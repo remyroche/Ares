@@ -36,16 +36,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from extreme_price_movements.economic_target_optimizer import (  # noqa: E402
+    EconomicTargetSpec,
+    append_economic_target_columns,
+)
 from extreme_price_movements.features_gmm_ae import (  # noqa: E402
     AE_GMM_FEATURE_COLUMNS,
     fit_ae_gmm_state,
     load_ae_gmm_state_artifact,
     save_ae_gmm_state_artifact,
     transform_ae_gmm_features,
-)
-from extreme_price_movements.economic_target_optimizer import (  # noqa: E402
-    EconomicTargetSpec,
-    append_economic_target_columns,
 )
 from scripts.run_label_economic_proxy_ablation import LABEL_ARMS, _label_targets
 from scripts.run_label_quality_proxy_diagnostics import (
@@ -67,10 +67,17 @@ from scripts.run_label_quality_proxy_diagnostics import (
     _selection_metrics,
     _spearman,
 )
-from scripts.run_label_weighted_proxy_ablation import WEIGHT_ARMS, _effective_sample_size, _weight_series
-from scripts.run_label_weighted_proxy_ablation import PROXY_METHODS, _weighted_proxy_score
+from scripts.run_label_weighted_proxy_ablation import (
+    PROXY_METHODS,
+    WEIGHT_ARMS,
+    _effective_sample_size,
+    _weight_series,
+    _weighted_proxy_score,
+)
 from scripts.run_soft_label_rounda_topk_proxy_diagnostics import (
     STRICT_LABEL_ARMS as STRICT_ROUNDA_LABEL_ARMS,
+)
+from scripts.run_soft_label_rounda_topk_proxy_diagnostics import (
     _strict_rounda_targets,
 )
 
@@ -92,8 +99,12 @@ def _average_rank_1d(values: np.ndarray) -> np.ndarray:
 
 
 def _spearman(x: Any, y: Any) -> float:
-    x_arr = pd.to_numeric(pd.Series(x), errors="coerce").to_numpy(dtype=np.float64, copy=False)
-    y_arr = pd.to_numeric(pd.Series(y), errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    x_arr = pd.to_numeric(pd.Series(x), errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
+    y_arr = pd.to_numeric(pd.Series(y), errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
     if x_arr.shape[0] != y_arr.shape[0]:
         n = min(int(x_arr.shape[0]), int(y_arr.shape[0]))
         x_arr = x_arr[:n]
@@ -116,7 +127,9 @@ def _spearman(x: Any, y: Any) -> float:
 
 
 def _finite_quantile_np(values: Any, q: float) -> float:
-    arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
         return float("nan")
@@ -124,7 +137,9 @@ def _finite_quantile_np(values: Any, q: float) -> float:
 
 
 def _rank_pct_np(values: Any, fill: float = 0.5) -> pd.Series:
-    arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
     out = np.full(arr.shape[0], float(fill), dtype=np.float32)
     valid = np.isfinite(arr)
     if int(valid.sum()) >= 1:
@@ -156,20 +171,40 @@ DISCOVERY_CONTEXT_BUCKET_LIMITS = {
 DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS = 15000
 DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS = 100000
 DEFAULT_AE_GMM_STATE_FEATURE_MAX_ITER = 32
-AE_GMM_SMOKE_FEATURE_POLICY = os.environ.get(
-    "EPM_AE_GMM_SMOKE_FEATURE_POLICY",
-    "all",
-).strip().lower()
-_AE_GMM_SIDE_CONTEXT_MODE_RAW = os.environ.get(
-    "EPM_AE_GMM_SIDE_CONTEXT_MODE",
-    "off",
-).strip().lower()
-if _AE_GMM_SIDE_CONTEXT_MODE_RAW in {"short_asset", "short_boll", "short_asset_short_boll"}:
+AE_GMM_SMOKE_FEATURE_POLICY = (
+    os.environ.get(
+        "EPM_AE_GMM_SMOKE_FEATURE_POLICY",
+        "all",
+    )
+    .strip()
+    .lower()
+)
+_AE_GMM_SIDE_CONTEXT_MODE_RAW = (
+    os.environ.get(
+        "EPM_AE_GMM_SIDE_CONTEXT_MODE",
+        "off",
+    )
+    .strip()
+    .lower()
+)
+if _AE_GMM_SIDE_CONTEXT_MODE_RAW in {
+    "short_asset",
+    "short_boll",
+    "short_asset_short_boll",
+}:
     raise ValueError(
         "EPM_AE_GMM_SIDE_CONTEXT_MODE must use global long/short side context; "
         "set it to 'long_short' instead of legacy short-only context names."
     )
-if _AE_GMM_SIDE_CONTEXT_MODE_RAW in {"1", "true", "yes", "y", "on", "long_short", "long_short_context"}:
+if _AE_GMM_SIDE_CONTEXT_MODE_RAW in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+    "long_short",
+    "long_short_context",
+}:
     AE_GMM_SIDE_CONTEXT_MODE = "long_short"
 elif _AE_GMM_SIDE_CONTEXT_MODE_RAW in {"", "0", "false", "no", "n", "off", "none"}:
     AE_GMM_SIDE_CONTEXT_MODE = "off"
@@ -291,6 +326,7 @@ FIXED_ARTIFACT_LABEL_ARMS = (
     "OPTIMIZED_ECONOMIC_SIDEAWARE_EXEC_RESOLUTION_TARGET",
 )
 
+
 def _bounded_sigmoid(values: Any) -> pd.Series:
     arr = np.clip(np.asarray(values, dtype=np.float64), -60.0, 60.0)
     return pd.Series(1.0 / (1.0 + np.exp(-arr)))
@@ -325,20 +361,32 @@ def _apply_spread_symbol_universe(
     target_symbol_count: int | None,
     max_spread_bps: float | None,
 ) -> tuple[pd.DataFrame, dict[str, Any], pd.DataFrame]:
-    if spread_baseline_path is None and target_symbol_count is None and max_spread_bps is None:
+    if (
+        spread_baseline_path is None
+        and target_symbol_count is None
+        and max_spread_bps is None
+    ):
         return frame, {"enabled": False}, pd.DataFrame()
     if spread_baseline_path is None:
-        raise ValueError("--spread-baseline-path is required for spread universe filtering")
+        raise ValueError(
+            "--spread-baseline-path is required for spread universe filtering"
+        )
     if "__symbol__" not in frame.columns:
-        raise ValueError("Cannot apply spread universe filter: label frame is missing __symbol__")
+        raise ValueError(
+            "Cannot apply spread universe filter: label frame is missing __symbol__"
+        )
     spread = pd.read_csv(spread_baseline_path)
     if "symbol" not in spread.columns:
-        raise ValueError(f"Spread baseline is missing required column 'symbol': {spread_baseline_path}")
+        raise ValueError(
+            f"Spread baseline is missing required column 'symbol': {spread_baseline_path}"
+        )
     if spread_rank_column not in spread.columns:
         raise ValueError(
             f"Spread baseline is missing rank column {spread_rank_column!r}: {spread_baseline_path}"
         )
-    present_symbols = pd.Series(frame["__symbol__"].dropna().astype(str).unique(), name="symbol")
+    present_symbols = pd.Series(
+        frame["__symbol__"].dropna().astype(str).unique(), name="symbol"
+    )
     universe = present_symbols.to_frame().merge(spread, on="symbol", how="left")
     universe["_spread_rank_value"] = pd.to_numeric(
         universe[spread_rank_column],
@@ -349,7 +397,9 @@ def _apply_spread_symbol_universe(
         ascending=[True, True],
         na_position="last",
     ).reset_index(drop=True)
-    universe["available_rank_by_spread"] = np.arange(1, len(universe) + 1, dtype=np.int32)
+    universe["available_rank_by_spread"] = np.arange(
+        1, len(universe) + 1, dtype=np.int32
+    )
     selected_mask = universe["_spread_rank_value"].notna()
     if max_spread_bps is not None:
         selected_mask &= universe["_spread_rank_value"].le(float(max_spread_bps))
@@ -359,7 +409,9 @@ def _apply_spread_symbol_universe(
         selected_mask = universe.index.to_series().isin(keep).to_numpy(dtype=bool)
     universe["selected"] = selected_mask.astype(bool)
     universe["exclusion_reason"] = ""
-    universe.loc[universe["_spread_rank_value"].isna(), "exclusion_reason"] = "missing_spread"
+    universe.loc[universe["_spread_rank_value"].isna(), "exclusion_reason"] = (
+        "missing_spread"
+    )
     universe.loc[
         universe["_spread_rank_value"].notna() & ~universe["selected"],
         "exclusion_reason",
@@ -374,15 +426,21 @@ def _apply_spread_symbol_universe(
         "enabled": True,
         "spread_baseline_path": str(spread_baseline_path),
         "spread_rank_column": str(spread_rank_column),
-        "target_symbol_count": int(target_symbol_count) if target_symbol_count is not None else None,
+        "target_symbol_count": int(target_symbol_count)
+        if target_symbol_count is not None
+        else None,
         "max_spread_bps": float(max_spread_bps) if max_spread_bps is not None else None,
         "input_rows": int(len(frame)),
         "input_symbols": int(len(present_symbols)),
         "selected_rows": int(len(filtered)),
         "selected_symbols": int(len(selected_symbols)),
         "excluded_symbols": int(len(universe) - len(selected_symbols)),
-        "selected_spread_max_bps": _safe_mean([universe.loc[universe["selected"], "_spread_rank_value"].max()]),
-        "excluded_missing_spread_symbols": int(universe["_spread_rank_value"].isna().sum()),
+        "selected_spread_max_bps": _safe_mean(
+            [universe.loc[universe["selected"], "_spread_rank_value"].max()]
+        ),
+        "excluded_missing_spread_symbols": int(
+            universe["_spread_rank_value"].isna().sum()
+        ),
     }
     return filtered, report, universe
 
@@ -417,7 +475,9 @@ def _add_delta_fields(row: dict[str, Any], baseline: dict[str, float]) -> None:
     )
 
 
-def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def _fixed_artifact_targets(
+    frame: pd.DataFrame, metrics: pd.DataFrame
+) -> dict[str, pd.DataFrame]:
     targets: dict[str, pd.DataFrame] = {}
     if "__y_econ_sideaware_soft__" not in frame.columns:
         try:
@@ -512,9 +572,13 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             index=frame.index,
         )
     if "__stage15_target_soft__" in frame.columns:
-        soft = pd.to_numeric(frame["__stage15_target_soft__"], errors="coerce").clip(0.0, 1.0)
+        soft = pd.to_numeric(frame["__stage15_target_soft__"], errors="coerce").clip(
+            0.0, 1.0
+        )
         if "__stage15_target_hard__" in frame.columns:
-            hard = pd.to_numeric(frame["__stage15_target_hard__"], errors="coerce").fillna(0.0)
+            hard = pd.to_numeric(
+                frame["__stage15_target_hard__"], errors="coerce"
+            ).fillna(0.0)
         else:
             hard = (soft >= 0.50).astype(float)
         targets["STAGE15_quiet_mid_clean_utility"] = pd.DataFrame(
@@ -531,7 +595,9 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         elif "__y_econ_pos__" in frame.columns:
             hard = pd.to_numeric(frame["__y_econ_pos__"], errors="coerce").fillna(0.0)
         elif "__u_econ_net__" in frame.columns:
-            hard = (pd.to_numeric(frame["__u_econ_net__"], errors="coerce") > 0.0).astype(float)
+            hard = (
+                pd.to_numeric(frame["__u_econ_net__"], errors="coerce") > 0.0
+            ).astype(float)
         else:
             hard = (soft >= 0.50).astype(float)
         targets["OPTIMIZED_ECONOMIC_TARGET"] = pd.DataFrame(
@@ -541,7 +607,9 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             },
             index=frame.index,
         )
-        u = pd.to_numeric(frame.get("__u_econ_net__", metrics["u_policy_net"]), errors="coerce")
+        u = pd.to_numeric(
+            frame.get("__u_econ_net__", metrics["u_policy_net"]), errors="coerce"
+        )
         mae_norm = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0)
         mfe_norm = pd.to_numeric(metrics["mfe_norm"], errors="coerce").fillna(0.0)
         timeout = metrics["is_timeout"].astype(float).fillna(1.0)
@@ -581,7 +649,9 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
                 method="average",
                 pct=True,
             )
-            clean_rank = clean_rank.fillna(contrast_soft.rank(method="average", pct=True))
+            clean_rank = clean_rank.fillna(
+                contrast_soft.rank(method="average", pct=True)
+            )
         else:
             clean_rank = contrast_soft.rank(method="average", pct=True)
         clean_rank_soft = (0.55 * contrast_soft + 0.45 * clean_rank).clip(0.0, 1.0)
@@ -598,9 +668,15 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             - 1.20 * (mae_norm - 0.60).clip(lower=0.0)
             - 2.50 * timeout
         )
-        timeout_safe_soft = _bounded_sigmoid(timeout_safe_raw).reindex(frame.index).fillna(0.0)
-        timeout_safe_soft = (0.70 * timeout_safe_soft + 0.30 * path_safe_soft).clip(0.0, 1.0)
-        timeout_safe_soft = timeout_safe_soft.where(timeout <= 0.0, timeout_safe_soft * 0.10)
+        timeout_safe_soft = (
+            _bounded_sigmoid(timeout_safe_raw).reindex(frame.index).fillna(0.0)
+        )
+        timeout_safe_soft = (0.70 * timeout_safe_soft + 0.30 * path_safe_soft).clip(
+            0.0, 1.0
+        )
+        timeout_safe_soft = timeout_safe_soft.where(
+            timeout <= 0.0, timeout_safe_soft * 0.10
+        )
         targets["OPTIMIZED_ECONOMIC_TIMEOUT_SAFE_TARGET"] = pd.DataFrame(
             {
                 "target_soft": timeout_safe_soft.astype(np.float32),
@@ -621,13 +697,19 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             - 3.00 * (mae_norm >= 1.0).astype(float)
             - 2.50 * timeout
         )
-        strict_path_soft = _bounded_sigmoid(strict_path_raw).reindex(frame.index).fillna(0.0)
-        strict_path_soft = (0.70 * strict_path_soft + 0.30 * strict_clean_gate).clip(0.0, 1.0)
+        strict_path_soft = (
+            _bounded_sigmoid(strict_path_raw).reindex(frame.index).fillna(0.0)
+        )
+        strict_path_soft = (0.70 * strict_path_soft + 0.30 * strict_clean_gate).clip(
+            0.0, 1.0
+        )
         strict_path_soft = strict_path_soft.where(
             (mae_norm < 1.0) & (timeout <= 0.0),
             strict_path_soft * 0.05,
         )
-        strict_clean_hard = ((u > 0.0) & (mae_norm < 0.75) & (timeout <= 0.0)).astype(float)
+        strict_clean_hard = ((u > 0.0) & (mae_norm < 0.75) & (timeout <= 0.0)).astype(
+            float
+        )
         targets["OPTIMIZED_ECONOMIC_STRICT_PATH_FIRST_TARGET"] = pd.DataFrame(
             {
                 "target_soft": strict_path_soft.astype(np.float32),
@@ -638,14 +720,18 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
 
         clean_utility = u.where((u > 0.0) & (mae_norm < 0.75) & (timeout <= 0.0))
         if "__ts__" in frame.columns:
-            clean_utility_rank = clean_utility.groupby(frame["__ts__"], dropna=False).rank(
+            clean_utility_rank = clean_utility.groupby(
+                frame["__ts__"], dropna=False
+            ).rank(
                 method="average",
                 pct=True,
             )
             fallback_rank = clean_utility.rank(method="average", pct=True)
             clean_utility_rank = clean_utility_rank.fillna(fallback_rank).fillna(0.0)
         else:
-            clean_utility_rank = clean_utility.rank(method="average", pct=True).fillna(0.0)
+            clean_utility_rank = clean_utility.rank(method="average", pct=True).fillna(
+                0.0
+            )
         clean_utility_rank_soft = (
             0.60 * clean_utility_rank
             + 0.25 * strict_path_soft
@@ -663,10 +749,14 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             index=frame.index,
         )
 
-        side = pd.to_numeric(
-            metrics.get("side", pd.Series(1.0, index=frame.index)),
-            errors="coerce",
-        ).reindex(frame.index).fillna(1.0)
+        side = (
+            pd.to_numeric(
+                metrics.get("side", pd.Series(1.0, index=frame.index)),
+                errors="coerce",
+            )
+            .reindex(frame.index)
+            .fillna(1.0)
+        )
         side_key = side.where(side < 0.0, 1.0).where(side >= 0.0, -1.0)
         if "__ts__" in frame.columns:
             group_keys = [frame["__ts__"], side_key]
@@ -680,9 +770,16 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         bad_mae = mae_norm >= 1.0
         timed_out = timeout > 0.5
         full_stop = pd.Series(False, index=frame.index)
-        for stop_col in ("__full_stop_loss__", "full_stop_loss", "full_sl", "replay_full_sl"):
+        for stop_col in (
+            "__full_stop_loss__",
+            "full_stop_loss",
+            "full_sl",
+            "replay_full_sl",
+        ):
             if stop_col in frame.columns:
-                full_stop = pd.to_numeric(frame[stop_col], errors="coerce").fillna(0.0).gt(0.5)
+                full_stop = (
+                    pd.to_numeric(frame[stop_col], errors="coerce").fillna(0.0).gt(0.5)
+                )
                 break
         clean_path = (u > 0.0) & (~bad_mae) & (~timed_out) & (~full_stop)
         dirty_positive = (u > 0.0) & (bad_mae | timed_out | full_stop)
@@ -703,14 +800,22 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
 
         # S24 keeps the source broad enough for Gate 3 recall while teaching the
         # model that dirty-positive paths are weak, non-final candidates.
-        clean_rank_u = u.where(clean_path).groupby(group_keys, dropna=False).rank(
-            method="average",
-            pct=True,
+        clean_rank_u = (
+            u.where(clean_path)
+            .groupby(group_keys, dropna=False)
+            .rank(
+                method="average",
+                pct=True,
+            )
         )
         clean_rank_u = clean_rank_u.fillna(0.0)
-        dirty_rank_u = u.where(dirty_positive).groupby(group_keys, dropna=False).rank(
-            method="average",
-            pct=True,
+        dirty_rank_u = (
+            u.where(dirty_positive)
+            .groupby(group_keys, dropna=False)
+            .rank(
+                method="average",
+                pct=True,
+            )
         )
         dirty_rank_u = dirty_rank_u.fillna(0.0)
         broad_path_soft = pd.Series(0.0, index=frame.index, dtype=np.float32)
@@ -725,11 +830,7 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         ).astype(np.float32)
         broad_path_soft = broad_path_soft.clip(0.0, 1.0).fillna(0.0)
         broad_path_hard = (
-            clean_path
-            & (
-                ts_side_u_rank.ge(0.75)
-                | clean_rank_u.ge(0.70)
-            )
+            clean_path & (ts_side_u_rank.ge(0.75) | clean_rank_u.ge(0.70))
         ).astype(np.float32)
         targets["OPTIMIZED_ECONOMIC_S24_BROAD_PATH_FIRST_SOURCE_TARGET"] = pd.DataFrame(
             {
@@ -744,10 +845,15 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         # they are ranked below clean non-timeout paths by construction.
         timeout_clean_positive = (u > 0.0) & timed_out & (~bad_mae) & (~full_stop)
         fast_clean_path = clean_path & mae_norm.lt(0.75) & mfe_norm.ge(1.0)
-        timeout_clean_rank = u.where(timeout_clean_positive).groupby(group_keys, dropna=False).rank(
-            method="average",
-            pct=True,
-        ).fillna(0.0)
+        timeout_clean_rank = (
+            u.where(timeout_clean_positive)
+            .groupby(group_keys, dropna=False)
+            .rank(
+                method="average",
+                pct=True,
+            )
+            .fillna(0.0)
+        )
         timeout_aware_soft = pd.Series(0.0, index=frame.index, dtype=np.float32)
         timeout_aware_soft.loc[timeout_clean_positive] = (
             0.04 + 0.10 * timeout_clean_rank.loc[timeout_clean_positive]
@@ -763,11 +869,7 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         ).astype(np.float32)
         timeout_aware_soft = timeout_aware_soft.clip(0.0, 1.0).fillna(0.0)
         timeout_aware_hard = (
-            fast_clean_path
-            & (
-                ts_side_u_rank.ge(0.72)
-                | clean_rank_u.ge(0.68)
-            )
+            fast_clean_path & (ts_side_u_rank.ge(0.72) | clean_rank_u.ge(0.68))
         ).astype(np.float32)
         targets["OPTIMIZED_ECONOMIC_TIMEOUT_AWARE_CLEAN_SOURCE_TARGET"] = pd.DataFrame(
             {
@@ -777,9 +879,27 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             index=frame.index,
         )
 
-        mfe_mae = (mfe_norm / mae_norm.clip(lower=0.25)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-        bars_to_mfe = pd.to_numeric(metrics.get("bars_to_mfe", pd.Series(0.0, index=frame.index)), errors="coerce").reindex(frame.index).fillna(0.0)
-        barrier = pd.to_numeric(metrics.get("barrier", pd.Series(0.02, index=frame.index)), errors="coerce").reindex(frame.index).fillna(0.02)
+        mfe_mae = (
+            (mfe_norm / mae_norm.clip(lower=0.25))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+        )
+        bars_to_mfe = (
+            pd.to_numeric(
+                metrics.get("bars_to_mfe", pd.Series(0.0, index=frame.index)),
+                errors="coerce",
+            )
+            .reindex(frame.index)
+            .fillna(0.0)
+        )
+        barrier = (
+            pd.to_numeric(
+                metrics.get("barrier", pd.Series(0.02, index=frame.index)),
+                errors="coerce",
+            )
+            .reindex(frame.index)
+            .fillna(0.02)
+        )
         exec_margin = (
             u.fillna(-0.02)
             - 0.0040 * (mae_norm - 0.65).clip(lower=0.0)
@@ -805,20 +925,30 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
             & bars_to_mfe.le(10.0)
             & mfe_mae.ge(1.40)
         ).fillna(False)
-        exec_rank = exec_margin.where(exec_admissible).groupby(group_keys, dropna=False).rank(
-            method="average",
-            pct=True,
-        ).fillna(0.0)
+        exec_rank = (
+            exec_margin.where(exec_admissible)
+            .groupby(group_keys, dropna=False)
+            .rank(
+                method="average",
+                pct=True,
+            )
+            .fillna(0.0)
+        )
         exec_soft = pd.Series(0.0, index=frame.index, dtype=np.float32)
         exec_soft.loc[dirty_positive] = 0.02
         exec_margin_sigmoid = pd.Series(
-            _bounded_sigmoid(exec_margin.loc[exec_admissible] / 0.003).to_numpy(dtype=np.float32),
+            _bounded_sigmoid(exec_margin.loc[exec_admissible] / 0.003).to_numpy(
+                dtype=np.float32
+            ),
             index=exec_margin.loc[exec_admissible].index,
         )
         exec_soft.loc[exec_admissible] = (
             0.35
             + 0.40 * exec_rank.loc[exec_admissible]
-            + 0.25 * exec_margin_sigmoid.reindex(exec_admissible.loc[exec_admissible].index).fillna(0.0)
+            + 0.25
+            * exec_margin_sigmoid.reindex(
+                exec_admissible.loc[exec_admissible].index
+            ).fillna(0.0)
         ).astype(np.float32)
         exec_soft.loc[exec_strict] = np.maximum(
             exec_soft.loc[exec_strict].to_numpy(dtype=np.float32),
@@ -828,7 +958,9 @@ def _fixed_artifact_targets(frame: pd.DataFrame, metrics: pd.DataFrame) -> dict[
         targets["OPTIMIZED_ECONOMIC_EXEC_MARGIN_STABLE_TARGET"] = pd.DataFrame(
             {
                 "target_soft": exec_soft.astype(np.float32),
-                "target_hard": (exec_admissible & exec_rank.ge(0.55)).astype(np.float32),
+                "target_hard": (exec_admissible & exec_rank.ge(0.55)).astype(
+                    np.float32
+                ),
             },
             index=frame.index,
         )
@@ -905,7 +1037,9 @@ def _timestamp_ranking_metrics(
         target.get("target_hard", hard_default).reset_index(drop=True),
         errors="coerce",
     ).fillna(0.0)
-    mae_norm = pd.to_numeric(metrics["mae_norm"].reset_index(drop=True), errors="coerce")
+    mae_norm = pd.to_numeric(
+        metrics["mae_norm"].reset_index(drop=True), errors="coerce"
+    )
     barrier = pd.to_numeric(metrics["barrier"].reset_index(drop=True), errors="coerce")
     timeout = metrics["is_timeout"].reset_index(drop=True).astype(float)
 
@@ -962,9 +1096,7 @@ def _timestamp_ranking_metrics(
         group_idx = order_ts[start:stop]
         if group_idx.size == 0:
             continue
-        ranked_idx = group_idx[
-            np.argsort(-score_arr[group_idx], kind="mergesort")
-        ]
+        ranked_idx = group_idx[np.argsort(-score_arr[group_idx], kind="mergesort")]
         gains_all = np.maximum(u_arr[group_idx].astype(np.float64, copy=False), 0.0)
         ideal = np.sort(gains_all)[::-1][: min(30, gains_all.size)]
         ideal_dcg = _dcg(ideal)
@@ -975,7 +1107,9 @@ def _timestamp_ranking_metrics(
         ts_values.append(ts_valid[group_idx[0]])
         rows30_values.append(int(top30_idx.size))
         ndcg30_values.append(
-            pred_dcg / ideal_dcg if math.isfinite(ideal_dcg) and ideal_dcg > 0.0 else 0.0
+            pred_dcg / ideal_dcg
+            if math.isfinite(ideal_dcg) and ideal_dcg > 0.0
+            else 0.0
         )
         opportunity_values.append(float(np.any(gains_all > 0.0)))
         top30_bad_values.append(float(np.mean(mae_arr[top30_idx] >= 1.0)))
@@ -1060,8 +1194,12 @@ def _fold_ae_gmm_economic_targets(
     train_frame: pd.DataFrame | None = None,
 ) -> dict[str, np.ndarray]:
     u = pd.to_numeric(train_metrics["u_policy_net"], errors="coerce").fillna(0.0)
-    bad_mae = pd.to_numeric(train_metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
-    timeout = pd.to_numeric(train_metrics["is_timeout"], errors="coerce").fillna(1.0).gt(0.5)
+    bad_mae = (
+        pd.to_numeric(train_metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+    )
+    timeout = (
+        pd.to_numeric(train_metrics["is_timeout"], errors="coerce").fillna(1.0).gt(0.5)
+    )
     side = pd.to_numeric(
         train_metrics.get("side", pd.Series(1.0, index=train_metrics.index)),
         errors="coerce",
@@ -1077,7 +1215,10 @@ def _fold_ae_gmm_economic_targets(
         "side": side.to_numpy(dtype=np.float32, copy=False),
     }
     time_source = train_frame if train_frame is not None else train_metrics
-    ts_col = next((col for col in ("__ts__", "timestamp", "ts") if col in time_source.columns), None)
+    ts_col = next(
+        (col for col in ("__ts__", "timestamp", "ts") if col in time_source.columns),
+        None,
+    )
     if ts_col is not None:
         ts = pd.to_datetime(time_source[ts_col], errors="coerce")
         if bool(ts.notna().any()):
@@ -1094,9 +1235,18 @@ def _ae_gmm_smoke_feature_policy_columns(columns: list[str]) -> list[str]:
     hard_cluster = {"gmm_cluster_id", "cluster_t"}
     if policy in {"all", "legacy", "with_cluster_id"}:
         return list(columns)
-    if policy in {"continuous", "continuous_only", "continuous_no_cluster_id", "no_cluster_id"}:
+    if policy in {
+        "continuous",
+        "continuous_only",
+        "continuous_no_cluster_id",
+        "no_cluster_id",
+    }:
         return [str(col) for col in columns if str(col) not in hard_cluster]
-    if policy in {"soft_distance_transition", "soft_distance_transition_no_cluster_id", "soft"}:
+    if policy in {
+        "soft_distance_transition",
+        "soft_distance_transition_no_cluster_id",
+        "soft",
+    }:
         prefixes = (
             "gmm_prob_",
             "gmm_cluster_posterior_",
@@ -1138,7 +1288,10 @@ def _ae_gmm_smoke_feature_policy_columns(columns: list[str]) -> list[str]:
             str(col)
             for col in columns
             if str(col) not in hard_cluster
-            and (str(col) in exact or any(str(col).startswith(prefix) for prefix in prefixes))
+            and (
+                str(col) in exact
+                or any(str(col).startswith(prefix) for prefix in prefixes)
+            )
         ]
     return [str(col) for col in columns if str(col) not in hard_cluster]
 
@@ -1162,14 +1315,19 @@ def _chronological_inner_oof_splits(
     if n_rows <= int(min_train_rows):
         return []
     if "__ts__" in train_frame.columns:
-        ts = pd.to_datetime(train_frame["__ts__"].reset_index(drop=True), errors="coerce")
+        ts = pd.to_datetime(
+            train_frame["__ts__"].reset_index(drop=True), errors="coerce"
+        )
         months = ts.dt.to_period("M").astype(str)
         unique_months = [m for m in sorted(months.dropna().unique()) if str(m) != "NaT"]
         splits: list[tuple[np.ndarray, np.ndarray]] = []
         for month in unique_months[1:]:
             train_mask = months < month
             valid_mask = months == month
-            if int(train_mask.sum()) >= int(min_train_rows) and int(valid_mask.sum()) > 0:
+            if (
+                int(train_mask.sum()) >= int(min_train_rows)
+                and int(valid_mask.sum()) > 0
+            ):
                 splits.append(
                     (
                         np.flatnonzero(train_mask.to_numpy(dtype=bool)),
@@ -1186,7 +1344,12 @@ def _chronological_inner_oof_splits(
         valid_start = int(boundaries[i])
         valid_end = int(boundaries[i + 1])
         if train_end >= int(min_train_rows) and valid_end > valid_start:
-            splits.append((np.arange(0, train_end, dtype=np.int64), np.arange(valid_start, valid_end, dtype=np.int64)))
+            splits.append(
+                (
+                    np.arange(0, train_end, dtype=np.int64),
+                    np.arange(valid_start, valid_end, dtype=np.int64),
+                )
+            )
     return splits
 
 
@@ -1207,7 +1370,9 @@ def _fit_ae_gmm_state_for_rows(
         x_base.reset_index(drop=True).iloc[pos].reset_index(drop=True),
         economic_targets=_fold_ae_gmm_economic_targets(
             metrics.reset_index(drop=True).iloc[pos].reset_index(drop=True),
-            train_frame=train_frame.reset_index(drop=True).iloc[pos].reset_index(drop=True),
+            train_frame=train_frame.reset_index(drop=True)
+            .iloc[pos]
+            .reset_index(drop=True),
         ),
         random_state=int(random_state),
         max_train_rows=int(max_train_rows),
@@ -1232,8 +1397,13 @@ def _persist_ae_gmm_state_artifact(
     if artifact_dir is None:
         return {}
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(artifact_name or "fold")).strip("_") or "fold"
-    safe_scope = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(scope or "global")).strip("_") or "global"
+    safe_name = (
+        re.sub(r"[^A-Za-z0-9_.-]+", "_", str(artifact_name or "fold")).strip("_")
+        or "fold"
+    )
+    safe_scope = (
+        re.sub(r"[^A-Za-z0-9_.-]+", "_", str(scope or "global")).strip("_") or "global"
+    )
     stem = f"{safe_name}__{safe_scope}"
     state_path = artifact_dir / f"{stem}_state.pkl"
     manifest_path = artifact_dir / f"{stem}_manifest.json"
@@ -1250,8 +1420,12 @@ def _persist_ae_gmm_state_artifact(
             "selected_config": selected,
             "oos_transform_contract": "state_fit_on_fold_train_rows_only_then_frozen_transform_on_validation_rows",
             "materialized_transform_rules": {
-                "emitted_feature_subset": list(state.get("_emitted_feature_subset", []) or []),
-                "emitted_feature_subset_count": int(len(state.get("_emitted_feature_subset", []) or [])),
+                "emitted_feature_subset": list(
+                    state.get("_emitted_feature_subset", []) or []
+                ),
+                "emitted_feature_subset_count": int(
+                    len(state.get("_emitted_feature_subset", []) or [])
+                ),
                 "side_context_mode": str(state.get("_side_context_mode", "off")),
                 "chunk_rows": state.get("_transform_chunk_rows"),
                 "train_missing_value_policy": "median_from_train_matrix_then_zero_fill_remaining",
@@ -1290,7 +1464,11 @@ def _transform_ae_gmm_features_selected_chunked(
     idx_values = x_base.index if index is None else index
     for start in range(0, n_rows, chunk):
         end = min(start + chunk, n_rows)
-        idx_slice = idx_values[start:end] if hasattr(idx_values, "__getitem__") else x_base.index[start:end]
+        idx_slice = (
+            idx_values[start:end]
+            if hasattr(idx_values, "__getitem__")
+            else x_base.index[start:end]
+        )
         values = transform_ae_gmm_features(
             x_base.iloc[start:end],
             state,
@@ -1312,12 +1490,16 @@ def _crossfit_ae_gmm_features(
     ae_max_iter: int,
     require_both_sides: bool,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    out = pd.DataFrame(0.0, index=x_base.index, columns=generated_features, dtype=np.float32)
+    out = pd.DataFrame(
+        0.0, index=x_base.index, columns=generated_features, dtype=np.float32
+    )
     available = pd.Series(0.0, index=x_base.index, dtype=np.float32)
     splits = _chronological_inner_oof_splits(
         train_frame=train_frame,
         n_rows=len(x_base),
-        min_train_rows=max(500, min(2_000, int(max_train_rows) if int(max_train_rows) > 0 else 500)),
+        min_train_rows=max(
+            500, min(2_000, int(max_train_rows) if int(max_train_rows) > 0 else 500)
+        ),
     )
     transformed_rows = 0
     fitted_folds = 0
@@ -1352,7 +1534,9 @@ def _crossfit_ae_gmm_features(
         fitted_folds += 1
         transformed_rows += int(inner_valid.size)
     if "ae_gmm_oof_available" in generated_features:
-        out.loc[:, "ae_gmm_oof_available"] = available.to_numpy(dtype=np.float32, copy=False)
+        out.loc[:, "ae_gmm_oof_available"] = available.to_numpy(
+            dtype=np.float32, copy=False
+        )
     return out, {
         "crossfit_enabled": bool(AE_GMM_CROSSFIT_TRAIN_FEATURES),
         "crossfit_split_count": int(len(splits)),
@@ -1373,9 +1557,9 @@ def _append_fold_ae_gmm_state_features(
     valid_metrics: pd.DataFrame,
     enabled: bool,
     max_train_rows: int,
-    gmm_max_train_rows: int,
-    ae_max_iter: int,
-    random_state: int,
+    gmm_max_train_rows: int | None = None,
+    ae_max_iter: int = 80,
+    random_state: int = 42,
     state_artifact_dir: Path | None = None,
     state_artifact_name: str = "",
     fixed_state_path: Path | None = None,
@@ -1385,12 +1569,20 @@ def _append_fold_ae_gmm_state_features(
     fit_train_frame: pd.DataFrame | None = None,
     fit_train_metrics: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict[str, Any]]:
+    gmm_max_train_rows = int(
+        max_train_rows if gmm_max_train_rows is None else gmm_max_train_rows
+    )
     if not enabled:
-        return x_train, x_valid, [], {
-            "ae_gmm_state_features_enabled": False,
-            "ae_gmm_state_feature_status": "disabled",
-            "ae_gmm_state_feature_count": 0,
-        }
+        return (
+            x_train,
+            x_valid,
+            [],
+            {
+                "ae_gmm_state_features_enabled": False,
+                "ae_gmm_state_feature_status": "disabled",
+                "ae_gmm_state_feature_count": 0,
+            },
+        )
     excluded_generated = set(str(v) for v in AE_GMM_FEATURE_COLUMNS)
     if input_feature_cols is not None:
         requested_inputs = [str(col) for col in input_feature_cols if str(col).strip()]
@@ -1401,18 +1593,23 @@ def _append_fold_ae_gmm_state_features(
         ]
     else:
         base_features = [
-            str(col)
-            for col in x_train.columns
-            if str(col) not in excluded_generated
+            str(col) for col in x_train.columns if str(col) not in excluded_generated
         ]
     if len(base_features) < 2 or len(x_train) < 500:
-        return x_train, x_valid, [], {
-            "ae_gmm_state_features_enabled": False,
-            "ae_gmm_state_feature_status": "insufficient_rows_or_features",
-            "ae_gmm_state_feature_count": 0,
-            "ae_gmm_state_input_feature_count": int(len(base_features)),
-            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
-        }
+        return (
+            x_train,
+            x_valid,
+            [],
+            {
+                "ae_gmm_state_features_enabled": False,
+                "ae_gmm_state_feature_status": "insufficient_rows_or_features",
+                "ae_gmm_state_feature_count": 0,
+                "ae_gmm_state_input_feature_count": int(len(base_features)),
+                "ae_gmm_state_input_feature_policy": "explicit_override"
+                if input_feature_cols is not None
+                else "all_non_generated",
+            },
+        )
     x_train_base = x_train.reindex(columns=base_features).astype(np.float32, copy=False)
     x_valid_base = x_valid.reindex(columns=base_features).astype(np.float32, copy=False)
     fit_x_base_local = (
@@ -1424,10 +1621,14 @@ def _append_fold_ae_gmm_state_features(
     valid_metrics_local = valid_metrics.reset_index(drop=True)
     train_frame_local = train_frame.reset_index(drop=True)
     fit_train_metrics_local = (
-        fit_train_metrics.reset_index(drop=True) if fit_train_metrics is not None else train_metrics_local
+        fit_train_metrics.reset_index(drop=True)
+        if fit_train_metrics is not None
+        else train_metrics_local
     )
     fit_train_frame_local = (
-        fit_train_frame.reset_index(drop=True) if fit_train_frame is not None else train_frame_local
+        fit_train_frame.reset_index(drop=True)
+        if fit_train_frame is not None
+        else train_frame_local
     )
     all_train_positions = np.arange(len(fit_x_base_local), dtype=np.int64)
     if fixed_state_path is not None:
@@ -1456,25 +1657,42 @@ def _append_fold_ae_gmm_state_features(
             valid_rows=len(x_valid_base),
             input_feature_count=len(base_features),
         )
-        return x_train, x_valid, [], {
-            "ae_gmm_state_features_enabled": False,
-            "ae_gmm_state_feature_status": str(state.get("reason", "state_disabled")),
-            "ae_gmm_state_feature_count": 0,
-            "ae_gmm_state_input_feature_count": int(len(base_features)),
-            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
-            "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
-            **persisted_disabled,
-        }
-    valid_generated = transform_ae_gmm_features(x_valid_base, state, index=x_valid.index)
+        return (
+            x_train,
+            x_valid,
+            [],
+            {
+                "ae_gmm_state_features_enabled": False,
+                "ae_gmm_state_feature_status": str(
+                    state.get("reason", "state_disabled")
+                ),
+                "ae_gmm_state_feature_count": 0,
+                "ae_gmm_state_input_feature_count": int(len(base_features)),
+                "ae_gmm_state_input_feature_policy": "explicit_override"
+                if input_feature_cols is not None
+                else "all_non_generated",
+                "ae_gmm_state_hpo_report_count": int(
+                    state.get("hpo_report_count", 0) or 0
+                ),
+                **persisted_disabled,
+            },
+        )
+    valid_generated = transform_ae_gmm_features(
+        x_valid_base, state, index=x_valid.index
+    )
     all_generated_features = [str(col) for col in valid_generated.columns]
     generated_features = _ae_gmm_smoke_feature_policy_columns(all_generated_features)
-    generated_features = list(dict.fromkeys([*generated_features, "ae_gmm_oof_available"]))
+    generated_features = list(
+        dict.fromkeys([*generated_features, "ae_gmm_oof_available"])
+    )
     output_subset = set(str(c) for c in (output_feature_subset or []) if str(c).strip())
     if output_subset:
         generated_features = [col for col in generated_features if col in output_subset]
     state["_emitted_feature_subset"] = list(generated_features)
     state["_side_context_mode"] = str(AE_GMM_SIDE_CONTEXT_MODE or "off")
-    state["_transform_chunk_rows"] = int(os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000"))
+    state["_transform_chunk_rows"] = int(
+        os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000")
+    )
     persisted_artifacts: dict[str, Any] = _persist_ae_gmm_state_artifact(
         state=state,
         artifact_dir=state_artifact_dir,
@@ -1515,7 +1733,9 @@ def _append_fold_ae_gmm_state_features(
         }
         if "ae_gmm_oof_available" in generated_features:
             train_generated["ae_gmm_oof_available"] = np.float32(1.0)
-    valid_generated = valid_generated.reindex(columns=generated_features, fill_value=0.0)
+    valid_generated = valid_generated.reindex(
+        columns=generated_features, fill_value=0.0
+    )
     side_context_reports: list[dict[str, Any]] = []
     side_feature_frames_train: list[pd.DataFrame] = []
     side_feature_frames_valid: list[pd.DataFrame] = []
@@ -1531,11 +1751,15 @@ def _append_fold_ae_gmm_state_features(
             )
         else:
             side_train = pd.to_numeric(
-                train_metrics_local.get("side", pd.Series(1.0, index=train_metrics_local.index)),
+                train_metrics_local.get(
+                    "side", pd.Series(1.0, index=train_metrics_local.index)
+                ),
                 errors="coerce",
             ).fillna(1.0)
             side_valid = pd.to_numeric(
-                valid_metrics_local.get("side", pd.Series(1.0, index=valid_metrics_local.index)),
+                valid_metrics_local.get(
+                    "side", pd.Series(1.0, index=valid_metrics_local.index)
+                ),
                 errors="coerce",
             ).fillna(1.0)
             for side_name, side_mask in (
@@ -1558,14 +1782,24 @@ def _append_fold_ae_gmm_state_features(
                     )
                     continue
                 side_state = fit_ae_gmm_state(
-                    x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
+                    x_train_base.reset_index(drop=True)
+                    .iloc[side_mask]
+                    .reset_index(drop=True),
                     economic_targets=_fold_ae_gmm_economic_targets(
                         train_metrics_local.iloc[side_mask].reset_index(drop=True),
-                        train_frame=train_frame_local.iloc[side_mask].reset_index(drop=True),
+                        train_frame=train_frame_local.iloc[side_mask].reset_index(
+                            drop=True
+                        ),
                     ),
-                    random_state=int(random_state + (70_000 if side_name == "long" else 80_000)),
-                    max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
-                    gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2)) if int(gmm_max_train_rows) > 0 else 0,
+                    random_state=int(
+                        random_state + (70_000 if side_name == "long" else 80_000)
+                    ),
+                    max_train_rows=max(200, int(max_train_rows // 2))
+                    if int(max_train_rows) > 0
+                    else 0,
+                    gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2))
+                    if int(gmm_max_train_rows) > 0
+                    else 0,
                     ae_max_iter=int(ae_max_iter),
                     require_both_sides=False,
                 )
@@ -1595,14 +1829,18 @@ def _append_fold_ae_gmm_state_features(
                     columns=generated_features,
                     dtype=np.float32,
                 )
-                side_train_available = pd.Series(0.0, index=x_train.index, dtype=np.float32)
+                side_train_available = pd.Series(
+                    0.0, index=x_train.index, dtype=np.float32
+                )
                 side_valid_generated = pd.DataFrame(
                     0.0,
                     index=x_valid.index,
                     columns=generated_features,
                     dtype=np.float32,
                 )
-                side_valid_available = pd.Series(0.0, index=x_valid.index, dtype=np.float32)
+                side_valid_available = pd.Series(
+                    0.0, index=x_valid.index, dtype=np.float32
+                )
                 side_crossfit_rows = 0
                 side_crossfit_folds = 0
                 side_crossfit_failed = 0
@@ -1610,12 +1848,21 @@ def _append_fold_ae_gmm_state_features(
                     inner_splits = _chronological_inner_oof_splits(
                         train_frame=train_frame_local,
                         n_rows=len(x_train_base),
-                        min_train_rows=max(500, min(2_000, int(max_train_rows) if int(max_train_rows) > 0 else 500)),
+                        min_train_rows=max(
+                            500,
+                            min(
+                                2_000,
+                                int(max_train_rows) if int(max_train_rows) > 0 else 500,
+                            ),
+                        ),
                     )
                     for fold_i, (inner_train, inner_valid) in enumerate(inner_splits):
                         side_inner_train = inner_train[side_mask[inner_train]]
                         side_inner_valid = inner_valid[side_mask[inner_valid]]
-                        if int(side_inner_train.size) < 250 or int(side_inner_valid.size) <= 0:
+                        if (
+                            int(side_inner_train.size) < 250
+                            or int(side_inner_valid.size) <= 0
+                        ):
                             continue
                         side_inner_state = _fit_ae_gmm_state_for_rows(
                             x_base=x_train_base,
@@ -1627,8 +1874,12 @@ def _append_fold_ae_gmm_state_features(
                                 + (170_000 if side_name == "long" else 180_000)
                                 + fold_i * 101
                             ),
-                            max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
-                            gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2)) if int(gmm_max_train_rows) > 0 else 0,
+                            max_train_rows=max(200, int(max_train_rows // 2))
+                            if int(max_train_rows) > 0
+                            else 0,
+                            gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2))
+                            if int(gmm_max_train_rows) > 0
+                            else 0,
                             ae_max_iter=int(ae_max_iter),
                             require_both_sides=False,
                         )
@@ -1636,7 +1887,9 @@ def _append_fold_ae_gmm_state_features(
                             side_crossfit_failed += 1
                             continue
                         side_train_values = transform_ae_gmm_features(
-                            x_train_base.reset_index(drop=True).iloc[side_inner_valid].reset_index(drop=True),
+                            x_train_base.reset_index(drop=True)
+                            .iloc[side_inner_valid]
+                            .reset_index(drop=True),
                             side_inner_state,
                             index=x_train.index[side_inner_valid],
                         ).reindex(columns=generated_features, fill_value=0.0)
@@ -1649,12 +1902,16 @@ def _append_fold_ae_gmm_state_features(
                         side_crossfit_folds += 1
                 else:
                     side_train_values = _transform_ae_gmm_features_selected_chunked(
-                        x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
+                        x_train_base.reset_index(drop=True)
+                        .iloc[side_mask]
+                        .reset_index(drop=True),
                         side_state,
                         index=x_train.index[side_mask],
                         columns=generated_features,
                     )
-                    side_train_generated.loc[x_train.index[side_mask], generated_features] = side_train_values.to_numpy(
+                    side_train_generated.loc[
+                        x_train.index[side_mask], generated_features
+                    ] = side_train_values.to_numpy(
                         dtype=np.float32,
                         copy=False,
                     )
@@ -1662,36 +1919,62 @@ def _append_fold_ae_gmm_state_features(
                     side_crossfit_rows = int(side_mask.sum())
                 if bool(valid_side_mask.any()):
                     side_valid_values = transform_ae_gmm_features(
-                        x_valid_base.reset_index(drop=True).iloc[valid_side_mask].reset_index(drop=True),
+                        x_valid_base.reset_index(drop=True)
+                        .iloc[valid_side_mask]
+                        .reset_index(drop=True),
                         side_state,
                         index=x_valid.index[valid_side_mask],
                     ).reindex(columns=generated_features, fill_value=0.0)
-                    side_valid_generated.loc[x_valid.index[valid_side_mask], generated_features] = side_valid_values.to_numpy(
+                    side_valid_generated.loc[
+                        x_valid.index[valid_side_mask], generated_features
+                    ] = side_valid_values.to_numpy(
                         dtype=np.float32,
                         copy=False,
                     )
                     side_valid_available.loc[x_valid.index[valid_side_mask]] = 1.0
                 if "ae_gmm_oof_available" in generated_features:
-                    side_train_generated.loc[:, "ae_gmm_oof_available"] = side_train_available.to_numpy(
-                        dtype=np.float32,
-                        copy=False,
+                    side_train_generated.loc[:, "ae_gmm_oof_available"] = (
+                        side_train_available.to_numpy(
+                            dtype=np.float32,
+                            copy=False,
+                        )
                     )
-                    side_valid_generated.loc[:, "ae_gmm_oof_available"] = side_valid_available.to_numpy(
-                        dtype=np.float32,
-                        copy=False,
+                    side_valid_generated.loc[:, "ae_gmm_oof_available"] = (
+                        side_valid_available.to_numpy(
+                            dtype=np.float32,
+                            copy=False,
+                        )
                     )
-                side_train_prefixed = _prefixed_side_context(side_train_generated, side_name)
-                side_valid_prefixed = _prefixed_side_context(side_valid_generated, side_name)
+                side_train_prefixed = _prefixed_side_context(
+                    side_train_generated, side_name
+                )
+                side_valid_prefixed = _prefixed_side_context(
+                    side_valid_generated, side_name
+                )
                 if output_subset:
-                    side_keep = [col for col in side_train_prefixed.columns if str(col) in output_subset]
-                    side_train_prefixed = side_train_prefixed.reindex(columns=side_keep, fill_value=0.0)
-                    side_valid_prefixed = side_valid_prefixed.reindex(columns=side_keep, fill_value=0.0)
+                    side_keep = [
+                        col
+                        for col in side_train_prefixed.columns
+                        if str(col) in output_subset
+                    ]
+                    side_train_prefixed = side_train_prefixed.reindex(
+                        columns=side_keep, fill_value=0.0
+                    )
+                    side_valid_prefixed = side_valid_prefixed.reindex(
+                        columns=side_keep, fill_value=0.0
+                    )
                 side_feature_frames_train.append(side_train_prefixed)
                 side_feature_frames_valid.append(side_valid_prefixed)
-                side_generated_features.extend(str(col) for col in side_train_prefixed.columns)
-                side_state["_emitted_feature_subset"] = [str(col) for col in side_train_prefixed.columns]
+                side_generated_features.extend(
+                    str(col) for col in side_train_prefixed.columns
+                )
+                side_state["_emitted_feature_subset"] = [
+                    str(col) for col in side_train_prefixed.columns
+                ]
                 side_state["_side_context_mode"] = f"side_{side_name}"
-                side_state["_transform_chunk_rows"] = int(os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000"))
+                side_state["_transform_chunk_rows"] = int(
+                    os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000")
+                )
                 side_persisted = _persist_ae_gmm_state_artifact(
                     state=side_state,
                     artifact_dir=state_artifact_dir,
@@ -1710,8 +1993,12 @@ def _append_fold_ae_gmm_state_features(
                         "valid_rows": int(valid_side_mask.sum()),
                         "feature_count": int(side_train_prefixed.shape[1]),
                         "train_crossfit_rows": int(side_crossfit_rows),
-                        "train_crossfit_uncovered_rows": int(max(int(side_mask.sum()) - side_crossfit_rows, 0)),
-                        "train_crossfit_coverage": float(side_crossfit_rows / max(int(side_mask.sum()), 1)),
+                        "train_crossfit_uncovered_rows": int(
+                            max(int(side_mask.sum()) - side_crossfit_rows, 0)
+                        ),
+                        "train_crossfit_coverage": float(
+                            side_crossfit_rows / max(int(side_mask.sum()), 1)
+                        ),
                         "train_crossfit_folds": int(side_crossfit_folds),
                         "train_crossfit_failed_folds": int(side_crossfit_failed),
                         "n_components": int(side_state.get("gmm_n_components", 0) or 0),
@@ -1719,13 +2006,17 @@ def _append_fold_ae_gmm_state_features(
                             side_selected.get("path_cleanliness_score", float("nan"))
                         ),
                         "temporal_concentration_score": float(
-                            side_selected.get("temporal_concentration_score", float("nan"))
+                            side_selected.get(
+                                "temporal_concentration_score", float("nan")
+                            )
                         ),
                         **side_persisted,
                     }
                 )
     if output_subset:
-        raw_keep = [col for col in output_feature_subset or [] if str(col) in x_train.columns]
+        raw_keep = [
+            col for col in output_feature_subset or [] if str(col) in x_train.columns
+        ]
         x_train_emit = x_train.reindex(columns=raw_keep, fill_value=0.0)
         x_valid_emit = x_valid.reindex(columns=raw_keep, fill_value=0.0)
     else:
@@ -1754,30 +2045,54 @@ def _append_fold_ae_gmm_state_features(
             else "outer_train_in_sample",
             "ae_gmm_state_validation_feature_scope": "frozen_outer_train_artifact",
             "ae_gmm_state_source": state_source,
-            "ae_gmm_state_fit_scope": "explicit_fit_frame" if fit_x_base is not None else "outer_train_fold",
+            "ae_gmm_state_fit_scope": "explicit_fit_frame"
+            if fit_x_base is not None
+            else "outer_train_fold",
             "ae_gmm_state_crossfit_enabled": bool(AE_GMM_CROSSFIT_TRAIN_FEATURES),
-            "ae_gmm_state_crossfit_split_count": int(crossfit_diag.get("crossfit_split_count", 0)),
-            "ae_gmm_state_crossfit_fitted_folds": int(crossfit_diag.get("crossfit_fitted_folds", 0)),
-            "ae_gmm_state_crossfit_failed_folds": int(crossfit_diag.get("crossfit_failed_folds", 0)),
-            "ae_gmm_state_crossfit_transformed_rows": int(crossfit_diag.get("crossfit_transformed_rows", 0)),
-            "ae_gmm_state_crossfit_uncovered_rows": int(crossfit_diag.get("crossfit_uncovered_rows", 0)),
-            "ae_gmm_state_crossfit_coverage": float(crossfit_diag.get("crossfit_coverage", float("nan"))),
+            "ae_gmm_state_crossfit_split_count": int(
+                crossfit_diag.get("crossfit_split_count", 0)
+            ),
+            "ae_gmm_state_crossfit_fitted_folds": int(
+                crossfit_diag.get("crossfit_fitted_folds", 0)
+            ),
+            "ae_gmm_state_crossfit_failed_folds": int(
+                crossfit_diag.get("crossfit_failed_folds", 0)
+            ),
+            "ae_gmm_state_crossfit_transformed_rows": int(
+                crossfit_diag.get("crossfit_transformed_rows", 0)
+            ),
+            "ae_gmm_state_crossfit_uncovered_rows": int(
+                crossfit_diag.get("crossfit_uncovered_rows", 0)
+            ),
+            "ae_gmm_state_crossfit_coverage": float(
+                crossfit_diag.get("crossfit_coverage", float("nan"))
+            ),
             "ae_gmm_side_context_mode": str(AE_GMM_SIDE_CONTEXT_MODE or "off"),
             "ae_gmm_side_context_enabled": bool(_side_context_enabled()),
             "ae_gmm_side_context_feature_count": int(len(side_generated_features)),
             "ae_gmm_side_context_report": json.dumps(_json_safe(side_context_reports)),
             "ae_gmm_state_input_feature_count": int(len(base_features)),
-            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
+            "ae_gmm_state_input_feature_policy": "explicit_override"
+            if input_feature_cols is not None
+            else "all_non_generated",
             "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
-            "ae_gmm_state_train_rows_available": int(state.get("train_rows_available", len(fit_x_base_local)) or 0),
+            "ae_gmm_state_train_rows_available": int(
+                state.get("train_rows_available", len(fit_x_base_local)) or 0
+            ),
             "ae_gmm_state_ae_fit_rows": int(state.get("ae_fit_rows", 0) or 0),
             "ae_gmm_state_gmm_fit_rows": int(state.get("gmm_fit_rows", 0) or 0),
-            "ae_gmm_state_ae_max_train_rows": int(state.get("ae_max_train_rows", max_train_rows) or 0),
-            "ae_gmm_state_gmm_max_train_rows": int(state.get("gmm_max_train_rows", gmm_max_train_rows) or 0),
+            "ae_gmm_state_ae_max_train_rows": int(
+                state.get("ae_max_train_rows", max_train_rows) or 0
+            ),
+            "ae_gmm_state_gmm_max_train_rows": int(
+                state.get("gmm_max_train_rows", gmm_max_train_rows) or 0
+            ),
             "ae_gmm_state_sample_policy": str(state.get("sample_policy", "")),
             "ae_gmm_state_n_components": int(state.get("gmm_n_components", 0) or 0),
             "ae_gmm_state_reg_covar": float(state.get("gmm_reg_covar", float("nan"))),
-            "ae_gmm_state_smooth_lambda": float(state.get("smooth_lambda", float("nan"))),
+            "ae_gmm_state_smooth_lambda": float(
+                state.get("smooth_lambda", float("nan"))
+            ),
             "ae_gmm_state_economic_regime_separation": float(
                 selected_config.get("economic_regime_separation", float("nan"))
             ),
@@ -1811,13 +2126,21 @@ def _append_fold_ae_gmm_state_features(
             "ae_gmm_state_temporal_stability_score": float(
                 selected_config.get("temporal_stability_score", float("nan"))
             ),
-            "ae_gmm_state_switch_rate": float(selected_config.get("switch_rate", float("nan"))),
+            "ae_gmm_state_switch_rate": float(
+                selected_config.get("switch_rate", float("nan"))
+            ),
             "ae_gmm_state_side_balance_score": float(
                 selected_config.get("side_balance_score", float("nan"))
             ),
-            "ae_gmm_state_min_occupancy": float(selected_config.get("min_occupancy", float("nan"))),
-            "ae_gmm_state_max_occupancy": float(selected_config.get("max_occupancy", float("nan"))),
-            "ae_gmm_state_artifact_dir": str(state_artifact_dir) if state_artifact_dir is not None else None,
+            "ae_gmm_state_min_occupancy": float(
+                selected_config.get("min_occupancy", float("nan"))
+            ),
+            "ae_gmm_state_max_occupancy": float(
+                selected_config.get("max_occupancy", float("nan"))
+            ),
+            "ae_gmm_state_artifact_dir": str(state_artifact_dir)
+            if state_artifact_dir is not None
+            else None,
             "ae_gmm_frozen_replay_contract": (
                 "global and side AE/GMM states fit on the outer train fold are persisted; "
                 "validation/OOS rows are transformed with those frozen train-fitted states"
@@ -1846,13 +2169,19 @@ def _fit_predict(
     model.fit(
         x_train,
         pd.to_numeric(y_train, errors="coerce").fillna(0.0).to_numpy(dtype=np.float32),
-        sample_weight=pd.to_numeric(w_train, errors="coerce").fillna(1.0).to_numpy(dtype=np.float32),
+        sample_weight=pd.to_numeric(w_train, errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32),
     )
     return model.predict(x_valid).astype(np.float32)
 
 
 def _timestamp_groups(train_frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    ts = pd.to_datetime(train_frame["__ts__"], errors="coerce").astype("int64").to_numpy()
+    ts = (
+        pd.to_datetime(train_frame["__ts__"], errors="coerce")
+        .astype("int64")
+        .to_numpy()
+    )
     order = np.argsort(ts, kind="mergesort")
     if not len(order):
         return order.astype(np.int64), np.asarray([], dtype=np.int32)
@@ -1874,16 +2203,18 @@ def _ranker_relevance(
     pct_u = u.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
     if str(mode) == "path_quality":
         group_mean = u.groupby(ts, sort=False).transform("mean")
-        group_std = u.groupby(ts, sort=False).transform("std").replace(0.0, np.nan).fillna(1.0)
+        group_std = (
+            u.groupby(ts, sort=False).transform("std").replace(0.0, np.nan).fillna(1.0)
+        )
         realized_edge_z = ((u - group_mean) / group_std).clip(-3.0, 3.0)
-        bad_mae = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        bad_mae = (
+            pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        )
         timeout = metrics["is_timeout"].astype(float).fillna(1.0).gt(0.5)
-        target_soft = pd.to_numeric(target_local["target_soft"], errors="coerce").fillna(0.0)
-        clean_path = (
-            (u > 0.0)
-            & (~bad_mae)
-            & (~timeout)
-        ).astype(np.float32)
+        target_soft = pd.to_numeric(
+            target_local["target_soft"], errors="coerce"
+        ).fillna(0.0)
+        clean_path = ((u > 0.0) & (~bad_mae) & (~timeout)).astype(np.float32)
         blended = (
             realized_edge_z.astype(np.float32)
             + 0.65 * pct_u.astype(np.float32)
@@ -1892,13 +2223,19 @@ def _ranker_relevance(
             - 1.50 * bad_mae.astype(np.float32)
             - 0.75 * timeout.astype(np.float32)
         )
-        pct = blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        pct = (
+            blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        )
     elif str(mode) == "oracle_enriched":
         group_mean = u.groupby(ts, sort=False).transform("mean")
-        group_std = u.groupby(ts, sort=False).transform("std").replace(0.0, np.nan).fillna(1.0)
+        group_std = (
+            u.groupby(ts, sort=False).transform("std").replace(0.0, np.nan).fillna(1.0)
+        )
         realized_edge_z = ((u - group_mean) / group_std).clip(-3.0, 3.0)
         oracle_top = pct_u.ge(0.90).astype(np.float32)
-        bad_mae = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        bad_mae = (
+            pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        )
         timeout = metrics["is_timeout"].astype(float).fillna(1.0).gt(0.5)
         blended = (
             realized_edge_z.astype(np.float32)
@@ -1906,14 +2243,22 @@ def _ranker_relevance(
             - 0.90 * bad_mae.astype(np.float32)
             - 0.55 * timeout.astype(np.float32)
         )
-        pct = blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        pct = (
+            blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        )
     elif str(mode) == "clean_oracle":
-        bad_mae = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        bad_mae = (
+            pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        )
         timeout = metrics["is_timeout"].astype(float).fillna(1.0).gt(0.5)
         clean_path = (u > 0.0) & (~bad_mae) & (~timeout)
-        target_soft = pd.to_numeric(target_local["target_soft"], errors="coerce").fillna(0.0)
+        target_soft = pd.to_numeric(
+            target_local["target_soft"], errors="coerce"
+        ).fillna(0.0)
         clean_u = u.where(clean_path)
-        clean_rank = clean_u.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        clean_rank = (
+            clean_u.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        )
         blended = (
             3.00 * clean_rank.astype(np.float32)
             + 0.75 * clean_path.astype(np.float32)
@@ -1921,7 +2266,9 @@ def _ranker_relevance(
             - 1.25 * bad_mae.astype(np.float32)
             - 0.75 * timeout.astype(np.float32)
         )
-        pct = blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        pct = (
+            blended.groupby(ts, sort=False).rank(method="average", pct=True).fillna(0.0)
+        )
     elif str(mode) in {
         "path_first_clean",
         "path_first_clean_dirty_zero",
@@ -1931,23 +2278,33 @@ def _ranker_relevance(
         "s30_side_asymmetric_path_first_dirty_zero",
         "timeout_aware_clean_source",
     }:
-        bad_mae = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        bad_mae = (
+            pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+        )
         timeout = metrics["is_timeout"].astype(float).fillna(1.0).gt(0.5)
         mae_norm = pd.to_numeric(metrics["mae_norm"], errors="coerce").fillna(10.0)
         full_stop = pd.Series(False, index=metrics.index)
         for stop_col in ("full_stop_loss", "full_sl", "replay_full_sl"):
             if stop_col in metrics.columns:
-                full_stop = pd.to_numeric(metrics[stop_col], errors="coerce").fillna(0.0).gt(0.5)
+                full_stop = (
+                    pd.to_numeric(metrics[stop_col], errors="coerce")
+                    .fillna(0.0)
+                    .gt(0.5)
+                )
                 break
         side = pd.to_numeric(
             metrics.get("side", pd.Series(1.0, index=metrics.index)),
             errors="coerce",
         ).fillna(1.0)
         side_key = side.where(side < 0.0, 1.0).where(side >= 0.0, -1.0)
-        ts_side_pct_u = u.groupby([ts, side_key], sort=False).rank(
-            method="average",
-            pct=True,
-        ).fillna(0.0)
+        ts_side_pct_u = (
+            u.groupby([ts, side_key], sort=False)
+            .rank(
+                method="average",
+                pct=True,
+            )
+            .fillna(0.0)
+        )
         clean_path = (u > 0.0) & (~bad_mae) & (~timeout) & (~full_stop)
         dirty_positive = (u > 0.0) & (bad_mae | timeout | full_stop)
         relevance_s = pd.Series(0, index=u.index, dtype=np.int32)
@@ -1968,7 +2325,9 @@ def _ranker_relevance(
             short_clean = clean_path & short_side
             if str(mode) == "s30_side_asymmetric_path_first_source":
                 relevance_s.loc[dirty_positive & short_side] = 1
-                relevance_s.loc[dirty_positive & long_side & mae_norm.lt(1.15) & (~timeout)] = 1
+                relevance_s.loc[
+                    dirty_positive & long_side & mae_norm.lt(1.15) & (~timeout)
+                ] = 1
             relevance_s.loc[short_clean] = 2
             relevance_s.loc[long_clean] = 2
             relevance_s.loc[short_clean & ts_side_pct_u.ge(0.70)] = 3
@@ -1986,7 +2345,9 @@ def _ranker_relevance(
         return np.clip(relevance_s.to_numpy(dtype=np.int32, copy=False), 0, 4)
     else:
         pct = pct_u
-    relevance = np.floor(pct.to_numpy(dtype=np.float32, copy=False) * 5.0).astype(np.int32)
+    relevance = np.floor(pct.to_numpy(dtype=np.float32, copy=False) * 5.0).astype(
+        np.int32
+    )
     return np.clip(relevance, 0, 4)
 
 
@@ -2026,7 +2387,11 @@ def _fit_lgbm_ranker_prediction(
             np.full(len(x_valid), np.nan, dtype=np.float32),
             "constant_relevance",
         )
-    weights = pd.to_numeric(w_train.reset_index(drop=True), errors="coerce").fillna(1.0).to_numpy(dtype=np.float32)
+    weights = (
+        pd.to_numeric(w_train.reset_index(drop=True), errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32)
+    )
     x_train_sorted = x_train.reset_index(drop=True).iloc[order]
     y_sorted = y[order]
     weights_sorted = weights[order]
@@ -2051,8 +2416,12 @@ def _fit_lgbm_ranker_prediction(
             group=group,
             sample_weight=weights_sorted,
         )
-        train_preds.append(model.predict(x_train.reset_index(drop=True)).astype(np.float32))
-        valid_preds.append(model.predict(x_valid.reset_index(drop=True)).astype(np.float32))
+        train_preds.append(
+            model.predict(x_train.reset_index(drop=True)).astype(np.float32)
+        )
+        valid_preds.append(
+            model.predict(x_valid.reset_index(drop=True)).astype(np.float32)
+        )
     return (
         np.mean(np.vstack(train_preds), axis=0).astype(np.float32),
         np.mean(np.vstack(valid_preds), axis=0).astype(np.float32),
@@ -2073,14 +2442,22 @@ def _fit_side_lgbm_ranker_prediction(
     relevance_mode: str,
     min_train_rows: int = 500,
 ) -> tuple[np.ndarray, np.ndarray, str]:
-    train_side = pd.to_numeric(
-        train_metrics.get("side", pd.Series(1.0, index=train_metrics.index)),
-        errors="coerce",
-    ).reset_index(drop=True).fillna(1.0)
-    valid_side = pd.to_numeric(
-        valid_metrics.get("side", pd.Series(1.0, index=valid_metrics.index)),
-        errors="coerce",
-    ).reset_index(drop=True).fillna(1.0)
+    train_side = (
+        pd.to_numeric(
+            train_metrics.get("side", pd.Series(1.0, index=train_metrics.index)),
+            errors="coerce",
+        )
+        .reset_index(drop=True)
+        .fillna(1.0)
+    )
+    valid_side = (
+        pd.to_numeric(
+            valid_metrics.get("side", pd.Series(1.0, index=valid_metrics.index)),
+            errors="coerce",
+        )
+        .reset_index(drop=True)
+        .fillna(1.0)
+    )
     train_out = np.full(len(x_train), np.nan, dtype=np.float32)
     valid_out = np.full(len(x_valid), np.nan, dtype=np.float32)
     statuses: list[str] = []
@@ -2097,12 +2474,24 @@ def _fit_side_lgbm_ranker_prediction(
             statuses.append(f"{side_name}:insufficient_rows")
             continue
         train_pred, valid_pred, status = _fit_lgbm_ranker_prediction(
-            x_train=x_train.reset_index(drop=True).iloc[train_idx].reset_index(drop=True),
-            train_frame=train_frame.reset_index(drop=True).iloc[train_idx].reset_index(drop=True),
-            train_metrics=train_metrics.reset_index(drop=True).iloc[train_idx].reset_index(drop=True),
-            target_train=target_train.reset_index(drop=True).iloc[train_idx].reset_index(drop=True),
-            w_train=w_train.reset_index(drop=True).iloc[train_idx].reset_index(drop=True),
-            x_valid=x_valid.reset_index(drop=True).iloc[valid_idx].reset_index(drop=True),
+            x_train=x_train.reset_index(drop=True)
+            .iloc[train_idx]
+            .reset_index(drop=True),
+            train_frame=train_frame.reset_index(drop=True)
+            .iloc[train_idx]
+            .reset_index(drop=True),
+            train_metrics=train_metrics.reset_index(drop=True)
+            .iloc[train_idx]
+            .reset_index(drop=True),
+            target_train=target_train.reset_index(drop=True)
+            .iloc[train_idx]
+            .reset_index(drop=True),
+            w_train=w_train.reset_index(drop=True)
+            .iloc[train_idx]
+            .reset_index(drop=True),
+            x_valid=x_valid.reset_index(drop=True)
+            .iloc[valid_idx]
+            .reset_index(drop=True),
             seeds=seeds,
             relevance_mode=relevance_mode,
         )
@@ -2125,14 +2514,22 @@ def _side_sign_calibrated_ranker_score(
     valid_metrics: pd.DataFrame,
     train_relevance: np.ndarray,
 ) -> tuple[pd.Series, dict[str, Any]]:
-    train_side = pd.to_numeric(
-        train_metrics.get("side", pd.Series(1.0, index=train_metrics.index)),
-        errors="coerce",
-    ).reset_index(drop=True).fillna(1.0)
-    valid_side = pd.to_numeric(
-        valid_metrics.get("side", pd.Series(1.0, index=valid_metrics.index)),
-        errors="coerce",
-    ).reset_index(drop=True).fillna(1.0)
+    train_side = (
+        pd.to_numeric(
+            train_metrics.get("side", pd.Series(1.0, index=train_metrics.index)),
+            errors="coerce",
+        )
+        .reset_index(drop=True)
+        .fillna(1.0)
+    )
+    valid_side = (
+        pd.to_numeric(
+            valid_metrics.get("side", pd.Series(1.0, index=valid_metrics.index)),
+            errors="coerce",
+        )
+        .reset_index(drop=True)
+        .fillna(1.0)
+    )
     train_score = pd.Series(train_pred, dtype=np.float32)
     valid_score = pd.Series(valid_pred, dtype=np.float32)
     relevance = pd.Series(train_relevance, dtype=np.float32)
@@ -2163,11 +2560,17 @@ def _score_from_selected_indices(
     constrained rows the highest scores while leaving all rows finite so the
     selected count remains comparable with the unconstrained top-frac selector.
     """
-    score = pd.to_numeric(base_score.reset_index(drop=True), errors="coerce").fillna(-1.0e9)
-    adjusted = pd.Series(-1.0e6 + score.rank(method="first", pct=True).to_numpy(), index=score.index)
+    score = pd.to_numeric(base_score.reset_index(drop=True), errors="coerce").fillna(
+        -1.0e9
+    )
+    adjusted = pd.Series(
+        -1.0e6 + score.rank(method="first", pct=True).to_numpy(), index=score.index
+    )
     if len(selected_idx):
         selected = np.asarray(selected_idx, dtype=np.int64)
-        selected_order = np.argsort(-score.iloc[selected].to_numpy(dtype=np.float64), kind="mergesort")
+        selected_order = np.argsort(
+            -score.iloc[selected].to_numpy(dtype=np.float64), kind="mergesort"
+        )
         ordered = selected[selected_order]
         adjusted.iloc[ordered] = np.arange(len(ordered), 0, -1, dtype=np.float64)
     return adjusted
@@ -2195,7 +2598,9 @@ def _side_capped_score(
     counts = {1: 0, -1: 0}
     selected: list[int] = []
     order = valid_idx[
-        np.argsort(-score_s.iloc[valid_idx].to_numpy(dtype=np.float64), kind="mergesort")
+        np.argsort(
+            -score_s.iloc[valid_idx].to_numpy(dtype=np.float64), kind="mergesort"
+        )
     ]
     for idx in order:
         side_key = -1 if float(side_s.iloc[int(idx)]) < 0.0 else 1
@@ -2249,7 +2654,11 @@ def _constrained_top_indices(
     eligible_s = eligible.reset_index(drop=True).fillna(False).astype(bool)
     finite = score_s.notna()
     base_valid_idx = np.flatnonzero(finite.to_numpy())
-    target_rows = max(1, int(math.ceil(float(top_frac) * len(base_valid_idx)))) if len(base_valid_idx) else 0
+    target_rows = (
+        max(1, int(math.ceil(float(top_frac) * len(base_valid_idx))))
+        if len(base_valid_idx)
+        else 0
+    )
     eligible_idx = np.flatnonzero((finite & eligible_s).to_numpy())
     if target_rows <= 0 or not len(eligible_idx):
         return np.array([], dtype=np.int64), {
@@ -2263,7 +2672,9 @@ def _constrained_top_indices(
     counts = {1: 0, -1: 0}
     selected: list[int] = []
     order = eligible_idx[
-        np.argsort(-score_s.iloc[eligible_idx].to_numpy(dtype=np.float64), kind="mergesort")
+        np.argsort(
+            -score_s.iloc[eligible_idx].to_numpy(dtype=np.float64), kind="mergesort"
+        )
     ]
     for idx in order:
         side_key = -1 if float(side_s.iloc[int(idx)]) < 0.0 else 1
@@ -2345,7 +2756,11 @@ def _budgeted_top_indices(
     )
     finite = score_s.notna()
     base_valid_idx = np.flatnonzero(finite.to_numpy())
-    target_rows = max(1, int(math.ceil(float(top_frac) * len(base_valid_idx)))) if len(base_valid_idx) else 0
+    target_rows = (
+        max(1, int(math.ceil(float(top_frac) * len(base_valid_idx))))
+        if len(base_valid_idx)
+        else 0
+    )
     eligible_idx = np.flatnonzero((finite & eligible_s).to_numpy())
     if target_rows <= 0 or not len(eligible_idx):
         return np.array([], dtype=np.int64), {
@@ -2362,7 +2777,9 @@ def _budgeted_top_indices(
     max_side_rows = max(1, int(math.floor(float(max_side_share) * target_rows)))
     min_fill_rows = max(1, int(math.ceil(float(min_fill_ratio) * target_rows)))
     order = eligible_idx[
-        np.argsort(-score_s.iloc[eligible_idx].to_numpy(dtype=np.float64), kind="mergesort")
+        np.argsort(
+            -score_s.iloc[eligible_idx].to_numpy(dtype=np.float64), kind="mergesort"
+        )
     ]
     counts = {1: 0, -1: 0}
     bad_sums = {1: 0.0, -1: 0.0}
@@ -2388,7 +2805,9 @@ def _budgeted_top_indices(
             denom = float(len(selected) + 1)
             next_bad = (sum(bad_sums.values()) + bad_val) / denom
             next_timeout = (sum(timeout_sums.values()) + timeout_val) / denom
-        return next_bad <= float(bad_risk_budget) and next_timeout <= float(timeout_risk_budget)
+        return next_bad <= float(bad_risk_budget) and next_timeout <= float(
+            timeout_risk_budget
+        )
 
     def _add(idx: int) -> None:
         idx_int = int(idx)
@@ -2401,7 +2820,11 @@ def _budgeted_top_indices(
 
     for idx in order:
         idx_int = int(idx)
-        if idx_int in selected_set or not _within_side_cap(idx_int) or not _within_budget(idx_int):
+        if (
+            idx_int in selected_set
+            or not _within_side_cap(idx_int)
+            or not _within_budget(idx_int)
+        ):
             continue
         _add(idx_int)
         if len(selected) >= target_rows:
@@ -2432,18 +2855,32 @@ def _budgeted_top_indices(
     if len(selected_arr):
         selected_bad = bad_s.iloc[selected_arr].to_numpy(dtype=np.float64)
         selected_timeout = timeout_s.iloc[selected_arr].to_numpy(dtype=np.float64)
-        selected_sides = np.asarray([_side_key(int(idx)) for idx in selected_arr], dtype=np.int8)
+        selected_sides = np.asarray(
+            [_side_key(int(idx)) for idx in selected_arr], dtype=np.int8
+        )
         long_mask = selected_sides > 0
         short_mask = selected_sides < 0
         bad_mean = float(np.mean(selected_bad))
         timeout_mean = float(np.mean(selected_timeout))
-        long_bad_mean = float(np.mean(selected_bad[long_mask])) if bool(long_mask.any()) else float("nan")
-        short_bad_mean = float(np.mean(selected_bad[short_mask])) if bool(short_mask.any()) else float("nan")
+        long_bad_mean = (
+            float(np.mean(selected_bad[long_mask]))
+            if bool(long_mask.any())
+            else float("nan")
+        )
+        short_bad_mean = (
+            float(np.mean(selected_bad[short_mask]))
+            if bool(short_mask.any())
+            else float("nan")
+        )
         long_timeout_mean = (
-            float(np.mean(selected_timeout[long_mask])) if bool(long_mask.any()) else float("nan")
+            float(np.mean(selected_timeout[long_mask]))
+            if bool(long_mask.any())
+            else float("nan")
         )
         short_timeout_mean = (
-            float(np.mean(selected_timeout[short_mask])) if bool(short_mask.any()) else float("nan")
+            float(np.mean(selected_timeout[short_mask]))
+            if bool(short_mask.any())
+            else float("nan")
         )
     else:
         bad_mean = timeout_mean = long_bad_mean = short_bad_mean = float("nan")
@@ -2536,10 +2973,14 @@ def _timestamp_rank_percentile(
     valid = values_s.notna() & ts.notna()
     if not bool(valid.any()):
         return out
-    ranked = values_s[valid].groupby(ts[valid], sort=False).rank(
-        method="average",
-        pct=True,
-        ascending=ascending,
+    ranked = (
+        values_s[valid]
+        .groupby(ts[valid], sort=False)
+        .rank(
+            method="average",
+            pct=True,
+            ascending=ascending,
+        )
     )
     out.loc[valid] = ranked.astype(np.float32)
     return out
@@ -2641,8 +3082,12 @@ def _recent_train_indices(
     lookback_days: int,
     min_rows: int,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    train_ts = pd.to_datetime(train_frame["__ts__"].reset_index(drop=True), errors="coerce")
-    valid_ts = pd.to_datetime(valid_frame["__ts__"].reset_index(drop=True), errors="coerce")
+    train_ts = pd.to_datetime(
+        train_frame["__ts__"].reset_index(drop=True), errors="coerce"
+    )
+    valid_ts = pd.to_datetime(
+        valid_frame["__ts__"].reset_index(drop=True), errors="coerce"
+    )
     valid_min = valid_ts.min()
     all_idx = np.arange(len(train_frame), dtype=np.int64)
     if pd.isna(valid_min) or int(lookback_days) <= 0:
@@ -2697,7 +3142,9 @@ def _oracle_recall_stats(
 
     out: dict[str, Any] = {
         f"{prefix}_rows": int(mask_arr.sum()),
-        f"{prefix}_row_share": float(mask_arr.mean()) if len(mask_arr) else float("nan"),
+        f"{prefix}_row_share": float(mask_arr.mean())
+        if len(mask_arr)
+        else float("nan"),
         f"{prefix}_oracle_rows": int(oracle_mask.sum()),
         f"{prefix}_oracle_hit_rows": int((mask_arr & oracle_mask).sum()),
         f"{prefix}_oracle_recall": (
@@ -2708,7 +3155,9 @@ def _oracle_recall_stats(
         f"{prefix}_mean_u": _safe_mean(selected_metrics["u_policy_net"]),
         f"{prefix}_q10_u": _safe_quantile(selected_metrics["u_policy_net"], 0.10),
         f"{prefix}_bad_mae_1r_rate": _safe_mean(selected_metrics["mae_norm"] >= 1.0),
-        f"{prefix}_timeout_rate": _safe_mean(selected_metrics["is_timeout"].astype(float) > 0.5),
+        f"{prefix}_timeout_rate": _safe_mean(
+            selected_metrics["is_timeout"].astype(float) > 0.5
+        ),
         f"{prefix}_lower_tail_rate": _safe_mean(
             selected_metrics["u_policy_net"] <= lower_tail_cutoff
         ),
@@ -2719,7 +3168,9 @@ def _oracle_recall_stats(
     ):
         local_oracle = oracle_mask & side_mask
         out[f"{prefix}_{side_name}_oracle_rows"] = int(local_oracle.sum())
-        out[f"{prefix}_{side_name}_oracle_hit_rows"] = int((mask_arr & local_oracle).sum())
+        out[f"{prefix}_{side_name}_oracle_hit_rows"] = int(
+            (mask_arr & local_oracle).sum()
+        )
         out[f"{prefix}_{side_name}_oracle_recall"] = (
             float((mask_arr & local_oracle).sum() / max(int(local_oracle.sum()), 1))
             if int(local_oracle.sum())
@@ -2750,7 +3201,9 @@ def _clean_dirty_selected_diagnostics(
     selected_mask[idx] = True
 
     u = pd.to_numeric(metrics_local["u_policy_net"], errors="coerce").fillna(0.0)
-    bad_mae = pd.to_numeric(metrics_local["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+    bad_mae = (
+        pd.to_numeric(metrics_local["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+    )
     timeout = metrics_local["is_timeout"].astype(float).fillna(1.0).gt(0.5)
     positive_u = u.gt(0.0)
     clean_positive = positive_u & (~bad_mae) & (~timeout)
@@ -2798,7 +3251,10 @@ def _clean_dirty_selected_diagnostics(
                     selected_metrics["is_timeout"].astype(float) > 0.5
                 ),
                 "oracle_recall": (
-                    float((local_selected & local_oracle).sum() / max(int(local_oracle.sum()), 1))
+                    float(
+                        (local_selected & local_oracle).sum()
+                        / max(int(local_oracle.sum()), 1)
+                    )
                     if int(local_oracle.sum())
                     else float("nan")
                 ),
@@ -2819,7 +3275,8 @@ def _clean_dirty_selected_diagnostics(
                 "mean_rank_score_dirty_positive": mean_dirty_score,
                 "score_gap_clean_minus_dirty": (
                     mean_clean_score - mean_dirty_score
-                    if math.isfinite(mean_clean_score) and math.isfinite(mean_dirty_score)
+                    if math.isfinite(mean_clean_score)
+                    and math.isfinite(mean_dirty_score)
                     else float("nan")
                 ),
             }
@@ -2833,12 +3290,25 @@ def _discovery_context_bucket(feature: str) -> str:
         return "long_ae_gmm"
     if lower.startswith("short_"):
         return "short_ae_gmm"
-    if any(token in lower for token in ("gmm", "cluster", "archetype", "posterior", "mahalanobis", "reconstruction", "latent")):
+    if any(
+        token in lower
+        for token in (
+            "gmm",
+            "cluster",
+            "archetype",
+            "posterior",
+            "mahalanobis",
+            "reconstruction",
+            "latent",
+        )
+    ):
         return "global_ae_gmm"
     return "market_state"
 
 
-def _discovery_context_scores(frame: pd.DataFrame, features: list[str]) -> dict[str, pd.Series]:
+def _discovery_context_scores(
+    frame: pd.DataFrame, features: list[str]
+) -> dict[str, pd.Series]:
     bucketed: dict[str, list[tuple[str, pd.Series]]] = {
         "market_state": [],
         "global_ae_gmm": [],
@@ -2918,15 +3388,25 @@ def _prior_bucket_quality_overlay(
     features: list[str],
     min_bucket_rows: int = 80,
 ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, dict[str, Any]]:
-    available = [feature for feature in SOURCE_BUCKET_QUALITY_FEATURES if feature in features and feature in train.columns and feature in valid.columns]
+    available = [
+        feature
+        for feature in SOURCE_BUCKET_QUALITY_FEATURES
+        if feature in features and feature in train.columns and feature in valid.columns
+    ]
     index = valid.reset_index(drop=True).index
     if not available:
         zeros = pd.Series(np.zeros(len(valid), dtype=np.float32), index=index)
-        return zeros, zeros, zeros, zeros, {
-            "s22_bucket_quality_feature_count": 0,
-            "s22_bucket_quality_features": "",
-            "s22_bucket_quality_status": "no_features",
-        }
+        return (
+            zeros,
+            zeros,
+            zeros,
+            zeros,
+            {
+                "s22_bucket_quality_feature_count": 0,
+                "s22_bucket_quality_features": "",
+                "s22_bucket_quality_status": "no_features",
+            },
+        )
 
     train_m = train_metrics.reset_index(drop=True)
     valid_m = valid_metrics.reset_index(drop=True)
@@ -2936,12 +3416,18 @@ def _prior_bucket_quality_overlay(
     clean = u.gt(0.0) & (~bad) & (~timeout)
     dirty = u.gt(0.0) & (bad | timeout)
     train_side = np.where(
-        pd.to_numeric(train_m["side"], errors="coerce").fillna(1.0).to_numpy(dtype=np.float32) < 0.0,
+        pd.to_numeric(train_m["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32)
+        < 0.0,
         -1,
         1,
     )
     valid_side = np.where(
-        pd.to_numeric(valid_m["side"], errors="coerce").fillna(1.0).to_numpy(dtype=np.float32) < 0.0,
+        pd.to_numeric(valid_m["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32)
+        < 0.0,
         -1,
         1,
     )
@@ -2960,7 +3446,9 @@ def _prior_bucket_quality_overlay(
     strict_counts = np.zeros(len(valid), dtype=np.float32)
     used_features: list[str] = []
     for feature in available:
-        train_codes, valid_codes = _bucket_codes_from_train(train[feature], valid[feature])
+        train_codes, valid_codes = _bucket_codes_from_train(
+            train[feature], valid[feature]
+        )
         if np.max(train_codes) < 0 or np.max(valid_codes) < 0:
             continue
         local = train_local.copy()
@@ -2992,9 +3480,15 @@ def _prior_bucket_quality_overlay(
                 continue
             stats = None
             key = (int(bucket), int(valid_side[i]))
-            if key in by_bucket_side.index and int(by_bucket_side.loc[key, "rows"]) >= min_bucket_rows:
+            if (
+                key in by_bucket_side.index
+                and int(by_bucket_side.loc[key, "rows"]) >= min_bucket_rows
+            ):
                 stats = by_bucket_side.loc[key]
-            elif int(bucket) in by_bucket.index and int(by_bucket.loc[int(bucket), "rows"]) >= min_bucket_rows:
+            elif (
+                int(bucket) in by_bucket.index
+                and int(by_bucket.loc[int(bucket), "rows"]) >= min_bucket_rows
+            ):
                 stats = by_bucket.loc[int(bucket)]
             if stats is None:
                 continue
@@ -3035,24 +3529,38 @@ def _prior_bucket_quality_overlay(
         used_features.append(feature)
     if not feature_quality:
         zeros = pd.Series(np.zeros(len(valid), dtype=np.float32), index=index)
-        return zeros, zeros, zeros, zeros, {
-            "s22_bucket_quality_feature_count": 0,
-            "s22_bucket_quality_features": "",
-            "s22_bucket_quality_status": "no_usable_buckets",
-        }
+        return (
+            zeros,
+            zeros,
+            zeros,
+            zeros,
+            {
+                "s22_bucket_quality_feature_count": 0,
+                "s22_bucket_quality_features": "",
+                "s22_bucket_quality_status": "no_usable_buckets",
+            },
+        )
     quality_arr = np.nanmean(np.vstack(feature_quality), axis=0).astype(np.float32)
     quality = pd.Series(quality_arr, index=index)
-    quality_rank = quality.rank(method="average", pct=True).fillna(0.0).astype(np.float32)
+    quality_rank = (
+        quality.rank(method="average", pct=True).fillna(0.0).astype(np.float32)
+    )
     relaxed_count_s = pd.Series(relaxed_counts, index=index, dtype=np.float32)
     strict_count_s = pd.Series(strict_counts, index=index, dtype=np.float32)
-    return quality, quality_rank, relaxed_count_s, strict_count_s, {
-        "s22_bucket_quality_feature_count": int(len(used_features)),
-        "s22_bucket_quality_features": ",".join(used_features),
-        "s22_bucket_quality_min_bucket_rows": int(min_bucket_rows),
-        "s22_bucket_quality_status": "ok",
-        "s22_bucket_relaxed_pass_rate": float((relaxed_counts > 0).mean()),
-        "s22_bucket_strict_pass_rate": float((strict_counts > 0).mean()),
-    }
+    return (
+        quality,
+        quality_rank,
+        relaxed_count_s,
+        strict_count_s,
+        {
+            "s22_bucket_quality_feature_count": int(len(used_features)),
+            "s22_bucket_quality_features": ",".join(used_features),
+            "s22_bucket_quality_min_bucket_rows": int(min_bucket_rows),
+            "s22_bucket_quality_status": "ok",
+            "s22_bucket_relaxed_pass_rate": float((relaxed_counts > 0).mean()),
+            "s22_bucket_strict_pass_rate": float((strict_counts > 0).mean()),
+        },
+    )
 
 
 def _side_spread_aegmm_bucket_quality(
@@ -3064,27 +3572,44 @@ def _side_spread_aegmm_bucket_quality(
     min_bucket_rows: int = 120,
 ) -> tuple[pd.Series, pd.Series, dict[str, Any]]:
     index = valid.reset_index(drop=True).index
-    if "median_spread_bps" not in train.columns or "median_spread_bps" not in valid.columns:
+    if (
+        "median_spread_bps" not in train.columns
+        or "median_spread_bps" not in valid.columns
+    ):
         zeros = pd.Series(np.zeros(len(valid), dtype=np.float32), index=index)
-        return zeros, zeros, {
-            "s46_bucket_quality_status": "missing_median_spread_bps",
-            "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
-        }
+        return (
+            zeros,
+            zeros,
+            {
+                "s46_bucket_quality_status": "missing_median_spread_bps",
+                "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
+            },
+        )
 
     def _posterior_codes(frame: pd.DataFrame, metrics: pd.DataFrame) -> np.ndarray:
-        side = pd.to_numeric(
-            metrics.get("side", pd.Series(1.0, index=metrics.index)),
-            errors="coerce",
-        ).reset_index(drop=True).fillna(1.0)
+        side = (
+            pd.to_numeric(
+                metrics.get("side", pd.Series(1.0, index=metrics.index)),
+                errors="coerce",
+            )
+            .reset_index(drop=True)
+            .fillna(1.0)
+        )
         codes = np.full(len(frame), -1, dtype=np.int16)
         global_cols = [
-            col for col in frame.columns if re.match(r"^gmm_cluster_posterior_\d+$", str(col))
+            col
+            for col in frame.columns
+            if re.match(r"^gmm_cluster_posterior_\d+$", str(col))
         ]
         long_cols = [
-            col for col in frame.columns if re.match(r"^long_gmm_cluster_posterior_\d+$", str(col))
+            col
+            for col in frame.columns
+            if re.match(r"^long_gmm_cluster_posterior_\d+$", str(col))
         ]
         short_cols = [
-            col for col in frame.columns if re.match(r"^short_gmm_cluster_posterior_\d+$", str(col))
+            col
+            for col in frame.columns
+            if re.match(r"^short_gmm_cluster_posterior_\d+$", str(col))
         ]
         for mask, cols in (
             (side.ge(0.0).to_numpy(dtype=bool), long_cols or global_cols),
@@ -3114,12 +3639,18 @@ def _side_spread_aegmm_bucket_quality(
     clean = u.gt(0.0) & (~bad) & (~timeout)
     dirty = u.gt(0.0) & (bad | timeout)
     train_side = np.where(
-        pd.to_numeric(train_m["side"], errors="coerce").fillna(1.0).to_numpy(dtype=np.float32) < 0.0,
+        pd.to_numeric(train_m["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32)
+        < 0.0,
         -1,
         1,
     )
     valid_side = np.where(
-        pd.to_numeric(valid_m["side"], errors="coerce").fillna(1.0).to_numpy(dtype=np.float32) < 0.0,
+        pd.to_numeric(valid_m["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float32)
+        < 0.0,
         -1,
         1,
     )
@@ -3145,10 +3676,14 @@ def _side_spread_aegmm_bucket_quality(
     local = local[(local["spread_bucket"] >= 0) & (local["regime_bucket"] >= 0)]
     if local.empty:
         zeros = pd.Series(np.zeros(len(valid), dtype=np.float32), index=index)
-        return zeros, zeros, {
-            "s46_bucket_quality_status": "no_train_buckets",
-            "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
-        }
+        return (
+            zeros,
+            zeros,
+            {
+                "s46_bucket_quality_status": "no_train_buckets",
+                "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
+            },
+        )
 
     def _agg(group_cols: list[str]) -> pd.DataFrame:
         return local.groupby(group_cols, sort=False).agg(
@@ -3167,7 +3702,13 @@ def _side_spread_aegmm_bucket_quality(
         "side": _agg(["side_key"]),
     }
     values = np.zeros(len(valid), dtype=np.float32)
-    fallback_counts = {"exact": 0, "side_regime": 0, "side_spread": 0, "side": 0, "missing": 0}
+    fallback_counts = {
+        "exact": 0,
+        "side_regime": 0,
+        "side_spread": 0,
+        "side": 0,
+        "missing": 0,
+    }
     for i in range(len(valid)):
         side_key = int(valid_side[i])
         spread_bucket = int(valid_spread[i])
@@ -3182,7 +3723,9 @@ def _side_spread_aegmm_bucket_quality(
         used = "missing"
         for level, key in candidates:
             table = tables[level]
-            if key in table.index and int(table.loc[key, "rows"]) >= int(min_bucket_rows):
+            if key in table.index and int(table.loc[key, "rows"]) >= int(
+                min_bucket_rows
+            ):
                 stats = table.loc[key]
                 used = level
                 break
@@ -3206,18 +3749,36 @@ def _side_spread_aegmm_bucket_quality(
             + 0.08 * row_conf
         )
     quality = pd.Series(values, index=index, dtype=np.float32)
-    quality_rank = quality.rank(method="average", pct=True).fillna(0.0).astype(np.float32)
-    return quality, quality_rank, {
-        "s46_bucket_quality_status": "ok",
-        "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
-        "s46_exact_match_rate": float(fallback_counts["exact"] / max(len(valid), 1)),
-        "s46_side_regime_match_rate": float(fallback_counts["side_regime"] / max(len(valid), 1)),
-        "s46_side_spread_match_rate": float(fallback_counts["side_spread"] / max(len(valid), 1)),
-        "s46_side_fallback_rate": float(fallback_counts["side"] / max(len(valid), 1)),
-        "s46_missing_rate": float(fallback_counts["missing"] / max(len(valid), 1)),
-        "s46_train_regime_coverage": float((train_regime >= 0).mean()) if len(train_regime) else 0.0,
-        "s46_valid_regime_coverage": float((valid_regime >= 0).mean()) if len(valid_regime) else 0.0,
-    }
+    quality_rank = (
+        quality.rank(method="average", pct=True).fillna(0.0).astype(np.float32)
+    )
+    return (
+        quality,
+        quality_rank,
+        {
+            "s46_bucket_quality_status": "ok",
+            "s46_bucket_quality_min_bucket_rows": int(min_bucket_rows),
+            "s46_exact_match_rate": float(
+                fallback_counts["exact"] / max(len(valid), 1)
+            ),
+            "s46_side_regime_match_rate": float(
+                fallback_counts["side_regime"] / max(len(valid), 1)
+            ),
+            "s46_side_spread_match_rate": float(
+                fallback_counts["side_spread"] / max(len(valid), 1)
+            ),
+            "s46_side_fallback_rate": float(
+                fallback_counts["side"] / max(len(valid), 1)
+            ),
+            "s46_missing_rate": float(fallback_counts["missing"] / max(len(valid), 1)),
+            "s46_train_regime_coverage": float((train_regime >= 0).mean())
+            if len(train_regime)
+            else 0.0,
+            "s46_valid_regime_coverage": float((valid_regime >= 0).mean())
+            if len(valid_regime)
+            else 0.0,
+        },
+    )
 
 
 def _timestamp_side_rank_percentile(
@@ -3233,10 +3794,14 @@ def _timestamp_side_rank_percentile(
     valid = values_s.notna() & ts.notna()
     if not bool(valid.any()):
         return out
-    ranked = values_s[valid].groupby([ts[valid], side_key[valid]], sort=False).rank(
-        method="average",
-        pct=True,
-        ascending=True,
+    ranked = (
+        values_s[valid]
+        .groupby([ts[valid], side_key[valid]], sort=False)
+        .rank(
+            method="average",
+            pct=True,
+            ascending=True,
+        )
     )
     out.loc[valid] = ranked.astype(np.float32)
     return out
@@ -3266,7 +3831,9 @@ def _candidate_ledger_rows(
     if not len(idx):
         return []
     u = pd.to_numeric(metrics_local["u_policy_net"], errors="coerce").fillna(0.0)
-    bad_mae = pd.to_numeric(metrics_local["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+    bad_mae = (
+        pd.to_numeric(metrics_local["mae_norm"], errors="coerce").fillna(10.0).ge(1.0)
+    )
     timeout = metrics_local["is_timeout"].astype(float).fillna(1.0).gt(0.5)
     clean_positive = u.gt(0.0) & (~bad_mae) & (~timeout)
     dirty_positive = u.gt(0.0) & (bad_mae | timeout)
@@ -3280,13 +3847,16 @@ def _candidate_ledger_rows(
     score_rank = score_s.rank(method="average", pct=True).astype(np.float32)
     score_ts_rank = _timestamp_rank_percentile(frame_local, score_s, ascending=True)
     score_ts_side_rank = _timestamp_side_rank_percentile(frame_local, score_s, side)
-    order = idx[np.argsort(-score_s.iloc[idx].to_numpy(dtype=np.float64), kind="mergesort")]
+    order = idx[
+        np.argsort(-score_s.iloc[idx].to_numpy(dtype=np.float64), kind="mergesort")
+    ]
     side_arr = side.to_numpy(dtype=np.float32, copy=False)
     score_arr = score_s.to_numpy(dtype=np.float32, copy=False)
     score_rank_arr = score_rank.to_numpy(dtype=np.float32, copy=False)
     score_ts_rank_arr = score_ts_rank.to_numpy(dtype=np.float32, copy=False)
     score_ts_side_rank_arr = score_ts_side_rank.to_numpy(dtype=np.float32, copy=False)
     n_selected = int(len(order))
+
     def _metric_arr(name: str) -> np.ndarray:
         if name not in metrics_local.columns:
             return np.full(len(metrics_local), np.nan, dtype=np.float32)
@@ -3362,7 +3932,9 @@ def _fit_risk_prediction(
     x_valid: pd.DataFrame,
     seeds: list[int],
 ) -> np.ndarray:
-    uniform_weight = pd.Series(np.ones(len(y_train), dtype=np.float32), index=y_train.index)
+    uniform_weight = pd.Series(
+        np.ones(len(y_train), dtype=np.float32), index=y_train.index
+    )
     seed_preds = [
         _fit_predict(
             x_train=x_train,
@@ -3386,7 +3958,11 @@ def _fit_lgbm_binary_risk_prediction(
 ) -> tuple[np.ndarray, str]:
     if not _LIGHTGBM_AVAILABLE or LGBMClassifier is None:
         return np.full(len(x_valid), np.nan, dtype=np.float32), "lightgbm_unavailable"
-    y = pd.to_numeric(y_train.reset_index(drop=True), errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    y = (
+        pd.to_numeric(y_train.reset_index(drop=True), errors="coerce")
+        .fillna(0.0)
+        .clip(0.0, 1.0)
+    )
     if int((y > 0.5).sum()) <= 0 or int((y <= 0.5).sum()) <= 0:
         return np.full(len(x_valid), float(y.mean()), dtype=np.float32), "single_class"
     weights = (
@@ -3394,7 +3970,11 @@ def _fit_lgbm_binary_risk_prediction(
         if sample_weight is not None
         else pd.Series(np.ones(len(y), dtype=np.float32))
     )
-    weights = weights.replace([np.inf, -np.inf], np.nan).fillna(1.0).clip(lower=0.05, upper=20.0)
+    weights = (
+        weights.replace([np.inf, -np.inf], np.nan)
+        .fillna(1.0)
+        .clip(lower=0.05, upper=20.0)
+    )
     preds: list[np.ndarray] = []
     for seed in seeds:
         model = LGBMClassifier(
@@ -3436,7 +4016,9 @@ def _fit_lgbm_conditional_binary_prediction(
     mask = train_mask.reset_index(drop=True).fillna(False).astype(bool)
     mask_arr = mask.to_numpy(dtype=bool)
     if int(mask.sum()) < int(min_train_rows):
-        return np.full(len(x_valid), np.nan, dtype=np.float32), "insufficient_conditional_rows"
+        return np.full(
+            len(x_valid), np.nan, dtype=np.float32
+        ), "insufficient_conditional_rows"
     conditional_weight = (
         sample_weight.reset_index(drop=True).iloc[mask_arr]
         if sample_weight is not None
@@ -3478,8 +4060,12 @@ def _fit_side_lgbm_conditional_binary_prediction(
         min_train_rows=min_train_rows,
     )
     out = global_pred.copy()
-    train_side_s = pd.to_numeric(train_side.reset_index(drop=True), errors="coerce").fillna(1.0)
-    valid_side_s = pd.to_numeric(valid_side.reset_index(drop=True), errors="coerce").fillna(1.0)
+    train_side_s = pd.to_numeric(
+        train_side.reset_index(drop=True), errors="coerce"
+    ).fillna(1.0)
+    valid_side_s = pd.to_numeric(
+        valid_side.reset_index(drop=True), errors="coerce"
+    ).fillna(1.0)
     base_mask = train_mask.reset_index(drop=True).fillna(False).astype(bool)
     statuses = [f"global:{global_status}"]
     for side_name, side_value, seed_offset in (
@@ -3492,14 +4078,18 @@ def _fit_side_lgbm_conditional_binary_prediction(
         else:
             side_train_mask = base_mask & train_side_s.ge(0.0)
             side_valid_mask = valid_side_s.ge(0.0).to_numpy(dtype=bool)
-        if int(side_train_mask.sum()) < int(min_side_train_rows) or not bool(side_valid_mask.any()):
+        if int(side_train_mask.sum()) < int(min_side_train_rows) or not bool(
+            side_valid_mask.any()
+        ):
             statuses.append(f"{side_name}:insufficient_rows")
             continue
         pred, status = _fit_lgbm_conditional_binary_prediction(
             x_train=x_train,
             y_train=y_train,
             train_mask=side_train_mask,
-            x_valid=x_valid.reset_index(drop=True).iloc[side_valid_mask].reset_index(drop=True),
+            x_valid=x_valid.reset_index(drop=True)
+            .iloc[side_valid_mask]
+            .reset_index(drop=True),
             seeds=[seed + seed_offset for seed in seeds],
             sample_weight=sample_weight,
             min_train_rows=min_side_train_rows,
@@ -3543,13 +4133,31 @@ def _fit_side_risk_prediction(
         seeds=[seed + 20_000 for seed in seeds],
     )
     out = global_pred.copy()
-    train_side_s = pd.to_numeric(train_side.reset_index(drop=True), errors="coerce").fillna(1.0)
-    valid_side_s = pd.to_numeric(valid_side.reset_index(drop=True), errors="coerce").fillna(1.0)
-    y_train_s = pd.to_numeric(y_train.reset_index(drop=True), errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    train_side_s = pd.to_numeric(
+        train_side.reset_index(drop=True), errors="coerce"
+    ).fillna(1.0)
+    valid_side_s = pd.to_numeric(
+        valid_side.reset_index(drop=True), errors="coerce"
+    ).fillna(1.0)
+    y_train_s = (
+        pd.to_numeric(y_train.reset_index(drop=True), errors="coerce")
+        .fillna(0.0)
+        .clip(0.0, 1.0)
+    )
     for side_value in (-1, 1):
-        train_mask = (train_side_s < 0.0).to_numpy() if side_value < 0 else (train_side_s >= 0.0).to_numpy()
-        valid_mask = (valid_side_s < 0.0).to_numpy() if side_value < 0 else (valid_side_s >= 0.0).to_numpy()
-        if int(train_mask.sum()) < int(min_side_train_rows) or not bool(valid_mask.any()):
+        train_mask = (
+            (train_side_s < 0.0).to_numpy()
+            if side_value < 0
+            else (train_side_s >= 0.0).to_numpy()
+        )
+        valid_mask = (
+            (valid_side_s < 0.0).to_numpy()
+            if side_value < 0
+            else (valid_side_s >= 0.0).to_numpy()
+        )
+        if int(train_mask.sum()) < int(min_side_train_rows) or not bool(
+            valid_mask.any()
+        ):
             continue
         out[valid_mask] = _fit_risk_prediction(
             x_train=x_train.iloc[train_mask],
@@ -3590,7 +4198,10 @@ def _fit_feature_gap_risk_score(
         values = pd.to_numeric(train_x[feature], errors="coerce")
         clean_values = values[clean]
         risky_values = values[risky]
-        if int(clean_values.notna().sum()) < 100 or int(risky_values.notna().sum()) < 100:
+        if (
+            int(clean_values.notna().sum()) < 100
+            or int(risky_values.notna().sum()) < 100
+        ):
             continue
         clean_median = _finite_quantile_np(clean_values, 0.50)
         risky_median = _finite_quantile_np(risky_values, 0.50)
@@ -3627,7 +4238,9 @@ def _fit_feature_gap_risk_score(
             "feature_gap_risk_feature_count": 0,
             "feature_gap_risk_features": "",
         }
-    feature_table = feature_table.sort_values("score", ascending=False).head(int(top_k)).copy()
+    feature_table = (
+        feature_table.sort_values("score", ascending=False).head(int(top_k)).copy()
+    )
     parts: list[pd.Series] = []
     for _, row in feature_table.iterrows():
         feature = str(row["feature"])
@@ -3635,10 +4248,16 @@ def _fit_feature_gap_risk_score(
         if float(row["risk_direction"]) < 0.0:
             ranks = 1.0 - ranks
         parts.append(ranks.fillna(0.5))
-    risk = pd.concat(parts, axis=1).mean(axis=1) if parts else pd.Series(0.0, index=valid_x.index)
+    risk = (
+        pd.concat(parts, axis=1).mean(axis=1)
+        if parts
+        else pd.Series(0.0, index=valid_x.index)
+    )
     return risk.astype(np.float32), {
         "feature_gap_risk_feature_count": int(len(feature_table)),
-        "feature_gap_risk_features": ",".join(feature_table["feature"].astype(str).tolist()),
+        "feature_gap_risk_features": ",".join(
+            feature_table["feature"].astype(str).tolist()
+        ),
         "feature_gap_risk_top_score": float(feature_table["score"].iloc[0]),
         "feature_gap_risk_mean_score": float(feature_table["score"].mean()),
     }
@@ -3682,7 +4301,9 @@ def _fit_clean_dirty_positive_risk_score(
         values = pd.to_numeric(train_x[feature], errors="coerce")
         clean_values = values[clean]
         dirty_values = values[dirty]
-        if int(clean_values.notna().sum()) < int(min_class_rows) or int(dirty_values.notna().sum()) < int(min_class_rows):
+        if int(clean_values.notna().sum()) < int(min_class_rows) or int(
+            dirty_values.notna().sum()
+        ) < int(min_class_rows):
             continue
         clean_median = _finite_quantile_np(clean_values, 0.50)
         dirty_median = _finite_quantile_np(dirty_values, 0.50)
@@ -3724,7 +4345,9 @@ def _fit_clean_dirty_positive_risk_score(
             "clean_dirty_positive_train_clean_rows": clean_rows,
             "clean_dirty_positive_train_dirty_rows": dirty_rows,
         }
-    feature_table = feature_table.sort_values("score", ascending=False).head(int(top_k)).copy()
+    feature_table = (
+        feature_table.sort_values("score", ascending=False).head(int(top_k)).copy()
+    )
     parts: list[pd.Series] = []
     for _, row in feature_table.iterrows():
         feature = str(row["feature"])
@@ -3732,10 +4355,16 @@ def _fit_clean_dirty_positive_risk_score(
         if float(row["risk_direction"]) < 0.0:
             ranks = 1.0 - ranks
         parts.append(ranks.fillna(0.5))
-    risk = pd.concat(parts, axis=1).mean(axis=1) if parts else pd.Series(0.0, index=valid_x.index)
+    risk = (
+        pd.concat(parts, axis=1).mean(axis=1)
+        if parts
+        else pd.Series(0.0, index=valid_x.index)
+    )
     return risk.astype(np.float32), {
         "clean_dirty_positive_risk_feature_count": int(len(feature_table)),
-        "clean_dirty_positive_risk_features": ",".join(feature_table["feature"].astype(str).tolist()),
+        "clean_dirty_positive_risk_features": ",".join(
+            feature_table["feature"].astype(str).tolist()
+        ),
         "clean_dirty_positive_risk_top_score": float(feature_table["score"].iloc[0]),
         "clean_dirty_positive_risk_mean_score": float(feature_table["score"].mean()),
         "clean_dirty_positive_train_clean_rows": clean_rows,
@@ -3766,7 +4395,12 @@ def _run_month(
     ae_gmm_state_feature_max_train_rows: int,
     ae_gmm_state_feature_gmm_max_train_rows: int,
     ae_gmm_state_feature_max_iter: int,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     month_period = frame["__ts__"].dt.to_period("M").astype(str)
     train_mask = month_period < month
     if train_lookback_months is not None and int(train_lookback_months) > 0:
@@ -3775,14 +4409,19 @@ def _run_month(
         train_mask = train_mask & month_period.isin(keep_months)
     valid_mask = month_period == month
     if int(train_mask.sum()) < 500 or int(valid_mask.sum()) < 100:
-        return [], [
-            {
-                "period": month,
-                "skipped": True,
-                "train_rows": int(train_mask.sum()),
-                "valid_rows": int(valid_mask.sum()),
-            }
-        ], [], []
+        return (
+            [],
+            [
+                {
+                    "period": month,
+                    "skipped": True,
+                    "train_rows": int(train_mask.sum()),
+                    "valid_rows": int(valid_mask.sum()),
+                }
+            ],
+            [],
+            [],
+        )
 
     x_train, x_valid = _month_model_frame(
         frame,
@@ -3794,17 +4433,20 @@ def _run_month(
     valid = frame.loc[valid_mask].copy().reset_index(drop=True)
     train_metrics = metrics.loc[train_mask].copy()
     valid_metrics = metrics.loc[valid_mask].copy().reset_index(drop=True)
-    x_train, x_valid, ae_gmm_state_features, ae_gmm_state_diag = _append_fold_ae_gmm_state_features(
-        x_train=x_train,
-        x_valid=x_valid,
-        train_frame=train,
-        train_metrics=train_metrics,
-        valid_metrics=valid_metrics,
-        enabled=bool(include_ae_gmm_state_features),
-        max_train_rows=int(ae_gmm_state_feature_max_train_rows),
-        gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
-        ae_max_iter=int(ae_gmm_state_feature_max_iter),
-        random_state=90221 + sum((i + 1) * ord(ch) for i, ch in enumerate(str(month))),
+    x_train, x_valid, ae_gmm_state_features, ae_gmm_state_diag = (
+        _append_fold_ae_gmm_state_features(
+            x_train=x_train,
+            x_valid=x_valid,
+            train_frame=train,
+            train_metrics=train_metrics,
+            valid_metrics=valid_metrics,
+            enabled=bool(include_ae_gmm_state_features),
+            max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+            gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
+            ae_max_iter=int(ae_gmm_state_feature_max_iter),
+            random_state=90221
+            + sum((i + 1) * ord(ch) for i, ch in enumerate(str(month))),
+        )
     )
     fold_features = list(dict.fromkeys(list(features) + list(ae_gmm_state_features)))
     valid_context = pd.concat(
@@ -3884,11 +4526,15 @@ def _run_month(
                     if feature in x_train.columns
                 ]
                 if selected:
-                    model_features = list(dict.fromkeys(selected + list(ae_gmm_state_features)))
+                    model_features = list(
+                        dict.fromkeys(selected + list(ae_gmm_state_features))
+                    )
                     feature_selector_diag.update(
                         {
                             "model_features": ",".join(model_features),
-                            "model_feature_proxy_top_abs_ic": selector_diag.get("proxy_top_abs_ic"),
+                            "model_feature_proxy_top_abs_ic": selector_diag.get(
+                                "proxy_top_abs_ic"
+                            ),
                             "model_feature_proxy_mean_top_abs_ic": selector_diag.get(
                                 "proxy_mean_top_abs_ic"
                             ),
@@ -3901,7 +4547,9 @@ def _run_month(
                         }
                     )
                 else:
-                    feature_selector_diag["model_feature_selector_fallback"] = "empty_selected_features"
+                    feature_selector_diag["model_feature_selector_fallback"] = (
+                        "empty_selected_features"
+                    )
 
             x_train_model = x_train[model_features]
             x_valid_model = x_valid[model_features]
@@ -3930,11 +4578,15 @@ def _run_month(
             clean_path_pred = pd.Series(np.nan, index=valid.index, dtype=np.float32)
             feature_gap_risk = pd.Series(np.nan, index=valid.index, dtype=np.float32)
             feature_gap_diag: dict[str, Any] = {}
-            clean_dirty_positive_risk = pd.Series(np.nan, index=valid.index, dtype=np.float32)
+            clean_dirty_positive_risk = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
             clean_dirty_positive_diag: dict[str, Any] = {}
             lgbm_bad_mae_pred = pd.Series(np.nan, index=valid.index, dtype=np.float32)
             lgbm_timeout_pred = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_clean_path_pred = pd.Series(np.nan, index=valid.index, dtype=np.float32)
+            lgbm_clean_path_pred = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
             lgbm_dirty_positive_bad_mae_pred = pd.Series(
                 np.nan,
                 index=valid.index,
@@ -3957,7 +4609,9 @@ def _run_month(
             )
             lgbm_bad_mae_ts_pct = pd.Series(np.nan, index=valid.index, dtype=np.float32)
             lgbm_timeout_ts_pct = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_clean_path_ts_pct = pd.Series(np.nan, index=valid.index, dtype=np.float32)
+            lgbm_clean_path_ts_pct = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
             lgbm_dirty_positive_bad_mae_ts_pct = pd.Series(
                 np.nan,
                 index=valid.index,
@@ -3986,10 +4640,18 @@ def _run_month(
             lgbm_side_dirty_positive_bad_mae_status = "not_run"
             lgbm_side_positive_clean_path_status = "not_run"
             lgbm_ranker_score = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_path_ranker_score = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_oracle_ranker_score = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_clean_oracle_ranker_score = pd.Series(np.nan, index=valid.index, dtype=np.float32)
-            lgbm_path_first_ranker_score = pd.Series(np.nan, index=valid.index, dtype=np.float32)
+            lgbm_path_ranker_score = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
+            lgbm_oracle_ranker_score = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
+            lgbm_clean_oracle_ranker_score = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
+            lgbm_path_first_ranker_score = pd.Series(
+                np.nan, index=valid.index, dtype=np.float32
+            )
             lgbm_path_first_dirty_zero_ranker_score = pd.Series(
                 np.nan,
                 index=valid.index,
@@ -4107,15 +4769,13 @@ def _run_month(
             s46_bucket_quality_diag: dict[str, Any] = {
                 "s46_bucket_quality_status": "not_run",
             }
-            include_path_first_selectors = (
-                str(label_arm)
-                in {
-                    "OPTIMIZED_ECONOMIC_PATH_FIRST_CLEAN_RELEVANCE_TARGET",
-                    "OPTIMIZED_ECONOMIC_S24_BROAD_PATH_FIRST_SOURCE_TARGET",
-                }
-            )
+            include_path_first_selectors = str(label_arm) in {
+                "OPTIMIZED_ECONOMIC_PATH_FIRST_CLEAN_RELEVANCE_TARGET",
+                "OPTIMIZED_ECONOMIC_S24_BROAD_PATH_FIRST_SOURCE_TARGET",
+            }
             include_s24_path_first_selectors = (
-                str(label_arm) == "OPTIMIZED_ECONOMIC_S24_BROAD_PATH_FIRST_SOURCE_TARGET"
+                str(label_arm)
+                == "OPTIMIZED_ECONOMIC_S24_BROAD_PATH_FIRST_SOURCE_TARGET"
             )
             include_timeout_aware_selectors = (
                 str(label_arm) == "OPTIMIZED_ECONOMIC_TIMEOUT_AWARE_CLEAN_SOURCE_TARGET"
@@ -4131,11 +4791,25 @@ def _run_month(
                 for name in requested_ledger_base_selectors
             )
             if include_risk_selector_variants:
-                bad_mae_train_target = (train_metrics["mae_norm"].reset_index(drop=True) >= 1.0).astype(float)
-                timeout_train_target = train_metrics["is_timeout"].reset_index(drop=True).astype(float)
+                bad_mae_train_target = (
+                    train_metrics["mae_norm"].reset_index(drop=True) >= 1.0
+                ).astype(float)
+                timeout_train_target = (
+                    train_metrics["is_timeout"].reset_index(drop=True).astype(float)
+                )
                 clean_path_train_target = (
-                    (pd.to_numeric(train_metrics["u_policy_net"], errors="coerce").reset_index(drop=True) > 0.0)
-                    & (pd.to_numeric(train_metrics["mae_norm"], errors="coerce").reset_index(drop=True) < 1.0)
+                    (
+                        pd.to_numeric(
+                            train_metrics["u_policy_net"], errors="coerce"
+                        ).reset_index(drop=True)
+                        > 0.0
+                    )
+                    & (
+                        pd.to_numeric(
+                            train_metrics["mae_norm"], errors="coerce"
+                        ).reset_index(drop=True)
+                        < 1.0
+                    )
                     & (
                         train_metrics["is_timeout"]
                         .reset_index(drop=True)
@@ -4192,32 +4866,44 @@ def _run_month(
                     ),
                     index=valid.index,
                 )
-                risk_head_weight = _path_risk_sample_weight(train_metrics.reset_index(drop=True))
-                lgbm_bad_mae_values, lgbm_bad_mae_status = _fit_lgbm_binary_risk_prediction(
-                    x_train=x_train_model,
-                    y_train=bad_mae_train_target,
-                    x_valid=x_valid_model,
-                    seeds=[seed + 90_000 for seed in seeds],
-                    sample_weight=risk_head_weight,
+                risk_head_weight = _path_risk_sample_weight(
+                    train_metrics.reset_index(drop=True)
+                )
+                lgbm_bad_mae_values, lgbm_bad_mae_status = (
+                    _fit_lgbm_binary_risk_prediction(
+                        x_train=x_train_model,
+                        y_train=bad_mae_train_target,
+                        x_valid=x_valid_model,
+                        seeds=[seed + 90_000 for seed in seeds],
+                        sample_weight=risk_head_weight,
+                    )
                 )
                 lgbm_bad_mae_pred = pd.Series(lgbm_bad_mae_values, index=valid.index)
-                lgbm_timeout_values, lgbm_timeout_status = _fit_lgbm_binary_risk_prediction(
-                    x_train=x_train_model,
-                    y_train=timeout_train_target,
-                    x_valid=x_valid_model,
-                    seeds=[seed + 100_000 for seed in seeds],
-                    sample_weight=risk_head_weight,
+                lgbm_timeout_values, lgbm_timeout_status = (
+                    _fit_lgbm_binary_risk_prediction(
+                        x_train=x_train_model,
+                        y_train=timeout_train_target,
+                        x_valid=x_valid_model,
+                        seeds=[seed + 100_000 for seed in seeds],
+                        sample_weight=risk_head_weight,
+                    )
                 )
                 lgbm_timeout_pred = pd.Series(lgbm_timeout_values, index=valid.index)
-                clean_path_weight = risk_head_weight + 2.0 * clean_path_train_target.astype(np.float32)
-                lgbm_clean_path_values, lgbm_clean_path_status = _fit_lgbm_binary_risk_prediction(
-                    x_train=x_train_model,
-                    y_train=clean_path_train_target,
-                    x_valid=x_valid_model,
-                    seeds=[seed + 110_000 for seed in seeds],
-                    sample_weight=clean_path_weight,
+                clean_path_weight = (
+                    risk_head_weight + 2.0 * clean_path_train_target.astype(np.float32)
                 )
-                lgbm_clean_path_pred = pd.Series(lgbm_clean_path_values, index=valid.index)
+                lgbm_clean_path_values, lgbm_clean_path_status = (
+                    _fit_lgbm_binary_risk_prediction(
+                        x_train=x_train_model,
+                        y_train=clean_path_train_target,
+                        x_valid=x_valid_model,
+                        seeds=[seed + 110_000 for seed in seeds],
+                        sample_weight=clean_path_weight,
+                    )
+                )
+                lgbm_clean_path_pred = pd.Series(
+                    lgbm_clean_path_values, index=valid.index
+                )
                 positive_train_mask = (
                     pd.to_numeric(
                         train_metrics["u_policy_net"].reset_index(drop=True),
@@ -4317,11 +5003,13 @@ def _run_month(
                         "feature_gap_risk_skipped": "candidate_ledger_fast_mode",
                     }
                 if needs_clean_dirty_score:
-                    clean_dirty_values, clean_dirty_positive_diag = _fit_clean_dirty_positive_risk_score(
-                        x_train=x_train_model,
-                        x_valid=x_valid_model,
-                        train_metrics=train_metrics.reset_index(drop=True),
-                        top_k=12,
+                    clean_dirty_values, clean_dirty_positive_diag = (
+                        _fit_clean_dirty_positive_risk_score(
+                            x_train=x_train_model,
+                            x_valid=x_valid_model,
+                            train_metrics=train_metrics.reset_index(drop=True),
+                            top_k=12,
+                        )
                     )
                     clean_dirty_positive_risk = pd.Series(
                         clean_dirty_values.to_numpy(dtype=np.float32),
@@ -4337,15 +5025,17 @@ def _run_month(
                         "clean_dirty_positive_risk_features": "",
                         "clean_dirty_positive_risk_skipped": "candidate_ledger_fast_mode",
                     }
-                _train_ranker_pred, valid_ranker_pred, lgbm_ranker_status = _fit_lgbm_ranker_prediction(
-                    x_train=x_train_model,
-                    train_frame=train.reset_index(drop=True),
-                    train_metrics=train_metrics.reset_index(drop=True),
-                    target_train=target_train.reset_index(drop=True),
-                    w_train=weights,
-                    x_valid=x_valid_model,
-                    seeds=seeds,
-                    relevance_mode="utility_quintile",
+                _train_ranker_pred, valid_ranker_pred, lgbm_ranker_status = (
+                    _fit_lgbm_ranker_prediction(
+                        x_train=x_train_model,
+                        train_frame=train.reset_index(drop=True),
+                        train_metrics=train_metrics.reset_index(drop=True),
+                        target_train=target_train.reset_index(drop=True),
+                        w_train=weights,
+                        x_valid=x_valid_model,
+                        seeds=seeds,
+                        relevance_mode="utility_quintile",
+                    )
                 )
                 lgbm_ranker_score = pd.Series(valid_ranker_pred, index=valid.index)
                 (
@@ -4362,7 +5052,9 @@ def _run_month(
                     seeds=[seed + 60_000 for seed in seeds],
                     relevance_mode="path_quality",
                 )
-                lgbm_path_ranker_score = pd.Series(valid_path_ranker_pred, index=valid.index)
+                lgbm_path_ranker_score = pd.Series(
+                    valid_path_ranker_pred, index=valid.index
+                )
                 if needs_oracle_rankers:
                     (
                         _train_oracle_ranker_pred,
@@ -4402,7 +5094,9 @@ def _run_month(
                     )
                 else:
                     lgbm_oracle_ranker_status = "skipped_candidate_ledger_fast_mode"
-                    lgbm_clean_oracle_ranker_status = "skipped_candidate_ledger_fast_mode"
+                    lgbm_clean_oracle_ranker_status = (
+                        "skipped_candidate_ledger_fast_mode"
+                    )
                 if include_path_first_selectors:
                     (
                         _train_path_first_ranker_pred,
@@ -4633,9 +5327,11 @@ def _run_month(
                         seeds=[seed + 250_000 for seed in seeds],
                         relevance_mode="s30_side_asymmetric_path_first_dirty_zero",
                     )
-                    lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score = pd.Series(
-                        valid_s45_side_interaction_roll45_dirty_zero_ranker_pred,
-                        index=valid.index,
+                    lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score = (
+                        pd.Series(
+                            valid_s45_side_interaction_roll45_dirty_zero_ranker_pred,
+                            index=valid.index,
+                        )
                     )
                 if include_timeout_aware_selectors:
                     (
@@ -4666,11 +5362,15 @@ def _run_month(
                 if len(seeds) > 1
                 else "feature_store_model_smoke_oos"
             )
-            base_variants: list[tuple[str, pd.Series, dict[str, Any], np.ndarray | None]] = [
+            base_variants: list[
+                tuple[str, pd.Series, dict[str, Any], np.ndarray | None]
+            ] = [
                 ("raw_utility", score, {}, None),
             ]
             if include_risk_selector_variants:
-                risk_penalty = (score - 0.35 * bad_mae_pred - 0.10 * timeout_pred).astype(np.float32)
+                risk_penalty = (
+                    score - 0.35 * bad_mae_pred - 0.10 * timeout_pred
+                ).astype(np.float32)
                 strong_risk_penalty = (
                     score - 0.55 * bad_mae_pred - 0.15 * timeout_pred
                 ).astype(np.float32)
@@ -4678,21 +5378,30 @@ def _run_month(
                     score - 0.55 * side_bad_mae_pred - 0.15 * side_timeout_pred
                 ).astype(np.float32)
                 feature_gap_penalty = (
-                    score - 0.55 * bad_mae_pred - 0.15 * timeout_pred - 0.20 * feature_gap_risk
+                    score
+                    - 0.55 * bad_mae_pred
+                    - 0.15 * timeout_pred
+                    - 0.20 * feature_gap_risk
                 ).astype(np.float32)
                 lgbm_ranker_risk_score = (
-                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.45 * bad_mae_pred
                     - 0.15 * timeout_pred
                 ).astype(np.float32)
                 lgbm_path_ranker_risk_score = (
-                    pd.to_numeric(lgbm_path_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_path_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.55 * bad_mae_pred
                     - 0.20 * timeout_pred
                     + 0.20 * clean_path_pred
                 ).astype(np.float32)
                 lgbm_oracle_ranker_risk_score = (
-                    pd.to_numeric(lgbm_oracle_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_oracle_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.50 * bad_mae_pred
                     - 0.18 * timeout_pred
                 ).astype(np.float32)
@@ -4705,54 +5414,102 @@ def _run_month(
                     - 0.15 * timeout_pred
                     + 0.10 * clean_path_pred
                 ).astype(np.float32)
-                lgbm_path_first_ranker_pct = pd.to_numeric(
-                    lgbm_path_first_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_path_first_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_path_first_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s24_broad_path_first_ranker_pct = pd.to_numeric(
-                    lgbm_s24_broad_path_first_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s24_broad_path_first_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_s24_broad_path_first_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s28_side_s24_ranker_pct = pd.to_numeric(
-                    lgbm_s28_side_s24_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s28_side_s24_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_s28_side_s24_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s30_side_asym_ranker_pct = pd.to_numeric(
-                    lgbm_s30_side_asym_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s30_side_asym_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_s30_side_asym_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s42_side_interaction_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_s42_side_interaction_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s44_side_interaction_sign_calibrated_ranker_pct = pd.to_numeric(
-                    lgbm_s44_side_interaction_sign_calibrated_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_s45_side_interaction_roll45_dirty_zero_ranker_pct = pd.to_numeric(
-                    lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
-                lgbm_timeout_aware_clean_ranker_pct = pd.to_numeric(
-                    lgbm_timeout_aware_clean_ranker_score,
-                    errors="coerce",
-                ).rank(method="average", pct=True).astype(np.float32)
+                lgbm_path_first_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_path_first_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_path_first_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_path_first_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s24_broad_path_first_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s24_broad_path_first_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s24_broad_path_first_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s24_broad_path_first_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s28_side_s24_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s28_side_s24_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s28_side_s24_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s28_side_s24_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s30_side_asym_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s30_side_asym_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s30_side_asym_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s30_side_asym_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s42_side_interaction_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s42_side_interaction_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s44_side_interaction_sign_calibrated_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s44_side_interaction_sign_calibrated_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_s45_side_interaction_roll45_dirty_zero_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
+                lgbm_timeout_aware_clean_ranker_pct = (
+                    pd.to_numeric(
+                        lgbm_timeout_aware_clean_ranker_score,
+                        errors="coerce",
+                    )
+                    .rank(method="average", pct=True)
+                    .astype(np.float32)
+                )
                 lgbm_utility_pct = pd.to_numeric(
                     lgbm_ranker_score,
                     errors="coerce",
@@ -4809,31 +5566,34 @@ def _run_month(
                     + 0.10 * clean_path_pred
                 ).astype(np.float32)
                 lgbm_utility_clean_dirty_penalty = (
-                    lgbm_ranker_risk_score
-                    - 0.30 * clean_dirty_positive_risk
+                    lgbm_ranker_risk_score - 0.30 * clean_dirty_positive_risk
                 ).astype(np.float32)
                 lgbm_utility_clean_dirty_strong_penalty = (
-                    lgbm_ranker_risk_score
-                    - 0.45 * clean_dirty_positive_risk
+                    lgbm_ranker_risk_score - 0.45 * clean_dirty_positive_risk
                 ).astype(np.float32)
                 lgbm_path_clean_dirty_penalty = (
-                    lgbm_path_ranker_risk_score
-                    - 0.30 * clean_dirty_positive_risk
+                    lgbm_path_ranker_risk_score - 0.30 * clean_dirty_positive_risk
                 ).astype(np.float32)
                 lgbm_utility_lgbm_risk_score = (
-                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.55 * lgbm_bad_mae_pred
                     - 0.18 * lgbm_timeout_pred
                 ).astype(np.float32)
                 lgbm_utility_blended_risk_score = (
-                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.30 * bad_mae_pred
                     - 0.35 * lgbm_bad_mae_pred
                     - 0.10 * timeout_pred
                     - 0.12 * lgbm_timeout_pred
                 ).astype(np.float32)
                 lgbm_path_lgbm_risk_score = (
-                    pd.to_numeric(lgbm_path_ranker_score, errors="coerce").rank(method="average", pct=True)
+                    pd.to_numeric(lgbm_path_ranker_score, errors="coerce").rank(
+                        method="average", pct=True
+                    )
                     - 0.60 * lgbm_bad_mae_pred
                     - 0.20 * lgbm_timeout_pred
                     + 0.15 * clean_path_pred
@@ -4934,12 +5694,10 @@ def _run_month(
                     - 0.45 * lgbm_timeout_ts_pct
                 ).astype(np.float32)
                 lgbm_exec_clean_contrast_score = (
-                    lgbm_exec_clean_score
-                    - 0.45 * clean_dirty_positive_risk
+                    lgbm_exec_clean_score - 0.45 * clean_dirty_positive_risk
                 ).astype(np.float32)
                 lgbm_exec_clean_strict_contrast_score = (
-                    lgbm_exec_clean_strict_score
-                    - 0.60 * clean_dirty_positive_risk
+                    lgbm_exec_clean_strict_score - 0.60 * clean_dirty_positive_risk
                 ).astype(np.float32)
                 lgbm_positive_clean_exec_score = (
                     0.35 * lgbm_path_ts_pct
@@ -5045,13 +5803,19 @@ def _run_month(
                         (
                             "bad_mae_timeout_penalty",
                             risk_penalty,
-                            {"bad_mae_penalty_lambda": 0.35, "timeout_penalty_lambda": 0.10},
+                            {
+                                "bad_mae_penalty_lambda": 0.35,
+                                "timeout_penalty_lambda": 0.10,
+                            },
                             None,
                         ),
                         (
                             "strong_bad_mae_timeout_penalty",
                             strong_risk_penalty,
-                            {"bad_mae_penalty_lambda": 0.55, "timeout_penalty_lambda": 0.15},
+                            {
+                                "bad_mae_penalty_lambda": 0.55,
+                                "timeout_penalty_lambda": 0.15,
+                            },
                             None,
                         ),
                         (
@@ -5084,9 +5848,9 @@ def _run_month(
                     ]
                 )
             for top_frac in top_fracs:
-                variants: list[tuple[str, pd.Series, dict[str, Any], np.ndarray | None]] = (
-                    [] if candidate_ledger_only else list(base_variants)
-                )
+                variants: list[
+                    tuple[str, pd.Series, dict[str, Any], np.ndarray | None]
+                ] = [] if candidate_ledger_only else list(base_variants)
                 if include_risk_selector_variants:
                     stage_a_top20_pre_risk_mask = _per_timestamp_top_mask(
                         valid,
@@ -5109,18 +5873,32 @@ def _run_month(
                         | stage_a_top10pct_pre_risk_mask
                     )
                     relaxed_risk_mask = (
-                        pd.to_numeric(bad_mae_pred, errors="coerce").le(0.70)
-                        & pd.to_numeric(timeout_pred, errors="coerce").le(0.30)
-                    ).fillna(False).to_numpy(dtype=bool)
+                        (
+                            pd.to_numeric(bad_mae_pred, errors="coerce").le(0.70)
+                            & pd.to_numeric(timeout_pred, errors="coerce").le(0.30)
+                        )
+                        .fillna(False)
+                        .to_numpy(dtype=bool)
+                    )
                     relaxed_side_risk_mask = (
-                        pd.to_numeric(side_bad_mae_pred, errors="coerce").le(0.70)
-                        & pd.to_numeric(side_timeout_pred, errors="coerce").le(0.30)
-                    ).fillna(False).to_numpy(dtype=bool)
+                        (
+                            pd.to_numeric(side_bad_mae_pred, errors="coerce").le(0.70)
+                            & pd.to_numeric(side_timeout_pred, errors="coerce").le(0.30)
+                        )
+                        .fillna(False)
+                        .to_numpy(dtype=bool)
+                    )
                     strict_risk_mask = (
-                        pd.to_numeric(bad_mae_pred, errors="coerce").le(0.57)
-                        & pd.to_numeric(timeout_pred, errors="coerce").le(0.12)
-                    ).fillna(False).to_numpy(dtype=bool)
-                    stage_a_candidate_mask = stage_a_candidate_pre_risk_mask & relaxed_risk_mask
+                        (
+                            pd.to_numeric(bad_mae_pred, errors="coerce").le(0.57)
+                            & pd.to_numeric(timeout_pred, errors="coerce").le(0.12)
+                        )
+                        .fillna(False)
+                        .to_numpy(dtype=bool)
+                    )
+                    stage_a_candidate_mask = (
+                        stage_a_candidate_pre_risk_mask & relaxed_risk_mask
+                    )
                     stage_a_side_candidate_mask = (
                         stage_a_candidate_pre_risk_mask & relaxed_side_risk_mask
                     )
@@ -5149,7 +5927,9 @@ def _run_month(
                                 prefix=prefix,
                             )
                         )
-                    s7_specs: list[tuple[str, pd.Series, np.ndarray, dict[str, Any]]] = [
+                    s7_specs: list[
+                        tuple[str, pd.Series, np.ndarray, dict[str, Any]]
+                    ] = [
                         (
                             "s7a_no_prefilter_rerank",
                             strong_risk_penalty,
@@ -5393,12 +6173,10 @@ def _run_month(
                                 )
                             )
                         for clean_dirty_cap in (0.45, 0.50, 0.55, 0.60):
-                            clean_dirty_mask = (
-                                stage_a_candidate_mask
-                                & pd.to_numeric(clean_dirty_positive_risk, errors="coerce")
-                                .le(float(clean_dirty_cap))
-                                .fillna(False)
-                                .to_numpy(dtype=bool)
+                            clean_dirty_mask = stage_a_candidate_mask & pd.to_numeric(
+                                clean_dirty_positive_risk, errors="coerce"
+                            ).le(float(clean_dirty_cap)).fillna(False).to_numpy(
+                                dtype=bool
                             )
                             s7_specs.append(
                                 (
@@ -5413,18 +6191,16 @@ def _run_month(
                                     clean_dirty_mask,
                                     {
                                         **base_clean_dirty_diag,
-                                        "clean_dirty_positive_risk_cap": float(clean_dirty_cap),
+                                        "clean_dirty_positive_risk_cap": float(
+                                            clean_dirty_cap
+                                        ),
                                     },
                                 )
                             )
                     for path_pct_min in (0.50, 0.60, 0.70):
-                        path_agreement_mask = (
-                            stage_a_candidate_mask
-                            & pd.to_numeric(lgbm_path_pct, errors="coerce")
-                            .ge(float(path_pct_min))
-                            .fillna(False)
-                            .to_numpy(dtype=bool)
-                        )
+                        path_agreement_mask = stage_a_candidate_mask & pd.to_numeric(
+                            lgbm_path_pct, errors="coerce"
+                        ).ge(float(path_pct_min)).fillna(False).to_numpy(dtype=bool)
                         s7_specs.append(
                             (
                                 (
@@ -5449,13 +6225,9 @@ def _run_month(
                             )
                         )
                         for timeout_cap in (0.15, 0.20):
-                            path_timeout_mask = (
-                                path_agreement_mask
-                                & pd.to_numeric(timeout_pred, errors="coerce")
-                                .le(float(timeout_cap))
-                                .fillna(False)
-                                .to_numpy(dtype=bool)
-                            )
+                            path_timeout_mask = path_agreement_mask & pd.to_numeric(
+                                timeout_pred, errors="coerce"
+                            ).le(float(timeout_cap)).fillna(False).to_numpy(dtype=bool)
                             s7_specs.append(
                                 (
                                     (
@@ -5476,7 +6248,9 @@ def _run_month(
                                             f"path:{lgbm_path_ranker_status}"
                                         ),
                                         "ranker_relevance": "utility_quintile",
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_bad_mae_cap": 0.70,
                                         "pred_timeout_cap": float(timeout_cap),
                                     },
@@ -5517,15 +6291,17 @@ def _run_month(
                                         "ranker_relevance": (
                                             "utility_quintile_opportunity_preserving_dirty_clean"
                                         ),
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_timeout_cap": float(timeout_cap),
                                         "base_score": "s15_lgbm_ranker_risk_score",
                                         "path_ranker_tiebreak_weight": 0.04,
                                         "dirty_positive_bad_mae_ts_penalty_lambda": 0.04,
                                         "side_dirty_positive_bad_mae_ts_penalty_lambda": 0.03,
                                     },
-                                    )
                                 )
+                            )
                             s35_ultralight_score = (
                                 lgbm_ranker_risk_score
                                 + 0.010 * lgbm_path_pct
@@ -5562,7 +6338,9 @@ def _run_month(
                                         "ranker_relevance": (
                                             "utility_quintile_s15_ultralight_dirty_clean"
                                         ),
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_timeout_cap": float(timeout_cap),
                                         "base_score": "s15_lgbm_ranker_risk_score",
                                         "path_ranker_tiebreak_weight": 0.010,
@@ -5608,7 +6386,9 @@ def _run_month(
                                         "ranker_relevance": (
                                             "utility_quintile_s15_micro_dirty_clean"
                                         ),
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_timeout_cap": float(timeout_cap),
                                         "base_score": "s15_lgbm_ranker_risk_score",
                                         "path_ranker_tiebreak_weight": 0.004,
@@ -5657,7 +6437,9 @@ def _run_month(
                                         "ranker_relevance": (
                                             "utility_quintile_s15_micro_local_bucket_dirty_clean"
                                         ),
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_timeout_cap": float(timeout_cap),
                                         "base_score": "s15_lgbm_ranker_risk_score",
                                         "path_ranker_tiebreak_weight": 0.004,
@@ -5681,26 +6463,26 @@ def _run_month(
                                 (0.55, 1.0, 0.0, "q55_relaxed01"),
                                 (0.50, 0.0, 1.0, "q50_strict01"),
                             ):
-                                s38_bucket_mask = (
-                                    path_timeout_mask
-                                    & pd.to_numeric(
-                                        s22_bucket_quality_rank_pct,
-                                        errors="coerce",
-                                    )
-                                    .ge(float(bucket_q_min))
-                                    .fillna(False)
-                                    .to_numpy(dtype=bool)
+                                s38_bucket_mask = path_timeout_mask & pd.to_numeric(
+                                    s22_bucket_quality_rank_pct,
+                                    errors="coerce",
+                                ).ge(float(bucket_q_min)).fillna(False).to_numpy(
+                                    dtype=bool
                                 )
                                 if relaxed_min > 0.0:
                                     s38_bucket_mask = s38_bucket_mask & pd.to_numeric(
                                         s22_bucket_relaxed_pass_count,
                                         errors="coerce",
-                                    ).ge(float(relaxed_min)).fillna(False).to_numpy(dtype=bool)
+                                    ).ge(float(relaxed_min)).fillna(False).to_numpy(
+                                        dtype=bool
+                                    )
                                 if strict_min > 0.0:
                                     s38_bucket_mask = s38_bucket_mask & pd.to_numeric(
                                         s22_bucket_strict_pass_count,
                                         errors="coerce",
-                                    ).ge(float(strict_min)).fillna(False).to_numpy(dtype=bool)
+                                    ).ge(float(strict_min)).fillna(False).to_numpy(
+                                        dtype=bool
+                                    )
                                 s7_specs.append(
                                     (
                                         (
@@ -5730,21 +6512,33 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "utility_quintile_s15_micro_local_bucket_abstention"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": "s37_lgbm_s15_micro_local_bucket_dirty_clean",
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "local_bucket_abstention": True,
                                             **s22_bucket_quality_diag,
                                         },
                                     )
                                 )
-                            side_values_for_bucket = pd.to_numeric(
-                                valid_metrics["side"],
-                                errors="coerce",
-                            ).fillna(1.0).to_numpy(dtype=np.float32)
+                            side_values_for_bucket = (
+                                pd.to_numeric(
+                                    valid_metrics["side"],
+                                    errors="coerce",
+                                )
+                                .fillna(1.0)
+                                .to_numpy(dtype=np.float32)
+                            )
                             for (
                                 bucket_q_min,
                                 relaxed_min,
@@ -5756,36 +6550,41 @@ def _run_month(
                                 (0.50, 1.0, 0.0, 60, "q50_relaxed01_sidefallback60"),
                                 (0.50, 0.0, 1.0, 60, "q50_strict01_sidefallback60"),
                             ):
-                                raw_bucket_mask = (
-                                    path_timeout_mask
-                                    & pd.to_numeric(
-                                        s22_bucket_quality_rank_pct,
-                                        errors="coerce",
-                                    )
-                                    .ge(float(bucket_q_min))
-                                    .fillna(False)
-                                    .to_numpy(dtype=bool)
+                                raw_bucket_mask = path_timeout_mask & pd.to_numeric(
+                                    s22_bucket_quality_rank_pct,
+                                    errors="coerce",
+                                ).ge(float(bucket_q_min)).fillna(False).to_numpy(
+                                    dtype=bool
                                 )
                                 if relaxed_min > 0.0:
                                     raw_bucket_mask = raw_bucket_mask & pd.to_numeric(
                                         s22_bucket_relaxed_pass_count,
                                         errors="coerce",
-                                    ).ge(float(relaxed_min)).fillna(False).to_numpy(dtype=bool)
+                                    ).ge(float(relaxed_min)).fillna(False).to_numpy(
+                                        dtype=bool
+                                    )
                                 if strict_min > 0.0:
                                     raw_bucket_mask = raw_bucket_mask & pd.to_numeric(
                                         s22_bucket_strict_pass_count,
                                         errors="coerce",
-                                    ).ge(float(strict_min)).fillna(False).to_numpy(dtype=bool)
+                                    ).ge(float(strict_min)).fillna(False).to_numpy(
+                                        dtype=bool
+                                    )
                                 s39_bucket_mask = np.zeros(len(valid), dtype=bool)
                                 fallback_sides: list[str] = []
-                                for side_value, side_name in ((1.0, "long"), (-1.0, "short")):
+                                for side_value, side_name in (
+                                    (1.0, "long"),
+                                    (-1.0, "short"),
+                                ):
                                     side_mask = (
                                         side_values_for_bucket > 0.0
                                         if side_value > 0.0
                                         else side_values_for_bucket < 0.0
                                     )
                                     side_bucket_mask = raw_bucket_mask & side_mask
-                                    if int(side_bucket_mask.sum()) >= int(min_side_candidates):
+                                    if int(side_bucket_mask.sum()) >= int(
+                                        min_side_candidates
+                                    ):
                                         s39_bucket_mask |= side_bucket_mask
                                     else:
                                         fallback_sides.append(side_name)
@@ -5819,14 +6618,26 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "utility_quintile_s15_micro_local_bucket_abstention_side_fallback"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": "s37_lgbm_s15_micro_local_bucket_dirty_clean",
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
-                                            "s39_min_side_bucket_candidates": int(min_side_candidates),
-                                            "s39_bucket_fallback_sides": ",".join(fallback_sides),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
+                                            "s39_min_side_bucket_candidates": int(
+                                                min_side_candidates
+                                            ),
+                                            "s39_bucket_fallback_sides": ",".join(
+                                                fallback_sides
+                                            ),
                                             "local_bucket_abstention": True,
                                             "local_bucket_side_fallback": True,
                                             **s22_bucket_quality_diag,
@@ -5898,14 +6709,22 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "s30_side_asymmetric_path_first_dirty_zero"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": (
                                                 "s42_side_spread_aegmm_dirtyzero_ranker"
                                             ),
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -5994,14 +6813,22 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "inverted_s30_side_asymmetric_path_first_dirty_zero"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": (
                                                 "s43_side_spread_aegmm_dirtyzero_inverted_ranker"
                                             ),
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -6088,14 +6915,22 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "train_side_sign_calibrated_s30_side_asymmetric_path_first_dirty_zero"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": (
                                                 "s44_side_spread_aegmm_dirtyzero_signcal_ranker"
                                             ),
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -6182,14 +7017,22 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "rolling45_s30_side_asymmetric_path_first_dirty_zero"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": (
                                                 "s45_side_spread_aegmm_dirtyzero_roll45_ranker"
                                             ),
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -6282,14 +7125,22 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "s42_dirty_zero_ranker_plus_train_side_spread_aegmm_bucket_quality"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": (
                                                 "s46_side_spread_aegmm_local_quality_ranker"
                                             ),
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -6374,12 +7225,20 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "s15_micro_score_plus_train_side_spread_aegmm_bucket_quality"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "base_score": "s37_lgbm_s15_micro_local_bucket_dirty_clean",
-                                            "s22_bucket_quality_rank_pct_min": float(bucket_q_min),
-                                            "s22_bucket_relaxed_pass_count_min": float(relaxed_min),
-                                            "s22_bucket_strict_pass_count_min": float(strict_min),
+                                            "s22_bucket_quality_rank_pct_min": float(
+                                                bucket_q_min
+                                            ),
+                                            "s22_bucket_relaxed_pass_count_min": float(
+                                                relaxed_min
+                                            ),
+                                            "s22_bucket_strict_pass_count_min": float(
+                                                strict_min
+                                            ),
                                             "s39_min_side_bucket_candidates": int(
                                                 min_side_candidates
                                             ),
@@ -6435,18 +7294,25 @@ def _run_month(
                                     s40_timeout_mask = np.zeros(len(valid), dtype=bool)
                                     s40_bucket_fallback_sides: list[str] = []
                                     s40_timeout_fallback_sides: list[str] = []
-                                    for side_value, side_name in ((1.0, "long"), (-1.0, "short")):
+                                    for side_value, side_name in (
+                                        (1.0, "long"),
+                                        (-1.0, "short"),
+                                    ):
                                         side_mask = (
                                             side_values_for_bucket > 0.0
                                             if side_value > 0.0
                                             else side_values_for_bucket < 0.0
                                         )
                                         side_bucket_mask = raw_bucket_mask & side_mask
-                                        if int(side_bucket_mask.sum()) >= int(min_side_candidates):
+                                        if int(side_bucket_mask.sum()) >= int(
+                                            min_side_candidates
+                                        ):
                                             side_source_mask = side_bucket_mask
                                         else:
                                             s40_bucket_fallback_sides.append(side_name)
-                                            side_source_mask = path_timeout_mask & side_mask
+                                            side_source_mask = (
+                                                path_timeout_mask & side_mask
+                                            )
 
                                         timeout_ts_cap = (
                                             float(long_timeout_ts_cap)
@@ -6518,7 +7384,9 @@ def _run_month(
                                                 "ranker_relevance": (
                                                     "utility_quintile_s15_micro_local_bucket_timeout_abstention_side_fallback"
                                                 ),
-                                                "path_ranker_min_percentile": float(path_pct_min),
+                                                "path_ranker_min_percentile": float(
+                                                    path_pct_min
+                                                ),
                                                 "pred_timeout_cap": float(timeout_cap),
                                                 "base_score": (
                                                     "s37_lgbm_s15_micro_local_bucket_dirty_clean"
@@ -6571,26 +7439,57 @@ def _run_month(
                                         clean_min_side_candidates,
                                         clean_suffix,
                                     ) in (
-                                        (0.75, 0.70, 0.20, 40, "dirty75_bad70_clean20_min40"),
-                                        (0.65, 0.65, 0.25, 40, "dirty65_bad65_clean25_min40"),
-                                        (0.55, 0.60, 0.30, 40, "dirty55_bad60_clean30_min40"),
+                                        (
+                                            0.75,
+                                            0.70,
+                                            0.20,
+                                            40,
+                                            "dirty75_bad70_clean20_min40",
+                                        ),
+                                        (
+                                            0.65,
+                                            0.65,
+                                            0.25,
+                                            40,
+                                            "dirty65_bad65_clean25_min40",
+                                        ),
+                                        (
+                                            0.55,
+                                            0.60,
+                                            0.30,
+                                            40,
+                                            "dirty55_bad60_clean30_min40",
+                                        ),
                                     ):
-                                        s41_clean_mask = np.zeros(len(valid), dtype=bool)
+                                        s41_clean_mask = np.zeros(
+                                            len(valid), dtype=bool
+                                        )
                                         s41_bucket_fallback_sides: list[str] = []
                                         s41_timeout_fallback_sides: list[str] = []
                                         s41_clean_fallback_sides: list[str] = []
-                                        for side_value, side_name in ((1.0, "long"), (-1.0, "short")):
+                                        for side_value, side_name in (
+                                            (1.0, "long"),
+                                            (-1.0, "short"),
+                                        ):
                                             side_mask = (
                                                 side_values_for_bucket > 0.0
                                                 if side_value > 0.0
                                                 else side_values_for_bucket < 0.0
                                             )
-                                            side_bucket_mask = raw_bucket_mask & side_mask
-                                            if int(side_bucket_mask.sum()) >= int(min_side_candidates):
+                                            side_bucket_mask = (
+                                                raw_bucket_mask & side_mask
+                                            )
+                                            if int(side_bucket_mask.sum()) >= int(
+                                                min_side_candidates
+                                            ):
                                                 side_source_mask = side_bucket_mask
                                             else:
-                                                s41_bucket_fallback_sides.append(side_name)
-                                                side_source_mask = path_timeout_mask & side_mask
+                                                s41_bucket_fallback_sides.append(
+                                                    side_name
+                                                )
+                                                side_source_mask = (
+                                                    path_timeout_mask & side_mask
+                                                )
 
                                             timeout_ts_cap = (
                                                 float(long_timeout_ts_cap)
@@ -6622,7 +7521,9 @@ def _run_month(
                                             if int(side_timeout_mask.sum()) < int(
                                                 timeout_min_side_candidates
                                             ):
-                                                s41_timeout_fallback_sides.append(side_name)
+                                                s41_timeout_fallback_sides.append(
+                                                    side_name
+                                                )
                                                 side_timeout_mask = side_source_mask
 
                                             side_path_clean_mask = (
@@ -6654,13 +7555,16 @@ def _run_month(
                                             ):
                                                 s41_clean_mask |= side_path_clean_mask
                                             else:
-                                                s41_clean_fallback_sides.append(side_name)
+                                                s41_clean_fallback_sides.append(
+                                                    side_name
+                                                )
                                                 s41_clean_mask |= side_timeout_mask
 
                                         s41_clean_score = (
                                             s40_timeout_score
                                             + 0.003 * lgbm_clean_path_ts_pct
-                                            - 0.004 * lgbm_side_dirty_positive_bad_mae_ts_pct
+                                            - 0.004
+                                            * lgbm_side_dirty_positive_bad_mae_ts_pct
                                             - 0.003 * lgbm_bad_mae_ts_pct
                                         ).astype(np.float32)
                                         s7_specs.append(
@@ -6697,7 +7601,9 @@ def _run_month(
                                                     "path_ranker_min_percentile": float(
                                                         path_pct_min
                                                     ),
-                                                    "pred_timeout_cap": float(timeout_cap),
+                                                    "pred_timeout_cap": float(
+                                                        timeout_cap
+                                                    ),
                                                     "base_score": (
                                                         "s40_lgbm_s15_micro_local_bucket_timeout_abstain"
                                                     ),
@@ -6734,7 +7640,9 @@ def _run_month(
                                                     "s41_side_dirty_positive_ts_pct_cap": float(
                                                         dirty_ts_cap
                                                     ),
-                                                    "s41_bad_mae_ts_pct_cap": float(bad_ts_cap),
+                                                    "s41_bad_mae_ts_pct_cap": float(
+                                                        bad_ts_cap
+                                                    ),
                                                     "s41_clean_path_ts_pct_min": float(
                                                         clean_ts_min
                                                     ),
@@ -6876,9 +7784,11 @@ def _run_month(
 
                                         s48_score = (
                                             s40_timeout_score
-                                            + 0.010 * lgbm_side_positive_clean_path_ts_pct
+                                            + 0.010
+                                            * lgbm_side_positive_clean_path_ts_pct
                                             + 0.006 * lgbm_clean_path_ts_pct
-                                            - 0.014 * lgbm_side_dirty_positive_bad_mae_ts_pct
+                                            - 0.014
+                                            * lgbm_side_dirty_positive_bad_mae_ts_pct
                                             - 0.010 * lgbm_bad_mae_ts_pct
                                             - 0.004 * lgbm_timeout_ts_pct
                                         ).astype(np.float32)
@@ -6915,7 +7825,9 @@ def _run_month(
                                                     "path_ranker_min_percentile": float(
                                                         path_pct_min
                                                     ),
-                                                    "pred_timeout_cap": float(timeout_cap),
+                                                    "pred_timeout_cap": float(
+                                                        timeout_cap
+                                                    ),
                                                     "base_score": (
                                                         "s40_lgbm_s15_micro_local_bucket_timeout_abstain"
                                                     ),
@@ -6966,18 +7878,29 @@ def _run_month(
                                         s49_mask = np.zeros(len(valid), dtype=bool)
                                         s49_bucket_fallback_sides: list[str] = []
                                         s49_timeout_fallback_sides: list[str] = []
-                                        for side_value, side_name in ((1.0, "long"), (-1.0, "short")):
+                                        for side_value, side_name in (
+                                            (1.0, "long"),
+                                            (-1.0, "short"),
+                                        ):
                                             side_mask = (
                                                 side_values_for_bucket > 0.0
                                                 if side_value > 0.0
                                                 else side_values_for_bucket < 0.0
                                             )
-                                            side_bucket_mask = raw_bucket_mask & side_mask
-                                            if int(side_bucket_mask.sum()) >= int(min_side_candidates):
+                                            side_bucket_mask = (
+                                                raw_bucket_mask & side_mask
+                                            )
+                                            if int(side_bucket_mask.sum()) >= int(
+                                                min_side_candidates
+                                            ):
                                                 side_source_mask = side_bucket_mask
                                             else:
-                                                s49_bucket_fallback_sides.append(side_name)
-                                                side_source_mask = path_timeout_mask & side_mask
+                                                s49_bucket_fallback_sides.append(
+                                                    side_name
+                                                )
+                                                side_source_mask = (
+                                                    path_timeout_mask & side_mask
+                                                )
 
                                             clean_ts_min = (
                                                 float(long_clean_ts_min)
@@ -7024,7 +7947,9 @@ def _run_month(
                                             if int(side_timeout_mask.sum()) < int(
                                                 timeout_min_side_candidates
                                             ):
-                                                s49_timeout_fallback_sides.append(side_name)
+                                                s49_timeout_fallback_sides.append(
+                                                    side_name
+                                                )
                                                 side_timeout_mask = side_source_mask
 
                                             s49_mask |= (
@@ -7085,7 +8010,9 @@ def _run_month(
                                                     "path_ranker_min_percentile": float(
                                                         path_pct_min
                                                     ),
-                                                    "pred_timeout_cap": float(timeout_cap),
+                                                    "pred_timeout_cap": float(
+                                                        timeout_cap
+                                                    ),
                                                     "base_score": (
                                                         "s40_lgbm_s15_micro_local_bucket_timeout_abstain"
                                                     ),
@@ -7140,12 +8067,15 @@ def _run_month(
                                                 },
                                             )
                                         )
-                                    s50_scores: list[tuple[str, pd.Series, dict[str, Any]]] = [
+                                    s50_scores: list[
+                                        tuple[str, pd.Series, dict[str, Any]]
+                                    ] = [
                                         (
                                             "clean_rerank",
                                             (
                                                 s40_timeout_score
-                                                + 0.012 * lgbm_side_positive_clean_path_ts_pct
+                                                + 0.012
+                                                * lgbm_side_positive_clean_path_ts_pct
                                                 + 0.006 * lgbm_clean_path_ts_pct
                                                 - 0.002 * lgbm_timeout_ts_pct
                                             ).astype(np.float32),
@@ -7160,7 +8090,8 @@ def _run_month(
                                             "utility_clean_blend",
                                             (
                                                 s40_timeout_score
-                                                + 0.010 * lgbm_side_positive_clean_path_ts_pct
+                                                + 0.010
+                                                * lgbm_side_positive_clean_path_ts_pct
                                                 + 0.006 * lgbm_clean_path_ts_pct
                                                 - 0.008 * lgbm_bad_mae_ts_pct
                                                 - 0.004 * lgbm_timeout_ts_pct
@@ -7177,9 +8108,11 @@ def _run_month(
                                             "utility_clean_dirty_blend",
                                             (
                                                 s40_timeout_score
-                                                + 0.012 * lgbm_side_positive_clean_path_ts_pct
+                                                + 0.012
+                                                * lgbm_side_positive_clean_path_ts_pct
                                                 + 0.006 * lgbm_clean_path_ts_pct
-                                                - 0.014 * lgbm_side_dirty_positive_bad_mae_ts_pct
+                                                - 0.014
+                                                * lgbm_side_dirty_positive_bad_mae_ts_pct
                                                 - 0.010 * lgbm_bad_mae_ts_pct
                                                 - 0.004 * lgbm_timeout_ts_pct
                                             ).astype(np.float32),
@@ -7193,7 +8126,11 @@ def _run_month(
                                             },
                                         ),
                                     ]
-                                    for s50_score_suffix, s50_score, s50_score_diag in s50_scores:
+                                    for (
+                                        s50_score_suffix,
+                                        s50_score,
+                                        s50_score_diag,
+                                    ) in s50_scores:
                                         s50_name = (
                                             "s50_lgbm_budgeted_clean_allocator"
                                             f"_{bucket_suffix}"
@@ -7203,33 +8140,40 @@ def _run_month(
                                             f"_timeout_cap_{int(round(timeout_cap * 100)):02d}"
                                             "_stageA_rerank"
                                         )
-                                        s50_full_name = (
-                                            f"{s50_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
-                                        )
+                                        s50_full_name = f"{s50_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
                                         if not (
                                             candidate_ledger_only
-                                            and s50_full_name not in requested_ledger_selectors
+                                            and s50_full_name
+                                            not in requested_ledger_selectors
                                         ):
-                                            selected_idx, budget_diag = _constrained_top_indices(
-                                                score=s50_score,
-                                                side=valid_metrics["side"],
-                                                eligible=pd.Series(
-                                                    s40_timeout_mask,
-                                                    index=valid.index,
-                                                ),
-                                                top_frac=float(top_frac),
-                                                max_side_share=float(side_cap_max_share),
+                                            selected_idx, budget_diag = (
+                                                _constrained_top_indices(
+                                                    score=s50_score,
+                                                    side=valid_metrics["side"],
+                                                    eligible=pd.Series(
+                                                        s40_timeout_mask,
+                                                        index=valid.index,
+                                                    ),
+                                                    top_frac=float(top_frac),
+                                                    max_side_share=float(
+                                                        side_cap_max_share
+                                                    ),
+                                                )
                                             )
-                                            final_mask = _mask_from_indices(len(valid), selected_idx)
+                                            final_mask = _mask_from_indices(
+                                                len(valid), selected_idx
+                                            )
                                             final_diag = _oracle_recall_stats(
                                                 metrics=valid_metrics,
                                                 mask=final_mask,
                                                 top_frac=float(top_frac),
                                                 prefix="final",
                                             )
-                                            hard_cap_score = _score_from_selected_indices(
-                                                base_score=s50_score,
-                                                selected_idx=selected_idx,
+                                            hard_cap_score = (
+                                                _score_from_selected_indices(
+                                                    base_score=s50_score,
+                                                    selected_idx=selected_idx,
+                                                )
                                             )
                                             variants.append(
                                                 (
@@ -7256,7 +8200,9 @@ def _run_month(
                                                         "path_ranker_min_percentile": float(
                                                             path_pct_min
                                                         ),
-                                                        "pred_timeout_cap": float(timeout_cap),
+                                                        "pred_timeout_cap": float(
+                                                            timeout_cap
+                                                        ),
                                                         "base_score": (
                                                             "s40_lgbm_s15_micro_local_bucket_timeout_abstain"
                                                         ),
@@ -7273,7 +8219,10 @@ def _run_month(
                                             )
                                         for s50_bad_budget in (0.54, 0.53, 0.52, 0.50):
                                             for s50_timeout_budget in (0.12, 0.10):
-                                                for s50_budget_mode in ("global", "side"):
+                                                for s50_budget_mode in (
+                                                    "global",
+                                                    "side",
+                                                ):
                                                     s50_name = (
                                                         "s50_lgbm_budgeted_clean_allocator"
                                                         f"_{bucket_suffix}"
@@ -7286,32 +8235,36 @@ def _run_month(
                                                         f"_timeout_cap_{int(round(timeout_cap * 100)):02d}"
                                                         "_stageA_rerank"
                                                     )
-                                                    s50_full_name = (
-                                                        f"{s50_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
-                                                    )
+                                                    s50_full_name = f"{s50_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
                                                     if (
                                                         candidate_ledger_only
                                                         and s50_full_name
                                                         not in requested_ledger_selectors
                                                     ):
                                                         continue
-                                                    selected_idx, budget_diag = _budgeted_top_indices(
-                                                        score=s50_score,
-                                                        side=valid_metrics["side"],
-                                                        eligible=pd.Series(
-                                                            s40_timeout_mask,
-                                                            index=valid.index,
-                                                        ),
-                                                        bad_risk=side_bad_mae_pred,
-                                                        timeout_risk=lgbm_timeout_pred,
-                                                        top_frac=float(top_frac),
-                                                        max_side_share=float(side_cap_max_share),
-                                                        bad_risk_budget=float(s50_bad_budget),
-                                                        timeout_risk_budget=float(
-                                                            s50_timeout_budget
-                                                        ),
-                                                        budget_mode=s50_budget_mode,
-                                                        min_fill_ratio=0.90,
+                                                    selected_idx, budget_diag = (
+                                                        _budgeted_top_indices(
+                                                            score=s50_score,
+                                                            side=valid_metrics["side"],
+                                                            eligible=pd.Series(
+                                                                s40_timeout_mask,
+                                                                index=valid.index,
+                                                            ),
+                                                            bad_risk=side_bad_mae_pred,
+                                                            timeout_risk=lgbm_timeout_pred,
+                                                            top_frac=float(top_frac),
+                                                            max_side_share=float(
+                                                                side_cap_max_share
+                                                            ),
+                                                            bad_risk_budget=float(
+                                                                s50_bad_budget
+                                                            ),
+                                                            timeout_risk_budget=float(
+                                                                s50_timeout_budget
+                                                            ),
+                                                            budget_mode=s50_budget_mode,
+                                                            min_fill_ratio=0.90,
+                                                        )
                                                     )
                                                     final_mask = _mask_from_indices(
                                                         len(valid),
@@ -7323,9 +8276,11 @@ def _run_month(
                                                         top_frac=float(top_frac),
                                                         prefix="final",
                                                     )
-                                                    hard_cap_score = _score_from_selected_indices(
-                                                        base_score=s50_score,
-                                                        selected_idx=selected_idx,
+                                                    hard_cap_score = (
+                                                        _score_from_selected_indices(
+                                                            base_score=s50_score,
+                                                            selected_idx=selected_idx,
+                                                        )
                                                     )
                                                     variants.append(
                                                         (
@@ -7380,15 +8335,11 @@ def _run_month(
                                                         )
                                                     )
                             for dirty_ts_cap in (0.90, 0.85):
-                                s34_dirty_mask = (
-                                    path_timeout_mask
-                                    & pd.to_numeric(
-                                        lgbm_dirty_positive_bad_mae_ts_pct,
-                                        errors="coerce",
-                                    )
-                                    .le(float(dirty_ts_cap))
-                                    .fillna(False)
-                                    .to_numpy(dtype=bool)
+                                s34_dirty_mask = path_timeout_mask & pd.to_numeric(
+                                    lgbm_dirty_positive_bad_mae_ts_pct,
+                                    errors="coerce",
+                                ).le(float(dirty_ts_cap)).fillna(False).to_numpy(
+                                    dtype=bool
                                 )
                                 s7_specs.append(
                                     (
@@ -7418,7 +8369,9 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "utility_quintile_opportunity_preserving_dirty_clean"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "dirty_positive_bad_mae_ts_pct_max": float(
                                                 dirty_ts_cap
@@ -7462,7 +8415,9 @@ def _run_month(
                                             f"side_clean:{lgbm_side_positive_clean_path_status}"
                                         ),
                                         "ranker_relevance": "utility_quintile_dirty_clean_penalty",
-                                        "path_ranker_min_percentile": float(path_pct_min),
+                                        "path_ranker_min_percentile": float(
+                                            path_pct_min
+                                        ),
                                         "pred_timeout_cap": float(timeout_cap),
                                         "dirty_positive_bad_mae_ts_penalty_lambda": 0.28,
                                         "side_dirty_positive_bad_mae_ts_penalty_lambda": 0.18,
@@ -7470,13 +8425,9 @@ def _run_month(
                                 )
                             )
                             for bad_cap in (0.58, 0.54, 0.50):
-                                s33_bad_mask = (
-                                    path_timeout_mask
-                                    & pd.to_numeric(lgbm_bad_mae_pred, errors="coerce")
-                                    .le(float(bad_cap))
-                                    .fillna(False)
-                                    .to_numpy(dtype=bool)
-                                )
+                                s33_bad_mask = path_timeout_mask & pd.to_numeric(
+                                    lgbm_bad_mae_pred, errors="coerce"
+                                ).le(float(bad_cap)).fillna(False).to_numpy(dtype=bool)
                                 s7_specs.append(
                                     (
                                         (
@@ -7505,7 +8456,9 @@ def _run_month(
                                             "ranker_relevance": (
                                                 "utility_quintile_dirty_clean_penalty"
                                             ),
-                                            "path_ranker_min_percentile": float(path_pct_min),
+                                            "path_ranker_min_percentile": float(
+                                                path_pct_min
+                                            ),
                                             "pred_timeout_cap": float(timeout_cap),
                                             "pred_bad_mae_cap": float(bad_cap),
                                             "dirty_positive_bad_mae_ts_penalty_lambda": 0.28,
@@ -7576,7 +8529,10 @@ def _run_month(
                                     ),
                                     s16_score,
                                     stage_a_candidate_mask,
-                                    {**base_s16_diag, "selection_top_frac": float(final_frac)},
+                                    {
+                                        **base_s16_diag,
+                                        "selection_top_frac": float(final_frac),
+                                    },
                                 )
                             )
                         for bad_cap, timeout_cap in (
@@ -7702,14 +8658,20 @@ def _run_month(
                             )
                             s7_specs.append(
                                 (
-                                    s17_name.replace("_stageA_", f"{gate_name}_stageA_"),
+                                    s17_name.replace(
+                                        "_stageA_", f"{gate_name}_stageA_"
+                                    ),
                                     s17_score,
                                     s17_mask,
                                     {
                                         **base_s17_diag,
-                                        "lgbm_clean_path_ts_pct_min": float(clean_ts_min),
+                                        "lgbm_clean_path_ts_pct_min": float(
+                                            clean_ts_min
+                                        ),
                                         "lgbm_bad_mae_ts_pct_max": float(bad_ts_max),
-                                        "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
+                                        "lgbm_timeout_ts_pct_max": float(
+                                            timeout_ts_max
+                                        ),
                                         "lgbm_pred_bad_mae_cap": float(raw_bad_cap),
                                         "lgbm_pred_timeout_cap": float(raw_timeout_cap),
                                     },
@@ -7730,11 +8692,19 @@ def _run_month(
                                         s17_mask,
                                         {
                                             **base_s17_diag,
-                                            "lgbm_clean_path_ts_pct_min": float(clean_ts_min),
-                                            "lgbm_bad_mae_ts_pct_max": float(bad_ts_max),
-                                            "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
+                                            "lgbm_clean_path_ts_pct_min": float(
+                                                clean_ts_min
+                                            ),
+                                            "lgbm_bad_mae_ts_pct_max": float(
+                                                bad_ts_max
+                                            ),
+                                            "lgbm_timeout_ts_pct_max": float(
+                                                timeout_ts_max
+                                            ),
                                             "lgbm_pred_bad_mae_cap": float(raw_bad_cap),
-                                            "lgbm_pred_timeout_cap": float(raw_timeout_cap),
+                                            "lgbm_pred_timeout_cap": float(
+                                                raw_timeout_cap
+                                            ),
                                             "selection_top_frac": float(final_frac),
                                         },
                                     )
@@ -7773,7 +8743,9 @@ def _run_month(
                             "lgbm_timeout_status": lgbm_timeout_status,
                             "lgbm_clean_path_status": lgbm_clean_path_status,
                             "timestamp_percentile_gate": True,
-                            "dirty_positive_bad_mae_ts_penalty_lambda": float(dirty_lambda),
+                            "dirty_positive_bad_mae_ts_penalty_lambda": float(
+                                dirty_lambda
+                            ),
                         }
                         for (
                             clean_ts_min,
@@ -7824,17 +8796,25 @@ def _run_month(
                             )
                             s7_specs.append(
                                 (
-                                    s18_name.replace("_stageA_", f"{gate_name}_stageA_"),
+                                    s18_name.replace(
+                                        "_stageA_", f"{gate_name}_stageA_"
+                                    ),
                                     s18_score,
                                     s18_mask,
                                     {
                                         **base_s18_diag,
-                                        "lgbm_clean_path_ts_pct_min": float(clean_ts_min),
+                                        "lgbm_clean_path_ts_pct_min": float(
+                                            clean_ts_min
+                                        ),
                                         "lgbm_dirty_positive_bad_mae_ts_pct_max": float(
                                             dirty_ts_max
                                         ),
-                                        "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
-                                        "lgbm_dirty_positive_bad_mae_cap": float(raw_dirty_cap),
+                                        "lgbm_timeout_ts_pct_max": float(
+                                            timeout_ts_max
+                                        ),
+                                        "lgbm_dirty_positive_bad_mae_cap": float(
+                                            raw_dirty_cap
+                                        ),
                                         "lgbm_pred_timeout_cap": float(raw_timeout_cap),
                                     },
                                 )
@@ -7854,15 +8834,21 @@ def _run_month(
                                         s18_mask,
                                         {
                                             **base_s18_diag,
-                                            "lgbm_clean_path_ts_pct_min": float(clean_ts_min),
+                                            "lgbm_clean_path_ts_pct_min": float(
+                                                clean_ts_min
+                                            ),
                                             "lgbm_dirty_positive_bad_mae_ts_pct_max": float(
                                                 dirty_ts_max
                                             ),
-                                            "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
+                                            "lgbm_timeout_ts_pct_max": float(
+                                                timeout_ts_max
+                                            ),
                                             "lgbm_dirty_positive_bad_mae_cap": float(
                                                 raw_dirty_cap
                                             ),
-                                            "lgbm_pred_timeout_cap": float(raw_timeout_cap),
+                                            "lgbm_pred_timeout_cap": float(
+                                                raw_timeout_cap
+                                            ),
                                             "selection_top_frac": float(final_frac),
                                         },
                                     )
@@ -7943,7 +8929,9 @@ def _run_month(
                             "lgbm_timeout_status": lgbm_timeout_status,
                             "timestamp_percentile_gate": True,
                             "lgbm_clean_path_ts_pct_min": float(clean_ts_min),
-                            "lgbm_dirty_positive_bad_mae_ts_pct_max": float(dirty_ts_max),
+                            "lgbm_dirty_positive_bad_mae_ts_pct_max": float(
+                                dirty_ts_max
+                            ),
                             "lgbm_bad_mae_ts_pct_max": float(bad_ts_max),
                             "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
                             "lgbm_dirty_positive_bad_mae_cap": float(raw_dirty_cap),
@@ -7972,7 +8960,9 @@ def _run_month(
                         ):
                             s7_specs.append(
                                 (
-                                    s20_name.replace("_stageA_", f"{gate_name}_stageA_"),
+                                    s20_name.replace(
+                                        "_stageA_", f"{gate_name}_stageA_"
+                                    ),
                                     s20_score,
                                     s20_mask,
                                     base_s20_diag,
@@ -7999,15 +8989,11 @@ def _run_month(
                                 )
                             if "contrast" in s20_name:
                                 for clean_dirty_cap in (0.45, 0.50, 0.55):
-                                    clean_dirty_mask = (
-                                        s20_mask
-                                        & pd.to_numeric(
-                                            clean_dirty_positive_risk,
-                                            errors="coerce",
-                                        )
-                                        .le(float(clean_dirty_cap))
-                                        .fillna(False)
-                                        .to_numpy(dtype=bool)
+                                    clean_dirty_mask = s20_mask & pd.to_numeric(
+                                        clean_dirty_positive_risk,
+                                        errors="coerce",
+                                    ).le(float(clean_dirty_cap)).fillna(False).to_numpy(
+                                        dtype=bool
                                     )
                                     s7_specs.append(
                                         (
@@ -8050,7 +9036,9 @@ def _run_month(
                                                     "clean_dirty_positive_risk_cap": float(
                                                         clean_dirty_cap
                                                     ),
-                                                    "selection_top_frac": float(final_frac),
+                                                    "selection_top_frac": float(
+                                                        final_frac
+                                                    ),
                                                 },
                                             )
                                         )
@@ -8145,7 +9133,9 @@ def _run_month(
                             "timestamp_percentile_gate": True,
                             "lgbm_positive_clean_path_ts_pct_min": float(clean_ts_min),
                             "lgbm_positive_clean_path_pred_min": float(raw_clean_min),
-                            "lgbm_dirty_positive_bad_mae_ts_pct_max": float(dirty_ts_max),
+                            "lgbm_dirty_positive_bad_mae_ts_pct_max": float(
+                                dirty_ts_max
+                            ),
                             "lgbm_bad_mae_ts_pct_max": float(bad_ts_max),
                             "lgbm_timeout_ts_pct_max": float(timeout_ts_max),
                             "lgbm_dirty_positive_bad_mae_cap": float(raw_dirty_cap),
@@ -8164,7 +9154,9 @@ def _run_month(
                         ):
                             s7_specs.append(
                                 (
-                                    s21_name.replace("_stageA_", f"{gate_name}_stageA_"),
+                                    s21_name.replace(
+                                        "_stageA_", f"{gate_name}_stageA_"
+                                    ),
                                     s21_score,
                                     s21_mask,
                                     base_s21_diag,
@@ -8218,26 +9210,26 @@ def _run_month(
                                 1.0,
                             ),
                         ):
-                            bucket_mask = (
-                                s21_mask
-                                & pd.to_numeric(
-                                    s22_bucket_quality_rank_pct,
-                                    errors="coerce",
-                                )
-                                .ge(float(min_quality_pct))
-                                .fillna(False)
-                                .to_numpy(dtype=bool)
+                            bucket_mask = s21_mask & pd.to_numeric(
+                                s22_bucket_quality_rank_pct,
+                                errors="coerce",
+                            ).ge(float(min_quality_pct)).fillna(False).to_numpy(
+                                dtype=bool
                             )
                             if min_relaxed_count > 0.0:
                                 bucket_mask = bucket_mask & pd.to_numeric(
                                     s22_bucket_relaxed_pass_count,
                                     errors="coerce",
-                                ).ge(float(min_relaxed_count)).fillna(False).to_numpy(dtype=bool)
+                                ).ge(float(min_relaxed_count)).fillna(False).to_numpy(
+                                    dtype=bool
+                                )
                             if min_strict_count > 0.0:
                                 bucket_mask = bucket_mask & pd.to_numeric(
                                     s22_bucket_strict_pass_count,
                                     errors="coerce",
-                                ).ge(float(min_strict_count)).fillna(False).to_numpy(dtype=bool)
+                                ).ge(float(min_strict_count)).fillna(False).to_numpy(
+                                    dtype=bool
+                                )
                             bucket_gate_name = (
                                 f"{gate_name}"
                                 f"_bucket_q_min_{int(round(min_quality_pct * 100)):02d}"
@@ -8249,13 +9241,21 @@ def _run_month(
                                 **s22_bucket_quality_diag,
                                 "s7_ablation": "prior_bucket_quality_abstention",
                                 "prior_bucket_quality_overlay": True,
-                                "s22_bucket_quality_rank_pct_min": float(min_quality_pct),
-                                "s22_bucket_relaxed_pass_count_min": float(min_relaxed_count),
-                                "s22_bucket_strict_pass_count_min": float(min_strict_count),
+                                "s22_bucket_quality_rank_pct_min": float(
+                                    min_quality_pct
+                                ),
+                                "s22_bucket_relaxed_pass_count_min": float(
+                                    min_relaxed_count
+                                ),
+                                "s22_bucket_strict_pass_count_min": float(
+                                    min_strict_count
+                                ),
                             }
                             s7_specs.append(
                                 (
-                                    bucket_name.replace("_stageA_", f"{bucket_gate_name}_stageA_"),
+                                    bucket_name.replace(
+                                        "_stageA_", f"{bucket_gate_name}_stageA_"
+                                    ),
                                     bucket_score,
                                     bucket_mask,
                                     base_s22_diag,
@@ -8291,15 +9291,27 @@ def _run_month(
                                 .to_numpy(dtype=bool)
                             )
                             if min_relaxed_count > 0.0:
-                                bootstrap_bucket_mask = bootstrap_bucket_mask & pd.to_numeric(
-                                    s22_bucket_relaxed_pass_count,
-                                    errors="coerce",
-                                ).ge(float(min_relaxed_count)).fillna(False).to_numpy(dtype=bool)
+                                bootstrap_bucket_mask = (
+                                    bootstrap_bucket_mask
+                                    & pd.to_numeric(
+                                        s22_bucket_relaxed_pass_count,
+                                        errors="coerce",
+                                    )
+                                    .ge(float(min_relaxed_count))
+                                    .fillna(False)
+                                    .to_numpy(dtype=bool)
+                                )
                             if min_strict_count > 0.0:
-                                bootstrap_bucket_mask = bootstrap_bucket_mask & pd.to_numeric(
-                                    s22_bucket_strict_pass_count,
-                                    errors="coerce",
-                                ).ge(float(min_strict_count)).fillna(False).to_numpy(dtype=bool)
+                                bootstrap_bucket_mask = (
+                                    bootstrap_bucket_mask
+                                    & pd.to_numeric(
+                                        s22_bucket_strict_pass_count,
+                                        errors="coerce",
+                                    )
+                                    .ge(float(min_strict_count))
+                                    .fillna(False)
+                                    .to_numpy(dtype=bool)
+                                )
                             bootstrap_diag = {
                                 **base_s22_diag,
                                 **s22_bucket_quality_diag,
@@ -8307,9 +9319,15 @@ def _run_month(
                                     "prior_bucket_quality_abstention_bootstrap"
                                 ),
                                 "prior_bucket_quality_overlay": True,
-                                "s22_bucket_quality_rank_pct_min": float(min_quality_pct),
-                                "s22_bucket_relaxed_pass_count_min": float(min_relaxed_count),
-                                "s22_bucket_strict_pass_count_min": float(min_strict_count),
+                                "s22_bucket_quality_rank_pct_min": float(
+                                    min_quality_pct
+                                ),
+                                "s22_bucket_relaxed_pass_count_min": float(
+                                    min_relaxed_count
+                                ),
+                                "s22_bucket_strict_pass_count_min": float(
+                                    min_strict_count
+                                ),
                                 "s22_bootstrap_overlay": True,
                                 "s22_bootstrap_base_mask": "stage_a_candidate_pre_risk",
                             }
@@ -8746,13 +9764,9 @@ def _run_month(
                             .fillna(False)
                             .to_numpy(dtype=bool)
                         )
-                        s27_strict_mask = (
-                            s27_base_mask
-                            & pd.to_numeric(lgbm_bad_mae_pred, errors="coerce")
-                            .le(0.55)
-                            .fillna(False)
-                            .to_numpy(dtype=bool)
-                        )
+                        s27_strict_mask = s27_base_mask & pd.to_numeric(
+                            lgbm_bad_mae_pred, errors="coerce"
+                        ).le(0.55).fillna(False).to_numpy(dtype=bool)
                         base_s27_diag = {
                             "s7_ablation": (
                                 "s27_s24_inverted_path_first_source_repair"
@@ -8864,13 +9878,9 @@ def _run_month(
                             .fillna(False)
                             .to_numpy(dtype=bool)
                         )
-                        s28_strict_mask = (
-                            s28_base_mask
-                            & pd.to_numeric(lgbm_bad_mae_pred, errors="coerce")
-                            .le(0.55)
-                            .fillna(False)
-                            .to_numpy(dtype=bool)
-                        )
+                        s28_strict_mask = s28_base_mask & pd.to_numeric(
+                            lgbm_bad_mae_pred, errors="coerce"
+                        ).le(0.55).fillna(False).to_numpy(dtype=bool)
                         base_s28_diag = {
                             "s7_ablation": "s28_side_specific_s24_path_first_ranker",
                             "ranker_type": "side_specific_lgbm_lambdarank",
@@ -9582,7 +10592,9 @@ def _run_month(
                                         "ranker_type": "lgbm_lambdarank",
                                         "ranker_relevance": "utility_quintile",
                                         "ranker_status": lgbm_ranker_status,
-                                        "min_clean_path_pred": float(min_clean_path_pred),
+                                        "min_clean_path_pred": float(
+                                            min_clean_path_pred
+                                        ),
                                         "pred_timeout_cap": 0.20,
                                         "selection_top_frac": float(final_frac),
                                     },
@@ -9607,7 +10619,9 @@ def _run_month(
                                             f"utility:{lgbm_ranker_status};"
                                             f"path:{lgbm_path_ranker_status}"
                                         ),
-                                        "min_clean_path_pred": float(min_clean_path_pred),
+                                        "min_clean_path_pred": float(
+                                            min_clean_path_pred
+                                        ),
                                         "pred_timeout_cap": 0.20,
                                         "selection_top_frac": float(final_frac),
                                         "utility_ranker_weight": 0.60,
@@ -9616,12 +10630,15 @@ def _run_month(
                                 )
                             )
                     for s7_name, s7_score, s7_eligible_mask, s7_diag in s7_specs:
-                        full_s7_name = (
-                            f"{s7_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
-                        )
-                        if candidate_ledger_only and full_s7_name not in requested_ledger_selectors:
+                        full_s7_name = f"{s7_name}_side_cap_{int(round(side_cap_max_share * 100)):02d}"
+                        if (
+                            candidate_ledger_only
+                            and full_s7_name not in requested_ledger_selectors
+                        ):
                             continue
-                        selector_top_frac = float(s7_diag.get("selection_top_frac", top_frac))
+                        selector_top_frac = float(
+                            s7_diag.get("selection_top_frac", top_frac)
+                        )
                         selected_idx, hard_cap_diag = _constrained_top_indices(
                             score=s7_score,
                             side=valid_metrics["side"],
@@ -9655,7 +10672,12 @@ def _run_month(
                         )
                     if candidate_ledger_only:
                         pass
-                    for variant_name, variant_score, variant_diag, _selected_idx in base_variants:
+                    for (
+                        variant_name,
+                        variant_score,
+                        variant_diag,
+                        _selected_idx,
+                    ) in base_variants:
                         capped_score, cap_diag = _side_capped_score(
                             score=variant_score,
                             side=valid_metrics["side"],
@@ -9672,7 +10694,8 @@ def _run_month(
                         )
                     for max_bad_mae_pred in (0.60, 0.57, 0.55, 0.53, 0.52, 0.50):
                         eligible = (
-                            pd.to_numeric(bad_mae_pred, errors="coerce") <= float(max_bad_mae_pred)
+                            pd.to_numeric(bad_mae_pred, errors="coerce")
+                            <= float(max_bad_mae_pred)
                         ) & (pd.to_numeric(timeout_pred, errors="coerce") <= 0.12)
                         selected_idx, hard_cap_diag = _constrained_top_indices(
                             score=strong_risk_penalty,
@@ -9739,10 +10762,9 @@ def _run_month(
                             )
                         )
                     for min_clean_path_pred in (0.35, 0.40, 0.45, 0.50):
-                        eligible = (
-                            pd.to_numeric(clean_path_pred, errors="coerce")
-                            >= float(min_clean_path_pred)
-                        )
+                        eligible = pd.to_numeric(
+                            clean_path_pred, errors="coerce"
+                        ) >= float(min_clean_path_pred)
                         selected_idx, hard_cap_diag = _constrained_top_indices(
                             score=clean_path_pred,
                             side=valid_metrics["side"],
@@ -9774,7 +10796,9 @@ def _run_month(
                         eligible = (
                             pd.to_numeric(bad_mae_pred, errors="coerce").le(0.57)
                             & pd.to_numeric(timeout_pred, errors="coerce").le(0.12)
-                            & pd.to_numeric(feature_gap_risk, errors="coerce").le(float(feature_gap_cap))
+                            & pd.to_numeric(feature_gap_risk, errors="coerce").le(
+                                float(feature_gap_cap)
+                            )
                         )
                         selected_idx, hard_cap_diag = _constrained_top_indices(
                             score=feature_gap_penalty,
@@ -9810,7 +10834,9 @@ def _run_month(
                             )
                         )
                 for variant_name, variant_score, variant_diag, selected_idx in variants:
-                    decile = _decile_diagnostics(variant_score, valid_metrics["u_policy_net"])
+                    decile = _decile_diagnostics(
+                        variant_score, valid_metrics["u_policy_net"]
+                    )
                     ts_rank = _timestamp_ranking_metrics(
                         frame=valid,
                         metrics=valid_metrics,
@@ -9822,7 +10848,9 @@ def _run_month(
                         metrics=valid_metrics,
                         target=target_valid,
                         score=variant_score,
-                        arm=base_arm if variant_name == "raw_utility" else f"{base_arm}::{variant_name}",
+                        arm=base_arm
+                        if variant_name == "raw_utility"
+                        else f"{base_arm}::{variant_name}",
                         selector=f"{selector_prefix}:{variant_name}",
                         period=month,
                         top_frac=top_frac,
@@ -9855,7 +10883,9 @@ def _run_month(
                             ),
                             "lgbm_bad_mae_pred_mean": _safe_mean(lgbm_bad_mae_pred),
                             "lgbm_timeout_pred_mean": _safe_mean(lgbm_timeout_pred),
-                            "lgbm_clean_path_pred_mean": _safe_mean(lgbm_clean_path_pred),
+                            "lgbm_clean_path_pred_mean": _safe_mean(
+                                lgbm_clean_path_pred
+                            ),
                             "lgbm_dirty_positive_bad_mae_pred_mean": _safe_mean(
                                 lgbm_dirty_positive_bad_mae_pred
                             ),
@@ -9926,8 +10956,12 @@ def _run_month(
                                 lgbm_timeout_aware_clean_ranker_status
                             ),
                             "lgbm_ranker_score_mean": _safe_mean(lgbm_ranker_score),
-                            "lgbm_path_ranker_score_mean": _safe_mean(lgbm_path_ranker_score),
-                            "lgbm_oracle_ranker_score_mean": _safe_mean(lgbm_oracle_ranker_score),
+                            "lgbm_path_ranker_score_mean": _safe_mean(
+                                lgbm_path_ranker_score
+                            ),
+                            "lgbm_oracle_ranker_score_mean": _safe_mean(
+                                lgbm_oracle_ranker_score
+                            ),
                             "lgbm_clean_oracle_ranker_score_mean": _safe_mean(
                                 lgbm_clean_oracle_ranker_score
                             ),
@@ -9982,10 +11016,14 @@ def _run_month(
                                 lgbm_positive_clean_path_pred.iloc[selected_for_risk]
                             ),
                             "selected_lgbm_side_dirty_positive_bad_mae_pred_mean": _safe_mean(
-                                lgbm_side_dirty_positive_bad_mae_pred.iloc[selected_for_risk]
+                                lgbm_side_dirty_positive_bad_mae_pred.iloc[
+                                    selected_for_risk
+                                ]
                             ),
                             "selected_lgbm_side_positive_clean_path_pred_mean": _safe_mean(
-                                lgbm_side_positive_clean_path_pred.iloc[selected_for_risk]
+                                lgbm_side_positive_clean_path_pred.iloc[
+                                    selected_for_risk
+                                ]
                             ),
                             "selected_s22_bucket_quality_score_mean": _safe_mean(
                                 s22_bucket_quality_score.iloc[selected_for_risk]
@@ -10009,25 +11047,38 @@ def _run_month(
                                 lgbm_clean_path_ts_pct.iloc[selected_for_risk]
                             ),
                             "selected_lgbm_dirty_positive_bad_mae_ts_pct_mean": _safe_mean(
-                                lgbm_dirty_positive_bad_mae_ts_pct.iloc[selected_for_risk]
+                                lgbm_dirty_positive_bad_mae_ts_pct.iloc[
+                                    selected_for_risk
+                                ]
                             ),
                             "selected_lgbm_positive_clean_path_ts_pct_mean": _safe_mean(
                                 lgbm_positive_clean_path_ts_pct.iloc[selected_for_risk]
                             ),
                             "selected_lgbm_side_dirty_positive_bad_mae_ts_pct_mean": _safe_mean(
-                                lgbm_side_dirty_positive_bad_mae_ts_pct.iloc[selected_for_risk]
+                                lgbm_side_dirty_positive_bad_mae_ts_pct.iloc[
+                                    selected_for_risk
+                                ]
                             ),
                             "selected_lgbm_side_positive_clean_path_ts_pct_mean": _safe_mean(
-                                lgbm_side_positive_clean_path_ts_pct.iloc[selected_for_risk]
+                                lgbm_side_positive_clean_path_ts_pct.iloc[
+                                    selected_for_risk
+                                ]
                             ),
                             "selected_clean_path_pred_mean": _safe_mean(
                                 clean_path_pred.iloc[selected_for_risk]
                             ),
                             "clean_positive_rate": _safe_mean(
                                 (
-                                    (valid_metrics["u_policy_net"].iloc[selected_for_risk] > 0.0)
+                                    (
+                                        valid_metrics["u_policy_net"].iloc[
+                                            selected_for_risk
+                                        ]
+                                        > 0.0
+                                    )
                                     & (
-                                        valid_metrics["mae_norm"].iloc[selected_for_risk]
+                                        valid_metrics["mae_norm"].iloc[
+                                            selected_for_risk
+                                        ]
                                         < 1.0
                                     )
                                     & (
@@ -10040,10 +11091,17 @@ def _run_month(
                             ),
                             "dirty_positive_rate": _safe_mean(
                                 (
-                                    (valid_metrics["u_policy_net"].iloc[selected_for_risk] > 0.0)
+                                    (
+                                        valid_metrics["u_policy_net"].iloc[
+                                            selected_for_risk
+                                        ]
+                                        > 0.0
+                                    )
                                     & (
                                         (
-                                            valid_metrics["mae_norm"].iloc[selected_for_risk]
+                                            valid_metrics["mae_norm"].iloc[
+                                                selected_for_risk
+                                            ]
                                             >= 1.0
                                         )
                                         | (
@@ -10058,19 +11116,25 @@ def _run_month(
                             "selected_pred_bad_mae_mean": _safe_mean(
                                 (
                                     side_bad_mae_pred
-                                    if str(variant_diag.get("risk_head", "")) == "side_specific"
+                                    if str(variant_diag.get("risk_head", ""))
+                                    == "side_specific"
                                     else bad_mae_pred
                                 ).iloc[selected_for_risk]
                             ),
                             "selected_pred_timeout_mean": _safe_mean(
                                 (
                                     side_timeout_pred
-                                    if str(variant_diag.get("risk_head", "")) == "side_specific"
+                                    if str(variant_diag.get("risk_head", ""))
+                                    == "side_specific"
                                     else timeout_pred
                                 ).iloc[selected_for_risk]
                             ),
-                            "score_ic_u": _spearman(variant_score, valid_metrics["u_policy_net"]),
-                            "score_ic_label": _spearman(variant_score, target_valid["target_soft"]),
+                            "score_ic_u": _spearman(
+                                variant_score, valid_metrics["u_policy_net"]
+                            ),
+                            "score_ic_label": _spearman(
+                                variant_score, target_valid["target_soft"]
+                            ),
                             "score_ic_bad_mae": _spearman(
                                 variant_score,
                                 (valid_metrics["mae_norm"] >= 1.0).astype(float),
@@ -10113,7 +11177,9 @@ def _run_month(
                                     "model_feature_selector": model_feature_selector,
                                 },
                                 extra_scores={
-                                    **_discovery_context_scores(valid_context, model_features),
+                                    **_discovery_context_scores(
+                                        valid_context, model_features
+                                    ),
                                     "base_model_score": score,
                                     "bad_mae_pred": bad_mae_pred,
                                     "timeout_pred": timeout_pred,
@@ -10224,21 +11290,26 @@ def _run_month(
                     "valid_rows": int(valid_mask.sum()),
                     "target_train_mean": _safe_mean(target_train["target_soft"]),
                     "target_train_std": float(
-                        pd.to_numeric(target_train["target_soft"], errors="coerce").std(ddof=0)
+                        pd.to_numeric(target_train["target_soft"], errors="coerce").std(
+                            ddof=0
+                        )
                     ),
                     "target_train_hard_rate": _safe_mean(target_train["target_hard"]),
                     "weight_mean": _safe_mean(weights),
                     "weight_p90": _safe_quantile(weights, 0.90),
                     "weight_p99": _safe_quantile(weights, 0.99),
                     "weight_effective_n": _effective_sample_size(weights),
-                    "weight_effective_frac": _effective_sample_size(weights) / float(len(weights))
+                    "weight_effective_frac": _effective_sample_size(weights)
+                    / float(len(weights))
                     if len(weights)
                     else float("nan"),
                     "seeds": ",".join(str(seed) for seed in seeds),
                     "seed_count": int(len(seeds)),
                     "prediction_seed_std_mean": float(np.mean(pred_seed_std)),
                     "prediction_seed_std_p90": float(np.percentile(pred_seed_std, 90)),
-                    "include_risk_selector_variants": bool(include_risk_selector_variants),
+                    "include_risk_selector_variants": bool(
+                        include_risk_selector_variants
+                    ),
                     "pred_bad_mae_mean": _safe_mean(bad_mae_pred),
                     "pred_bad_mae_ic": _spearman(
                         bad_mae_pred,
@@ -10376,7 +11447,9 @@ def _run_month(
                         lgbm_path_ranker_score,
                         valid_metrics["u_policy_net"],
                     ),
-                    "lgbm_oracle_ranker_score_mean": _safe_mean(lgbm_oracle_ranker_score),
+                    "lgbm_oracle_ranker_score_mean": _safe_mean(
+                        lgbm_oracle_ranker_score
+                    ),
                     "lgbm_oracle_ranker_score_ic": _spearman(
                         lgbm_oracle_ranker_score,
                         valid_metrics["u_policy_net"],
@@ -10453,7 +11526,9 @@ def _run_month(
                     ),
                     **s42_interaction_diag,
                     "lgbm_s44_side_interaction_sign_calibrated_ranker_score_mean": (
-                        _safe_mean(lgbm_s44_side_interaction_sign_calibrated_ranker_score)
+                        _safe_mean(
+                            lgbm_s44_side_interaction_sign_calibrated_ranker_score
+                        )
                     ),
                     "lgbm_s44_side_interaction_sign_calibrated_ranker_score_ic": _spearman(
                         lgbm_s44_side_interaction_sign_calibrated_ranker_score,
@@ -10464,14 +11539,18 @@ def _run_month(
                         lgbm_s45_side_interaction_roll45_dirty_zero_ranker_status
                     ),
                     "lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score_mean": (
-                        _safe_mean(lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score)
+                        _safe_mean(
+                            lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score
+                        )
                     ),
                     "lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score_ic": _spearman(
                         lgbm_s45_side_interaction_roll45_dirty_zero_ranker_score,
                         valid_metrics["u_policy_net"],
                     ),
                     **s45_recent_train_diag,
-                    "s46_bucket_quality_score_mean": _safe_mean(s46_bucket_quality_score),
+                    "s46_bucket_quality_score_mean": _safe_mean(
+                        s46_bucket_quality_score
+                    ),
                     "s46_bucket_quality_rank_pct_mean": _safe_mean(
                         s46_bucket_quality_rank_pct
                     ),
@@ -10517,18 +11596,36 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
         return monthly
     rows: list[dict[str, Any]] = []
     groups = monthly.groupby(
-        ["arm", "label_arm", "weight_arm", "selector_variant", "model_feature_selector", "top_frac"],
+        [
+            "arm",
+            "label_arm",
+            "weight_arm",
+            "selector_variant",
+            "model_feature_selector",
+            "top_frac",
+        ],
         dropna=False,
         observed=True,
     )
     for key, group in groups:
-        arm, label_arm, weight_arm, selector_variant, model_feature_selector, top_frac = key
+        (
+            arm,
+            label_arm,
+            weight_arm,
+            selector_variant,
+            model_feature_selector,
+            top_frac,
+        ) = key
         mean_u = pd.to_numeric(group["mean_u"], errors="coerce")
         selected_rows = pd.to_numeric(group["selected_rows"], errors="coerce")
         q10 = pd.to_numeric(group["q10_u"], errors="coerce")
         score_ic_u = pd.to_numeric(group["score_ic_u"], errors="coerce")
-        selected_long_share = pd.to_numeric(group["selected_long_share"], errors="coerce")
-        selected_short_share = pd.to_numeric(group["selected_short_share"], errors="coerce")
+        selected_long_share = pd.to_numeric(
+            group["selected_long_share"], errors="coerce"
+        )
+        selected_short_share = pd.to_numeric(
+            group["selected_short_share"], errors="coerce"
+        )
         active_months = int((selected_rows > 0).sum())
         no_trade_months = int(group["period"].nunique()) - active_months
         selected_max_side_share = pd.concat(
@@ -10565,7 +11662,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "score_ic_label": _safe_mean(group["score_ic_label"]),
                 "decile_spearman_u": _safe_mean(group["decile_spearman_u"]),
                 "decile_violations_u": _safe_mean(group["decile_violations_u"]),
-                "top_bottom_decile_spread_u": _safe_mean(group["top_bottom_decile_spread_u"]),
+                "top_bottom_decile_spread_u": _safe_mean(
+                    group["top_bottom_decile_spread_u"]
+                ),
                 "ts_rank_hr10_u": _safe_mean(group["ts_rank_hr10_u"]),
                 "ts_rank_hr20_u": _safe_mean(group["ts_rank_hr20_u"]),
                 "ts_rank_hr30_u": _safe_mean(group["ts_rank_hr30_u"]),
@@ -10587,7 +11686,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "ts_rank_top30_wide_barrier_25bps_rate": _safe_mean(
                     group["ts_rank_top30_wide_barrier_25bps_rate"]
                 ),
-                "ts_rank_top30_timeout_rate": _safe_mean(group["ts_rank_top30_timeout_rate"]),
+                "ts_rank_top30_timeout_rate": _safe_mean(
+                    group["ts_rank_top30_timeout_rate"]
+                ),
                 "mean_ts_rank_top30_rows": _safe_mean(group["ts_rank_top30_rows"]),
                 "bad_mae_1r_rate": _safe_mean(group["bad_mae_1r_rate"]),
                 "clean_positive_rate": _safe_mean(group["clean_positive_rate"])
@@ -10602,9 +11703,15 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "selected_long_share": _safe_mean(selected_long_share),
                 "selected_short_share": _safe_mean(selected_short_share),
                 "max_selected_side_share": _safe_mean(selected_max_side_share),
-                "worst_month_selected_side_share": _safe_quantile(selected_max_side_share, 1.0),
-                "selected_pred_bad_mae_mean": _safe_mean(group["selected_pred_bad_mae_mean"]),
-                "selected_pred_timeout_mean": _safe_mean(group["selected_pred_timeout_mean"]),
+                "worst_month_selected_side_share": _safe_quantile(
+                    selected_max_side_share, 1.0
+                ),
+                "selected_pred_bad_mae_mean": _safe_mean(
+                    group["selected_pred_bad_mae_mean"]
+                ),
+                "selected_pred_timeout_mean": _safe_mean(
+                    group["selected_pred_timeout_mean"]
+                ),
                 "pred_bad_mae_mean": _safe_mean(group["pred_bad_mae_mean"]),
                 "pred_timeout_mean": _safe_mean(group["pred_timeout_mean"]),
                 "lgbm_bad_mae_pred_mean": _safe_mean(group["lgbm_bad_mae_pred_mean"])
@@ -10613,7 +11720,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "lgbm_timeout_pred_mean": _safe_mean(group["lgbm_timeout_pred_mean"])
                 if "lgbm_timeout_pred_mean" in group.columns
                 else float("nan"),
-                "lgbm_clean_path_pred_mean": _safe_mean(group["lgbm_clean_path_pred_mean"])
+                "lgbm_clean_path_pred_mean": _safe_mean(
+                    group["lgbm_clean_path_pred_mean"]
+                )
                 if "lgbm_clean_path_pred_mean" in group.columns
                 else float("nan"),
                 "lgbm_dirty_positive_bad_mae_pred_mean": _safe_mean(
@@ -10654,7 +11763,8 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "selected_lgbm_side_dirty_positive_bad_mae_pred_mean": _safe_mean(
                     group["selected_lgbm_side_dirty_positive_bad_mae_pred_mean"]
                 )
-                if "selected_lgbm_side_dirty_positive_bad_mae_pred_mean" in group.columns
+                if "selected_lgbm_side_dirty_positive_bad_mae_pred_mean"
+                in group.columns
                 else float("nan"),
                 "selected_lgbm_side_positive_clean_path_pred_mean": _safe_mean(
                     group["selected_lgbm_side_positive_clean_path_pred_mean"]
@@ -10684,7 +11794,8 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "selected_lgbm_side_dirty_positive_bad_mae_ts_pct_mean": _safe_mean(
                     group["selected_lgbm_side_dirty_positive_bad_mae_ts_pct_mean"]
                 )
-                if "selected_lgbm_side_dirty_positive_bad_mae_ts_pct_mean" in group.columns
+                if "selected_lgbm_side_dirty_positive_bad_mae_ts_pct_mean"
+                in group.columns
                 else float("nan"),
                 "selected_lgbm_side_positive_clean_path_ts_pct_mean": _safe_mean(
                     group["selected_lgbm_side_positive_clean_path_ts_pct_mean"]
@@ -10749,13 +11860,17 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 )
                 if "selected_s22_bucket_strict_pass_count_mean" in group.columns
                 else float("nan"),
-                "hard_risk_cap_no_trade_rate": _safe_mean(group["hard_risk_cap_no_trade_rate"])
+                "hard_risk_cap_no_trade_rate": _safe_mean(
+                    group["hard_risk_cap_no_trade_rate"]
+                )
                 if "hard_risk_cap_no_trade_rate" in group.columns
                 else float("nan"),
                 "stageA_candidate_rows": _safe_mean(group["stageA_candidate_rows"])
                 if "stageA_candidate_rows" in group.columns
                 else float("nan"),
-                "stageA_candidate_row_share": _safe_mean(group["stageA_candidate_row_share"])
+                "stageA_candidate_row_share": _safe_mean(
+                    group["stageA_candidate_row_share"]
+                )
                 if "stageA_candidate_row_share" in group.columns
                 else float("nan"),
                 "stageA_candidate_oracle_recall": _safe_mean(
@@ -10789,10 +11904,14 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "final_oracle_recall": _safe_mean(group["final_oracle_recall"])
                 if "final_oracle_recall" in group.columns
                 else float("nan"),
-                "final_long_oracle_recall": _safe_mean(group["final_long_oracle_recall"])
+                "final_long_oracle_recall": _safe_mean(
+                    group["final_long_oracle_recall"]
+                )
                 if "final_long_oracle_recall" in group.columns
                 else float("nan"),
-                "final_short_oracle_recall": _safe_mean(group["final_short_oracle_recall"])
+                "final_short_oracle_recall": _safe_mean(
+                    group["final_short_oracle_recall"]
+                )
                 if "final_short_oracle_recall" in group.columns
                 else float("nan"),
                 "final_bad_mae_1r_rate": _safe_mean(group["final_bad_mae_1r_rate"])
@@ -10801,7 +11920,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "final_timeout_rate": _safe_mean(group["final_timeout_rate"])
                 if "final_timeout_rate" in group.columns
                 else float("nan"),
-                "feature_gap_risk_features": str(group["feature_gap_risk_features"].dropna().iloc[-1])
+                "feature_gap_risk_features": str(
+                    group["feature_gap_risk_features"].dropna().iloc[-1]
+                )
                 if "feature_gap_risk_features" in group.columns
                 and group["feature_gap_risk_features"].dropna().size
                 else "",
@@ -10820,7 +11941,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
                 "score_ic_bad_mae": _safe_mean(group["score_ic_bad_mae"]),
                 "top_symbol_share": _safe_mean(group["top_symbol_share"]),
                 "mean_selected_rows": _safe_mean(selected_rows),
-                "min_selected_rows": int(selected_rows.min()) if len(selected_rows.dropna()) else 0,
+                "min_selected_rows": int(selected_rows.min())
+                if len(selected_rows.dropna())
+                else 0,
                 "mean_model_feature_count": _safe_mean(group["model_feature_count"]),
                 "model_features": str(group["model_features"].dropna().iloc[0])
                 if group["model_features"].dropna().size
@@ -10849,9 +11972,12 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
         )
         aggregate["plan_rank_score_penalized"] = (
             aggregate["plan_rank_score"]
-            - 0.25 * pd.to_numeric(aggregate["ts_rank_top30_bad_mae_1r_rate"], errors="coerce")
-            - 0.15 * pd.to_numeric(aggregate["ts_rank_top30_timeout_rate"], errors="coerce")
-            - 0.50 * pd.to_numeric(aggregate["wide_barrier_25bps_rate"], errors="coerce")
+            - 0.25
+            * pd.to_numeric(aggregate["ts_rank_top30_bad_mae_1r_rate"], errors="coerce")
+            - 0.15
+            * pd.to_numeric(aggregate["ts_rank_top30_timeout_rate"], errors="coerce")
+            - 0.50
+            * pd.to_numeric(aggregate["wide_barrier_25bps_rate"], errors="coerce")
         )
     return aggregate.sort_values(
         ["top_frac", "mean_u", "worst_month_mean_u"],
@@ -10859,7 +11985,9 @@ def _aggregate(monthly: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _write_markdown(output_dir: Path, aggregate: pd.DataFrame, manifest: dict[str, Any]) -> Path:
+def _write_markdown(
+    output_dir: Path, aggregate: pd.DataFrame, manifest: dict[str, Any]
+) -> Path:
     path = output_dir / "label_feature_store_model_smoke.md"
 
     def table(frame: pd.DataFrame, cols: list[str], limit: int | None = None) -> str:
@@ -10870,7 +11998,9 @@ def _write_markdown(output_dir: Path, aggregate: pd.DataFrame, manifest: dict[st
             view = view.head(limit)
         for col in view.columns:
             if pd.api.types.is_float_dtype(view[col]):
-                view[col] = view[col].map(lambda v: f"{float(v):.4f}" if pd.notna(v) else "")
+                view[col] = view[col].map(
+                    lambda v: f"{float(v):.4f}" if pd.notna(v) else ""
+                )
         return view.to_markdown(index=False)
 
     cols = [
@@ -10929,16 +12059,22 @@ def _write_markdown(output_dir: Path, aggregate: pd.DataFrame, manifest: dict[st
         "",
     ]
     if "decision" in aggregate.columns:
-        promoted = aggregate[aggregate["decision"].eq("promote_to_full_walkforward_test")]
+        promoted = aggregate[
+            aggregate["decision"].eq("promote_to_full_walkforward_test")
+        ]
     else:
         promoted = aggregate.iloc[:0].copy()
     lines.extend(["## Promotion Candidates", "", table(promoted, cols, limit=50), ""])
     for frac in manifest["top_fracs"]:
         if "top_frac" in aggregate.columns:
             subset = aggregate[aggregate["top_frac"].eq(frac)].copy()
-            sort_cols = [col for col in ("mean_u", "worst_month_mean_u") if col in subset.columns]
+            sort_cols = [
+                col for col in ("mean_u", "worst_month_mean_u") if col in subset.columns
+            ]
             if sort_cols:
-                subset = subset.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+                subset = subset.sort_values(
+                    sort_cols, ascending=[False] * len(sort_cols)
+                )
         else:
             subset = aggregate.iloc[:0].copy()
         frac_label = f"{frac:.1%}" if float(frac) < 0.01 else f"{frac:.0%}"
@@ -10997,18 +12133,26 @@ def run_smoke(
         target_symbol_count=target_symbol_count,
         max_spread_bps=max_spread_bps,
     )
-    selected_features = _read_feature_list(feature_list_csv, max_features=max_feature_store_features)
+    selected_features = _read_feature_list(
+        feature_list_csv, max_features=max_feature_store_features
+    )
     feature_matrix, feature_store_report = _load_feature_store_columns(
         frame,
         feature_dir=feature_dir,
         selected_features=selected_features,
     )
     if not feature_matrix.empty:
-        feature_matrix = feature_matrix.astype(np.float32, copy=False).reset_index(drop=True)
-        frame = pd.concat([frame.reset_index(drop=True), feature_matrix], axis=1, copy=False)
+        feature_matrix = feature_matrix.astype(np.float32, copy=False).reset_index(
+            drop=True
+        )
+        frame = pd.concat(
+            [frame.reset_index(drop=True), feature_matrix], axis=1, copy=False
+        )
 
     metrics = _path_metrics(frame)
-    evaluation_utility_source = _apply_evaluation_utility_column(frame, metrics, evaluation_utility_column)
+    evaluation_utility_source = _apply_evaluation_utility_column(
+        frame, metrics, evaluation_utility_column
+    )
     features = _feature_columns(frame)
     base_targets = _make_targets(frame, metrics)
     targets = _label_targets(frame, metrics)
@@ -11066,8 +12210,12 @@ def run_smoke(
             candidate_ledger_only=bool(candidate_ledger_only),
             candidate_ledger_fast_mode=bool(candidate_ledger_fast_mode),
             include_ae_gmm_state_features=bool(include_ae_gmm_state_features),
-            ae_gmm_state_feature_max_train_rows=int(ae_gmm_state_feature_max_train_rows),
-            ae_gmm_state_feature_gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
+            ae_gmm_state_feature_max_train_rows=int(
+                ae_gmm_state_feature_max_train_rows
+            ),
+            ae_gmm_state_feature_gmm_max_train_rows=int(
+                ae_gmm_state_feature_gmm_max_train_rows
+            ),
             ae_gmm_state_feature_max_iter=int(ae_gmm_state_feature_max_iter),
         )
         monthly_rows.extend(rows)
@@ -11087,8 +12235,10 @@ def run_smoke(
         "diagnostics": output_dir / "label_feature_store_model_smoke_diagnostics.csv",
         "clean_dirty_selected": output_dir
         / "label_feature_store_model_smoke_clean_dirty_selected.csv",
-        "candidate_ledger": output_dir / "label_feature_store_model_smoke_candidate_ledger.csv",
-        "symbol_universe": output_dir / "label_feature_store_model_smoke_symbol_universe.csv",
+        "candidate_ledger": output_dir
+        / "label_feature_store_model_smoke_candidate_ledger.csv",
+        "symbol_universe": output_dir
+        / "label_feature_store_model_smoke_symbol_universe.csv",
         "manifest": output_dir / "manifest.json",
     }
     monthly.to_csv(paths["monthly"], index=False)
@@ -11104,7 +12254,9 @@ def run_smoke(
         else []
     )
     if bool(include_ae_gmm_state_features):
-        ae_gmm_feature_names = list(dict.fromkeys([*ae_gmm_feature_names, "ae_gmm_oof_available"]))
+        ae_gmm_feature_names = list(
+            dict.fromkeys([*ae_gmm_feature_names, "ae_gmm_oof_available"])
+        )
     if bool(include_ae_gmm_state_features) and _side_context_enabled():
         ae_gmm_feature_names = list(ae_gmm_feature_names) + [
             f"{side_name}_{feature}"
@@ -11112,7 +12264,10 @@ def run_smoke(
             for feature in ae_gmm_feature_names
         ]
     ae_gmm_generated_feature_count = int(len(ae_gmm_feature_names))
-    if bool(include_ae_gmm_state_features) and "ae_gmm_state_feature_count" in diagnostics.columns:
+    if (
+        bool(include_ae_gmm_state_features)
+        and "ae_gmm_state_feature_count" in diagnostics.columns
+    ):
         observed = pd.to_numeric(
             diagnostics["ae_gmm_state_feature_count"],
             errors="coerce",
@@ -11180,10 +12335,14 @@ def run_smoke(
         },
         "outputs": {key: str(value) for key, value in paths.items()},
     }
-    paths["manifest"].write_text(json.dumps(_json_safe(manifest), indent=2), encoding="utf-8")
+    paths["manifest"].write_text(
+        json.dumps(_json_safe(manifest), indent=2), encoding="utf-8"
+    )
     markdown = _write_markdown(output_dir, aggregate, manifest)
     manifest["outputs"]["markdown"] = str(markdown)
-    paths["manifest"].write_text(json.dumps(_json_safe(manifest), indent=2), encoding="utf-8")
+    paths["manifest"].write_text(
+        json.dumps(_json_safe(manifest), indent=2), encoding="utf-8"
+    )
     return manifest
 
 
@@ -11192,7 +12351,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--labels-path", type=Path, default=DEFAULT_LABELS_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--feature-dir", type=Path, default=DEFAULT_FEATURE_DIR)
-    parser.add_argument("--feature-list-csv", type=Path, default=DEFAULT_FEATURE_LIST_CSV)
+    parser.add_argument(
+        "--feature-list-csv", type=Path, default=DEFAULT_FEATURE_LIST_CSV
+    )
     parser.add_argument(
         "--evaluation-utility-column",
         type=str,
@@ -11344,8 +12505,12 @@ def main() -> int:
         target_symbol_count=args.target_symbol_count,
         max_spread_bps=args.max_spread_bps,
         include_ae_gmm_state_features=not bool(args.disable_ae_gmm_state_features),
-        ae_gmm_state_feature_max_train_rows=int(args.ae_gmm_state_feature_max_train_rows),
-        ae_gmm_state_feature_gmm_max_train_rows=int(args.ae_gmm_state_feature_gmm_max_train_rows),
+        ae_gmm_state_feature_max_train_rows=int(
+            args.ae_gmm_state_feature_max_train_rows
+        ),
+        ae_gmm_state_feature_gmm_max_train_rows=int(
+            args.ae_gmm_state_feature_gmm_max_train_rows
+        ),
         ae_gmm_state_feature_max_iter=int(args.ae_gmm_state_feature_max_iter),
     )
     print(json.dumps(_json_safe(manifest), indent=2))

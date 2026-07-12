@@ -1,12 +1,13 @@
+import hashlib
 import inspect
 import json
-import hashlib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import extreme_price_movements.inference.run_inference as run_inference
 from extreme_price_movements.inference.candidate_selector import (
     build_strategy_candidate_masks,
     select_candidates,
@@ -15,10 +16,9 @@ from extreme_price_movements.inference.feature_generator import (
     _synthesize_live_safe_feature_keys,
 )
 from extreme_price_movements.inference.portfolio_policy import PortfolioPolicyConfig
-import extreme_price_movements.inference.run_inference as run_inference
 from extreme_price_movements.inference.run_inference import (
-    _evaluate_oco_policy,
     _ev_adjusted_prediction_after_entry_friction,
+    _evaluate_oco_policy,
     _latest_closed_candle_start,
     _monitor_active_position_price_action,
     _position_policy_entry_price,
@@ -32,11 +32,9 @@ from extreme_price_movements.inference.simple_policy_stop import (
     compute_simple_policy_stop_decision,
     extract_simple_policy_stop_params_by_strategy,
     load_simple_policy_stop_params_by_strategy,
-    validate_simple_policy_stop_params,
 )
 from extreme_price_movements.inference.trade_executor import (
     OCOExecutor,
-    STOP_MIN_CURRENT_DISTANCE_PCT,
     TradeExecutor,
     _classify_exchange_error,
     _closed_trade_metrics,
@@ -408,7 +406,52 @@ def test_pre_score_market_mask_accepts_fresh_liquid_candidate():
     assert snap["prescore_market_mask_allowed"] is True
     assert snap["prescore_market_mask_reason"] == ""
     assert snap["prescore_oi_value"] == pytest.approx(1000000.0)
-    assert snap["prescore_orderbook_capacity_quote_within_slippage"] >= 50.0
+
+
+def test_pre_score_market_mask_parallel_preserves_candidate_order():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbols = ["A/USD:USD", "B/USD:USD", "C/USD:USD"]
+    panel = {
+        "close": pd.DataFrame({symbol: [100.0] for symbol in symbols}, index=idx),
+        "volume": pd.DataFrame({symbol: [10.0] for symbol in symbols}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [100.0] for symbol in symbols}, index=idx),
+        "open_interest": pd.DataFrame(
+            {symbol: [1000000.0] for symbol in symbols}, index=idx
+        ),
+    }
+    side_metrics = {
+        "prescore_market_mask_input": 0,
+        "prescore_market_mask_pass": 0,
+        "prescore_market_mask_block": 0,
+        "prescore_market_mask_reasons": {},
+        "non_fatal_issues": 0,
+    }
+
+    kept, snapshots = run_inference._apply_pre_score_market_masks(
+        panel=panel,
+        candidates=symbols,
+        side="long",
+        strategy_id="long_mr",
+        executor=_PrescoreExecutor(_PrescoreExchange(bid=100.0, ask=100.1)),
+        policy=run_inference.PortfolioPolicyConfig(max_spread_bps=25.0),
+        runtime_config={
+            "mode": "live-test",
+            "market_mode": "perps",
+            "live_prescore_orderbook_enabled": False,
+            "live_prescore_market_mask_workers": 2,
+        },
+        now=pd.Timestamp("2026-06-10 09:05:00Z"),
+        signal_bar_ts=idx[-1],
+        raw_close_reference_gap_bps=150.0,
+        max_signal_close_to_entry_seconds=900.0,
+        side_metrics=side_metrics,
+    )
+
+    assert kept == symbols
+    assert list(snapshots) == symbols
+    assert side_metrics["prescore_market_mask_input"] == 3
+    assert side_metrics["prescore_market_mask_pass"] == 3
+    assert side_metrics["prescore_market_mask_block"] == 0
 
 
 def test_trade_result_merge_derives_entry_notional_quote_for_fee_audit():
@@ -677,9 +720,7 @@ def test_live_ev_haircut_uses_symbol_average_spread_baseline(tmp_path, monkeypat
     )
     baseline_path.parent.mkdir(parents=True)
     baseline_path.write_text(
-        "symbol,rows,average_spread_bps\n"
-        "BTC/USD:USD,10,20.0\n"
-        "NMR/USD:USD,10,60.0\n",
+        "symbol,rows,average_spread_bps\nBTC/USD:USD,10,20.0\nNMR/USD:USD,10,60.0\n",
         encoding="utf-8",
     )
     monkeypatch.delenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", raising=False)
@@ -3605,7 +3646,9 @@ def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeyp
     assert state.get("recovered_from_pending_trade_log") is not True
 
 
-def test_perps_reconciliation_existing_stop_does_not_override_artifact_barrier(monkeypatch):
+def test_perps_reconciliation_existing_stop_does_not_override_artifact_barrier(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -4811,7 +4854,10 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "policy_archetype: long__compression_release" in close_body
     assert "policy_archetype_source: policy_archetype" in close_body
     assert "auction_rank_pct: 0.939900" in close_body
-    assert "threshold_rank_score_source: threshold_rank_score_after_friction_ev" in close_body
+    assert (
+        "threshold_rank_score_source: threshold_rank_score_after_friction_ev"
+        in close_body
+    )
     assert "portfolio_priority_after_live_friction_ev: 0.918800" in close_body
     assert "archetype_recent_hit_rate: 72.0000%" in close_body
     assert "archetype_baseline_hit_rate: 64.0000%" in close_body
@@ -4823,7 +4869,10 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "strategy_ev_avg_net_return: 0.4000%" in close_body
     assert "ev_adjusted_net_return_after_friction: 0.6280%" in close_body
     assert "ev_inference_total_cost_bps: 93.2000" in close_body
-    assert "ev_inference_cost_model_contract: fixed20bps_plus_1.5x_live_spread" in close_body
+    assert (
+        "ev_inference_cost_model_contract: fixed20bps_plus_1.5x_live_spread"
+        in close_body
+    )
     assert "entry_fee_quote" not in close_body
     assert "nan" not in close_body.lower()
 

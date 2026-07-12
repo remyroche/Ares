@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Collect hourly Kraken Futures ticker spreads, candles, and L2 orderbooks."""
+
 from __future__ import annotations
 
 import sys
@@ -9,7 +11,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from extreme_price_movements.kraken_spread_model import collect_spread_snapshots_main
-
 
 if __name__ == "__main__":
     raise SystemExit(collect_spread_snapshots_main())

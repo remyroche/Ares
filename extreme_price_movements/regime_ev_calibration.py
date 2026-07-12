@@ -4,11 +4,13 @@ The calibration artifact is intentionally small and deterministic.  It stores
 per side x archetype regime effects learned offline; application only reads
 pre-entry/live-predictable feature columns and produces:
 
-    score_regime_calibrated = source_score - clipped(sum(effects))
+    score_regime_calibrated = source_score adjusted by clipped(sum(effects))
 
 Positive effects therefore lower the trading score, while negative effects
-raise it.  The module does not fit anything; fitting belongs in reporting/HPO
-scripts so live and replay paths can consume a frozen artifact.
+raise it.  The artifact can specify additive or multiplicative application,
+score scale, and max up/down adjustment.  The module does not fit anything;
+fitting belongs in reporting/HPO scripts so live and replay paths can consume
+a frozen artifact.
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
-
 
 SOURCE_SCORE_DEFAULT = "score_meta_base_soft_label"
 ADJUSTED_SCORE_DEFAULT = "score_regime_calibrated"
@@ -48,9 +49,9 @@ DEFAULT_REGIME_EV_FEATURE_HANDOFF = REPO_ROOT / (
 
 def default_regime_ev_calibration_artifact() -> Path | None:
     """Return the current default calibration artifact unless explicitly disabled."""
-    enabled = str(
-        os.environ.get("EPM_REGIME_EV_CALIBRATION_ENABLED", "1")
-    ).strip().lower()
+    enabled = (
+        str(os.environ.get("EPM_REGIME_EV_CALIBRATION_ENABLED", "1")).strip().lower()
+    )
     if enabled in {"0", "false", "no", "off"}:
         return None
     raw = os.environ.get("EPM_REGIME_EV_CALIBRATION_ARTIFACT", "").strip()
@@ -98,7 +99,10 @@ def _apply_shape(values: pd.Series, shape: str, params: Mapping[str, Any]) -> pd
     if shape == "bucketed":
         qs = np.asarray(params.get("quantiles", []), dtype=float)
         raw = x.to_numpy(dtype=float)
-        effects = {int(k): _safe_float(v, 0.0) for k, v in dict(params.get("effects", {})).items()}
+        effects = {
+            int(k): _safe_float(v, 0.0)
+            for k, v in dict(params.get("effects", {})).items()
+        }
         bins = np.digitize(raw, qs, right=True)
         out = np.asarray([effects.get(int(b), 0.0) for b in bins], dtype="float32")
         out[~np.isfinite(raw)] = 0.0
@@ -120,7 +124,9 @@ def _apply_shape(values: pd.Series, shape: str, params: Mapping[str, Any]) -> pd
         out += zz * zz * _safe_float(coef[1] if len(coef) > 1 else 0.0, 0.0)
     elif shape in {"ushape", "u_shaped", "u-shaped", "spline"}:
         coef = list(params.get("coef", [0.0]))
-        out = np.abs(z.to_numpy(dtype=float)) * _safe_float(coef[0] if coef else 0.0, 0.0)
+        out = np.abs(z.to_numpy(dtype=float)) * _safe_float(
+            coef[0] if coef else 0.0, 0.0
+        )
     else:
         out = np.zeros(len(values), dtype=float)
     return pd.Series(np.clip(out, -0.06, 0.06).astype("float32"), index=values.index)
@@ -134,26 +140,48 @@ def _derive_features(frame: pd.DataFrame) -> pd.DataFrame:
         and "score_base" in out.columns
     ):
         out["__derived_score_dispersion__"] = (
-            pd.to_numeric(out["score_meta_base_soft_label"], errors="coerce")
-            - pd.to_numeric(out["score_base"], errors="coerce")
-        ).abs().astype("float32")
+            (
+                pd.to_numeric(out["score_meta_base_soft_label"], errors="coerce")
+                - pd.to_numeric(out["score_base"], errors="coerce")
+            )
+            .abs()
+            .astype("float32")
+        )
     if "__derived_meta_uncertainty__" not in out.columns:
-        score_col = "score_meta_base_soft_label" if "score_meta_base_soft_label" in out.columns else "calibrated_score"
+        score_col = (
+            "score_meta_base_soft_label"
+            if "score_meta_base_soft_label" in out.columns
+            else "calibrated_score"
+        )
         if score_col in out.columns:
             p = pd.to_numeric(out[score_col], errors="coerce").clip(1e-6, 1.0 - 1e-6)
             entropy = -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p)) / math.log(2.0)
             out["__derived_meta_uncertainty__"] = entropy.astype("float32")
     if "__derived_gmm_entropy__" not in out.columns:
-        posterior_cols = [col for col in out.columns if str(col).startswith("gmm_cluster_posterior_")]
+        posterior_cols = [
+            col for col in out.columns if str(col).startswith("gmm_cluster_posterior_")
+        ]
         if posterior_cols:
-            probs = out[posterior_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).clip(0.0, 1.0)
+            probs = (
+                out[posterior_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .fillna(0.0)
+                .clip(0.0, 1.0)
+            )
             denom = probs.sum(axis=1).replace(0.0, np.nan)
             probs = probs.div(denom, axis=0).fillna(0.0)
-            entropy = -(probs.where(probs.gt(0.0), 1.0).apply(np.log) * probs).sum(axis=1)
-            out["__derived_gmm_entropy__"] = (entropy / math.log(max(2, len(posterior_cols)))).astype("float32")
+            entropy = -(probs.where(probs.gt(0.0), 1.0).apply(np.log) * probs).sum(
+                axis=1
+            )
+            out["__derived_gmm_entropy__"] = (
+                entropy / math.log(max(2, len(posterior_cols)))
+            ).astype("float32")
         elif "gmm_posterior_max" in out.columns:
             out["__derived_gmm_entropy__"] = (
-                1.0 - pd.to_numeric(out["gmm_posterior_max"], errors="coerce").clip(0.0, 1.0)
+                1.0
+                - pd.to_numeric(out["gmm_posterior_max"], errors="coerce").clip(
+                    0.0, 1.0
+                )
             ).astype("float32")
     return out
 
@@ -202,19 +230,30 @@ def _apply_pickled_model(
         x[col] = x[col].fillna(_safe_float(fill_values.get(col), 0.0))
     try:
         pred = model.predict(x)
-    except Exception:
+    except Exception as exc:
+        if bool(artifact.get("_raise_model_prediction_errors")):
+            raise RuntimeError(
+                "Frozen regime calibration model prediction failed for "
+                f"{effect.get('side_name')} / {effect.get('archetype_policy_key')} "
+                f"using {effect.get('model_path')}"
+            ) from exc
         pred = np.zeros(len(frame), dtype=float)
-    return pd.Series(np.asarray(pred, dtype="float32"), index=frame.index).replace(
-        [np.inf, -np.inf],
-        np.nan,
-    ).fillna(0.0)
+    return (
+        pd.Series(np.asarray(pred, dtype="float32"), index=frame.index)
+        .replace(
+            [np.inf, -np.inf],
+            np.nan,
+        )
+        .fillna(0.0)
+    )
 
 
-def _apply_archetype_aliases(values: pd.Series, artifact: Mapping[str, Any]) -> pd.Series:
+def _apply_archetype_aliases(
+    values: pd.Series, artifact: Mapping[str, Any]
+) -> pd.Series:
     out = values.astype(str)
     aliases = {
-        str(k): str(v)
-        for k, v in dict(artifact.get("archetype_aliases") or {}).items()
+        str(k): str(v) for k, v in dict(artifact.get("archetype_aliases") or {}).items()
     }
     if aliases:
         out = out.replace(aliases)
@@ -226,6 +265,40 @@ def _apply_archetype_aliases(values: pd.Series, artifact: Mapping[str, Any]) -> 
         if prefix and alias:
             out = out.mask(out.str.startswith(prefix, na=False), alias)
     return out
+
+
+def _apply_score_adjustment(
+    raw: pd.Series,
+    risk: pd.Series,
+    artifact: Mapping[str, Any],
+) -> pd.Series:
+    spec = (
+        artifact.get("score_application")
+        if isinstance(artifact.get("score_application"), Mapping)
+        else {}
+    )
+    mode = str(spec.get("mode") or artifact.get("score_application_mode") or "additive")
+    scale = _safe_float(spec.get("scale", artifact.get("score_scale", 1.0)), 1.0)
+    max_up = max(
+        _safe_float(spec.get("max_upscore", artifact.get("max_upscore", 0.04)), 0.04),
+        0.0,
+    )
+    max_down = max(
+        _safe_float(
+            spec.get("max_downscore", artifact.get("max_downscore", 0.04)), 0.04
+        ),
+        0.0,
+    )
+    base = pd.to_numeric(raw, errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    delta = (-scale * pd.to_numeric(risk, errors="coerce").fillna(0.0)).clip(
+        lower=-max_down,
+        upper=max_up,
+    )
+    if mode == "multiplicative":
+        adjusted = base * (1.0 + delta)
+    else:
+        adjusted = base + delta
+    return adjusted.clip(0.0, 1.0).astype("float32")
 
 
 def _timestamp_series(frame: pd.DataFrame) -> pd.Series | None:
@@ -261,7 +334,11 @@ def _effect_time_mask(
         or effect.get("latest")
     )
     if ts is None:
-        if is_time_windowed and any(e.get("latest") for e in artifact.get("effects") or [] if isinstance(e, Mapping)):
+        if is_time_windowed and any(
+            e.get("latest")
+            for e in artifact.get("effects") or []
+            if isinstance(e, Mapping)
+        ):
             return pd.Series(bool(effect.get("latest")), index=index)
         return pd.Series(True, index=index)
     aligned = ts.reindex(index)
@@ -307,8 +384,14 @@ def apply_regime_ev_calibration(
     """Apply frozen regime effects and return a frame with adjusted scores."""
     out = frame.copy() if copy else frame
     artifact = artifact or {}
-    source_col = str(source_score_col or artifact.get("source_score_col") or SOURCE_SCORE_DEFAULT)
-    adjusted_col = str(adjusted_score_col or artifact.get("adjusted_score_col") or ADJUSTED_SCORE_DEFAULT)
+    source_col = str(
+        source_score_col or artifact.get("source_score_col") or SOURCE_SCORE_DEFAULT
+    )
+    adjusted_col = str(
+        adjusted_score_col
+        or artifact.get("adjusted_score_col")
+        or ADJUSTED_SCORE_DEFAULT
+    )
     risk_col = str(artifact.get("risk_score_col") or RISK_SCORE_DEFAULT)
     count_col = str(artifact.get("effect_count_col") or EFFECT_COUNT_DEFAULT)
     risk_cap = max(_safe_float(artifact.get("risk_cap"), 0.06), 0.0)
@@ -324,12 +407,22 @@ def apply_regime_ev_calibration(
     if source_col not in out.columns and "calibrated_score" in out.columns:
         source_col = "calibrated_score"
     if source_col not in out.columns:
-        raise ValueError(f"source score column missing for regime EV calibration: {source_col}")
+        raise ValueError(
+            f"source score column missing for regime EV calibration: {source_col}"
+        )
     out = _derive_features(out)
     risk = pd.Series(0.0, index=out.index, dtype="float32")
     count = pd.Series(0, index=out.index, dtype="int16")
-    side = out[side_col].astype(str) if side_col in out.columns else pd.Series("", index=out.index)
-    arch = out[archetype_col].astype(str) if archetype_col in out.columns else pd.Series("", index=out.index)
+    side = (
+        out[side_col].astype(str)
+        if side_col in out.columns
+        else pd.Series("", index=out.index)
+    )
+    arch = (
+        out[archetype_col].astype(str)
+        if archetype_col in out.columns
+        else pd.Series("", index=out.index)
+    )
     arch = _apply_archetype_aliases(arch, artifact)
     ts = _timestamp_series(out)
     for effect in effects:
@@ -340,15 +433,16 @@ def apply_regime_ev_calibration(
             "gam_pickle",
             "ebm_pickle",
             "spline_pickle",
+            "lgbm_shallow_pickle",
         }:
             mask = _effect_match_mask(effect, out.index, side, arch, ts, artifact)
             if not bool(mask.any()):
                 continue
             eff = _apply_pickled_model(out.loc[mask], effect, artifact)
             risk.loc[mask] = risk.loc[mask].add(eff.astype("float32"), fill_value=0.0)
-            count.loc[mask] = (
-                count.loc[mask] + eff.ne(0.0).astype("int16")
-            ).astype("int16")
+            count.loc[mask] = (count.loc[mask] + eff.ne(0.0).astype("int16")).astype(
+                "int16"
+            )
             continue
         feature_col = str(effect.get("feature_col") or "")
         if not feature_col or feature_col not in out.columns:
@@ -357,14 +451,20 @@ def apply_regime_ev_calibration(
         if not bool(mask.any()):
             continue
         values = _as_numeric(out[feature_col], out.index)
-        eff = _apply_shape(values.loc[mask], str(effect.get("shape") or "flat"), effect.get("params") or {})
+        eff = _apply_shape(
+            values.loc[mask],
+            str(effect.get("shape") or "flat"),
+            effect.get("params") or {},
+        )
         risk.loc[mask] = risk.loc[mask].add(eff.astype("float32"), fill_value=0.0)
-        count.loc[mask] = (count.loc[mask] + eff.ne(0.0).astype("int16")).astype("int16")
+        count.loc[mask] = (count.loc[mask] + eff.ne(0.0).astype("int16")).astype(
+            "int16"
+        )
     risk = risk.clip(-risk_cap_negative, risk_cap_positive).astype("float32")
     raw = pd.to_numeric(out[source_col], errors="coerce")
     out[risk_col] = risk
     out[count_col] = count
-    out[adjusted_col] = (raw - risk).clip(0.0, 1.0).astype("float32")
+    out[adjusted_col] = _apply_score_adjustment(raw, risk, artifact)
     out["regime_ev_calibration_source_score_col"] = source_col
     out["regime_ev_calibration_source"] = str(
         artifact.get("policy_id")

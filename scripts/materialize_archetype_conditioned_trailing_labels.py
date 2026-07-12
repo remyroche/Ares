@@ -15,7 +15,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -40,21 +39,21 @@ from scripts.run_label_first_touch_capture_proxy import (  # noqa: E402
 from scripts.run_label_quality_proxy_diagnostics import (  # noqa: E402
     DEFAULT_FEATURE_DIR,
     DEFAULT_FEATURE_LIST_CSV,
-    ROUND_TRIP_COST,
     _json_safe,
     _load_feature_store_columns,
     _read_feature_list,
+    _sigmoid,  # noqa: E402
 )
-from scripts.run_label_quality_proxy_diagnostics import _sigmoid  # noqa: E402
 from scripts.run_label_widestop_capture_proxy import CaptureArm  # noqa: E402
-
 
 DEFAULT_SOURCE_LABELS_DIR = Path(
     "data_perp/artifacts/"
     "20260702_184500_single_head_monthly_walkforward_bidirectional_sideaware_policy_net_economic_target_labels/"
     "labels"
 )
-DEFAULT_OUTPUT_RUN_ID = "20260705_s59_full_long_family_conditioned_trailing_cost100bps_labels"
+DEFAULT_OUTPUT_RUN_ID = (
+    "20260705_s59_full_long_family_conditioned_trailing_cost100bps_labels"
+)
 DEFAULT_REGIME_FAMILY_MIN_SCORE = 0.55
 DEFAULT_REGIME_FAMILY_MIN_SCORE_GAP = 0.03
 
@@ -67,7 +66,9 @@ def _safe_numeric_series(values: Any, index: pd.Index) -> pd.Series:
     return pd.to_numeric(pd.Series(values, index=index), errors="coerce")
 
 
-def _add_long_path_label_columns(out: pd.DataFrame, capture: pd.DataFrame, side: str) -> pd.DataFrame:
+def _add_long_path_label_columns(
+    out: pd.DataFrame, capture: pd.DataFrame, side: str
+) -> pd.DataFrame:
     """Add explicit long-side path-quality labels derived from label outcomes only.
 
     These are not model features.  They make the long-side failure mode visible
@@ -80,10 +81,14 @@ def _add_long_path_label_columns(out: pd.DataFrame, capture: pd.DataFrame, side:
     capture_net = _safe_numeric_series(capture.get("capture_net"), index)
     gross = _safe_numeric_series(capture.get("capture_gross"), index)
     if gross.isna().all():
-        gross = capture_net + _safe_numeric_series(capture.get("round_trip_cost"), index).fillna(0.0)
+        gross = capture_net + _safe_numeric_series(
+            capture.get("round_trip_cost"), index
+        ).fillna(0.0)
     executable_margin = _safe_numeric_series(capture.get("executable_margin"), index)
     if executable_margin.isna().all():
-        executable_margin = gross - _safe_numeric_series(capture.get("executable_cost_floor"), index).fillna(0.0)
+        executable_margin = gross - _safe_numeric_series(
+            capture.get("executable_cost_floor"), index
+        ).fillna(0.0)
 
     full_mae = _safe_numeric_series(capture.get("full_path_mae_norm"), index)
     first_mae = _safe_numeric_series(capture.get("first_touch_mae_norm"), index)
@@ -92,18 +97,30 @@ def _add_long_path_label_columns(out: pd.DataFrame, capture: pd.DataFrame, side:
     bars_to_mfe_075 = _safe_numeric_series(capture.get("bars_to_mfe_075r"), index)
     bars_to_mfe_1 = _safe_numeric_series(capture.get("bars_to_mfe_1r"), index)
     activation_bar = _safe_numeric_series(capture.get("trailing_activation_bar"), index)
-    trailing_activated = _safe_numeric_series(capture.get("trailing_activated"), index).fillna(0.0)
+    trailing_activated = _safe_numeric_series(
+        capture.get("trailing_activated"), index
+    ).fillna(0.0)
     hit = _safe_numeric_series(capture.get("capture_hit"), index).fillna(0.0)
     timeout = _safe_numeric_series(capture.get("capture_timeout"), index).fillna(0.0)
     stop = _safe_numeric_series(capture.get("capture_stop"), index).fillna(0.0)
-    mae_before_mfe = _safe_numeric_series(capture.get("mae_1r_before_mfe_1r"), index).fillna(0.0)
-    mfe_before_mae = _safe_numeric_series(capture.get("mfe_1r_before_mae_1r"), index).fillna(0.0)
-    underwater_bars = _safe_numeric_series(capture.get("underwater_bars_before_mfe_1r"), index)
-    underwater_fraction = _safe_numeric_series(capture.get("underwater_fraction_before_mfe_1r"), index)
+    mae_before_mfe = _safe_numeric_series(
+        capture.get("mae_1r_before_mfe_1r"), index
+    ).fillna(0.0)
+    mfe_before_mae = _safe_numeric_series(
+        capture.get("mfe_1r_before_mae_1r"), index
+    ).fillna(0.0)
+    underwater_bars = _safe_numeric_series(
+        capture.get("underwater_bars_before_mfe_1r"), index
+    )
+    underwater_fraction = _safe_numeric_series(
+        capture.get("underwater_fraction_before_mfe_1r"), index
+    )
 
     post_mfe_drawdown = (full_mae - first_mae).clip(lower=0.0)
     time_to_profit = bars_to_mfe_1.where(bars_to_mfe_1.notna(), bars_to_mfe_075)
-    trailing_success = trailing_activated.gt(0.5) & hit.gt(0.5) & executable_margin.gt(0.0)
+    trailing_success = (
+        trailing_activated.gt(0.5) & hit.gt(0.5) & executable_margin.gt(0.0)
+    )
     slow_profit = time_to_profit.gt(16.0) | activation_bar.gt(16.0)
     full_bad = full_mae.ge(1.0)
     post_mfe_bad = post_mfe_drawdown.ge(0.50)
@@ -137,24 +154,36 @@ def _add_long_path_label_columns(out: pd.DataFrame, capture: pd.DataFrame, side:
         - 0.08 * mae_before_mfe.clip(0.0, 1.0)
     ).clip(0.0, 1.0)
     long_mask = np.full(len(out), bool(is_long), dtype=bool)
-    out["__long_path_full_bad_mae_1r__"] = np.where(long_mask, full_bad.fillna(False).astype(float), np.nan).astype(
-        np.float32
-    )
-    out["__long_path_time_to_profit_bars__"] = np.where(long_mask, time_to_profit, np.nan).astype(np.float32)
-    out["__long_path_slow_profit__"] = np.where(long_mask, slow_profit.fillna(False).astype(float), np.nan).astype(
-        np.float32
-    )
-    out["__long_path_post_mfe_drawdown_norm__"] = np.where(long_mask, post_mfe_drawdown, np.nan).astype(np.float32)
+    out["__long_path_full_bad_mae_1r__"] = np.where(
+        long_mask, full_bad.fillna(False).astype(float), np.nan
+    ).astype(np.float32)
+    out["__long_path_time_to_profit_bars__"] = np.where(
+        long_mask, time_to_profit, np.nan
+    ).astype(np.float32)
+    out["__long_path_slow_profit__"] = np.where(
+        long_mask, slow_profit.fillna(False).astype(float), np.nan
+    ).astype(np.float32)
+    out["__long_path_post_mfe_drawdown_norm__"] = np.where(
+        long_mask, post_mfe_drawdown, np.nan
+    ).astype(np.float32)
     out["__long_path_post_mfe_bad_drawdown__"] = np.where(
         long_mask, post_mfe_bad.fillna(False).astype(float), np.nan
     ).astype(np.float32)
-    out["__long_trailing_activated__"] = np.where(long_mask, trailing_activated, np.nan).astype(np.float32)
-    out["__long_trailing_success__"] = np.where(long_mask, trailing_success.astype(float), np.nan).astype(np.float32)
-    out["__long_path_clean_exec_label__"] = np.where(long_mask, clean.astype(float), np.nan).astype(np.float32)
-    out["__long_path_dirty_positive_label__"] = np.where(long_mask, dirty_positive.astype(float), np.nan).astype(
-        np.float32
-    )
-    out["__long_path_quality_soft__"] = np.where(long_mask, quality_soft, np.nan).astype(np.float32)
+    out["__long_trailing_activated__"] = np.where(
+        long_mask, trailing_activated, np.nan
+    ).astype(np.float32)
+    out["__long_trailing_success__"] = np.where(
+        long_mask, trailing_success.astype(float), np.nan
+    ).astype(np.float32)
+    out["__long_path_clean_exec_label__"] = np.where(
+        long_mask, clean.astype(float), np.nan
+    ).astype(np.float32)
+    out["__long_path_dirty_positive_label__"] = np.where(
+        long_mask, dirty_positive.astype(float), np.nan
+    ).astype(np.float32)
+    out["__long_path_quality_soft__"] = np.where(
+        long_mask, quality_soft, np.nan
+    ).astype(np.float32)
     out["__path_full_bad_mae_1r__"] = full_bad.fillna(False).astype(np.float32)
     out["__path_time_to_profit_bars__"] = time_to_profit.astype(np.float32)
     out["__path_post_mfe_drawdown_norm__"] = post_mfe_drawdown.astype(np.float32)
@@ -289,11 +318,16 @@ def _load_policy_manifest(path: Path | None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _policy_for(manifest: dict[str, Any], *, side: str, archetype: str) -> dict[str, Any]:
+def _policy_for(
+    manifest: dict[str, Any], *, side: str, archetype: str
+) -> dict[str, Any]:
     side_key = str(side).strip().lower()
     family = str(archetype).strip()
     for row in manifest.get("overrides", []) or []:
-        if str(row.get("side", "")).strip().lower() == side_key and str(row.get("archetype", "")).strip() == family:
+        if (
+            str(row.get("side", "")).strip().lower() == side_key
+            and str(row.get("archetype", "")).strip() == family
+        ):
             return dict(row)
     defaults = manifest.get("default", {}) or {}
     if side_key not in defaults:
@@ -328,15 +362,36 @@ def _copy_capture_columns(
     for col in _source_copy_columns(out):
         out[f"__source{col}"] = out[col].to_numpy(copy=False)
 
-    capture_net = pd.to_numeric(capture["capture_net"], errors="coerce").to_numpy(dtype=np.float32)
+    capture_net = pd.to_numeric(capture["capture_net"], errors="coerce").to_numpy(
+        dtype=np.float32
+    )
     policy_soft = _sigmoid(
-        (np.nan_to_num(capture_net, nan=float(policy_label_center)) - float(policy_label_center))
+        (
+            np.nan_to_num(capture_net, nan=float(policy_label_center))
+            - float(policy_label_center)
+        )
         / max(float(policy_label_temperature), 1e-12)
     ).astype(np.float32)
-    hit = pd.to_numeric(capture["capture_hit"], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32)
-    stop = pd.to_numeric(capture["capture_stop"], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32)
-    timeout = pd.to_numeric(capture["capture_timeout"], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32)
-    eligible = pd.to_numeric(capture["capture_eligible"], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32)
+    hit = (
+        pd.to_numeric(capture["capture_hit"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+    stop = (
+        pd.to_numeric(capture["capture_stop"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+    timeout = (
+        pd.to_numeric(capture["capture_timeout"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+    eligible = (
+        pd.to_numeric(capture["capture_eligible"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
 
     label_code = np.full(len(out), OUT_SL, dtype=np.int8)
     label_code[timeout > 0.5] = OUT_TO
@@ -347,29 +402,41 @@ def _copy_capture_columns(
     out["__y_bin__"] = hit.astype(np.float32)
     out["__y_ret__"] = capture_net
     out["__is_timeout__"] = timeout.astype(np.float32)
-    out["__tp__"] = pd.to_numeric(capture["effective_tp_abs"], errors="coerce").to_numpy(dtype=np.float32)
-    out["__sl__"] = pd.to_numeric(capture["effective_sl_abs"], errors="coerce").to_numpy(dtype=np.float32)
+    out["__tp__"] = pd.to_numeric(
+        capture["effective_tp_abs"], errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    out["__sl__"] = pd.to_numeric(
+        capture["effective_sl_abs"], errors="coerce"
+    ).to_numpy(dtype=np.float32)
     out["__u_policy_net__"] = capture_net
     out["__r_policy_net__"] = capture_net
 
-    out["__first_touch_target_soft__"] = pd.to_numeric(capture["target_soft"], errors="coerce").to_numpy(
-        dtype=np.float32
-    )
+    out["__first_touch_target_soft__"] = pd.to_numeric(
+        capture["target_soft"], errors="coerce"
+    ).to_numpy(dtype=np.float32)
     out["__first_touch_policy_soft__"] = policy_soft
     out["__first_touch_capture_net__"] = capture_net
-    out["__first_touch_round_trip_cost__"] = np.full(len(out), float(round_trip_cost), dtype=np.float32)
+    out["__first_touch_round_trip_cost__"] = np.full(
+        len(out), float(round_trip_cost), dtype=np.float32
+    )
     out["__first_touch_hit__"] = hit.astype(np.float32)
     out["__first_touch_stop__"] = stop.astype(np.float32)
     out["__first_touch_timeout__"] = timeout.astype(np.float32)
     out["__first_touch_eligible__"] = eligible.astype(np.float32)
-    out["__first_touch_valid_path__"] = pd.to_numeric(
-        capture["capture_valid_path"], errors="coerce"
-    ).fillna(0.0).to_numpy(dtype=np.float32)
+    out["__first_touch_valid_path__"] = (
+        pd.to_numeric(capture["capture_valid_path"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
     out["__first_touch_net_positive__"] = (capture_net > 0.0).astype(np.float32)
-    out["__first_touch_bar__"] = pd.to_numeric(capture["first_touch_bar"], errors="coerce").to_numpy(dtype=np.float32)
-    out["__first_touch_same_bar_both__"] = pd.to_numeric(
-        capture["same_bar_both_hit"], errors="coerce"
-    ).fillna(0.0).to_numpy(dtype=np.float32)
+    out["__first_touch_bar__"] = pd.to_numeric(
+        capture["first_touch_bar"], errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    out["__first_touch_same_bar_both__"] = (
+        pd.to_numeric(capture["same_bar_both_hit"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
     out["__first_touch_effective_tp_abs__"] = out["__tp__"]
     out["__first_touch_effective_sl_abs__"] = out["__sl__"]
     if "effective_trail_abs" in capture.columns:
@@ -377,9 +444,11 @@ def _copy_capture_columns(
             capture["effective_trail_abs"], errors="coerce"
         ).to_numpy(dtype=np.float32)
     if "trailing_activated" in capture.columns:
-        out["__trailing_profit_activated__"] = pd.to_numeric(
-            capture["trailing_activated"], errors="coerce"
-        ).fillna(0.0).to_numpy(dtype=np.float32)
+        out["__trailing_profit_activated__"] = (
+            pd.to_numeric(capture["trailing_activated"], errors="coerce")
+            .fillna(0.0)
+            .to_numpy(dtype=np.float32)
+        )
     if "trailing_activation_bar" in capture.columns:
         out["__trailing_profit_activation_bar__"] = pd.to_numeric(
             capture["trailing_activation_bar"], errors="coerce"
@@ -396,7 +465,9 @@ def _copy_capture_columns(
         ("full_path_mfe_norm", "__first_touch_full_path_mfe_norm__"),
     ):
         if source_col in capture.columns:
-            out[output_col] = pd.to_numeric(capture[source_col], errors="coerce").to_numpy(dtype=np.float32)
+            out[output_col] = pd.to_numeric(
+                capture[source_col], errors="coerce"
+            ).to_numpy(dtype=np.float32)
 
     for col in (
         "bars_to_mfe_05r",
@@ -420,7 +491,9 @@ def _copy_capture_columns(
         "area_underwater_before_mfe_1r",
     ):
         if col in capture.columns:
-            out[f"__{col}__"] = pd.to_numeric(capture[col], errors="coerce").to_numpy(dtype=np.float32)
+            out[f"__{col}__"] = pd.to_numeric(capture[col], errors="coerce").to_numpy(
+                dtype=np.float32
+            )
 
     out = add_side_contract_columns(
         out,
@@ -483,7 +556,9 @@ def _conditioned_capture(
         )
         for key, policy in policy_by_key.items()
     }
-    capture = pd.DataFrame(index=df.index, columns=next(iter(captures_by_key.values())).columns)
+    capture = pd.DataFrame(
+        index=df.index, columns=next(iter(captures_by_key.values())).columns
+    )
     policy_key = pd.Series("", index=df.index, dtype=object)
     role = pd.Series("", index=df.index, dtype=object)
     confidence = pd.Series("", index=df.index, dtype=object)
@@ -520,18 +595,28 @@ def _conditioned_capture(
     return capture, pd.DataFrame(assignment_rows)
 
 
-def _dataset_chunk_windows(source_path: Path, chunk_frequency: str) -> list[tuple[str, str, str]]:
+def _dataset_chunk_windows(
+    source_path: Path, chunk_frequency: str
+) -> list[tuple[str, str, str]]:
     mode = str(chunk_frequency or "none").strip().lower()
     if mode in {"", "none"}:
         return [("", "", "")]
     if mode != "monthly":
         raise ValueError(f"Unsupported chunk frequency: {chunk_frequency!r}")
-    ts = pd.to_datetime(pd.read_parquet(source_path, columns=["__ts__"])["__ts__"], utc=True, errors="coerce")
+    ts = pd.to_datetime(
+        pd.read_parquet(source_path, columns=["__ts__"])["__ts__"],
+        utc=True,
+        errors="coerce",
+    )
     ts = ts.dropna()
     if ts.empty:
-        raise RuntimeError(f"{source_path}: cannot build monthly chunks; __ts__ is empty or invalid")
+        raise RuntimeError(
+            f"{source_path}: cannot build monthly chunks; __ts__ is empty or invalid"
+        )
     start_month = ts.min().to_period("M").to_timestamp(how="start").tz_localize("UTC")
-    end_month = (ts.max().to_period("M") + 1).to_timestamp(how="start").tz_localize("UTC")
+    end_month = (
+        (ts.max().to_period("M") + 1).to_timestamp(how="start").tz_localize("UTC")
+    )
     starts = pd.date_range(start_month, end_month, freq="MS", inclusive="left")
     out: list[tuple[str, str, str]] = []
     for start in starts:
@@ -595,7 +680,9 @@ def _materialize_dataset(
                 f"{source_path}: no rows after timestamp filter start_ts={start_ts!r} end_ts={end_ts!r}"
             )
 
-    selected_features = _read_feature_list(feature_list_csv, max_features=max_feature_store_features)
+    selected_features = _read_feature_list(
+        feature_list_csv, max_features=max_feature_store_features
+    )
     feature_matrix, feature_report = _load_feature_store_columns(
         df,
         feature_dir=feature_dir,
@@ -605,7 +692,12 @@ def _materialize_dataset(
         new_cols = [col for col in feature_matrix.columns if col not in df.columns]
         if new_cols:
             df = pd.concat(
-                [df, feature_matrix.loc[:, new_cols].reset_index(drop=True).astype(np.float32, copy=False)],
+                [
+                    df,
+                    feature_matrix.loc[:, new_cols]
+                    .reset_index(drop=True)
+                    .astype(np.float32, copy=False),
+                ],
                 axis=1,
                 copy=False,
             )
@@ -665,20 +757,34 @@ def _materialize_dataset(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(output_path, index=False)
 
-    capture_net = pd.to_numeric(capture["capture_net"], errors="coerce").to_numpy(dtype=np.float32)
+    capture_net = pd.to_numeric(capture["capture_net"], errors="coerce").to_numpy(
+        dtype=np.float32
+    )
     finite = np.isfinite(capture_net)
     hit = pd.to_numeric(capture["capture_hit"], errors="coerce").fillna(0.0)
     stop = pd.to_numeric(capture["capture_stop"], errors="coerce").fillna(0.0)
     timeout = pd.to_numeric(capture["capture_timeout"], errors="coerce").fillna(0.0)
     eligible = pd.to_numeric(capture["capture_eligible"], errors="coerce").fillna(0.0)
     bad_mae = pd.to_numeric(capture["mae_to_sl"], errors="coerce").ge(1.0)
-    full_bad_mae = _safe_numeric_series(capture.get("full_path_mae_norm"), capture.index).ge(1.0)
-    long_clean = pd.to_numeric(out.get("__long_path_clean_exec_label__"), errors="coerce")
-    long_dirty = pd.to_numeric(out.get("__long_path_dirty_positive_label__"), errors="coerce")
-    long_post_mfe = pd.to_numeric(out.get("__long_path_post_mfe_drawdown_norm__"), errors="coerce")
-    long_time_to_profit = pd.to_numeric(out.get("__long_path_time_to_profit_bars__"), errors="coerce")
+    full_bad_mae = _safe_numeric_series(
+        capture.get("full_path_mae_norm"), capture.index
+    ).ge(1.0)
+    long_clean = pd.to_numeric(
+        out.get("__long_path_clean_exec_label__"), errors="coerce"
+    )
+    long_dirty = pd.to_numeric(
+        out.get("__long_path_dirty_positive_label__"), errors="coerce"
+    )
+    long_post_mfe = pd.to_numeric(
+        out.get("__long_path_post_mfe_drawdown_norm__"), errors="coerce"
+    )
+    long_time_to_profit = pd.to_numeric(
+        out.get("__long_path_time_to_profit_bars__"), errors="coerce"
+    )
     side_family_rows: list[dict[str, Any]] = []
-    for (fam, pkey), idx in out.groupby(["__archetype_label_family__", "__archetype_policy_key__"]).indices.items():
+    for (fam, pkey), idx in out.groupby(
+        ["__archetype_label_family__", "__archetype_policy_key__"]
+    ).indices.items():
         pos = np.asarray(idx, dtype=np.int64)
         net = pd.Series(capture_net[pos])
         side_family_rows.append(
@@ -689,26 +795,38 @@ def _materialize_dataset(
                 "policy_key": str(pkey),
                 "rows": int(len(pos)),
                 "symbols": int(out.iloc[pos]["__symbol__"].nunique(dropna=True)),
-                "capture_net_mean": float(net.mean()) if len(net.dropna()) else float("nan"),
-                "capture_net_q10": float(net.quantile(0.10)) if len(net.dropna()) else float("nan"),
+                "capture_net_mean": float(net.mean())
+                if len(net.dropna())
+                else float("nan"),
+                "capture_net_q10": float(net.quantile(0.10))
+                if len(net.dropna())
+                else float("nan"),
                 "hit_rate": _safe_rate(hit.iloc[pos]),
                 "stop_rate": _safe_rate(stop.iloc[pos]),
                 "timeout_rate": _safe_rate(timeout.iloc[pos]),
                 "bad_mae_to_sl_rate": _safe_rate(bad_mae.iloc[pos]),
                 "full_path_bad_mae_1r_rate": _safe_rate(full_bad_mae.iloc[pos]),
-                "long_path_clean_exec_rate": _safe_rate(long_clean.iloc[pos]) if str(side) == "long" else float("nan"),
+                "long_path_clean_exec_rate": _safe_rate(long_clean.iloc[pos])
+                if str(side) == "long"
+                else float("nan"),
                 "long_path_dirty_positive_rate": _safe_rate(long_dirty.iloc[pos])
                 if str(side) == "long"
                 else float("nan"),
-                "long_path_mean_post_mfe_drawdown_norm": float(long_post_mfe.iloc[pos].mean())
+                "long_path_mean_post_mfe_drawdown_norm": float(
+                    long_post_mfe.iloc[pos].mean()
+                )
                 if str(side) == "long" and long_post_mfe.iloc[pos].notna().any()
                 else float("nan"),
-                "long_path_mean_time_to_profit_bars": float(long_time_to_profit.iloc[pos].mean())
+                "long_path_mean_time_to_profit_bars": float(
+                    long_time_to_profit.iloc[pos].mean()
+                )
                 if str(side) == "long" and long_time_to_profit.iloc[pos].notna().any()
                 else float("nan"),
                 "eligible_rate": _safe_rate(eligible.iloc[pos]),
                 "net_positive_rate": _safe_rate(net > 0.0),
-                "policy_soft_mean": float(np.mean(policy_soft[pos])) if len(pos) else float("nan"),
+                "policy_soft_mean": float(np.mean(policy_soft[pos]))
+                if len(pos)
+                else float("nan"),
             }
         )
 
@@ -725,17 +843,29 @@ def _materialize_dataset(
         "rows": int(len(out)),
         "finite": int(np.sum(finite)),
         "finite_frac": float(np.mean(finite)) if len(finite) else 0.0,
-        "capture_net_mean": float(np.nanmean(capture_net)) if np.any(finite) else float("nan"),
-        "capture_net_std": float(np.nanstd(capture_net)) if np.any(finite) else float("nan"),
-        "capture_net_p10": float(np.nanpercentile(capture_net, 10)) if np.any(finite) else float("nan"),
-        "capture_net_p90": float(np.nanpercentile(capture_net, 90)) if np.any(finite) else float("nan"),
+        "capture_net_mean": float(np.nanmean(capture_net))
+        if np.any(finite)
+        else float("nan"),
+        "capture_net_std": float(np.nanstd(capture_net))
+        if np.any(finite)
+        else float("nan"),
+        "capture_net_p10": float(np.nanpercentile(capture_net, 10))
+        if np.any(finite)
+        else float("nan"),
+        "capture_net_p90": float(np.nanpercentile(capture_net, 90))
+        if np.any(finite)
+        else float("nan"),
         "hit_rate": _safe_rate(hit),
         "stop_rate": _safe_rate(stop),
         "timeout_rate": _safe_rate(timeout),
         "bad_mae_to_sl_rate": _safe_rate(bad_mae),
         "full_path_bad_mae_1r_rate": _safe_rate(full_bad_mae),
-        "long_path_clean_exec_rate": _safe_rate(long_clean) if str(side) == "long" else float("nan"),
-        "long_path_dirty_positive_rate": _safe_rate(long_dirty) if str(side) == "long" else float("nan"),
+        "long_path_clean_exec_rate": _safe_rate(long_clean)
+        if str(side) == "long"
+        else float("nan"),
+        "long_path_dirty_positive_rate": _safe_rate(long_dirty)
+        if str(side) == "long"
+        else float("nan"),
         "long_path_mean_post_mfe_drawdown_norm": float(long_post_mfe.mean())
         if str(side) == "long" and long_post_mfe.notna().any()
         else float("nan"),
@@ -744,11 +874,21 @@ def _materialize_dataset(
         else float("nan"),
         "eligible_rate": _safe_rate(eligible),
         "net_positive_rate": _safe_rate(capture_net > 0.0),
-        "policy_soft_mean": float(np.mean(policy_soft)) if len(policy_soft) else float("nan"),
-        "policy_soft_std": float(np.std(policy_soft)) if len(policy_soft) else float("nan"),
-        "effective_tp_abs_p90": _safe_quantile(out["__first_touch_effective_tp_abs__"], 0.90),
-        "effective_sl_abs_p90": _safe_quantile(out["__first_touch_effective_sl_abs__"], 0.90),
-        "effective_trail_abs_p90": _safe_quantile(out.get("__first_touch_effective_trail_abs__"), 0.90)
+        "policy_soft_mean": float(np.mean(policy_soft))
+        if len(policy_soft)
+        else float("nan"),
+        "policy_soft_std": float(np.std(policy_soft))
+        if len(policy_soft)
+        else float("nan"),
+        "effective_tp_abs_p90": _safe_quantile(
+            out["__first_touch_effective_tp_abs__"], 0.90
+        ),
+        "effective_sl_abs_p90": _safe_quantile(
+            out["__first_touch_effective_sl_abs__"], 0.90
+        ),
+        "effective_trail_abs_p90": _safe_quantile(
+            out.get("__first_touch_effective_trail_abs__"), 0.90
+        )
         if "__first_touch_effective_trail_abs__" in out.columns
         else float("nan"),
         "trailing_activated_rate": _safe_rate(out["__trailing_profit_activated__"])
@@ -788,18 +928,28 @@ def run_materialization(
     regime_family_min_score: float,
     regime_family_min_score_gap: float,
     chunk_frequency: str,
+    chunk_months: set[str] | None,
     dataset_regex: str | None,
     resume: bool,
     overwrite: bool,
 ) -> dict[str, Any]:
     if str(market_mode).strip().lower() == "perps":
         os.environ.setdefault("EPM_SIMPLE_POLICY_15M_CHART_ONLY", "1")
-    if output_labels_dir.exists() and any(output_labels_dir.iterdir()) and not overwrite and not resume:
-        raise FileExistsError(f"{output_labels_dir} already exists; pass --overwrite to replace files")
+    if (
+        output_labels_dir.exists()
+        and any(output_labels_dir.iterdir())
+        and not overwrite
+        and not resume
+    ):
+        raise FileExistsError(
+            f"{output_labels_dir} already exists; pass --overwrite to replace files"
+        )
     source_manifest = _read_manifest(source_labels_dir)
     datasets = source_manifest.get("datasets", {})
     if not isinstance(datasets, dict) or not datasets:
-        raise RuntimeError(f"No datasets found in {source_labels_dir / 'labels_manifest.json'}")
+        raise RuntimeError(
+            f"No datasets found in {source_labels_dir / 'labels_manifest.json'}"
+        )
 
     output_labels_dir.mkdir(parents=True, exist_ok=True)
     out_manifest = {
@@ -820,7 +970,9 @@ def run_materialization(
             "apply_delayed_entry": bool(apply_delayed_entry),
             "native_15m_chart_only": str(
                 os.environ.get("EPM_SIMPLE_POLICY_15M_CHART_ONLY", "")
-            ).strip().lower()
+            )
+            .strip()
+            .lower()
             not in {"0", "false", "no", "n", "off"},
             "policy_label_center": float(policy_label_center),
             "policy_label_temperature": float(policy_label_temperature),
@@ -829,6 +981,7 @@ def run_materialization(
             "regime_family_min_score": float(regime_family_min_score),
             "regime_family_min_score_gap": float(regime_family_min_score_gap),
             "chunk_frequency": str(chunk_frequency),
+            "chunk_months": sorted(chunk_months) if chunk_months else None,
             "dataset_regex": str(dataset_regex) if dataset_regex else None,
             "resume": bool(resume),
             "policy_manifest": policy_manifest,
@@ -840,14 +993,20 @@ def run_materialization(
     for dataset_name, meta in datasets.items():
         if not isinstance(meta, dict):
             continue
-        if dataset_pattern is not None and not dataset_pattern.search(str(dataset_name)):
+        if dataset_pattern is not None and not dataset_pattern.search(
+            str(dataset_name)
+        ):
             continue
         file_name = str(meta.get("file") or "")
         if not file_name or not file_name.endswith(".parquet"):
             continue
         source_path = source_labels_dir / file_name
         side = _infer_side(str(dataset_name), file_name, None)
-        for suffix, start_ts, end_ts in _dataset_chunk_windows(source_path, chunk_frequency):
+        for suffix, start_ts, end_ts in _dataset_chunk_windows(
+            source_path, chunk_frequency
+        ):
+            if chunk_months and suffix not in chunk_months:
+                continue
             chunk_dataset_name = _chunked_dataset_name(str(dataset_name), suffix)
             chunk_file_name = _chunked_file_name(file_name, suffix)
             output_path = output_labels_dir / chunk_file_name
@@ -865,8 +1024,12 @@ def run_materialization(
                 out_meta["source_dataset"] = str(dataset_name)
                 out_meta["chunk_frequency"] = str(chunk_frequency)
                 out_meta["chunk_suffix"] = str(suffix)
-                out_meta["min_ts"] = str(pd.to_datetime(existing["__ts__"], errors="coerce").min())
-                out_meta["max_ts"] = str(pd.to_datetime(existing["__ts__"], errors="coerce").max())
+                out_meta["min_ts"] = str(
+                    pd.to_datetime(existing["__ts__"], errors="coerce").min()
+                )
+                out_meta["max_ts"] = str(
+                    pd.to_datetime(existing["__ts__"], errors="coerce").max()
+                )
                 out_manifest["datasets"][chunk_dataset_name] = out_meta
                 continue
             print(
@@ -921,9 +1084,13 @@ def run_materialization(
             )
 
     if not summaries and not out_manifest["datasets"]:
-        raise RuntimeError(f"No parquet datasets were materialized from {source_labels_dir}")
+        raise RuntimeError(
+            f"No parquet datasets were materialized from {source_labels_dir}"
+        )
 
-    summary_path = output_labels_dir / "side_archetype_trailing_materialization_summary.json"
+    summary_path = (
+        output_labels_dir / "side_archetype_trailing_materialization_summary.json"
+    )
     manifest_path = output_labels_dir / "labels_manifest.json"
     policy_path = output_labels_dir / "side_archetype_label_manifest.json"
     policy_csv_path = output_labels_dir / "side_archetype_label_manifest.csv"
@@ -939,13 +1106,21 @@ def run_materialization(
     policy_rows.extend(list(policy_manifest.get("overrides", []) or []))
     pd.DataFrame(policy_rows).to_csv(policy_csv_path, index=False)
     if side_archetype_frames:
-        pd.concat(side_archetype_frames, ignore_index=True).to_csv(side_archetype_path, index=False)
+        pd.concat(side_archetype_frames, ignore_index=True).to_csv(
+            side_archetype_path, index=False
+        )
     else:
         pd.DataFrame().to_csv(side_archetype_path, index=False)
 
-    summary_path.write_text(json.dumps(_json_safe({"datasets": summaries}), indent=2), encoding="utf-8")
-    manifest_path.write_text(json.dumps(_json_safe(out_manifest), indent=2), encoding="utf-8")
-    policy_path.write_text(json.dumps(_json_safe(policy_manifest), indent=2), encoding="utf-8")
+    summary_path.write_text(
+        json.dumps(_json_safe({"datasets": summaries}), indent=2), encoding="utf-8"
+    )
+    manifest_path.write_text(
+        json.dumps(_json_safe(out_manifest), indent=2), encoding="utf-8"
+    )
+    policy_path.write_text(
+        json.dumps(_json_safe(policy_manifest), indent=2), encoding="utf-8"
+    )
     return {
         "output_labels_dir": str(output_labels_dir),
         "manifest": str(manifest_path),
@@ -959,10 +1134,14 @@ def run_materialization(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-labels-dir", type=Path, default=DEFAULT_SOURCE_LABELS_DIR)
+    parser.add_argument(
+        "--source-labels-dir", type=Path, default=DEFAULT_SOURCE_LABELS_DIR
+    )
     parser.add_argument("--data-root", type=Path, default=Path("data_perp"))
     parser.add_argument("--feature-dir", type=Path, default=DEFAULT_FEATURE_DIR)
-    parser.add_argument("--feature-list-csv", type=Path, default=DEFAULT_FEATURE_LIST_CSV)
+    parser.add_argument(
+        "--feature-list-csv", type=Path, default=DEFAULT_FEATURE_LIST_CSV
+    )
     parser.add_argument("--max-feature-store-features", type=int, default=None)
     parser.add_argument("--output-run-id", default=DEFAULT_OUTPUT_RUN_ID)
     parser.add_argument("--output-labels-dir", type=Path, default=None)
@@ -988,11 +1167,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--policy-label-center", type=float, default=0.0)
     parser.add_argument("--policy-label-temperature", type=float, default=0.004)
-    parser.add_argument("--outcome-mode", choices=("fixed_tp", "trailing_profit"), default="trailing_profit")
+    parser.add_argument(
+        "--outcome-mode",
+        choices=("fixed_tp", "trailing_profit"),
+        default="trailing_profit",
+    )
     parser.add_argument("--round-trip-cost", type=float, default=0.01)
-    parser.add_argument("--regime-family-min-score", type=float, default=DEFAULT_REGIME_FAMILY_MIN_SCORE)
-    parser.add_argument("--regime-family-min-score-gap", type=float, default=DEFAULT_REGIME_FAMILY_MIN_SCORE_GAP)
-    parser.add_argument("--chunk-frequency", choices=("none", "monthly"), default="none")
+    parser.add_argument(
+        "--regime-family-min-score", type=float, default=DEFAULT_REGIME_FAMILY_MIN_SCORE
+    )
+    parser.add_argument(
+        "--regime-family-min-score-gap",
+        type=float,
+        default=DEFAULT_REGIME_FAMILY_MIN_SCORE_GAP,
+    )
+    parser.add_argument(
+        "--chunk-frequency", choices=("none", "monthly"), default="none"
+    )
+    parser.add_argument(
+        "--chunk-months",
+        default=None,
+        help="Optional comma-separated monthly chunk filter, for example 2026-07,2026-08.",
+    )
     parser.add_argument("--dataset-regex", default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -1004,7 +1200,9 @@ def main() -> int:
     args = parse_args()
     output_labels_dir = args.output_labels_dir
     if output_labels_dir is None:
-        output_labels_dir = args.data_root / "artifacts" / str(args.output_run_id) / "labels"
+        output_labels_dir = (
+            args.data_root / "artifacts" / str(args.output_run_id) / "labels"
+        )
     result = run_materialization(
         source_labels_dir=args.source_labels_dir,
         output_labels_dir=output_labels_dir,
@@ -1026,6 +1224,14 @@ def main() -> int:
         regime_family_min_score=float(args.regime_family_min_score),
         regime_family_min_score_gap=float(args.regime_family_min_score_gap),
         chunk_frequency=str(args.chunk_frequency),
+        chunk_months=(
+            {
+                token.strip().replace("-", "_")
+                for token in str(args.chunk_months or "").split(",")
+                if token.strip()
+            }
+            or None
+        ),
         dataset_regex=args.dataset_regex,
         resume=bool(args.resume),
         overwrite=bool(args.overwrite),

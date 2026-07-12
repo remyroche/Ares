@@ -6,6 +6,12 @@ import pytest
 
 import extreme_price_movements.unsupervised_regime_learning.regime_models as regime_models_module
 from extreme_price_movements.config import CFG
+from extreme_price_movements.features import _add_regime_panel_composite_features
+from extreme_price_movements.unsupervised_regime_learning.context_features import (
+    RegimeContextFeatureConfig,
+    build_regime_context_feature_frame,
+    generate_signal_regime_interaction_features,
+)
 from extreme_price_movements.unsupervised_regime_learning.diagnostics import (
     compute_quality_report,
     select_primitive_features,
@@ -18,8 +24,20 @@ from extreme_price_movements.unsupervised_regime_learning.feature_registry impor
     FAMILY_REGIME_SPECS,
     LEVERAGE_UNWIND_FEATURES,
     LOW_PARTICIPATION_REBOUND_FEATURES,
+    MARKET_LIQUIDATION_COMPOSITE_FEATURES,
+    MARKET_LIQUIDATION_FUNDING_FEATURES,
+    MARKET_LIQUIDATION_OHLCV_FEATURES,
+    MARKET_LIQUIDATION_OI_FEATURES,
     SESSION_MICROSTRUCTURE_FEATURES,
     UNSUPERVISED_REGIME_PRIMITIVE_FEATURES,
+)
+from extreme_price_movements.unsupervised_regime_learning.lgbm_feature_filter import (
+    _LIGHTGBM_AVAILABLE,
+    RegimeFeatureLGBMFilterConfig,
+    _period_folds,
+    _time_order_and_period_codes,
+    extract_lgbm_reuse_contract,
+    select_regime_lgbm_addon_features,
 )
 from extreme_price_movements.unsupervised_regime_learning.operators import (
     fit_transform_svd_knn_features,
@@ -33,29 +51,11 @@ from extreme_price_movements.unsupervised_regime_learning.pipeline import (
     build_operator_feature_frame,
     fit_unsupervised_regime_learning_features,
 )
-from extreme_price_movements.unsupervised_regime_learning.context_features import (
-    RegimeContextFeatureConfig,
-    build_regime_context_feature_frame,
-    generate_signal_regime_interaction_features,
-    market_regime_aggregate_features,
-)
-from extreme_price_movements.unsupervised_regime_learning.lgbm_feature_filter import (
-    RegimeFeatureLGBMFilterConfig,
-    _LIGHTGBM_AVAILABLE,
-    _period_folds,
-    _time_order_and_period_codes,
-    extract_lgbm_reuse_contract,
-    select_regime_lgbm_addon_features,
-)
 from extreme_price_movements.unsupervised_regime_learning.regime_hpo import (
     DEFAULT_REGIME_HPO_SEARCH_SPACE,
     RegimeHPOConfig,
     _feature_conditional_learnability,
     run_advanced_regime_learning_hpo,
-)
-from extreme_price_movements.unsupervised_regime_learning.validation import (
-    regime_pipeline_validation_summary,
-    validate_regime_learning_artifact,
 )
 from extreme_price_movements.unsupervised_regime_learning.regime_models import (
     ADVANCED_REGIME_LEARNING_SCHEMA_VERSION,
@@ -68,17 +68,20 @@ from extreme_price_movements.unsupervised_regime_learning.regime_models import (
     _residualize_against_controls,
     _transition_duration_arrays,
     _trend_vol_matrix,
-    augment_frame_with_regime_artifact,
     fit_advanced_regime_learning,
     load_advanced_regime_learning_artifact,
     minimum_duration_smooth_by_frame,
     save_advanced_regime_learning_artifact,
 )
+from extreme_price_movements.unsupervised_regime_learning.validation import (
+    regime_pipeline_validation_summary,
+    validate_regime_learning_artifact,
+)
 from scripts.run_unsupervised_regime_learning_poc import (
-    _split_lgbm_feature_buckets,
     _load_aligned_base_oof_predictions,
     _select_base_run_by_oof_overlap,
     _select_oof_prediction_columns,
+    _split_lgbm_feature_buckets,
 )
 
 
@@ -110,25 +113,51 @@ def test_unsupervised_regime_learning_config_wires_primitives():
 
     assert "primitive_feature_keys" in cfg
     assert cfg["primitive_feature_keys"] == UNSUPERVISED_REGIME_PRIMITIVE_FEATURES
-    assert not set(BINARY_PRIMITIVE_FEATURES).intersection(cfg["primitive_feature_keys"])
+    assert not set(BINARY_PRIMITIVE_FEATURES).intersection(
+        cfg["primitive_feature_keys"]
+    )
     assert cfg["excluded_primitive_feature_keys"] == BINARY_PRIMITIVE_FEATURES
     assert "funding_mom_w" in cfg["primitive_feature_keys"]
     assert "asset_minus_mkt_oi_1d_cp_z_8_32_96" in cfg["primitive_feature_keys"]
     assert set(LEVERAGE_UNWIND_FEATURES).issubset(set(cfg["primitive_feature_keys"]))
-    assert set(LOW_PARTICIPATION_REBOUND_FEATURES).issubset(set(cfg["primitive_feature_keys"]))
-    assert set(CROSS_ASSET_DECOUPLING_FEATURES).issubset(set(cfg["primitive_feature_keys"]))
-    assert set(SESSION_MICROSTRUCTURE_FEATURES).issubset(set(cfg["primitive_feature_keys"]))
+    assert set(LOW_PARTICIPATION_REBOUND_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(CROSS_ASSET_DECOUPLING_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(SESSION_MICROSTRUCTURE_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(MARKET_LIQUIDATION_OI_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(MARKET_LIQUIDATION_FUNDING_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(MARKET_LIQUIDATION_OHLCV_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(MARKET_LIQUIDATION_COMPOSITE_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert "mkt_oi_flush_breadth_recovery_4h" in cfg["primitive_feature_keys"]
+    assert "mkt_pct_price_up_oi_down_1h" in cfg["primitive_feature_keys"]
+    assert "market_pc1_variance_share_24h" in cfg["primitive_feature_keys"]
+    assert "mkt_flush_exhaustion_score" in cfg["primitive_feature_keys"]
+    assert "price_up_oi_down_1h_rz" in CFG["MODEL_DIRECT_BASE_FEATURE_KEYS"]
+    assert "mkt_oi_flush_breadth_recovery_4h" in CFG["REGIME_ADAPTOR_FEATURE_ORDER"]
     assert len(cfg["primitive_feature_keys"]) == len(set(cfg["primitive_feature_keys"]))
     assert cfg["regime_models"]["family_regime_specs"] == FAMILY_REGIME_SPECS
     configured_family_names = {
-        str(spec["base_name"])
-        for spec in cfg["regime_models"]["family_regime_specs"]
+        str(spec["base_name"]) for spec in cfg["regime_models"]["family_regime_specs"]
     }
     assert {
         "family_leverage_unwind",
         "family_low_participation_rebound",
         "family_cross_asset_decoupling",
         "family_session_microstructure",
+        "family_liquidation_lifecycle",
     }.issubset(configured_family_names)
     assert cfg["regime_models"]["stability_bootstraps"] >= 1
     assert cfg["regime_models"]["selector_backend"] in {"lgbm", "random_forest"}
@@ -145,7 +174,9 @@ def test_unsupervised_regime_learning_config_wires_primitives():
     assert cfg["regime_models"]["model_helpfulness_incremental_auc_target"] > 0
     assert cfg["regime_models"]["model_helpfulness_min_stability_to_keep"] > 0
     assert cfg["regime_models"]["conditional_signal_learnability_weight"] >= 0.5
-    assert cfg["regime_models"]["conditional_signal_learnability_interaction_features"] > 0
+    assert (
+        cfg["regime_models"]["conditional_signal_learnability_interaction_features"] > 0
+    )
     assert cfg["regime_models"]["conditional_signal_learnability_min_score_to_keep"] > 0
     assert cfg["regime_models"]["future_structure_family_min_score_to_keep"] > 0
     assert cfg["regime_models"]["oof_failure_helpfulness_weight"] > 0
@@ -162,6 +193,30 @@ def test_unsupervised_regime_learning_config_wires_primitives():
         "lgbm_lambda_l2",
     ]:
         assert key in DEFAULT_REGIME_HPO_SEARCH_SPACE
+
+
+def test_regime_composite_fill_preserves_existing_liquidation_features():
+    idx = pd.date_range("2026-01-01", periods=8, freq="h", tz="UTC")
+    cols = pd.Index(["BTC/USD:USD", "ETH/USD:USD"])
+    original = pd.DataFrame(
+        np.linspace(0.0, 1.0, len(idx) * len(cols), dtype=np.float32).reshape(
+            len(idx), len(cols)
+        ),
+        index=idx,
+        columns=cols,
+    )
+    feats = {"liquidation_onset_score": original.copy()}
+
+    generated = _add_regime_panel_composite_features(
+        feats,
+        {"liquidation_onset_score"},
+        CFG,
+        idx,
+        cols,
+    )
+
+    assert "liquidation_onset_score" in generated
+    pd.testing.assert_frame_equal(feats["liquidation_onset_score"], original)
 
 
 def test_regime_family_resolver_supports_market_context_families():
@@ -245,7 +300,10 @@ def test_stratified_period_sample_positions_spans_time_and_symbols():
 def test_regime_minimum_duration_smoothing_respects_symbol_boundaries():
     frame = pd.DataFrame(
         {
-            "timestamp": list(pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")) * 2,
+            "timestamp": list(
+                pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+            )
+            * 2,
             "symbol": ["BTC"] * 3 + ["ETH"] * 3,
         }
     )
@@ -288,17 +346,22 @@ def test_nontriviality_trend_vol_proxy_does_not_fallback_to_arbitrary_features()
     matrix = np.arange(12, dtype=np.float32).reshape(6, 2)
     trend_vol = _trend_vol_matrix(matrix, ["flow", "liquidity_ratio"])
     labels = np.asarray([0, 0, 0, 1, 1, 1], dtype=np.int64)
-    frame = pd.DataFrame({"timestamp": pd.date_range("2026-01-01", periods=6, freq="h", tz="UTC")})
+    frame = pd.DataFrame(
+        {"timestamp": pd.date_range("2026-01-01", periods=6, freq="h", tz="UTC")}
+    )
 
     assert trend_vol.shape == (6, 0)
-    assert _cv_auc_trend_vol(
-        trend_vol,
-        labels,
-        blocks=[np.arange(0, 3, dtype=np.int64), np.arange(3, 6, dtype=np.int64)],
-        random_state=1,
-        max_features=96,
-        max_rows=100,
-    ) == 0.5
+    assert (
+        _cv_auc_trend_vol(
+            trend_vol,
+            labels,
+            blocks=[np.arange(0, 3, dtype=np.int64), np.arange(3, 6, dtype=np.int64)],
+            random_state=1,
+            max_features=96,
+            max_rows=100,
+        )
+        == 0.5
+    )
 
 
 def test_oof_failure_mode_helpfulness_scores_aligned_failures():
@@ -454,32 +517,74 @@ def test_advanced_regime_learning_builds_artifacts_and_adapter_features():
     assert not artifact.regime_labels.empty
     assert not artifact.regime_transition_features.empty
     steps_by_name = artifact.pipeline_steps.set_index("step")
-    assert steps_by_name.loc[
-        "04_autoencoder_latents",
-        "sparse_input_source",
-    ] == "05_final_regime_learning_feature_set"
-    assert steps_by_name.loc[
-        "04_autoencoder_latents",
-        "contrastive_input_source",
-    ] == "05_final_regime_learning_feature_set"
-    assert steps_by_name.loc[
-        "04_autoencoder_latents",
-        "contrastive_leaf_input_source",
-    ] == "03_leaf_and_raw_embeddings"
-    assert steps_by_name.loc[
-        "05_mixture_factor_analyzers",
-        "input_source",
-    ] == "05_final_regime_learning_feature_set"
-    assert any(col.endswith("_regime_prob_entropy") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_max") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_change_1h") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_change_4h") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_change_6h") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_change_12h") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_prob_change_24h") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_regime_transition_hazard") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_time_since_regime_change") for col in artifact.regime_transition_features.columns)
-    assert any(col.endswith("_expected_regime_duration") for col in artifact.regime_transition_features.columns)
+    assert (
+        steps_by_name.loc[
+            "04_autoencoder_latents",
+            "sparse_input_source",
+        ]
+        == "05_final_regime_learning_feature_set"
+    )
+    assert (
+        steps_by_name.loc[
+            "04_autoencoder_latents",
+            "contrastive_input_source",
+        ]
+        == "05_final_regime_learning_feature_set"
+    )
+    assert (
+        steps_by_name.loc[
+            "04_autoencoder_latents",
+            "contrastive_leaf_input_source",
+        ]
+        == "03_leaf_and_raw_embeddings"
+    )
+    assert (
+        steps_by_name.loc[
+            "05_mixture_factor_analyzers",
+            "input_source",
+        ]
+        == "05_final_regime_learning_feature_set"
+    )
+    assert any(
+        col.endswith("_regime_prob_entropy")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_max")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_change_1h")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_change_4h")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_change_6h")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_change_12h")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_prob_change_24h")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_regime_transition_hazard")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_time_since_regime_change")
+        for col in artifact.regime_transition_features.columns
+    )
+    assert any(
+        col.endswith("_expected_regime_duration")
+        for col in artifact.regime_transition_features.columns
+    )
     assert not artifact.regime_feature_importance.empty
     assert {"method", "regime", "feature", "importance", "signed_shift"}.issubset(
         artifact.regime_feature_importance.columns
@@ -499,13 +604,29 @@ def test_advanced_regime_learning_builds_artifacts_and_adapter_features():
     assert "raw_spectral_spectral" in set(artifact.regime_diagnostics["method"])
     assert "residual_structure_kmeans" in set(artifact.regime_diagnostics["method"])
     assert "regime_family" in artifact.regime_diagnostics.columns
-    assert "residual_structure" in set(artifact.regime_diagnostics["regime_family"].astype(str))
-    discovery_step = artifact.pipeline_steps.set_index("step").loc["06_regime_discovery_assessment"]
+    assert "residual_structure" in set(
+        artifact.regime_diagnostics["regime_family"].astype(str)
+    )
+    discovery_step = artifact.pipeline_steps.set_index("step").loc[
+        "06_regime_discovery_assessment"
+    ]
     assert int(discovery_step["family_candidate_method_count"]) >= 2
-    assert discovery_step["future_structure_target_status"] in {"completed", "too_few_valid_rows", "degenerate_target", "no_future_rows"}
-    assert artifact.diagnostics["training_inference_contract"]["primary_trading_horizon_hours"] == 6
+    assert discovery_step["future_structure_target_status"] in {
+        "completed",
+        "too_few_valid_rows",
+        "degenerate_target",
+        "no_future_rows",
+    }
+    assert (
+        artifact.diagnostics["training_inference_contract"][
+            "primary_trading_horizon_hours"
+        ]
+        == 6
+    )
     assert artifact.diagnostics["assessment"]["score"] == "UsefulRegimeScore"
-    spectral_diag = artifact.regime_diagnostics.set_index("method").loc["raw_spectral_spectral"]
+    spectral_diag = artifact.regime_diagnostics.set_index("method").loc[
+        "raw_spectral_spectral"
+    ]
     assert spectral_diag["assessment_cluster_method"] == "spectral"
     assessment_cols = {
         "AUC_tv",
@@ -556,10 +677,13 @@ def test_advanced_regime_learning_builds_artifacts_and_adapter_features():
         )
         strong_family_structure = bool(row.strong_family_structure)
         expected_keep = (not bool(row.is_baseline)) and (
-            float(row.UsefulRegimeScore) > float(row.baseline_score) + float(config.keep_candidate_margin)
-            and float(row.ModelHelpfulness) >= float(config.model_helpfulness_min_score_to_keep)
+            float(row.UsefulRegimeScore)
+            > float(row.baseline_score) + float(config.keep_candidate_margin)
+            and float(row.ModelHelpfulness)
+            >= float(config.model_helpfulness_min_score_to_keep)
             and (conditional_enough or strong_family_structure)
-            and float(row.stability) >= float(config.model_helpfulness_min_stability_to_keep)
+            and float(row.stability)
+            >= float(config.model_helpfulness_min_stability_to_keep)
         )
         assert bool(row.keep) is expected_keep
     assert artifact.specialist_candidate_features == []
@@ -583,7 +707,10 @@ def test_advanced_regime_learning_builds_artifacts_and_adapter_features():
         "method_total_score",
         "finite_fraction",
     }.issubset(artifact.model_regime_feature_metrics.columns)
-    assert artifact.diagnostics["model_regime_feature_count"] == artifact.model_regime_features.shape[1]
+    assert (
+        artifact.diagnostics["model_regime_feature_count"]
+        == artifact.model_regime_features.shape[1]
+    )
     contract = artifact.diagnostics["training_inference_contract"]
     assert contract["regime_model_scope"] == "pooled_across_assets"
     assert contract["row_application_scope"] == "per_asset_independent"
@@ -628,10 +755,16 @@ def test_advanced_regime_learning_artifact_round_trips(tmp_path):
     assert loaded.schema_version == artifact.schema_version
     assert loaded.selected_features == artifact.selected_features
     assert loaded.regime_labels.shape == artifact.regime_labels.shape
-    assert loaded.regime_tradability_diagnostics.shape == artifact.regime_tradability_diagnostics.shape
+    assert (
+        loaded.regime_tradability_diagnostics.shape
+        == artifact.regime_tradability_diagnostics.shape
+    )
     assert loaded.pipeline_steps.shape == artifact.pipeline_steps.shape
     assert loaded.model_regime_features.shape == artifact.model_regime_features.shape
-    assert loaded.model_regime_feature_metrics.shape == artifact.model_regime_feature_metrics.shape
+    assert (
+        loaded.model_regime_feature_metrics.shape
+        == artifact.model_regime_feature_metrics.shape
+    )
 
 
 def test_regime_hpo_runs_trials_and_persists_metrics(tmp_path):
@@ -709,7 +842,11 @@ def test_regime_hpo_runs_trials_and_persists_metrics(tmp_path):
     assert result.trials["hpo_stop_reason"].eq("completed_max_trials").all()
     assert "median_pruner_reference" in result.trials.columns
     assert "median_pruned" in result.trials.columns
-    assert result.trials.loc[result.trials["trial_id"].eq(1), "median_pruner_reference"].notna().all()
+    assert (
+        result.trials.loc[result.trials["trial_id"].eq(1), "median_pruner_reference"]
+        .notna()
+        .all()
+    )
     objective_cols = {
         "hpo_objective_mode",
         "structure_score",
@@ -765,9 +902,13 @@ def test_regime_hpo_runs_trials_and_persists_metrics(tmp_path):
     assert result.trials["hpo_score"].notna().any()
     assert not result.trial_steps.empty
     assert not result.trial_model_feature_metrics.empty
-    assert {"trials", "trial_steps", "manifest", "best_artifact", "best_manifest"}.issubset(
-        result.output_paths
-    )
+    assert {
+        "trials",
+        "trial_steps",
+        "manifest",
+        "best_artifact",
+        "best_manifest",
+    }.issubset(result.output_paths)
     for key in ["trials", "trial_steps", "manifest", "best_artifact", "best_manifest"]:
         assert pd.notna(result.output_paths[key])
         assert Path(result.output_paths[key]).exists()
@@ -834,12 +975,19 @@ def test_feature_conditional_learnability_rewards_incremental_structure():
 
 
 def test_regime_context_features_are_train_inference_deterministic():
-    frame = pd.DataFrame(
-        {
-            "timestamp": list(pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")) * 3,
-            "symbol": ["BTC"] * 4 + ["ETH"] * 4 + ["SOL"] * 4,
-        }
-    ).sort_values(["timestamp", "symbol"], kind="mergesort").reset_index(drop=True)
+    frame = (
+        pd.DataFrame(
+            {
+                "timestamp": list(
+                    pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")
+                )
+                * 3,
+                "symbol": ["BTC"] * 4 + ["ETH"] * 4 + ["SOL"] * 4,
+            }
+        )
+        .sort_values(["timestamp", "symbol"], kind="mergesort")
+        .reset_index(drop=True)
+    )
     n = len(frame)
     regime_outputs = pd.DataFrame(
         {
@@ -868,18 +1016,27 @@ def test_regime_context_features_are_train_inference_deterministic():
     )
 
     pd.testing.assert_frame_equal(train_features, inference_features)
-    assert train_diag["train_inference_parity_surface"] == "deterministic_row_level_regime_output_transform"
+    assert (
+        train_diag["train_inference_parity_surface"]
+        == "deterministic_row_level_regime_output_transform"
+    )
     assert inference_diag["output_feature_count"] == train_features.shape[1]
     assert any(col.startswith("url_asset__") for col in train_features.columns)
     assert any(col.startswith("url_xs_z__") for col in train_features.columns)
     assert any(col.startswith("url_market__") for col in train_features.columns)
     assert "url_market__mean__candidate_regime_prob_00" in train_features.columns
-    residual_cols = [col for col in train_features.columns if col.startswith("url_xs_z__")]
-    grouped = train_features[residual_cols].groupby(frame["timestamp"], sort=False).mean()
+    residual_cols = [
+        col for col in train_features.columns if col.startswith("url_xs_z__")
+    ]
+    grouped = (
+        train_features[residual_cols].groupby(frame["timestamp"], sort=False).mean()
+    )
     assert np.allclose(grouped.to_numpy(dtype=float), 0.0, atol=1e-5)
     assert "url_market__mean__candidate_regime_prob_entropy" in train_features.columns
     assert "url_market__mean__candidate_regime_prob_change_1h" in train_features.columns
-    assert "url_market__mean__candidate_regime_transition_hazard" in train_features.columns
+    assert (
+        "url_market__mean__candidate_regime_transition_hazard" in train_features.columns
+    )
     assert train_diag["groups"].get("latent_asset_context", 0) > 0
     assert train_diag["groups"].get("latent_market_context", 0) > 0
     assert train_diag["groups"].get("latent_cross_sectional_context", 0) > 0
@@ -913,18 +1070,29 @@ def test_regime_context_features_are_train_inference_deterministic():
         for col in train_features.columns
         if "ctx_portfolio_" in col and not col.startswith("url_xs_z__")
     ]
-    bounded = train_features[bounded_latent_cols + bounded_portfolio_cols].to_numpy(dtype=float)
+    bounded = train_features[bounded_latent_cols + bounded_portfolio_cols].to_numpy(
+        dtype=float
+    )
     assert np.isfinite(bounded).all()
     assert np.nanmin(bounded) >= -1e-6
     assert np.nanmax(bounded) <= 1.0 + 1e-6
-    assert train_features["url_asset__latent_defensive_no_trade_score"].max() > train_features["url_asset__latent_defensive_no_trade_score"].min()
-    assert train_features["url_asset__latent_conditional_confidence_score"].max() > train_features["url_asset__latent_conditional_confidence_score"].min()
+    assert (
+        train_features["url_asset__latent_defensive_no_trade_score"].max()
+        > train_features["url_asset__latent_defensive_no_trade_score"].min()
+    )
+    assert (
+        train_features["url_asset__latent_conditional_confidence_score"].max()
+        > train_features["url_asset__latent_conditional_confidence_score"].min()
+    )
 
 
 def test_regime_context_features_align_by_position_and_reject_wrong_lengths():
     frame = pd.DataFrame(
         {
-            "timestamp": list(pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")) * 2,
+            "timestamp": list(
+                pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+            )
+            * 2,
             "symbol": ["BTC"] * 3 + ["ETH"] * 3,
         },
         index=[10, 11, 12, 20, 21, 22],
@@ -987,9 +1155,13 @@ def test_regime_lgbm_addon_filter_reuses_contract_and_ranks_features():
     ts = pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC")
     signal = rng.normal(size=n)
     regime_good = rng.normal(size=n)
-    portfolio_budget = np.clip(0.50 + 0.35 * np.tanh(regime_good) + 0.15 * rng.normal(size=n), 0.0, 1.0)
+    portfolio_budget = np.clip(
+        0.50 + 0.35 * np.tanh(regime_good) + 0.15 * rng.normal(size=n), 0.0, 1.0
+    )
     base_oof_pred = 1.0 / (1.0 + np.exp(-signal))
-    y = ((signal > 0.0) & (portfolio_budget > np.nanmedian(portfolio_budget))).astype(int)
+    y = ((signal > 0.0) & (portfolio_budget > np.nanmedian(portfolio_budget))).astype(
+        int
+    )
     frame = pd.DataFrame(
         {
             "signal_a": signal,
@@ -1003,7 +1175,11 @@ def test_regime_lgbm_addon_filter_reuses_contract_and_ranks_features():
         {
             "train_base": {
                 "selected_features": ["signal_a", "signal_b"],
-                "best_params": {"n_estimators": 40, "learning_rate": 0.05, "max_depth": 3},
+                "best_params": {
+                    "n_estimators": 40,
+                    "learning_rate": 0.05,
+                    "max_depth": 3,
+                },
             }
         },
         stage="train_base",
@@ -1060,9 +1236,15 @@ def test_regime_lgbm_addon_filter_reuses_contract_and_ranks_features():
         "risk_budget_scaler_pass",
     ]:
         assert col in result.feature_metrics.columns
-    for col in ["signal_uplift_pair_count", "oof_failure_lift", "risk_budget_scaled_hr_lift"]:
+    for col in [
+        "signal_uplift_pair_count",
+        "oof_failure_lift",
+        "risk_budget_scaled_hr_lift",
+    ]:
         assert col in result.fold_metrics.columns
-    budget_metrics = result.feature_metrics.set_index("feature").loc["url_asset__ctx_portfolio_test_risk_budget"]
+    budget_metrics = result.feature_metrics.set_index("feature").loc[
+        "url_asset__ctx_portfolio_test_risk_budget"
+    ]
     assert budget_metrics["source"] == "context_portfolio"
     assert float(budget_metrics["risk_budget_scaler_available_rate"]) > 0.0
     assert bool(budget_metrics["risk_budget_scaler_pass"])
@@ -1109,12 +1291,16 @@ def test_signal_regime_interaction_features_are_bounded_and_deterministic():
 
 def test_poc_base_oof_selection_prefers_overlap_and_label_head(tmp_path):
     ts = pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")
-    sample = pd.DataFrame(
-        {
-            "timestamp": list(ts) * 2,
-            "symbol": ["BTC"] * 4 + ["ETH"] * 4,
-        }
-    ).sort_values(["timestamp", "symbol"], kind="mergesort").reset_index(drop=True)
+    sample = (
+        pd.DataFrame(
+            {
+                "timestamp": list(ts) * 2,
+                "symbol": ["BTC"] * 4 + ["ETH"] * 4,
+            }
+        )
+        .sort_values(["timestamp", "symbol"], kind="mergesort")
+        .reset_index(drop=True)
+    )
     label_path = tmp_path / "train_alpha_beta_5.parquet"
     data_root = tmp_path / "data"
 
@@ -1150,7 +1336,10 @@ def test_poc_base_oof_selection_prefers_overlap_and_label_head(tmp_path):
 
     assert run_id == "20260619_high_overlap"
     assert diag["selected"]["finite_coverage"] == 1.0
-    assert diag["selected"]["prediction_column_match"]["match_type"] == "label_head_and_horizon"
+    assert (
+        diag["selected"]["prediction_column_match"]["match_type"]
+        == "label_head_and_horizon"
+    )
 
     pred, pred_diag = _load_aligned_base_oof_predictions(
         data_root / "artifacts" / run_id,
@@ -1159,15 +1348,27 @@ def test_poc_base_oof_selection_prefers_overlap_and_label_head(tmp_path):
     )
     assert pred_diag["coverage"] == 1.0
     assert pred_diag["selected_prediction_columns"] == ["oof_alpha_beta_H5"]
-    assert np.allclose(pred.to_numpy(dtype=float), high["oof_alpha_beta_H5"].to_numpy(dtype=float))
+    assert np.allclose(
+        pred.to_numpy(dtype=float), high["oof_alpha_beta_H5"].to_numpy(dtype=float)
+    )
 
 
 def test_poc_lgbm_feature_buckets_separate_risk_and_exploratory():
     metrics = pd.DataFrame(
         {
             "feature": ["additive", "risk", "interaction", "rejected_risk"],
-            "source": ["probability", "probability", "signal_regime_interaction", "leaf"],
-            "context_role": ["mixed_or_weak_context", "risk_gate", "risk_gate", "risk_gate"],
+            "source": [
+                "probability",
+                "probability",
+                "signal_regime_interaction",
+                "leaf",
+            ],
+            "context_role": [
+                "mixed_or_weak_context",
+                "risk_gate",
+                "risk_gate",
+                "risk_gate",
+            ],
             "rank_score": [0.3, 0.2, 0.4, 0.9],
             "risk_gate_acceptance_score": [0.0, 0.5, 0.4, 0.1],
             "risk_gate_acceptance_pass": [False, True, True, False],

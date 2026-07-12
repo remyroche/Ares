@@ -18,7 +18,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-
 PREDICTION_NAME = "s52_train_meta_regime_handoff_smoke_predictions.parquet"
 SUMMARY_NAME = "s52_train_meta_regime_handoff_smoke_summary.csv"
 THRESHOLD_NAME = "s52_train_meta_regime_handoff_threshold_policy_summary.csv"
@@ -42,12 +41,20 @@ DELTA_METRICS = (
     "stop_or_adverse_rate",
     "mfe_before_mae_rate",
     "mae_before_mfe_rate",
+    "signed_hit_surprise_mean",
+    "signed_hit_surprise_autocorr_lag1",
+    "positive_hit_surprise_autocorr_lag1",
+    "negative_hit_surprise_autocorr_lag1",
+    "worst_day_mean_ev_after_1pct",
+    "worst_week_mean_ev_after_1pct",
+    "worst_month_mean_ev_after_1pct",
 )
 DELTA_KEY_COLUMNS = (
     "selector",
     "score_col",
     "top_frac",
     "scope",
+    "selection_basis",
     "month",
     "week_start",
     "side_name",
@@ -90,7 +97,7 @@ def _arm_name(path: Path) -> str:
 
 
 def _score_columns(frame: pd.DataFrame) -> list[str]:
-    cols = []
+    cols = ["score_base"] if "score_base" in frame.columns else []
     for col in ("score_meta_base_soft_label", "score_meta_context_hint_blend"):
         if col in frame.columns:
             cols.append(col)
@@ -102,6 +109,80 @@ def _score_columns(frame: pd.DataFrame) -> list[str]:
     return cols
 
 
+def _safe_autocorr(values: pd.Series) -> float:
+    clean = (
+        pd.to_numeric(values, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+    if len(clean) < 3:
+        return float("nan")
+    left = clean.iloc[:-1].to_numpy(dtype=np.float64)
+    right = clean.iloc[1:].to_numpy(dtype=np.float64)
+    if len(left) < 2 or float(np.std(left)) <= 1e-12 or float(np.std(right)) <= 1e-12:
+        return float("nan")
+    return float(np.corrcoef(left, right)[0, 1])
+
+
+def _selected_temporal_metrics(
+    selected: pd.DataFrame,
+    *,
+    score_col: str,
+    clean: pd.Series,
+    ev: pd.Series,
+) -> dict[str, Any]:
+    """Report realized surprise persistence on the selected OOS rows only.
+
+    The expected clean probability is the selector's own score, clipped to the
+    binary-label range. This is intentionally an evaluation statistic, not a
+    recent-performance feature or a policy input.
+    """
+    ts_col = "__ts__" if "__ts__" in selected.columns else "timestamp"
+    if ts_col not in selected.columns:
+        return {}
+    ts = pd.to_datetime(selected[ts_col], utc=True, errors="coerce")
+    score = _num(selected, score_col).clip(0.0, 1.0)
+    usable = ts.notna() & clean.notna() & score.notna() & ev.notna()
+    if int(usable.sum()) == 0:
+        return {}
+    local = pd.DataFrame(
+        {
+            "day": ts.loc[usable].dt.floor("D").dt.tz_localize(None),
+            "signed_surprise": clean.loc[usable].astype(float).to_numpy()
+            - score.loc[usable].astype(float).to_numpy(),
+            "ev": ev.loc[usable].astype(float).to_numpy(),
+        }
+    )
+    daily = local.groupby("day", observed=True, sort=True).mean(numeric_only=True)
+    weekly = (
+        local.assign(week_start=local["day"].dt.to_period("W-SUN").dt.start_time)
+        .groupby("week_start", observed=True, sort=True)["ev"]
+        .mean()
+    )
+    monthly = (
+        local.assign(month=local["day"].dt.to_period("M").astype(str))
+        .groupby("month", observed=True, sort=True)["ev"]
+        .mean()
+    )
+    signed = daily["signed_surprise"]
+    positive = signed.clip(lower=0.0)
+    negative = (-signed).clip(lower=0.0)
+    return {
+        "daily_surprise_days": int(len(daily)),
+        "signed_hit_surprise_mean": float(signed.mean()),
+        "signed_hit_surprise_autocorr_lag1": _safe_autocorr(signed),
+        "positive_hit_surprise_autocorr_lag1": _safe_autocorr(positive),
+        "negative_hit_surprise_autocorr_lag1": _safe_autocorr(negative),
+        "worst_day_mean_ev_after_1pct": float(daily["ev"].min()),
+        "worst_week_mean_ev_after_1pct": float(weekly.min())
+        if len(weekly)
+        else float("nan"),
+        "worst_month_mean_ev_after_1pct": float(monthly.min())
+        if len(monthly)
+        else float("nan"),
+    }
+
+
 def _metric_row(
     rows: pd.DataFrame,
     *,
@@ -111,6 +192,7 @@ def _metric_row(
     top_frac: float,
     scope: str,
     group_values: dict[str, Any],
+    preselected: bool = False,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "arm": arm,
@@ -118,6 +200,7 @@ def _metric_row(
         "score_col": score_col,
         "top_frac": float(top_frac),
         "scope": scope,
+        "selection_basis": "global_topk" if preselected else "within_scope_topk",
         **group_values,
     }
     out["candidate_rows"] = int(len(rows))
@@ -128,15 +211,24 @@ def _metric_row(
     if valid.empty:
         out["selected_rows"] = 0
         return out
-    n = max(1, int(math.ceil(len(valid) * float(top_frac))))
-    selected = valid.sort_values("_score", ascending=False).head(n)
+    if preselected:
+        selected = valid
+    else:
+        n = max(1, int(math.ceil(len(valid) * float(top_frac))))
+        selected = valid.sort_values("_score", ascending=False).head(n)
     out["selected_rows"] = int(len(selected))
     out["selected_share"] = float(len(selected) / len(valid))
     ts_col = "__ts__" if "__ts__" in selected.columns else "timestamp"
-    selected_ts = pd.to_datetime(selected.get(ts_col), utc=True, errors="coerce") if ts_col in selected.columns else pd.Series([], dtype="datetime64[ns]")
+    selected_ts = (
+        pd.to_datetime(selected.get(ts_col), utc=True, errors="coerce")
+        if ts_col in selected.columns
+        else pd.Series([], dtype="datetime64[ns]")
+    )
     selected_days = int(selected_ts.dt.date.nunique()) if len(selected_ts) else 0
     out["selected_days"] = selected_days
-    out["trades_per_day"] = float(len(selected) / selected_days) if selected_days > 0 else float("nan")
+    out["trades_per_day"] = (
+        float(len(selected) / selected_days) if selected_days > 0 else float("nan")
+    )
     ev = _num(selected, "ev_after_1pct")
     exec_margin = _num(selected, "exec_margin")
     clean = _num(selected, "clean_exec")
@@ -176,7 +268,9 @@ def _metric_row(
             "positive_ev_rate": float(positive_ev.mean()),
             "positive_exec_margin_rate": float(positive_exec.mean()),
             "clean_exec_precision": float(clean.mean()),
-            "ev_weighted_clean_precision": float((ev_pos_weight * clean.fillna(0.0)).sum() / weight_sum)
+            "ev_weighted_clean_precision": float(
+                (ev_pos_weight * clean.fillna(0.0)).sum() / weight_sum
+            )
             if weight_sum > 0.0
             else float("nan"),
             "dirty_positive_rate": float(dirty.mean()),
@@ -189,6 +283,9 @@ def _metric_row(
             "mean_score": float(selected["_score"].mean()),
             "min_score": float(selected["_score"].min()),
         }
+    )
+    out.update(
+        _selected_temporal_metrics(selected, score_col=score_col, clean=clean, ev=ev)
     )
     for col in (
         "long_path_clean_exec_label",
@@ -240,6 +337,54 @@ def _group_metrics(
     return pd.DataFrame(rows)
 
 
+def _global_topk_breakdown_metrics(
+    frame: pd.DataFrame,
+    *,
+    arm: str,
+    selector: str,
+    score_col: str,
+    group_specs: list[tuple[str, list[str]]],
+    min_group_rows: int,
+) -> pd.DataFrame:
+    """Decompose the actual global top-k book without locally re-ranking it."""
+    score = _num(frame, score_col)
+    valid = frame.loc[score.notna()].copy()
+    if valid.empty:
+        return pd.DataFrame()
+    valid["_score"] = score.loc[valid.index].astype(np.float32)
+    rows: list[dict[str, Any]] = []
+    for frac in TOP_FRACS:
+        n = max(1, int(math.ceil(len(valid) * float(frac))))
+        selected_global = valid.sort_values("_score", ascending=False).head(n)
+        for scope, group_cols in group_specs:
+            if not group_cols:
+                continue
+            missing = [col for col in group_cols if col not in selected_global.columns]
+            if missing:
+                continue
+            for keys, group in selected_global.groupby(
+                group_cols, dropna=False, sort=True
+            ):
+                if len(group) < int(min_group_rows):
+                    continue
+                if not isinstance(keys, tuple):
+                    keys = (keys,)
+                group_values = {col: key for col, key in zip(group_cols, keys)}
+                rows.append(
+                    _metric_row(
+                        group,
+                        arm=arm,
+                        selector=selector,
+                        score_col=score_col,
+                        top_frac=frac,
+                        scope=f"global_topk_{scope}",
+                        group_values=group_values,
+                        preselected=True,
+                    )
+                )
+    return pd.DataFrame(rows)
+
+
 def _load_arm_predictions(arm_dir: Path) -> pd.DataFrame | None:
     path = arm_dir / PREDICTION_NAME
     if path.exists():
@@ -251,10 +396,17 @@ def _load_arm_predictions(arm_dir: Path) -> pd.DataFrame | None:
             return None
         frame = pd.concat((pd.read_parquet(p) for p in shard_paths), ignore_index=True)
     if "month" not in frame.columns and "__ts__" in frame.columns:
-        frame["month"] = pd.to_datetime(frame["__ts__"], errors="coerce").dt.to_period("M").astype(str)
+        frame["month"] = (
+            pd.to_datetime(frame["__ts__"], errors="coerce")
+            .dt.to_period("M")
+            .astype(str)
+        )
     if "week_start" not in frame.columns and "__ts__" in frame.columns:
         ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
-        frame["week_start"] = ts.dt.tz_localize(None).dt.to_period("W-MON").dt.start_time.astype(str)
+        # W-SUN produces Monday-starting weeks, unlike W-MON (Tuesday start).
+        frame["week_start"] = (
+            ts.dt.tz_localize(None).dt.to_period("W-SUN").dt.start_time.astype(str)
+        )
     if "archetype_label_family" not in frame.columns:
         for col in (
             "__archetype_label_family__",
@@ -269,7 +421,10 @@ def _load_arm_predictions(arm_dir: Path) -> pd.DataFrame | None:
             if col in frame.columns:
                 frame["archetype_label_family"] = frame[col].astype(str)
                 break
-    if "archetype_policy_key" not in frame.columns and "__archetype_policy_key__" in frame.columns:
+    if (
+        "archetype_policy_key" not in frame.columns
+        and "__archetype_policy_key__" in frame.columns
+    ):
         frame["archetype_policy_key"] = frame["__archetype_policy_key__"].astype(str)
     return frame
 
@@ -281,19 +436,58 @@ def _add_baseline_deltas(metrics: pd.DataFrame) -> pd.DataFrame:
     metric_cols = [col for col in DELTA_METRICS if col in metrics.columns]
     if not key_cols or not metric_cols:
         return pd.DataFrame()
-    baseline = metrics.loc[metrics["arm"].eq(BASELINE_ARM), key_cols + metric_cols].copy()
+    baseline = metrics.loc[
+        metrics["arm"].eq(BASELINE_ARM), key_cols + metric_cols
+    ].copy()
     if baseline.empty:
         return pd.DataFrame()
     baseline = baseline.rename(columns={col: f"baseline_{col}" for col in metric_cols})
     merged = metrics.merge(baseline, on=key_cols, how="left")
     for col in metric_cols:
-        merged[f"delta_vs_{BASELINE_ARM}__{col}"] = pd.to_numeric(merged[col], errors="coerce") - pd.to_numeric(
-            merged[f"baseline_{col}"], errors="coerce"
-        )
+        merged[f"delta_vs_{BASELINE_ARM}__{col}"] = pd.to_numeric(
+            merged[col], errors="coerce"
+        ) - pd.to_numeric(merged[f"baseline_{col}"], errors="coerce")
     return merged
 
 
-def build_report(*, root_dir: Path, out_dir: Path, min_group_rows: int) -> dict[str, Any]:
+def _add_base_score_deltas(metrics: pd.DataFrame) -> pd.DataFrame:
+    """Compare every meta selector to the base score on identical OOS scopes."""
+    if metrics.empty or "selector" not in metrics.columns:
+        return pd.DataFrame()
+    metric_cols = [col for col in DELTA_METRICS if col in metrics.columns]
+    if not metric_cols:
+        return pd.DataFrame()
+    key_candidates = (
+        "arm",
+        "top_frac",
+        "scope",
+        "selection_basis",
+        "month",
+        "week_start",
+        "side_name",
+        "archetype_label_family",
+        "archetype_policy_key",
+    )
+    key_cols = [col for col in key_candidates if col in metrics.columns]
+    base = metrics.loc[
+        metrics["selector"].eq("base_score"), key_cols + metric_cols
+    ].copy()
+    if base.empty:
+        return pd.DataFrame()
+    base = base.rename(columns={col: f"base_score_{col}" for col in metric_cols})
+    compared = metrics.loc[~metrics["selector"].eq("base_score")].merge(
+        base, on=key_cols, how="left"
+    )
+    for col in metric_cols:
+        compared[f"delta_vs_base_score__{col}"] = pd.to_numeric(
+            compared[col], errors="coerce"
+        ) - pd.to_numeric(compared[f"base_score_{col}"], errors="coerce")
+    return compared
+
+
+def build_report(
+    *, root_dir: Path, out_dir: Path, min_group_rows: int
+) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     arm_dirs = sorted(
         path
@@ -315,8 +509,14 @@ def build_report(*, root_dir: Path, out_dir: Path, min_group_rows: int) -> dict[
         ("archetype_policy", ["archetype_policy_key"]),
         ("month_side", ["month", "side_name"]),
         ("side_archetype_family", ["side_name", "archetype_label_family"]),
-        ("month_side_archetype_family", ["month", "side_name", "archetype_label_family"]),
-        ("week_side_archetype_family", ["week_start", "side_name", "archetype_label_family"]),
+        (
+            "month_side_archetype_family",
+            ["month", "side_name", "archetype_label_family"],
+        ),
+        (
+            "week_side_archetype_family",
+            ["week_start", "side_name", "archetype_label_family"],
+        ),
     ]
     for arm_dir in arm_dirs:
         frame = _load_arm_predictions(arm_dir)
@@ -325,24 +525,40 @@ def build_report(*, root_dir: Path, out_dir: Path, min_group_rows: int) -> dict[
         arm = _arm_name(arm_dir)
         score_cols = _score_columns(frame)
         manifest_path = arm_dir / "manifest.json"
-        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        manifest = (
+            json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        )
         arm_summary_rows.append(
             {
                 "arm": arm,
                 "arm_dir": str(arm_dir),
                 "rows": int(len(frame)),
-                "months": int(frame["month"].nunique(dropna=True)) if "month" in frame.columns else 0,
-                "sides": int(frame["side_name"].nunique(dropna=True)) if "side_name" in frame.columns else 0,
-                "archetype_families": int(frame["archetype_label_family"].nunique(dropna=True))
+                "months": int(frame["month"].nunique(dropna=True))
+                if "month" in frame.columns
+                else 0,
+                "sides": int(frame["side_name"].nunique(dropna=True))
+                if "side_name" in frame.columns
+                else 0,
+                "archetype_families": int(
+                    frame["archetype_label_family"].nunique(dropna=True)
+                )
                 if "archetype_label_family" in frame.columns
                 else 0,
                 "best_selector": (manifest.get("best_selector") or {}).get("selector"),
-                "best_status": (manifest.get("best_selector") or {}).get("meta_smoke_status"),
-                "selected_feature_union_count": manifest.get("selected_feature_union_count"),
+                "best_status": (manifest.get("best_selector") or {}).get(
+                    "meta_smoke_status"
+                ),
+                "selected_feature_union_count": manifest.get(
+                    "selected_feature_union_count"
+                ),
             }
         )
         for score_col in score_cols:
-            selector = score_col.removeprefix("score_")
+            selector = (
+                "base_score"
+                if score_col == "score_base"
+                else score_col.removeprefix("score_")
+            )
             for scope, group_cols in group_specs:
                 missing = [col for col in group_cols if col not in frame.columns]
                 if missing:
@@ -358,21 +574,39 @@ def build_report(*, root_dir: Path, out_dir: Path, min_group_rows: int) -> dict[
                 )
                 if not metrics.empty:
                     all_rows.append(metrics)
+            global_breakdown = _global_topk_breakdown_metrics(
+                frame,
+                arm=arm,
+                selector=selector,
+                score_col=score_col,
+                group_specs=group_specs,
+                min_group_rows=int(min_group_rows),
+            )
+            if not global_breakdown.empty:
+                all_rows.append(global_breakdown)
     metrics_df = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
     delta_df = _add_baseline_deltas(metrics_df)
+    base_delta_df = _add_base_score_deltas(metrics_df)
     arm_summary = pd.DataFrame(arm_summary_rows)
     metrics_path = out_dir / "train_meta_extended_pool_ablation_topk_metrics.csv"
     delta_path = out_dir / "train_meta_extended_pool_ablation_delta_vs_baseline.csv"
+    base_delta_path = (
+        out_dir / "train_meta_extended_pool_ablation_delta_vs_base_score.csv"
+    )
     summary_path = out_dir / "train_meta_extended_pool_ablation_arm_summary.csv"
     metrics_df.to_csv(metrics_path, index=False)
     delta_df.to_csv(delta_path, index=False)
+    base_delta_df.to_csv(base_delta_path, index=False)
     arm_summary.to_csv(summary_path, index=False)
     outputs: dict[str, str] = {
         "all_metrics": str(metrics_path),
         "delta_vs_baseline": str(delta_path),
+        "delta_vs_base_score": str(base_delta_path),
         "arm_summary": str(summary_path),
     }
-    for scope in sorted(metrics_df["scope"].dropna().unique()) if not metrics_df.empty else []:
+    for scope in (
+        sorted(metrics_df["scope"].dropna().unique()) if not metrics_df.empty else []
+    ):
         scoped = metrics_df.loc[metrics_df["scope"].eq(scope)].copy()
         path = out_dir / f"train_meta_extended_pool_ablation_{scope}_metrics.csv"
         scoped.to_csv(path, index=False)
@@ -387,7 +621,9 @@ def build_report(*, root_dir: Path, out_dir: Path, min_group_rows: int) -> dict[
         "min_group_rows": int(min_group_rows),
         "outputs": outputs,
     }
-    (out_dir / "manifest.json").write_text(json.dumps(_json_safe(manifest), indent=2, sort_keys=True))
+    (out_dir / "manifest.json").write_text(
+        json.dumps(_json_safe(manifest), indent=2, sort_keys=True)
+    )
     return manifest
 
 
@@ -401,8 +637,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    manifest = build_report(root_dir=args.root_dir, out_dir=args.out_dir, min_group_rows=int(args.min_group_rows))
-    print(json.dumps(_json_safe({"event": "train_meta_extended_pool_ablation_report_done", **manifest}), sort_keys=True))
+    manifest = build_report(
+        root_dir=args.root_dir,
+        out_dir=args.out_dir,
+        min_group_rows=int(args.min_group_rows),
+    )
+    print(
+        json.dumps(
+            _json_safe(
+                {"event": "train_meta_extended_pool_ablation_report_done", **manifest}
+            ),
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

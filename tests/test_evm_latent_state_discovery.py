@@ -63,11 +63,26 @@ def test_evm_state_feature_selector_keeps_only_market_context_shock_entropy() ->
     frame = _panel()
     frame["vol_range_shock"] = np.linspace(0.0, 1.0, len(frame), dtype=np.float32)
     frame["direction_entropy_20"] = np.linspace(1.0, 0.0, len(frame), dtype=np.float32)
-    frame["asset_minus_mkt_vol_range_shock"] = np.linspace(0.0, 1.0, len(frame), dtype=np.float32)
-    frame["mkt_resid_direction_entropy_20"] = np.linspace(1.0, 0.0, len(frame), dtype=np.float32)
+    frame["asset_minus_mkt_vol_range_shock"] = np.linspace(
+        0.0, 1.0, len(frame), dtype=np.float32
+    )
+    frame["mkt_resid_direction_entropy_20"] = np.linspace(
+        1.0, 0.0, len(frame), dtype=np.float32
+    )
     frame["market_shock_index"] = np.linspace(0.0, 1.0, len(frame), dtype=np.float32)
     frame["xs_entropy_dispersion"] = np.linspace(1.0, 0.0, len(frame), dtype=np.float32)
-    frame["state_spectral_eig_entropy"] = np.linspace(0.2, 0.8, len(frame), dtype=np.float32)
+    frame["state_spectral_eig_entropy"] = np.linspace(
+        0.2, 0.8, len(frame), dtype=np.float32
+    )
+    frame["liquidation_climax_score"] = np.linspace(
+        0.0, 1.0, len(frame), dtype=np.float32
+    )
+    frame["pct_assets_extreme_oi_drop_1h"] = np.linspace(
+        1.0, 0.0, len(frame), dtype=np.float32
+    )
+    frame["asset_minus_mkt_liquidation_shock"] = np.linspace(
+        0.0, 1.0, len(frame), dtype=np.float32
+    )
     selected = select_evm_state_feature_columns(
         frame,
         include_aegmm=True,
@@ -80,6 +95,9 @@ def test_evm_state_feature_selector_keeps_only_market_context_shock_entropy() ->
     assert "market_shock_index" in selected
     assert "xs_entropy_dispersion" in selected
     assert "state_spectral_eig_entropy" in selected
+    assert "liquidation_climax_score" in selected
+    assert "pct_assets_extreme_oi_drop_1h" in selected
+    assert "asset_minus_mkt_liquidation_shock" not in selected
 
 
 def test_evm_latent_state_discovery_finds_oos_favorable_high_state() -> None:

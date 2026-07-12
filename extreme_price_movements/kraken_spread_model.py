@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -18,13 +19,17 @@ from extreme_price_movements.data_store import (
     _fetch_kraken_futures_charts_ohlcv,
     _public_data_session,
     make_perp_exchange,
+    normalize_orderbook_proxy_frame,
 )
 from extreme_price_movements.utils import tprint
 
-
 KRAKEN_FUTURES_TICKERS_URL = "https://futures.kraken.com/derivatives/api/v3/tickers"
+KRAKEN_FUTURES_ORDERBOOK_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
 DEFAULT_OUTPUT_DIR = Path("data_perp/exchanges/krakenfutures/spread_model")
 DEFAULT_SNAPSHOT_OUTPUT_DIR = Path("data_perp/exchanges/krakenfutures/spread_snapshots")
+DEFAULT_ORDERBOOK_HOURLY_DIR = Path(
+    "data_perp/exchanges/krakenfutures/orderbook_hourly"
+)
 SPREAD_CANDLE_FEATURES = [
     "hl_range_bps",
     "abs_return_bps",
@@ -92,7 +97,12 @@ def _market_tradeable(market: Dict[str, Any]) -> bool:
     if status and status not in {"online", "open", "trading", "enabled"}:
         return False
     for key in ("tradeable", "tradable", "active", "isTrading"):
-        if key in info and str(info.get(key)).lower() in {"0", "false", "no", "disabled"}:
+        if key in info and str(info.get(key)).lower() in {
+            "0",
+            "false",
+            "no",
+            "disabled",
+        }:
             return False
     return True
 
@@ -115,7 +125,9 @@ def _tick_size_from_market(market: Dict[str, Any]) -> float:
             continue
         if np.isfinite(tick) and tick > 0.0:
             return float(tick)
-    precision = market.get("precision") if isinstance(market.get("precision"), dict) else {}
+    precision = (
+        market.get("precision") if isinstance(market.get("precision"), dict) else {}
+    )
     price_precision = precision.get("price")
     try:
         value = float(price_precision)
@@ -150,7 +162,9 @@ def resolve_spread_universe(
         perp_symbol = str(market.get("symbol") or "")
         if not base or not perp_symbol:
             continue
-        market_id = str(market.get("id") or (market.get("info") or {}).get("symbol") or "")
+        market_id = str(
+            market.get("id") or (market.get("info") or {}).get("symbol") or ""
+        )
         if (
             allowed
             and base not in allowed
@@ -170,7 +184,9 @@ def resolve_spread_universe(
     return out, audit
 
 
-def _item_lookup(universe: Sequence[SpreadUniverseItem]) -> Dict[str, SpreadUniverseItem]:
+def _item_lookup(
+    universe: Sequence[SpreadUniverseItem],
+) -> Dict[str, SpreadUniverseItem]:
     out: Dict[str, SpreadUniverseItem] = {}
     for item in universe:
         out[item.perp_symbol.upper()] = item
@@ -294,6 +310,236 @@ def collect_kraken_futures_ticker_spreads(
     return out.set_index("timestamp").sort_index()
 
 
+def parse_kraken_futures_orderbook_payload(
+    payload: Dict[str, Any],
+    *,
+    item: SpreadUniverseItem,
+    observed_ts: Optional[pd.Timestamp] = None,
+    levels: int = 20,
+) -> pd.DataFrame:
+    """Normalize one Kraken Futures L2 snapshot to the feature-store contract."""
+    if not isinstance(payload, dict):
+        return pd.DataFrame()
+    if str(payload.get("result", "success")).lower() not in {"success", ""}:
+        raise RuntimeError(f"Kraken Futures orderbook error: {payload}")
+    orderbook = payload.get("orderBook")
+    if not isinstance(orderbook, dict):
+        return pd.DataFrame()
+
+    observed = (
+        pd.Timestamp.now(tz="UTC") if observed_ts is None else pd.Timestamp(observed_ts)
+    )
+    observed = (
+        observed.tz_localize("UTC")
+        if observed.tzinfo is None
+        else observed.tz_convert("UTC")
+    )
+    exchange_ts = pd.to_datetime(payload.get("serverTime"), utc=True, errors="coerce")
+    if pd.isna(exchange_ts):
+        exchange_ts = observed
+    timestamp = observed.floor("min")
+    max_levels = max(1, int(levels))
+    rows: List[Dict[str, Any]] = []
+    for side_name, payload_key, reverse in (
+        ("bid", "bids", True),
+        ("ask", "asks", False),
+    ):
+        raw_levels = orderbook.get(payload_key)
+        if not isinstance(raw_levels, list):
+            continue
+        parsed: List[Tuple[float, float]] = []
+        for raw in raw_levels:
+            if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+                continue
+            try:
+                price = float(raw[0])
+                qty = float(raw[1])
+            except (TypeError, ValueError):
+                continue
+            if (
+                not np.isfinite(price)
+                or not np.isfinite(qty)
+                or price <= 0.0
+                or qty < 0.0
+            ):
+                continue
+            parsed.append((price, qty))
+        parsed.sort(key=lambda row: row[0], reverse=reverse)
+        for level, (price, qty) in enumerate(parsed[:max_levels], start=1):
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "observed_ts": observed,
+                    "exchange_timestamp": exchange_ts,
+                    "symbol": item.perp_symbol,
+                    "perp_market_id": item.perp_market_id,
+                    "base": item.base,
+                    "side": side_name,
+                    "level": int(level),
+                    "price": float(price),
+                    "qty": float(qty),
+                    "notional_price_x_qty": float(price * qty),
+                    "qty_unit": "exchange_contracts",
+                    "source": "kraken_futures_l2_snapshot",
+                }
+            )
+    if not rows:
+        return pd.DataFrame()
+    out = (
+        pd.DataFrame(rows)
+        .set_index("timestamp")
+        .sort_values(["symbol", "side", "level"], kind="mergesort")
+    )
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def fetch_kraken_futures_orderbook_snapshot(
+    *,
+    item: SpreadUniverseItem,
+    levels: int = 20,
+    session: Any = None,
+    timeout: int = 30,
+) -> pd.DataFrame:
+    session = session or _public_data_session()
+    observed_ts = pd.Timestamp.now(tz="UTC")
+    response = session.get(
+        KRAKEN_FUTURES_ORDERBOOK_URL,
+        params={"symbol": item.perp_market_id},
+        timeout=int(timeout),
+        headers={"User-Agent": _ARCHIVE_USER_AGENT},
+    )
+    response.raise_for_status()
+    return parse_kraken_futures_orderbook_payload(
+        response.json(),
+        item=item,
+        observed_ts=observed_ts,
+        levels=levels,
+    )
+
+
+def collect_kraken_futures_orderbooks(
+    *,
+    universe: Sequence[SpreadUniverseItem],
+    levels: int = 20,
+    workers: int = 8,
+    timeout: int = 30,
+    session: Any = None,
+) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+    """Collect independent public L2 books with bounded concurrent requests."""
+    session = session or _public_data_session()
+    frames: List[pd.DataFrame] = []
+    audit: List[Dict[str, Any]] = []
+
+    def fetch_one(
+        item: SpreadUniverseItem,
+    ) -> Tuple[SpreadUniverseItem, pd.DataFrame, Optional[str]]:
+        try:
+            frame = fetch_kraken_futures_orderbook_snapshot(
+                item=item,
+                levels=levels,
+                session=session,
+                timeout=timeout,
+            )
+            if frame.empty:
+                return item, frame, "empty_orderbook"
+            return item, frame, None
+        except Exception as exc:
+            return item, pd.DataFrame(), f"{exc.__class__.__name__}: {exc}"
+
+    max_workers = max(1, min(int(workers), len(universe) or 1))
+    if max_workers == 1:
+        results = [fetch_one(item) for item in universe]
+    else:
+        results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(fetch_one, item): item for item in universe}
+            for future in as_completed(futures):
+                results.append(future.result())
+
+    for item, frame, error in sorted(results, key=lambda row: row[0].perp_symbol):
+        if not frame.empty:
+            frames.append(frame)
+        audit.append(
+            {
+                "base": item.base,
+                "perp_symbol": item.perp_symbol,
+                "perp_market_id": item.perp_market_id,
+                "status": "ok" if error is None else "failed",
+                "levels_requested": int(levels),
+                "rows": int(len(frame)),
+                "error": error,
+            }
+        )
+    if not frames:
+        return pd.DataFrame(), audit
+    return pd.concat(frames, axis=0, sort=False).sort_index(), audit
+
+
+def summarize_kraken_futures_orderbooks(frame: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate raw L2 rows into the existing hourly sidecar schema."""
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    work = frame.reset_index().copy()
+    work["timestamp"] = pd.to_datetime(
+        work["timestamp"], utc=True, errors="coerce"
+    ).dt.floor("h")
+    work["observed_ts"] = pd.to_datetime(
+        work.get("observed_ts"), utc=True, errors="coerce"
+    )
+    work["price"] = pd.to_numeric(work["price"], errors="coerce")
+    work["qty"] = pd.to_numeric(work["qty"], errors="coerce")
+    work = work.dropna(subset=["timestamp", "symbol", "side", "level", "price", "qty"])
+    rows: List[Dict[str, Any]] = []
+    for (timestamp, symbol), group in work.groupby(["timestamp", "symbol"], sort=True):
+        bids = group[group["side"].astype(str).str.startswith("b")].sort_values(
+            "price", ascending=False
+        )
+        asks = group[group["side"].astype(str).str.startswith("a")].sort_values(
+            "price", ascending=True
+        )
+        if bids.empty or asks.empty:
+            continue
+        best_bid = float(bids.iloc[0]["price"])
+        best_ask = float(asks.iloc[0]["price"])
+        mid = 0.5 * (best_bid + best_ask)
+        observed = pd.to_datetime(group["observed_ts"], utc=True, errors="coerce").max()
+        rows.append(
+            {
+                "timestamp": timestamp,
+                "symbol": symbol,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "mid": mid,
+                "bid_qty_1": float(bids.iloc[0]["qty"]),
+                "ask_qty_1": float(asks.iloc[0]["qty"]),
+                "cum_bid_qty_l10": float(bids.head(10)["qty"].sum()),
+                "cum_ask_qty_l10": float(asks.head(10)["qty"].sum()),
+                "cum_bid_qty_l20": float(bids.head(20)["qty"].sum()),
+                "cum_ask_qty_l20": float(asks.head(20)["qty"].sum()),
+                "snapshot_ts": observed if pd.notna(observed) else timestamp,
+                "trade_count_1h": 0.0,
+                "buy_qty_1h": 0.0,
+                "sell_qty_1h": 0.0,
+                "notional_1h": 0.0,
+                "buy_notional_1h": 0.0,
+                "sell_notional_1h": 0.0,
+                "vwap_1h": mid,
+                "mean_trade_qty_1h": 0.0,
+                "signed_flow_imbalance_1h": 0.0,
+                "l2_bid_notional_l20": float(
+                    (bids.head(20)["price"] * bids.head(20)["qty"]).sum()
+                ),
+                "l2_ask_notional_l20": float(
+                    (asks.head(20)["price"] * asks.head(20)["qty"]).sum()
+                ),
+                "source": "kraken_futures_l2_snapshot",
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).set_index("timestamp").sort_index()
+
+
 def _seconds_until_next_hour(
     now: Optional[pd.Timestamp] = None,
     *,
@@ -386,6 +632,96 @@ def _append_history_parquet(
     return history_path, int(len(combined))
 
 
+def _safe_symbol_file_key(symbol: str) -> str:
+    return str(symbol).replace("/", "_").replace(":", "_")
+
+
+def _atomic_write_parquet(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    frame.to_parquet(tmp, compression="zstd")
+    tmp.replace(path)
+
+
+def save_orderbook_snapshot_collection(
+    frame: pd.DataFrame,
+    *,
+    output_dir: Path | str,
+    hourly_dir: Path | str = DEFAULT_ORDERBOOK_HOURLY_DIR,
+    run_id: str,
+    audit: Optional[Sequence[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Save raw L2 history and update canonical per-symbol hourly summaries."""
+    if frame is None or frame.empty:
+        return {
+            "orderbook_rows": 0,
+            "orderbook_symbols": 0,
+            "orderbook_audit": list(audit or []),
+        }
+    out_dir = Path(output_dir)
+    raw = frame.copy()
+    raw.index = _normalise_datetime_index(raw.index, floor="min")
+    raw.index.name = "timestamp"
+    snapshot_path = out_dir / f"kraken_futures_perp_orderbooks_{run_id}.parquet"
+    latest_path = out_dir / "latest_orderbooks.parquet"
+    _atomic_write_parquet(snapshot_path, raw)
+    _atomic_write_parquet(latest_path, raw)
+
+    history_paths: List[str] = []
+    dates = pd.DatetimeIndex(raw.index).strftime("%Y-%m-%d")
+    for date in sorted(set(dates)):
+        part = raw.loc[dates == date]
+        history_path = (
+            out_dir / "orderbook_history" / f"date={date}" / "snapshots.parquet"
+        )
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        _append_history_parquet(
+            history_path,
+            part,
+            dedupe_cols=("symbol", "side", "level"),
+        )
+        history_paths.append(str(history_path.resolve()))
+
+    summary = summarize_kraken_futures_orderbooks(raw)
+    latest_summary_path = out_dir / "latest_orderbook_summary.parquet"
+    if not summary.empty:
+        _atomic_write_parquet(latest_summary_path, summary)
+        canonical_dir = Path(hourly_dir)
+        for symbol, symbol_rows in summary.groupby("symbol", sort=True):
+            symbol_rows = symbol_rows.drop(columns=["symbol"]).sort_index()
+            path = canonical_dir / f"{_safe_symbol_file_key(str(symbol))}.parquet"
+            if path.exists():
+                try:
+                    existing = pd.read_parquet(path)
+                    existing.index = pd.to_datetime(
+                        existing.index, utc=True, errors="coerce"
+                    )
+                    symbol_rows = pd.concat([existing, symbol_rows], axis=0, sort=False)
+                except Exception as exc:
+                    tprint(
+                        f"WARN could not merge existing orderbook sidecar {path}: {exc}"
+                    )
+            symbol_rows = symbol_rows[
+                ~symbol_rows.index.duplicated(keep="last")
+            ].sort_index()
+            symbol_rows = normalize_orderbook_proxy_frame(symbol_rows)
+            _atomic_write_parquet(path, symbol_rows)
+
+    return {
+        "orderbook_rows": int(len(raw)),
+        "orderbook_symbols": int(raw["symbol"].nunique()),
+        "orderbook_levels": int(pd.to_numeric(raw["level"], errors="coerce").max()),
+        "orderbook_snapshot_path": str(snapshot_path.resolve()),
+        "latest_orderbook_path": str(latest_path.resolve()),
+        "latest_orderbook_summary_path": (
+            str(latest_summary_path.resolve()) if not summary.empty else None
+        ),
+        "orderbook_history_paths": history_paths,
+        "orderbook_hourly_dir": str(Path(hourly_dir).resolve()),
+        "orderbook_audit": list(audit or []),
+    }
+
+
 def save_spread_snapshot_collection(
     frame: pd.DataFrame,
     *,
@@ -393,6 +729,9 @@ def save_spread_snapshot_collection(
     candles: Optional[pd.DataFrame] = None,
     training: Optional[pd.DataFrame] = None,
     candle_audit: Optional[Sequence[Dict[str, Any]]] = None,
+    orderbooks: Optional[pd.DataFrame] = None,
+    orderbook_audit: Optional[Sequence[Dict[str, Any]]] = None,
+    orderbook_hourly_dir: Path | str = DEFAULT_ORDERBOOK_HOURLY_DIR,
     output_dir: Path | str = DEFAULT_SNAPSHOT_OUTPUT_DIR,
     run_id: Optional[str] = None,
 ) -> Tuple[Path, Path]:
@@ -401,7 +740,9 @@ def save_spread_snapshot_collection(
     run_id = run_id or pd.Timestamp.now(tz="UTC").strftime("%Y%m%d_%H%M%S")
     frame_to_write = frame.copy() if frame is not None else pd.DataFrame()
     if not frame_to_write.empty:
-        frame_to_write.index = _normalise_datetime_index(frame_to_write.index, floor="min")
+        frame_to_write.index = _normalise_datetime_index(
+            frame_to_write.index, floor="min"
+        )
         frame_to_write.index.name = "timestamp"
     parquet_path = out_dir / f"kraken_futures_perp_spreads_{run_id}.parquet"
     latest_path = out_dir / "latest.parquet"
@@ -420,19 +761,34 @@ def save_spread_snapshot_collection(
     candles_to_write = candles.copy() if candles is not None else pd.DataFrame()
     history_candle_rows = 0
     if not candles_to_write.empty:
-        candles_to_write.index = _normalise_datetime_index(candles_to_write.index, floor="min")
+        candles_to_write.index = _normalise_datetime_index(
+            candles_to_write.index, floor="min"
+        )
         candles_to_write.index.name = "timestamp"
         candles_to_write.to_parquet(candles_path, compression="zstd")
         candles_to_write.to_parquet(latest_candles_path, compression="zstd")
-        _, history_candle_rows = _append_history_parquet(history_candles_path, candles_to_write)
+        _, history_candle_rows = _append_history_parquet(
+            history_candles_path, candles_to_write
+        )
     training_to_write = training.copy() if training is not None else pd.DataFrame()
     history_training_rows = 0
     if not training_to_write.empty:
-        training_to_write.index = _normalise_datetime_index(training_to_write.index, floor="min")
+        training_to_write.index = _normalise_datetime_index(
+            training_to_write.index, floor="min"
+        )
         training_to_write.index.name = "timestamp"
         training_to_write.to_parquet(training_path, compression="zstd")
         training_to_write.to_parquet(latest_training_path, compression="zstd")
-        _, history_training_rows = _append_history_parquet(history_training_path, training_to_write)
+        _, history_training_rows = _append_history_parquet(
+            history_training_path, training_to_write
+        )
+    orderbook_manifest = save_orderbook_snapshot_collection(
+        orderbooks if orderbooks is not None else pd.DataFrame(),
+        output_dir=out_dir,
+        hourly_dir=orderbook_hourly_dir,
+        run_id=run_id,
+        audit=orderbook_audit,
+    )
     summary = _spread_snapshot_summary(
         frame_to_write,
         universe_count=len(universe_audit),
@@ -444,22 +800,37 @@ def save_spread_snapshot_collection(
             "snapshot_path": str(parquet_path.resolve()),
             "latest_snapshot_path": str(latest_path.resolve()),
             "history_snapshot_path": str(history_path.resolve()),
-            "candles_path": str(candles_path.resolve()) if not candles_to_write.empty else None,
-            "latest_candles_path": str(latest_candles_path.resolve()) if not candles_to_write.empty else None,
-            "history_candles_path": str(history_candles_path.resolve()) if history_candle_rows else None,
-            "training_path": str(training_path.resolve()) if not training_to_write.empty else None,
-            "latest_training_path": str(latest_training_path.resolve()) if not training_to_write.empty else None,
-            "history_training_path": str(history_training_path.resolve()) if history_training_rows else None,
+            "candles_path": str(candles_path.resolve())
+            if not candles_to_write.empty
+            else None,
+            "latest_candles_path": str(latest_candles_path.resolve())
+            if not candles_to_write.empty
+            else None,
+            "history_candles_path": str(history_candles_path.resolve())
+            if history_candle_rows
+            else None,
+            "training_path": str(training_path.resolve())
+            if not training_to_write.empty
+            else None,
+            "latest_training_path": str(latest_training_path.resolve())
+            if not training_to_write.empty
+            else None,
+            "history_training_path": str(history_training_path.resolve())
+            if history_training_rows
+            else None,
             "candle_rows": int(len(candles_to_write)),
             "training_rows": int(len(training_to_write)),
             "history_rows": int(history_rows),
             "history_candle_rows": int(history_candle_rows),
             "history_training_rows": int(history_training_rows),
             "candle_audit": list(candle_audit or []),
+            **orderbook_manifest,
             "universe_audit": list(universe_audit),
         }
     )
-    payload = json.dumps(_jsonify(summary), indent=2, sort_keys=True, allow_nan=False) + "\n"
+    payload = (
+        json.dumps(_jsonify(summary), indent=2, sort_keys=True, allow_nan=False) + "\n"
+    )
     summary_path.write_text(payload, encoding="utf-8")
     latest_summary_path.write_text(payload, encoding="utf-8")
     return parquet_path, summary_path
@@ -522,7 +893,9 @@ def compute_spread_relevant_candle_features(candles: pd.DataFrame) -> pd.DataFra
     features["lower_wick_bps"] = 10000.0 * lower / denom_close
     features["wick_to_range"] = ((upper + lower) / (range_abs + EPS)).clip(0.0, 5.0)
     features["close_location"] = ((close - low) / (range_abs + EPS)).clip(0.0, 1.0)
-    features["gap_bps"] = 10000.0 * (open_ - prev_close).abs() / (prev_close.abs() + EPS)
+    features["gap_bps"] = (
+        10000.0 * (open_ - prev_close).abs() / (prev_close.abs() + EPS)
+    )
     features["log_candle_volume"] = np.log1p(volume)
     features["log_candle_quote_volume"] = np.log1p(quote_volume)
     return features.replace([np.inf, -np.inf], np.nan).astype(np.float32)
@@ -566,7 +939,9 @@ def add_spread_model_derived_features(frame: pd.DataFrame) -> pd.DataFrame:
 
     if "symbol" in out.columns:
         ordered = out.reset_index(names="_timestamp").reset_index(names="_row_order")
-        ordered["_timestamp"] = pd.to_datetime(ordered["_timestamp"], utc=True, errors="coerce")
+        ordered["_timestamp"] = pd.to_datetime(
+            ordered["_timestamp"], utc=True, errors="coerce"
+        )
         ordered = ordered.sort_values(["symbol", "_timestamp", "_row_order"])
         grouped = ordered.groupby("symbol", sort=False, observed=False)
         rolling_sources = {
@@ -577,7 +952,9 @@ def add_spread_model_derived_features(frame: pd.DataFrame) -> pd.DataFrame:
         for feature, source in rolling_sources.items():
             if source in ordered.columns:
                 ordered[feature] = grouped[source].transform(
-                    lambda x: pd.to_numeric(x, errors="coerce").rolling(3, min_periods=2).mean()
+                    lambda x: pd.to_numeric(x, errors="coerce")
+                    .rolling(3, min_periods=2)
+                    .mean()
                 )
             else:
                 ordered[feature] = np.nan
@@ -614,12 +991,19 @@ def build_spread_training_frame(
     joined = spread.join(feats, how="inner")
     if symbol is not None:
         joined["symbol"] = str(symbol)
-    required = ["spread_bps", "spread_ticks", "min_tick_spread_bps", *SPREAD_CANDLE_FEATURES]
+    required = [
+        "spread_bps",
+        "spread_ticks",
+        "min_tick_spread_bps",
+        *SPREAD_CANDLE_FEATURES,
+    ]
     for col in required:
         if col not in joined.columns:
             joined[col] = np.nan
     joined = joined.replace([np.inf, -np.inf], np.nan)
-    joined = joined.dropna(subset=["spread_bps", "spread_ticks", *SPREAD_CANDLE_FEATURES])
+    joined = joined.dropna(
+        subset=["spread_bps", "spread_ticks", *SPREAD_CANDLE_FEATURES]
+    )
     joined = joined[joined["spread_bps"] >= 0.0]
     return joined.sort_index()
 
@@ -675,7 +1059,9 @@ def compute_feature_ic_table(
     out = pd.DataFrame(rows)
     if out.empty:
         return out
-    return out.sort_values(["abs_ic", "feature"], ascending=[False, True]).reset_index(drop=True)
+    return out.sort_values(["abs_ic", "feature"], ascending=[False, True]).reset_index(
+        drop=True
+    )
 
 
 def compute_asset_spread_baseline(frame: pd.DataFrame) -> Tuple[pd.DataFrame, float]:
@@ -684,7 +1070,9 @@ def compute_asset_spread_baseline(frame: pd.DataFrame) -> Tuple[pd.DataFrame, fl
     work = frame.copy()
     if "symbol" not in work.columns:
         work["symbol"] = "__global__"
-    work["spread_bps"] = pd.to_numeric(work["spread_bps"], errors="coerce").clip(lower=0.0)
+    work["spread_bps"] = pd.to_numeric(work["spread_bps"], errors="coerce").clip(
+        lower=0.0
+    )
     if "spread_ticks" in work.columns:
         work["spread_ticks"] = pd.to_numeric(work["spread_ticks"], errors="coerce")
     else:
@@ -708,7 +1096,11 @@ def compute_asset_spread_baseline(frame: pd.DataFrame) -> Tuple[pd.DataFrame, fl
 
 
 def _asset_baseline_lookup(artifact: Dict[str, Any]) -> Dict[str, float]:
-    rows = artifact.get("per_asset_spread_baseline") or artifact.get("per_asset_average_spread") or []
+    rows = (
+        artifact.get("per_asset_spread_baseline")
+        or artifact.get("per_asset_average_spread")
+        or []
+    )
     lookup: Dict[str, float] = {}
     for row in rows:
         if not isinstance(row, dict):
@@ -730,7 +1122,9 @@ def asset_baseline_spread_bps(
     frame: pd.DataFrame,
     artifact: Dict[str, Any],
 ) -> np.ndarray:
-    default = artifact.get("global_average_spread_bps", artifact.get("baseline_spread_bps", 0.0))
+    default = artifact.get(
+        "global_average_spread_bps", artifact.get("baseline_spread_bps", 0.0)
+    )
     try:
         global_baseline = float(default)
     except Exception:
@@ -744,10 +1138,17 @@ def asset_baseline_spread_bps(
     lookup = _asset_baseline_lookup(artifact)
     symbols = frame["symbol"].astype(str)
     baseline = symbols.map(lookup).fillna(global_baseline)
-    return pd.to_numeric(baseline, errors="coerce").fillna(global_baseline).clip(lower=0.0).to_numpy(dtype=np.float64)
+    return (
+        pd.to_numeric(baseline, errors="coerce")
+        .fillna(global_baseline)
+        .clip(lower=0.0)
+        .to_numpy(dtype=np.float64)
+    )
 
 
-def _wide_classification_metrics(actual: np.ndarray, pred: np.ndarray, threshold: float) -> Dict[str, float]:
+def _wide_classification_metrics(
+    actual: np.ndarray, pred: np.ndarray, threshold: float
+) -> Dict[str, float]:
     y = actual >= float(threshold)
     p = pred >= float(threshold)
     tp = int(np.sum(y & p))
@@ -785,8 +1186,12 @@ def _group_error(frame: pd.DataFrame, group_col: str) -> List[Dict[str, Any]]:
                 "rows": int(len(grp)),
                 "mae_spread_bps": float(err.abs().mean()),
                 "bias_pred_minus_actual_bps": float(err.mean()),
-                "actual_spread_bps_mean": float(pd.to_numeric(grp["spread_bps"], errors="coerce").mean()),
-                "predicted_spread_bps_mean": float(pd.to_numeric(grp["predicted_spread_bps"], errors="coerce").mean()),
+                "actual_spread_bps_mean": float(
+                    pd.to_numeric(grp["spread_bps"], errors="coerce").mean()
+                ),
+                "predicted_spread_bps_mean": float(
+                    pd.to_numeric(grp["predicted_spread_bps"], errors="coerce").mean()
+                ),
             }
         )
     return rows
@@ -816,31 +1221,48 @@ def predict_spread_bps(frame: pd.DataFrame, artifact: Dict[str, Any]) -> np.ndar
     fill = artifact.get("feature_fill_values", {})
     for col in features:
         x[col] = x[col].fillna(float(fill.get(col, 0.0)))
-    mean = np.asarray(artifact.get("scaler_mean", [0.0] * len(features)), dtype=np.float64)
-    scale = np.asarray(artifact.get("scaler_scale", [1.0] * len(features)), dtype=np.float64)
-    coef = np.asarray(artifact.get("ridge_coef", [0.0] * len(features)), dtype=np.float64)
+    mean = np.asarray(
+        artifact.get("scaler_mean", [0.0] * len(features)), dtype=np.float64
+    )
+    scale = np.asarray(
+        artifact.get("scaler_scale", [1.0] * len(features)), dtype=np.float64
+    )
+    coef = np.asarray(
+        artifact.get("ridge_coef", [0.0] * len(features)), dtype=np.float64
+    )
     intercept = float(artifact.get("ridge_intercept", 0.0))
     scale = np.where(np.abs(scale) > EPS, scale, 1.0)
     values = x.to_numpy(dtype=np.float64)
     raw_pred = ((values - mean) / scale) @ coef + intercept
     target = str(artifact.get("target") or "")
-    if "asset_average_spread_bps_baseline" in target or str(artifact.get("baseline_type") or "") == "per_asset_average_spread_bps":
+    if (
+        "asset_average_spread_bps_baseline" in target
+        or str(artifact.get("baseline_type") or "") == "per_asset_average_spread_bps"
+    ):
         baseline = asset_baseline_spread_bps(prepared, artifact)
         pred = np.expm1(np.log1p(np.clip(baseline, 0.0, None)) + raw_pred)
     else:
         pred = np.expm1(raw_pred)
-    min_tick = pd.to_numeric(
-        prepared.get("min_tick_spread_bps", pd.Series(0.0, index=prepared.index)),
-        errors="coerce",
-    ).fillna(0.0).to_numpy(dtype=np.float64)
+    min_tick = (
+        pd.to_numeric(
+            prepared.get("min_tick_spread_bps", pd.Series(0.0, index=prepared.index)),
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
+    )
     return np.maximum(np.nan_to_num(pred, nan=0.0, posinf=0.0, neginf=0.0), min_tick)
 
 
 def evaluate_spread_predictions(frame: pd.DataFrame) -> Dict[str, Any]:
     if frame.empty:
         return {"rows": 0}
-    actual = pd.to_numeric(frame["spread_bps"], errors="coerce").to_numpy(dtype=np.float64)
-    pred = pd.to_numeric(frame["predicted_spread_bps"], errors="coerce").to_numpy(dtype=np.float64)
+    actual = pd.to_numeric(frame["spread_bps"], errors="coerce").to_numpy(
+        dtype=np.float64
+    )
+    pred = pd.to_numeric(frame["predicted_spread_bps"], errors="coerce").to_numpy(
+        dtype=np.float64
+    )
     mask = np.isfinite(actual) & np.isfinite(pred)
     if not mask.any():
         return {"rows": 0}
@@ -849,16 +1271,22 @@ def evaluate_spread_predictions(frame: pd.DataFrame) -> Dict[str, Any]:
     eval_frame = frame.loc[mask].copy()
     eval_frame["prediction_error_bps"] = pred - actual
     eval_frame["actual_spread_decile"] = _qcut_codes(actual, 10).to_numpy()
-    eval_frame["hour_utc"] = _normalise_datetime_index(eval_frame.index, floor="min").hour
+    eval_frame["hour_utc"] = _normalise_datetime_index(
+        eval_frame.index, floor="min"
+    ).hour
     vol_source = pd.to_numeric(eval_frame.get("hl_range_bps"), errors="coerce")
     vol_codes = _qcut_codes(vol_source, 3).to_numpy()
     regime_names = np.asarray(["low", "medium", "high"], dtype=object)
-    eval_frame["volatility_regime"] = regime_names[np.clip(vol_codes, 0, len(regime_names) - 1)]
+    eval_frame["volatility_regime"] = regime_names[
+        np.clip(vol_codes, 0, len(regime_names) - 1)
+    ]
     wide_threshold = float(np.nanpercentile(actual, 75))
     metrics = {
         "rows": int(len(actual)),
         "mae_spread_bps": float(np.mean(np.abs(pred - actual))),
-        "mae_log1p_spread_bps": float(np.mean(np.abs(np.log1p(pred) - np.log1p(actual)))),
+        "mae_log1p_spread_bps": float(
+            np.mean(np.abs(np.log1p(pred) - np.log1p(actual)))
+        ),
         "bias_pred_minus_actual_bps": float(np.mean(pred - actual)),
         "actual_spread_bps_mean": float(np.mean(actual)),
         "predicted_spread_bps_mean": float(np.mean(pred)),
@@ -868,11 +1296,20 @@ def evaluate_spread_predictions(frame: pd.DataFrame) -> Dict[str, Any]:
         "error_by_pair": _group_error(eval_frame, "symbol"),
         "error_by_time_of_day": _group_error(eval_frame, "hour_utc"),
         "error_by_volatility_regime": _group_error(eval_frame, "volatility_regime"),
-        "wide_spread_classification": _wide_classification_metrics(actual, pred, wide_threshold),
+        "wide_spread_classification": _wide_classification_metrics(
+            actual, pred, wide_threshold
+        ),
     }
     if "asset_spread_baseline_bps" in eval_frame.columns:
-        baseline = pd.to_numeric(eval_frame["asset_spread_baseline_bps"], errors="coerce").to_numpy(dtype=np.float64)
-        baseline = np.nan_to_num(baseline, nan=float(np.nanmean(actual)), posinf=float(np.nanmean(actual)), neginf=0.0)
+        baseline = pd.to_numeric(
+            eval_frame["asset_spread_baseline_bps"], errors="coerce"
+        ).to_numpy(dtype=np.float64)
+        baseline = np.nan_to_num(
+            baseline,
+            nan=float(np.nanmean(actual)),
+            posinf=float(np.nanmean(actual)),
+            neginf=0.0,
+        )
         baseline = np.clip(baseline, 0.0, None)
         baseline_mae = float(np.mean(np.abs(baseline - actual)))
         metrics.update(
@@ -881,8 +1318,12 @@ def evaluate_spread_predictions(frame: pd.DataFrame) -> Dict[str, Any]:
                 "baseline_mae_log1p_spread_bps": float(
                     np.mean(np.abs(np.log1p(baseline) - np.log1p(actual)))
                 ),
-                "baseline_bias_pred_minus_actual_bps": float(np.mean(baseline - actual)),
-                "mae_improvement_vs_baseline_bps": float(baseline_mae - metrics["mae_spread_bps"]),
+                "baseline_bias_pred_minus_actual_bps": float(
+                    np.mean(baseline - actual)
+                ),
+                "mae_improvement_vs_baseline_bps": float(
+                    baseline_mae - metrics["mae_spread_bps"]
+                ),
             }
         )
     return metrics
@@ -905,11 +1346,12 @@ def fit_ridge_spread_model(
     actual_spread = pd.to_numeric(frame["spread_bps"], errors="coerce").clip(lower=0.0)
     baseline = asset_baseline_spread_bps(frame, baseline_artifact)
     frame["asset_spread_baseline_bps"] = baseline
-    frame["spread_deviation_from_baseline_bps"] = actual_spread.to_numpy(dtype=np.float64) - baseline
-    frame["spread_log1p_deviation_from_asset_average_baseline"] = (
-        np.log1p(actual_spread.to_numpy(dtype=np.float64))
-        - np.log1p(np.clip(baseline, 0.0, None))
+    frame["spread_deviation_from_baseline_bps"] = (
+        actual_spread.to_numpy(dtype=np.float64) - baseline
     )
+    frame["spread_log1p_deviation_from_asset_average_baseline"] = np.log1p(
+        actual_spread.to_numpy(dtype=np.float64)
+    ) - np.log1p(np.clip(baseline, 0.0, None))
     ic_target = "spread_log1p_deviation_from_asset_average_baseline"
     ic_table = compute_feature_ic_table(frame, target_col=ic_target)
     selected = [
@@ -920,9 +1362,15 @@ def fit_ridge_spread_model(
     if not selected:
         selected = list(SPREAD_MODEL_FEATURES[: int(top_k)])
     x = frame[selected].apply(pd.to_numeric, errors="coerce")
-    fills = {col: float(x[col].median()) if x[col].notna().any() else 0.0 for col in selected}
+    fills = {
+        col: float(x[col].median()) if x[col].notna().any() else 0.0 for col in selected
+    }
     x = x.fillna(fills)
-    y = pd.to_numeric(frame[ic_target], errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
+    y = (
+        pd.to_numeric(frame[ic_target], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
+    )
     scaler = StandardScaler()
     x_scaled = scaler.fit_transform(x.to_numpy(dtype=np.float64))
     model = Ridge(alpha=float(alpha))
@@ -966,7 +1414,10 @@ def fit_ridge_spread_model(
             average_spread_bps=("spread_bps", "mean"),
             median_spread_bps=("spread_bps", "median"),
             p75_spread_bps=("spread_bps", lambda x: float(np.nanpercentile(x, 75))),
-            predicted_p75_spread_bps=("predicted_spread_bps", lambda x: float(np.nanpercentile(x, 75))),
+            predicted_p75_spread_bps=(
+                "predicted_spread_bps",
+                lambda x: float(np.nanpercentile(x, 75)),
+            ),
             average_spread_ticks=("spread_ticks", "mean"),
         )
         .reset_index()
@@ -997,7 +1448,9 @@ def fetch_symbol_training_frame(
     )
     if candles.empty:
         return pd.DataFrame()
-    frame = build_spread_training_frame(symbol_spreads, candles, symbol=item.perp_symbol)
+    frame = build_spread_training_frame(
+        symbol_spreads, candles, symbol=item.perp_symbol
+    )
     frame["base"] = item.base
     frame["perp_market_id"] = item.perp_market_id
     frame["tick_size"] = float(item.tick_size)
@@ -1017,9 +1470,19 @@ def collect_associated_candles_and_training(
     if spreads is None or spreads.empty or "symbol" not in spreads.columns:
         return pd.DataFrame(), pd.DataFrame(), audit
     for i, item in enumerate(universe, start=1):
-        symbol_spreads = spreads[spreads["symbol"].astype(str) == item.perp_symbol].copy()
+        symbol_spreads = spreads[
+            spreads["symbol"].astype(str) == item.perp_symbol
+        ].copy()
         if symbol_spreads.empty:
-            audit.append({**asdict(item), "status": "no_spreads", "spread_rows": 0, "candle_rows": 0, "training_rows": 0})
+            audit.append(
+                {
+                    **asdict(item),
+                    "status": "no_spreads",
+                    "spread_rows": 0,
+                    "candle_rows": 0,
+                    "training_rows": 0,
+                }
+            )
             continue
         try:
             candles = fetch_kraken_futures_1m_candles_for_spread_minutes(
@@ -1068,8 +1531,16 @@ def collect_associated_candles_and_training(
         )
         if sleep_seconds > 0.0:
             time.sleep(float(sleep_seconds))
-    candles_all = pd.concat(candle_frames, axis=0).sort_index() if candle_frames else pd.DataFrame()
-    training_all = pd.concat(training_frames, axis=0).sort_index() if training_frames else pd.DataFrame()
+    candles_all = (
+        pd.concat(candle_frames, axis=0).sort_index()
+        if candle_frames
+        else pd.DataFrame()
+    )
+    training_all = (
+        pd.concat(training_frames, axis=0).sort_index()
+        if training_frames
+        else pd.DataFrame()
+    )
     return candles_all, training_all, audit
 
 
@@ -1094,9 +1565,13 @@ def train_kraken_spread_model(
         if symbols:
             allowed = {str(s).upper().strip() for s in symbols if str(s).strip()}
             if allowed and "symbol" in training.columns:
-                training = training[training["symbol"].astype(str).str.upper().isin(allowed)]
+                training = training[
+                    training["symbol"].astype(str).str.upper().isin(allowed)
+                ]
         if max_symbols and int(max_symbols) > 0 and "symbol" in training.columns:
-            keep_symbols = sorted(training["symbol"].astype(str).unique())[: int(max_symbols)]
+            keep_symbols = sorted(training["symbol"].astype(str).unique())[
+                : int(max_symbols)
+            ]
             training = training[training["symbol"].astype(str).isin(keep_symbols)]
         if training.empty:
             raise RuntimeError("No spread/candle training rows were loaded")
@@ -1110,20 +1585,32 @@ def train_kraken_spread_model(
             )
         else:
             fetch_audit = pd.DataFrame(
-                [{"symbol": "__all__", "rows": int(len(training)), "status": "loaded_joined_training_frame"}]
+                [
+                    {
+                        "symbol": "__all__",
+                        "rows": int(len(training)),
+                        "status": "loaded_joined_training_frame",
+                    }
+                ]
             )
         artifact.update(
             {
                 "lookback_hours": float(lookback_hours),
                 "since_ts": since_ts.isoformat(),
                 "created_ts": pd.Timestamp.now(tz="UTC").isoformat(),
-                "universe_count": int(fetch_audit["symbol"].nunique()) if "symbol" in fetch_audit.columns else 0,
-                "fetched_symbol_count": int(fetch_audit["rows"].gt(0).sum()) if "rows" in fetch_audit.columns else 0,
+                "universe_count": int(fetch_audit["symbol"].nunique())
+                if "symbol" in fetch_audit.columns
+                else 0,
+                "fetched_symbol_count": int(fetch_audit["rows"].gt(0).sum())
+                if "rows" in fetch_audit.columns
+                else 0,
                 "fetch_audit": fetch_audit.to_dict(orient="records"),
                 "universe_audit": [],
                 "spread_data_source": "loaded_joined_training_frame",
                 "source_endpoint": KRAKEN_FUTURES_TICKERS_URL,
-                "spread_snapshot_path": str(spread_snapshot_path) if spread_snapshot_path else None,
+                "spread_snapshot_path": str(spread_snapshot_path)
+                if spread_snapshot_path
+                else None,
                 "training_frame_path": str(training_frame_path),
                 "snapshot_count": int(snapshot_count),
                 "snapshot_interval_seconds": float(snapshot_interval_seconds),
@@ -1168,7 +1655,9 @@ def train_kraken_spread_model(
             status = f"failed:{exc.__class__.__name__}:{exc}"
             rows = 0
         fetch_rows.append({**asdict(item), "status": status, "rows": rows})
-        tprint(f"[{i:04d}/{len(universe):04d}] {item.perp_symbol} spread rows={rows} status={status}")
+        tprint(
+            f"[{i:04d}/{len(universe):04d}] {item.perp_symbol} spread rows={rows} status={status}"
+        )
         if sleep_seconds > 0.0:
             time.sleep(float(sleep_seconds))
     if not frames:
@@ -1181,12 +1670,16 @@ def train_kraken_spread_model(
             "since_ts": since_ts.isoformat(),
             "created_ts": pd.Timestamp.now(tz="UTC").isoformat(),
             "universe_count": int(len(universe)),
-            "fetched_symbol_count": int(sum(1 for row in fetch_rows if row["rows"] > 0)),
+            "fetched_symbol_count": int(
+                sum(1 for row in fetch_rows if row["rows"] > 0)
+            ),
             "fetch_audit": fetch_rows,
             "universe_audit": audit,
             "spread_data_source": source_mode,
             "source_endpoint": KRAKEN_FUTURES_TICKERS_URL,
-            "spread_snapshot_path": str(spread_snapshot_path) if spread_snapshot_path else None,
+            "spread_snapshot_path": str(spread_snapshot_path)
+            if spread_snapshot_path
+            else None,
             "training_frame_path": None,
             "snapshot_count": int(snapshot_count),
             "snapshot_interval_seconds": float(snapshot_interval_seconds),
@@ -1210,7 +1703,11 @@ def save_spread_model_outputs(
     artifact_path = out_dir / "spread_model_latest.json"
     scored.to_parquet(scored_path, compression="zstd")
     fetch_audit.to_csv(audit_path, index=False)
-    baseline_rows = artifact.get("per_asset_spread_baseline") or artifact.get("per_asset_average_spread") or []
+    baseline_rows = (
+        artifact.get("per_asset_spread_baseline")
+        or artifact.get("per_asset_average_spread")
+        or []
+    )
     pd.DataFrame(baseline_rows).to_csv(baseline_path, index=False)
     serializable = _jsonify(artifact)
     serializable["scored_rows_path"] = str(scored_path.resolve())
@@ -1282,10 +1779,16 @@ def _jsonify(value: Any) -> Any:
     return value
 
 
-def load_spread_cost_bps(path: Path | str = DEFAULT_OUTPUT_DIR / "spread_model_latest.json") -> Optional[float]:
+def load_spread_cost_bps(
+    path: Path | str = DEFAULT_OUTPUT_DIR / "spread_model_latest.json",
+) -> Optional[float]:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        value = float(payload.get("predicted_cost_bps", payload.get("predicted_spread_75th_percentile")))
+        value = float(
+            payload.get(
+                "predicted_cost_bps", payload.get("predicted_spread_75th_percentile")
+            )
+        )
     except Exception:
         return None
     return value if np.isfinite(value) and value >= 0.0 else None
@@ -1293,13 +1796,24 @@ def load_spread_cost_bps(path: Path | str = DEFAULT_OUTPUT_DIR / "spread_model_l
 
 def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Collect Kraken Futures perp L1 bid/ask spread snapshots."
+        description="Collect Kraken Futures perp ticker spreads and L2 orderbooks."
     )
-    parser.add_argument("--symbols", default="", help="Comma-separated base or perp symbols.")
+    parser.add_argument(
+        "--symbols", default="", help="Comma-separated base or perp symbols."
+    )
     parser.add_argument("--max-symbols", type=int, default=0)
     parser.add_argument("--snapshot-count", type=int, default=1)
     parser.add_argument("--snapshot-interval-seconds", type=float, default=0.0)
     parser.add_argument("--candle-sleep-seconds", type=float, default=0.25)
+    parser.add_argument("--skip-orderbooks", action="store_true")
+    parser.add_argument("--orderbook-levels", type=int, default=20)
+    parser.add_argument("--orderbook-workers", type=int, default=8)
+    parser.add_argument("--orderbook-timeout-seconds", type=int, default=30)
+    parser.add_argument(
+        "--orderbook-hourly-dir",
+        default=str(DEFAULT_ORDERBOOK_HOURLY_DIR),
+        help="Canonical per-symbol hourly sidecar directory updated from real L2 snapshots.",
+    )
     parser.add_argument("--cycles", type=int, default=1)
     parser.add_argument("--cycle-sleep-seconds", type=float, default=0.0)
     parser.add_argument(
@@ -1324,7 +1838,9 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
         allowed = {item.perp_symbol for item in universe}
         audit = [row for row in audit if str(row.get("perp_symbol")) in allowed]
     if not universe:
-        raise RuntimeError("No eligible Kraken Futures perp markets found for spread collection")
+        raise RuntimeError(
+            "No eligible Kraken Futures perp markets found for spread collection"
+        )
     successes = 0
     requested_cycles = int(args.cycles)
     run_forever = requested_cycles <= 0
@@ -1333,7 +1849,9 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
     last_hourly_attempt: Optional[pd.Timestamp] = None
     while run_forever or cycle < cycles:
         cycle += 1
-        snapshot_count = 1 if bool(args.hourly_top_of_hour) else int(args.snapshot_count)
+        snapshot_count = (
+            1 if bool(args.hourly_top_of_hour) else int(args.snapshot_count)
+        )
         snapshot_interval_seconds = (
             0.0
             if bool(args.hourly_top_of_hour)
@@ -1350,9 +1868,14 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 if wait_seconds > 0.0:
                     target_hour = hour_start + pd.Timedelta(hours=1)
-                if last_hourly_attempt is not None and hour_start <= last_hourly_attempt:
+                if (
+                    last_hourly_attempt is not None
+                    and hour_start <= last_hourly_attempt
+                ):
                     target_hour = last_hourly_attempt + pd.Timedelta(hours=1)
-                    wait_seconds = max(float((target_hour - now_ts).total_seconds()), 0.0)
+                    wait_seconds = max(
+                        float((target_hour - now_ts).total_seconds()), 0.0
+                    )
                 if wait_seconds <= 0.0:
                     break
                 print(
@@ -1380,7 +1903,23 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
                 snapshot_interval_seconds=float(snapshot_interval_seconds),
             )
             if frame.empty:
-                raise RuntimeError("No Kraken Futures ticker spread snapshots were collected")
+                raise RuntimeError(
+                    "No Kraken Futures ticker spread snapshots were collected"
+                )
+            orderbooks = pd.DataFrame()
+            orderbook_audit: List[Dict[str, Any]] = []
+            if not bool(args.skip_orderbooks):
+                orderbooks, orderbook_audit = collect_kraken_futures_orderbooks(
+                    universe=universe,
+                    levels=max(1, int(args.orderbook_levels)),
+                    workers=max(1, int(args.orderbook_workers)),
+                    timeout=max(1, int(args.orderbook_timeout_seconds)),
+                )
+                if orderbooks.empty:
+                    tprint(
+                        "WARN no Kraken Futures L2 orderbooks were collected; "
+                        "ticker/candle collection will still be saved"
+                    )
             candles, training, candle_audit = collect_associated_candles_and_training(
                 perp_exchange=perp_exchange,
                 universe=universe,
@@ -1388,13 +1927,18 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
                 sleep_seconds=float(args.candle_sleep_seconds),
             )
             if candles.empty:
-                raise RuntimeError("No associated Kraken Futures 1m candles were collected")
+                raise RuntimeError(
+                    "No associated Kraken Futures 1m candles were collected"
+                )
             parquet_path, summary_path = save_spread_snapshot_collection(
                 frame,
                 universe_audit=audit,
                 candles=candles,
                 training=training,
                 candle_audit=candle_audit,
+                orderbooks=orderbooks,
+                orderbook_audit=orderbook_audit,
+                orderbook_hourly_dir=args.orderbook_hourly_dir,
                 output_dir=args.output_dir,
             )
             summary = _spread_snapshot_summary(frame, universe_count=len(audit))
@@ -1410,16 +1954,45 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
                         "snapshot_interval_seconds": float(snapshot_interval_seconds),
                         "snapshot_path": str(parquet_path),
                         "summary_path": str(summary_path),
-                        "latest_snapshot_path": str(Path(args.output_dir) / "latest.parquet"),
-                        "latest_candles_path": str(Path(args.output_dir) / "latest_candles.parquet"),
-                        "latest_training_path": str(Path(args.output_dir) / "latest_training.parquet"),
-                        "history_snapshot_path": str(Path(args.output_dir) / "history.parquet"),
-                        "history_candles_path": str(Path(args.output_dir) / "history_candles.parquet"),
-                        "history_training_path": str(Path(args.output_dir) / "history_training.parquet"),
+                        "latest_snapshot_path": str(
+                            Path(args.output_dir) / "latest.parquet"
+                        ),
+                        "latest_candles_path": str(
+                            Path(args.output_dir) / "latest_candles.parquet"
+                        ),
+                        "latest_training_path": str(
+                            Path(args.output_dir) / "latest_training.parquet"
+                        ),
+                        "history_snapshot_path": str(
+                            Path(args.output_dir) / "history.parquet"
+                        ),
+                        "history_candles_path": str(
+                            Path(args.output_dir) / "history_candles.parquet"
+                        ),
+                        "history_training_path": str(
+                            Path(args.output_dir) / "history_training.parquet"
+                        ),
+                        "latest_orderbook_path": str(
+                            Path(args.output_dir) / "latest_orderbooks.parquet"
+                        ),
+                        "orderbook_hourly_dir": str(Path(args.orderbook_hourly_dir)),
                         "rows": summary.get("rows"),
                         "symbols": summary.get("symbols"),
                         "candle_rows": int(len(candles)),
                         "training_rows": int(len(training)),
+                        "orderbook_rows": int(len(orderbooks)),
+                        "orderbook_symbols": (
+                            int(orderbooks["symbol"].nunique())
+                            if not orderbooks.empty and "symbol" in orderbooks.columns
+                            else 0
+                        ),
+                        "orderbook_failures": int(
+                            sum(
+                                1
+                                for row in orderbook_audit
+                                if row.get("status") != "ok"
+                            )
+                        ),
                         "timestamp_min": summary.get("timestamp_min"),
                         "timestamp_max": summary.get("timestamp_max"),
                         "spread_bps_p75": summary.get("spread_bps_p75"),
@@ -1446,7 +2019,9 @@ def collect_spread_snapshots_main(argv: Optional[Sequence[str]] = None) -> int:
         if cycle < cycles and float(args.cycle_sleep_seconds) > 0.0:
             time.sleep(float(args.cycle_sleep_seconds))
     if successes <= 0:
-        raise RuntimeError("No spread snapshot collection cycles completed successfully")
+        raise RuntimeError(
+            "No spread snapshot collection cycles completed successfully"
+        )
     return 0
 
 
@@ -1458,7 +2033,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     )
     parser.add_argument("--lookback-hours", type=float, default=24.0)
-    parser.add_argument("--symbols", default="", help="Comma-separated base or perp symbols.")
+    parser.add_argument(
+        "--symbols", default="", help="Comma-separated base or perp symbols."
+    )
     parser.add_argument("--max-symbols", type=int, default=0)
     parser.add_argument("--sleep-seconds", type=float, default=0.25)
     parser.add_argument(
@@ -1490,13 +2067,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise ValueError("--baseline-only requires --training-frame-path")
         frame = load_spread_snapshot_frame(training_path)
         if args.lookback_hours and float(args.lookback_hours) > 0.0:
-            since_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=float(args.lookback_hours))
+            since_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
+                hours=float(args.lookback_hours)
+            )
             frame = frame[frame.index >= since_ts.floor("min")]
         if symbols and "symbol" in frame.columns:
             allowed = {str(s).upper().strip() for s in symbols if str(s).strip()}
             frame = frame[frame["symbol"].astype(str).str.upper().isin(allowed)]
         if args.max_symbols and int(args.max_symbols) > 0 and "symbol" in frame.columns:
-            keep_symbols = sorted(frame["symbol"].astype(str).unique())[: int(args.max_symbols)]
+            keep_symbols = sorted(frame["symbol"].astype(str).unique())[
+                : int(args.max_symbols)
+            ]
             frame = frame[frame["symbol"].astype(str).isin(keep_symbols)]
         baseline_path, summary_path, summary = save_spread_baseline_outputs(
             frame,
@@ -1511,7 +2092,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "symbols": summary.get("symbols"),
                     "timestamp_min": summary.get("timestamp_min"),
                     "timestamp_max": summary.get("timestamp_max"),
-                    "global_average_spread_bps": summary.get("global_average_spread_bps"),
+                    "global_average_spread_bps": summary.get(
+                        "global_average_spread_bps"
+                    ),
                 },
                 indent=2,
                 sort_keys=True,
@@ -1542,11 +2125,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             {
                 "artifact_path": str(artifact_path),
                 "rows": int(len(scored)),
-                "symbols": int(fetch_audit["rows"].gt(0).sum()) if not fetch_audit.empty else 0,
+                "symbols": int(fetch_audit["rows"].gt(0).sum())
+                if not fetch_audit.empty
+                else 0,
                 "selected_features": artifact.get("selected_features", []),
                 "predicted_cost_bps": artifact.get("predicted_cost_bps"),
                 "mae_spread_bps": (artifact.get("metrics") or {}).get("mae_spread_bps"),
-                "baseline_mae_spread_bps": (artifact.get("metrics") or {}).get("baseline_mae_spread_bps"),
+                "baseline_mae_spread_bps": (artifact.get("metrics") or {}).get(
+                    "baseline_mae_spread_bps"
+                ),
             },
             indent=2,
             sort_keys=True,

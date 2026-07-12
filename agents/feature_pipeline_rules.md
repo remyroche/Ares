@@ -48,7 +48,9 @@ timestamp = **bar close time**
 Implication:
 
 - OHLCV bar at time t becomes available **after the bar closes**
-- indicators computed from that bar may only be used **from t+1 onward**
+- indicators computed from that bar may be used by a decision stamped `t` only
+  when `t` explicitly means post-close observability
+- execution must use the next explicitly executable event after that decision
 
 If the dataset uses a different convention it must be documented.
 
@@ -136,19 +138,18 @@ Do not construct features that depend on forward returns.
 
 ---
 
-# 7. Horizon Consistency
+# 7. Horizon And Lookback Consistency
 
 If a model predicts horizon H:
 
 target_t = return(t → t+H)
 
-Feature windows must not exceed the horizon in a way that leaks future information.
+Feature lookbacks may be longer than the prediction horizon. A 3-7 hour target
+may validly use daily, weekly, or longer historical context. The requirement is
+that every lookback ends at or before the feature timestamp and that target data
+starts only after the executable decision point.
 
-Example:
-
-If H = 10 bars:
-
-rolling features must only use `[t-k … t]`.
+Document both lookback and target horizon because they serve different roles.
 
 ---
 
@@ -180,11 +181,11 @@ Guidelines:
 
 ---
 
-# 10. Asset Isolation
+# 10. Per-Asset Isolation And Cross-Asset Features
 
 When computing rolling statistics:
 
-Never allow **data from one asset to influence another asset**.
+Per-asset rolling calculations must never accidentally mix symbols.
 
 Example:
 
@@ -195,6 +196,11 @@ rolling volatility computed across mixed assets.
 Correct:
 
 compute rolling statistics **per asset group**.
+
+Explicit cross-asset features are allowed and encouraged when they are causal.
+Breadth, dispersion, cross-asset correlation, OI breadth, market residuals, and
+peer features must use only assets and observations available at timestamp `t`.
+Their feature names and metadata must identify the cross-sectional semantics.
 
 ---
 
@@ -218,12 +224,12 @@ Every feature must be documented.
 
 Minimum metadata:
 
-feature_name  
-description  
-data sources  
-lookback window  
-units  
-expected range  
+feature_name
+description
+data sources
+lookback window
+units
+expected range
 
 Features without documentation should not be used in models.
 
@@ -289,6 +295,22 @@ No hidden external state may influence feature values.
 
 ---
 
+# 15. Current AE/GMM Feature Contract
+
+- The default state-input policy is `a0bis`: use ATR-normalized momentum/trend
+  variants for AE/GMM state discovery where available.
+- Fit the scaler, denoising AE, and GMM on authorized training data only.
+- Sample across beginning, middle, and end subperiods; record actual row counts.
+- Target approximately 15k AE rows and up to 100k GMM rows when available.
+- Freeze the fitted state across later growing OOS windows so cluster/posterior
+  meanings do not change fold by fold.
+- Downstream models may receive cluster ID, posterior vector, entropy,
+  Mahalanobis/distance measures, reconstruction error, speed, and acceleration.
+- Outcome-based cluster descriptions are diagnostics or train-derived priors;
+  they are not live inputs unless predicted from causal pre-entry features.
+
+---
+
 # Summary
 
 A valid feature pipeline must guarantee:
@@ -296,6 +318,6 @@ A valid feature pipeline must guarantee:
 - strict causality
 - no lookahead bias
 - correct timestamp alignment
-- cross-asset isolation
+- explicit per-asset and causal cross-asset semantics
 - deterministic execution
 - reproducible outputs

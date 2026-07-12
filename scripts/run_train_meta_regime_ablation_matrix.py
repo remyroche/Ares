@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
 import zlib
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -22,30 +22,44 @@ if str(ROOT) not in sys.path:
 
 from extreme_price_movements.meta_regime_ablation import (  # noqa: E402
     CROSS_ASSET_CONTEXT_FEATURES,
+    FrozenPhaseStateContext,
+    SideArchetypeIdentityContext,
     apply_regime_builder_fold,
+    drop_oos_outcome_columns,
     make_regime_builder,
     regime_feature_names,
 )
 from scripts.run_s52_train_meta_regime_handoff_smoke import run_smoke  # noqa: E402
-
 
 DEFAULT_RUN_ROOT = Path(
     "data_perp/reports/"
     "s59_h5_2025start_monthly_v4_base_configfull_mdafs120_hpo150_"
     "largestfold_oos15_ae3000_nocrossfit_k34567_payload300k_20260706"
 )
-DEFAULT_HANDOFF_DIR = DEFAULT_RUN_ROOT / "s52_trailing_regime_meta_handoff_top30_allsafe_aegmm_fixedtargets_oos15_20260706"
+DEFAULT_HANDOFF_DIR = (
+    DEFAULT_RUN_ROOT
+    / "s52_trailing_regime_meta_handoff_top30_allsafe_aegmm_fixedtargets_oos15_20260706"
+)
 DEFAULT_REFERENCE_MANIFEST = (
     DEFAULT_RUN_ROOT
     / "train_meta_regime_handoff_singlehead_base_soft_lgbmpipeline_auto_hpo150_oos15_top30_hpo45k_20260706_v5"
     / "best_full_oos_fixedfs_streamed_v1"
     / "manifest.json"
 )
-DEFAULT_OUT_ROOT = DEFAULT_RUN_ROOT / "train_meta_regime_ablation_matrix_apr_may_jun_20260707"
+DEFAULT_OUT_ROOT = (
+    DEFAULT_RUN_ROOT / "train_meta_regime_ablation_matrix_apr_may_jun_20260707"
+)
+DEFAULT_PHASE_STATE_CONTEXT = Path(
+    "data_perp/reports/global_residual_state_discovery_20260712_v2/"
+    "global_side_latent_states_phase_relevance_only/side_timestamp_market_states.parquet"
+)
 
 DEFAULT_ARMS = (
     "baseline_current_full_context",
     "baseline_no_cross_context",
+    "causal_phase_state_context",
+    "side_archetype_identity_context",
+    "causal_phase_side_archetype_context",
     "current_archetype_meta_regimes",
     "meta_feature_only_regimes",
     "base_error_signature_regimes",
@@ -65,6 +79,12 @@ def _json_safe(value: Any) -> Any:
         return [_json_safe(v) for v in value]
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    # pandas.Timestamp is intentionally handled without importing pandas in
+    # this lightweight runner module.
+    if type(value).__name__ == "Timestamp" and hasattr(value, "isoformat"):
+        return value.isoformat()
     return value
 
 
@@ -74,10 +94,16 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 
 def _selected_features(manifest: dict[str, Any]) -> list[str]:
-    features = manifest.get("selected_feature_union") or manifest.get("selected_features") or []
+    features = (
+        manifest.get("selected_feature_union")
+        or manifest.get("selected_features")
+        or []
+    )
     out = [str(col) for col in features if str(col).strip()]
     if not out:
-        raise ValueError("Reference manifest does not contain selected_feature_union/selected_features.")
+        raise ValueError(
+            "Reference manifest does not contain selected_feature_union/selected_features."
+        )
     return list(dict.fromkeys(out))
 
 
@@ -89,12 +115,95 @@ def _model_params(manifest: dict[str, Any]) -> dict[str, Any]:
     return {"classifier": classifier, "regressor": regressor}
 
 
-def _arm_features(arm: str, base_features: list[str], *, seed: int) -> list[str]:
+def _arm_features(
+    arm: str,
+    base_features: list[str],
+    *,
+    seed: int,
+    phase_context: FrozenPhaseStateContext | None = None,
+    identity_context: SideArchetypeIdentityContext | None = None,
+) -> list[str]:
     features = list(base_features)
     if arm == "baseline_no_cross_context":
         features = [col for col in features if col not in CROSS_ASSET_CONTEXT_FEATURES]
     features.extend(regime_feature_names(arm, seed=seed))
+    if arm in {"causal_phase_state_context", "causal_phase_side_archetype_context"}:
+        if phase_context is None:
+            raise ValueError(f"{arm} requires a frozen phase-state context source.")
+        features.extend(phase_context.feature_names())
+    if arm in {
+        "side_archetype_identity_context",
+        "causal_phase_side_archetype_context",
+    }:
+        if identity_context is None:
+            raise ValueError(
+                f"{arm} requires a frozen side x archetype identity context."
+            )
+        features.extend(identity_context.feature_names())
     return list(dict.fromkeys(features))
+
+
+def _minimal_fixed_handoff_columns(
+    handoff_path: Path,
+    selected_features: list[str],
+) -> list[str]:
+    """Resolve raw source columns for a frozen encoded meta feature contract.
+
+    The baseline reference uses numeric features plus fold-derived reliability
+    and OOD fields. This resolver avoids loading unrelated config-full columns
+    while retaining every raw source that can produce a selected feature.
+    """
+    try:
+        import pyarrow.parquet as pq
+
+        schema = list(pq.read_schema(handoff_path).names)
+    except Exception:
+        import pandas as pd
+
+        schema = list(pd.read_parquet(handoff_path).columns)
+    schema_set = set(schema)
+    required = {
+        "__ts__",
+        "__symbol__",
+        "side_name",
+        "month",
+        "score",
+        "selected_top30",
+        # Archetype identity is needed by base priors/reliability and reports.
+        "archetype_label_family",
+        "policy_archetype",
+        "archetype_policy_key",
+        "local_side_archetype",
+        "source_archetype",
+        "source_semantic_family",
+        "source_semantic_family_base",
+        "long_source_regime_split",
+    }
+    generated_prefixes = (
+        "meta_sel_ood_",
+        "rel_",
+        "base_margin_",
+        "base_signal_",
+        "base_score_rank_pct_",
+        "base_rank_band_",
+        "ctx_phase__",
+        "ctx_phase_",
+        "ctx_identity__",
+    )
+    raw_schema = sorted(schema, key=lambda name: (-len(name), name))
+    for feature in selected_features:
+        name = str(feature)
+        if name.startswith(generated_prefixes):
+            continue
+        if name in schema_set:
+            required.add(name)
+            continue
+        # Selected categorical dummies use <raw_feature>_<category>. Preserve
+        # the longest matching raw source to avoid misreading nested names.
+        matched = next((raw for raw in raw_schema if name.startswith(f"{raw}_")), None)
+        if matched is not None:
+            required.add(matched)
+    return sorted(required.intersection(schema_set))
 
 
 def _fold_seed(seed: int, arm: str, fold: str) -> int:
@@ -112,8 +221,26 @@ def _arm_complete(arm_out: Path, eval_months: list[str]) -> bool:
     return True
 
 
-def _make_fold_builder(arm: str, *, seed: int):
-    if make_regime_builder(arm, seed=seed) is None:
+def _make_fold_builder(
+    arm: str,
+    *,
+    seed: int,
+    phase_context: FrozenPhaseStateContext | None = None,
+    identity_context: SideArchetypeIdentityContext | None = None,
+):
+    use_phase_context = arm in {
+        "causal_phase_state_context",
+        "causal_phase_side_archetype_context",
+    }
+    use_identity_context = arm in {
+        "side_archetype_identity_context",
+        "causal_phase_side_archetype_context",
+    }
+    if (
+        not use_phase_context
+        and not use_identity_context
+        and make_regime_builder(arm, seed=seed) is None
+    ):
         return None
 
     def _builder(
@@ -127,12 +254,47 @@ def _make_fold_builder(arm: str, *, seed: int):
         selected_col: str,
     ):
         del month, valid_start, valid_end, selected_col
-        return apply_regime_builder_fold(
-            arm,
-            train=train,
-            valid=valid,
-            seed=_fold_seed(seed, arm, fold),
-        )
+        generated: list[str] = []
+        metadata: dict[str, Any] = {}
+        if use_identity_context:
+            if identity_context is None:
+                raise ValueError("Missing frozen side x archetype identity context.")
+            train_identity = identity_context.transform_train(train)
+            valid_identity = identity_context.transform_oos(
+                drop_oos_outcome_columns(valid)
+            )
+            train = train.copy(deep=False)
+            valid = valid.copy(deep=False)
+            for col in identity_context.feature_names():
+                train[col] = train_identity[col].to_numpy(dtype="float32", copy=False)
+                valid[col] = valid_identity[col].to_numpy(dtype="float32", copy=False)
+            generated.extend(identity_context.feature_names())
+            metadata["side_archetype_identity_context"] = identity_context.manifest()
+        if use_phase_context:
+            if phase_context is None:
+                raise ValueError(
+                    "Missing frozen phase-state context for causal_phase_state_context arm."
+                )
+            train_phase = phase_context.transform_train(train)
+            valid_phase = phase_context.transform_oos(drop_oos_outcome_columns(valid))
+            train = train.copy(deep=False)
+            valid = valid.copy(deep=False)
+            for col in phase_context.feature_names():
+                train[col] = train_phase[col].to_numpy(dtype="float32", copy=False)
+                valid[col] = valid_phase[col].to_numpy(dtype="float32", copy=False)
+            generated.extend(phase_context.feature_names())
+            metadata["causal_phase_context"] = phase_context.manifest()
+
+        if make_regime_builder(arm, seed=seed) is not None:
+            train, valid, regime_features, regime_meta = apply_regime_builder_fold(
+                arm,
+                train=train,
+                valid=valid,
+                seed=_fold_seed(seed, arm, fold),
+            )
+            generated.extend(regime_features)
+            metadata["regime_builder"] = regime_meta
+        return train, valid, list(dict.fromkeys(generated)), metadata
 
     return _builder
 
@@ -141,8 +303,20 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--handoff-dir", type=Path, default=DEFAULT_HANDOFF_DIR)
     parser.add_argument("--ledger-path", type=Path, default=None)
-    parser.add_argument("--reference-manifest", type=Path, default=DEFAULT_REFERENCE_MANIFEST)
+    parser.add_argument(
+        "--reference-manifest", type=Path, default=DEFAULT_REFERENCE_MANIFEST
+    )
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT)
+    parser.add_argument(
+        "--phase-state-context",
+        type=Path,
+        default=DEFAULT_PHASE_STATE_CONTEXT,
+        help=(
+            "Point-in-time side timestamp state table. Only deterministic state_phase__ fields "
+            "are used by the causal_phase_state_context arm."
+        ),
+    )
+    parser.add_argument("--phase-asof-max-minutes", type=int, default=60)
     parser.add_argument("--frontier", default="top30")
     parser.add_argument("--seed", type=int, default=20260707)
     parser.add_argument("--eval-months", default=",".join(DEFAULT_EVAL_MONTHS))
@@ -166,8 +340,26 @@ def main() -> None:
     unknown = sorted(set(arms) - set(DEFAULT_ARMS))
     if unknown:
         raise ValueError(f"Unknown arms: {unknown}; available={list(DEFAULT_ARMS)}")
-    eval_months = [part.strip() for part in str(args.eval_months).split(",") if part.strip()]
+    eval_months = [
+        part.strip() for part in str(args.eval_months).split(",") if part.strip()
+    ]
     args.out_root.mkdir(parents=True, exist_ok=True)
+    phase_context = None
+    phase_arms = {"causal_phase_state_context", "causal_phase_side_archetype_context"}
+    identity_arms = {
+        "side_archetype_identity_context",
+        "causal_phase_side_archetype_context",
+    }
+    if phase_arms.intersection(arms):
+        phase_context = FrozenPhaseStateContext(
+            source_path=Path(args.phase_state_context),
+            max_lag_minutes=int(args.phase_asof_max_minutes),
+        )
+    identity_context = None
+    if identity_arms.intersection(arms):
+        identity_context = SideArchetypeIdentityContext.from_parquet(
+            Path(args.handoff_dir) / "train_meta_regime_handoff.parquet"
+        )
 
     matrix_manifest: dict[str, Any] = {
         "generated_by": "run_train_meta_regime_ablation_matrix",
@@ -185,13 +377,53 @@ def main() -> None:
             "folds": "train rows strictly before OOS month start",
             "regime_oos_assignment": "frozen fold-local scaler/clusterer/classifier",
             "realized_error_descriptors": "train-only cluster labels/priors; never passed directly to OOS transforms",
+            "causal_phase_context": (
+                phase_context.manifest()
+                if phase_context is not None
+                else "not_requested"
+            ),
+            "side_archetype_identity_context": (
+                identity_context.manifest()
+                if identity_context is not None
+                else "not_requested"
+            ),
         },
     }
 
     for arm in arms:
         arm_out = args.out_root / arm
-        features = _arm_features(arm, base_features, seed=int(args.seed))
+        features = _arm_features(
+            arm,
+            base_features,
+            seed=int(args.seed),
+            phase_context=phase_context,
+            identity_context=identity_context,
+        )
         generated = regime_feature_names(arm, seed=int(args.seed))
+        if arm in phase_arms and phase_context is not None:
+            generated = list(
+                dict.fromkeys([*generated, *phase_context.feature_names()])
+            )
+        if arm in identity_arms and identity_context is not None:
+            generated = list(
+                dict.fromkeys([*generated, *identity_context.feature_names()])
+            )
+        # The two fixed-contract controls do not need every config-full input.
+        # More exploratory regime builders retain the full pre-selection space.
+        handoff_columns = (
+            _minimal_fixed_handoff_columns(
+                Path(args.handoff_dir) / "train_meta_regime_handoff.parquet", features
+            )
+            if arm
+            in {
+                "baseline_current_full_context",
+                "baseline_no_cross_context",
+                "causal_phase_state_context",
+                "side_archetype_identity_context",
+                "causal_phase_side_archetype_context",
+            }
+            else None
+        )
         if not args.rerun_complete and _arm_complete(arm_out, eval_months):
             print(
                 json.dumps(
@@ -228,7 +460,12 @@ def main() -> None:
                     "eval_months": eval_months,
                     "fixed_feature_count": len(features),
                     "generated_feature_count": len(generated),
-                    "removed_cross_asset_context_features": sorted(set(base_features) - set(features)),
+                    "removed_cross_asset_context_features": sorted(
+                        set(base_features) - set(features)
+                    ),
+                    "handoff_input_column_count": len(handoff_columns)
+                    if handoff_columns is not None
+                    else "all",
                 },
                 sort_keys=True,
             ),
@@ -243,8 +480,11 @@ def main() -> None:
             train_scope="selected",
             enable_base_prior_features=True,
             enable_reliability_features=True,
-            enable_support_drift_features=True,
-            enable_hit_surprise_features=True,
+            # Neither family is present in the frozen 55-feature reference
+            # contract. Avoid materializing discarded fold features while
+            # keeping the selected model inputs identical.
+            enable_support_drift_features=False,
+            enable_hit_surprise_features=False,
             feature_selection_top_n=0,
             feature_selection_target="ev_frontier",
             feature_selection_method="lgbm_pipeline",
@@ -257,20 +497,33 @@ def main() -> None:
             minimal_artifacts=bool(args.minimal_artifacts),
             fixed_selected_features=features,
             eval_months=eval_months,
-            fold_feature_builder=_make_fold_builder(arm, seed=int(args.seed)),
+            fold_feature_builder=_make_fold_builder(
+                arm,
+                seed=int(args.seed),
+                phase_context=phase_context,
+                identity_context=identity_context,
+            ),
             fold_feature_profile_name=arm,
             extra_prediction_columns=generated,
             force_prediction_shards=True,
             combine_prediction_shards=False,
+            handoff_columns=handoff_columns,
         )
         arm_record = {
             "arm": arm,
             "out_dir": str(arm_out),
             "generated_feature_count": len(generated),
             "fixed_feature_count": len(features),
-            "selected_feature_union_count": manifest.get("selected_feature_union_count"),
+            "selected_feature_union_count": manifest.get(
+                "selected_feature_union_count"
+            ),
             "best_selector": (manifest.get("best_selector") or {}).get("selector"),
-            "best_status": (manifest.get("best_selector") or {}).get("meta_smoke_status"),
+            "best_status": (manifest.get("best_selector") or {}).get(
+                "meta_smoke_status"
+            ),
+            "handoff_input_column_count": len(handoff_columns)
+            if handoff_columns is not None
+            else "all",
         }
         matrix_manifest["arms"].append(arm_record)
         (args.out_root / "matrix_manifest.json").write_text(
@@ -278,7 +531,15 @@ def main() -> None:
             encoding="utf-8",
         )
 
-    print(json.dumps({"event": "meta_regime_ablation_matrix_done", "out_root": str(args.out_root)}, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "event": "meta_regime_ablation_matrix_done",
+                "out_root": str(args.out_root),
+            },
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

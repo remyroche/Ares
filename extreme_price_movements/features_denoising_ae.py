@@ -25,7 +25,9 @@ AE_FEATURE_COLUMNS: tuple[str, ...] = tuple(
 )
 
 
-def _env_int_tuple(name: str, default: Sequence[int], *, allowed: Sequence[int]) -> tuple[int, ...]:
+def _env_int_tuple(
+    name: str, default: Sequence[int], *, allowed: Sequence[int]
+) -> tuple[int, ...]:
     raw = os.environ.get(name, "").strip()
     if not raw:
         return tuple(int(v) for v in default)
@@ -62,7 +64,9 @@ def _env_float_tuple(name: str, default: Sequence[float]) -> tuple[float, ...]:
     return tuple(out) if out else tuple(float(v) for v in default)
 
 
-def _env_str_tuple(name: str, default: Sequence[str], *, allowed: Sequence[str]) -> tuple[str, ...]:
+def _env_str_tuple(
+    name: str, default: Sequence[str], *, allowed: Sequence[str]
+) -> tuple[str, ...]:
     raw = os.environ.get(name, "").strip()
     if not raw:
         return tuple(str(v) for v in default)
@@ -94,14 +98,27 @@ def _activation(x: np.ndarray, name: str) -> np.ndarray:
     return np.maximum(x, 0.0)
 
 
-def _model_to_spec(model: Any, *, bottleneck: int, width: str, noise: float, metrics: Mapping[str, float]) -> dict[str, Any]:
+def _model_to_spec(
+    model: Any,
+    *,
+    bottleneck: int,
+    width: str,
+    noise: float,
+    metrics: Mapping[str, float],
+) -> dict[str, Any]:
     return {
         "bottleneck": int(bottleneck),
         "width": str(width),
         "noise": float(noise),
         "activation": str(getattr(model, "activation", "relu")),
-        "coefs": [np.asarray(w, dtype=np.float32).tolist() for w in getattr(model, "coefs_", [])],
-        "intercepts": [np.asarray(b, dtype=np.float32).tolist() for b in getattr(model, "intercepts_", [])],
+        "coefs": [
+            np.asarray(w, dtype=np.float32).tolist()
+            for w in getattr(model, "coefs_", [])
+        ],
+        "intercepts": [
+            np.asarray(b, dtype=np.float32).tolist()
+            for b in getattr(model, "intercepts_", [])
+        ],
         "metrics": {str(k): float(v) for k, v in dict(metrics).items()},
     }
 
@@ -173,7 +190,11 @@ def _evaluate_spec(
         12.0,
     )
     latent_noisy, recon_noisy = _forward(spec, noisy)
-    sensitivity = float(np.nanmean(np.sqrt(np.sum(np.square(latent_noisy - latent), axis=1)))) if len(latent) else 0.0
+    sensitivity = (
+        float(np.nanmean(np.sqrt(np.sum(np.square(latent_noisy - latent), axis=1))))
+        if len(latent)
+        else 0.0
+    )
     normal_mask = np.sqrt(np.sum(np.square(x_val), axis=1)) <= np.nanpercentile(
         np.sqrt(np.sum(np.square(x_val), axis=1)),
         60,
@@ -181,8 +202,16 @@ def _evaluate_spec(
     normal_err = row_err[normal_mask] if normal_mask.any() else row_err
     normal_vol = float(np.nanstd(normal_err)) if normal_err.size else 0.0
     radius = np.sqrt(np.sum(np.square(x_val), axis=1))
-    ood = radius >= np.nanpercentile(radius, 90) if radius.size else np.zeros(0, dtype=bool)
-    normal = radius <= np.nanpercentile(radius, 60) if radius.size else np.zeros(0, dtype=bool)
+    ood = (
+        radius >= np.nanpercentile(radius, 90)
+        if radius.size
+        else np.zeros(0, dtype=bool)
+    )
+    normal = (
+        radius <= np.nanpercentile(radius, 60)
+        if radius.size
+        else np.zeros(0, dtype=bool)
+    )
     ood_sep = 0.0
     if ood.any() and normal.any():
         ood_sep = float(np.nanmean(row_err[ood]) - np.nanmean(row_err[normal]))
@@ -194,7 +223,9 @@ def _evaluate_spec(
             12.0,
         )
         _, curve_recon = _forward(spec, pert)
-        curve_errors.append(float(np.nanmean(np.mean(np.square(curve_recon - x_val), axis=1))))
+        curve_errors.append(
+            float(np.nanmean(np.mean(np.square(curve_recon - x_val), axis=1)))
+        )
     curve_diffs = np.diff(np.asarray(curve_errors, dtype=np.float64))
     smooth_penalty = float(np.nanstd(curve_diffs)) if curve_diffs.size else 0.0
     temporal_consistency = (
@@ -212,7 +243,11 @@ def _evaluate_spec(
         "rank_penalty": _rank_penalty(erank, int(spec.get("bottleneck", 0) or 0)),
         "noise_curve_smoothness_penalty": smooth_penalty,
         "temporal_consistency": temporal_consistency,
-        "noisy_recon_loss": float(np.nanmean(np.mean(np.square(recon_noisy - x_val), axis=1))) if len(x_val) else 0.0,
+        "noisy_recon_loss": float(
+            np.nanmean(np.mean(np.square(recon_noisy - x_val), axis=1))
+        )
+        if len(x_val)
+        else 0.0,
     }
 
 
@@ -252,8 +287,12 @@ def _fit_one(
         model.fit(noisy, x_train)
     except Exception:
         return None
-    spec = _model_to_spec(model, bottleneck=bottleneck, width=width, noise=noise, metrics={})
-    metrics = _evaluate_spec(spec, x_val, noise=noise, rng=np.random.default_rng(int(random_state) + 17))
+    spec = _model_to_spec(
+        model, bottleneck=bottleneck, width=width, noise=noise, metrics={}
+    )
+    metrics = _evaluate_spec(
+        spec, x_val, noise=noise, rng=np.random.default_rng(int(random_state) + 17)
+    )
     spec["metrics"] = metrics
     return spec
 
@@ -286,9 +325,17 @@ def fit_denoising_autoencoder_state(
     """Fit bottleneck-8 and bottleneck-16 denoising AEs on compact numeric rows."""
     x = np.asarray(x_reference, dtype=np.float32)
     if MLPRegressor is None:
-        return {"enabled": False, "reason": "sklearn_mlp_unavailable", "schema_version": "denoising_ae_v1"}
+        return {
+            "enabled": False,
+            "reason": "sklearn_mlp_unavailable",
+            "schema_version": "denoising_ae_v1",
+        }
     if x.ndim != 2 or x.shape[0] < 200 or x.shape[1] < 2:
-        return {"enabled": False, "reason": "insufficient_rows_or_features", "schema_version": "denoising_ae_v1"}
+        return {
+            "enabled": False,
+            "reason": "insufficient_rows_or_features",
+            "schema_version": "denoising_ae_v1",
+        }
     x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
     if int(max_train_rows) > 0 and len(x) > int(max_train_rows):
         idx = np.linspace(0, len(x) - 1, int(max_train_rows)).round().astype(int)
@@ -299,7 +346,7 @@ def fit_denoising_autoencoder_state(
     x_train = x[:split]
     x_val = x[split:]
     if len(x_val) < 20:
-        x_val = x_train[-min(len(x_train), 100):]
+        x_val = x_train[-min(len(x_train), 100) :]
     models: dict[str, Any] = {}
     reports: dict[str, Any] = {}
     bottlenecks = _env_int_tuple(
@@ -331,13 +378,23 @@ def fit_denoising_autoencoder_state(
             if spec is None:
                 continue
             score = _score_width(spec.get("metrics", {}))
-            width_trials.append({"width": str(width), "noise": 0.10, "score": float(score), "metrics": spec.get("metrics", {})})
+            width_trials.append(
+                {
+                    "width": str(width),
+                    "noise": 0.10,
+                    "score": float(score),
+                    "metrics": spec.get("metrics", {}),
+                }
+            )
             if score < best_width_score:
                 best_width_score = float(score)
                 best_width = str(width)
                 best_width_spec = spec
         if best_width is None:
-            reports[f"b{int(bottleneck)}"] = {"enabled": False, "reason": "no_width_model_fit"}
+            reports[f"b{int(bottleneck)}"] = {
+                "enabled": False,
+                "reason": "no_width_model_fit",
+            }
             continue
         noise_trials: list[dict[str, Any]] = []
         best_spec = None
@@ -356,13 +413,22 @@ def fit_denoising_autoencoder_state(
                     bottleneck=int(bottleneck),
                     width=best_width,
                     noise=float(noise),
-                    random_state=int(random_state) + int(bottleneck) * 37 + int(round(noise * 1000)),
+                    random_state=int(random_state)
+                    + int(bottleneck) * 37
+                    + int(round(noise * 1000)),
                     max_iter=int(max_iter),
                 )
             if spec is None:
                 continue
             score = _score_final(spec.get("metrics", {}))
-            noise_trials.append({"width": best_width, "noise": float(noise), "score": float(score), "metrics": spec.get("metrics", {})})
+            noise_trials.append(
+                {
+                    "width": best_width,
+                    "noise": float(noise),
+                    "score": float(score),
+                    "metrics": spec.get("metrics", {}),
+                }
+            )
             if score < best_final_score:
                 best_final_score = float(score)
                 best_spec = spec
@@ -382,12 +448,86 @@ def fit_denoising_autoencoder_state(
         "schema_version": "denoising_ae_v1",
         "models": models,
         "report": reports,
-        "input_dim": int(x_reference.shape[1]) if np.asarray(x_reference).ndim == 2 else 0,
+        "input_dim": int(x_reference.shape[1])
+        if np.asarray(x_reference).ndim == 2
+        else 0,
         "fit_grid": {
             "bottlenecks": [int(v) for v in bottlenecks],
             "widths": [str(v) for v in widths],
             "noise_levels": [float(v) for v in noise_levels],
         },
+    }
+
+
+def refit_denoising_autoencoder_state(
+    x_reference: np.ndarray,
+    *,
+    selected_state: Mapping[str, Any],
+    random_state: int = 42,
+    max_iter: int = 80,
+) -> dict[str, Any]:
+    """Refit only the HPO-selected AE architectures on all permitted rows.
+
+    Architecture/noise selection remains on the caller's time-spread HPO
+    sample.  This final pass consumes every resolved training row, so rare
+    market states shape the frozen representation without multiplying the
+    width/noise search cost.
+    """
+
+    x = np.asarray(x_reference, dtype=np.float32)
+    if x.ndim != 2 or x.shape[0] < 200 or x.shape[1] < 2:
+        return {"enabled": False, "reason": "insufficient_rows_or_features"}
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    split = int(max(50, min(len(x) - 50, math_floor(0.80 * len(x)))))
+    if split <= 0 or split >= len(x):
+        split = max(1, len(x) - max(1, len(x) // 5))
+    x_train = x[:split]
+    x_val = x[split:]
+    if len(x_val) < 20:
+        x_val = x_train[-min(len(x_train), 100) :]
+    prior_models = (
+        selected_state.get("models", {}) if isinstance(selected_state, Mapping) else {}
+    )
+    prior_report = (
+        selected_state.get("report", {}) if isinstance(selected_state, Mapping) else {}
+    )
+    models: dict[str, Any] = {}
+    report: dict[str, Any] = {}
+    for bottleneck in AE_BOTTLENECKS:
+        key = f"b{int(bottleneck)}"
+        prior = prior_models.get(key, {}) if isinstance(prior_models, Mapping) else {}
+        metadata = (
+            prior_report.get(key, {}) if isinstance(prior_report, Mapping) else {}
+        )
+        width = str(metadata.get("best_width", prior.get("width", "small")))
+        noise = float(metadata.get("best_noise", prior.get("noise", 0.10)))
+        spec = _fit_one(
+            x_train,
+            x_val,
+            bottleneck=int(bottleneck),
+            width=width,
+            noise=noise,
+            random_state=int(random_state) + int(bottleneck) * 101,
+            max_iter=int(max_iter),
+        )
+        if spec is None:
+            continue
+        models[key] = spec
+        report[key] = {
+            "enabled": True,
+            "best_width": width,
+            "best_noise": noise,
+            "refit_rows": int(len(x)),
+            "metrics": spec.get("metrics", {}),
+        }
+    return {
+        "enabled": bool(models),
+        "schema_version": "denoising_ae_v1",
+        "models": models,
+        "report": report,
+        "input_dim": int(x.shape[1]),
+        "refit_on_all_rows": True,
+        "selection_source": "time_spread_hpo",
     }
 
 

@@ -92,6 +92,45 @@ def test_topk_opportunity_score_weighted_precision_recall_f1():
     assert out["score"] == pytest.approx(0.875)
 
 
+def test_mda_score_is_archetype_conditioned_by_default() -> None:
+    n = 240
+    labels = np.asarray(["long_mixed"] * 120 + ["short_breakout"] * 120)
+    y = np.tile(np.asarray([1, 0], dtype=np.float32), n // 2)
+    score = np.full(n, 0.5, dtype=np.float32)
+    score[:120] = np.where(y[:120] > 0.5, 0.9, 0.1)
+    result = lp._topk_mda_score(
+        y,
+        score,
+        sample_weight=np.ones(n, dtype=np.float32),
+        cfg=lp._resolve_lgbm_mda_config(
+            {
+                "shadow_null_enabled": False,
+                "archetype_min_rows": 64,
+            }
+        ),
+        archetype_labels=labels,
+    )
+    assert result["archetype_score_count"] == 2
+    assert "archetype_macro_score" in result
+    assert "archetype_worst_score" in result
+    assert result["score"] != pytest.approx(result["global_score"])
+    permuted_score = score.copy()
+    permuted_score[:120] = permuted_score[:120][::-1]
+    permuted = lp._topk_mda_score(
+        y,
+        permuted_score,
+        sample_weight=np.ones(n, dtype=np.float32),
+        cfg=lp._resolve_lgbm_mda_config(
+            {
+                "shadow_null_enabled": False,
+                "archetype_min_rows": 64,
+            }
+        ),
+        archetype_labels=labels,
+    )
+    assert result["score"] > permuted["score"]
+
+
 def test_exact_unused_lightgbm_feature_is_not_permuted():
     X, y, tr, va, params, model, pred, gain, split = _fit_fixture()
     cfg = _mda_cfg(permutation_mode="path_gated_lgbm")
@@ -120,6 +159,56 @@ def test_exact_unused_lightgbm_feature_is_not_permuted():
     assert row["mda_std_err"] == pytest.approx(0.0)
     assert int(row["n_repeats"]) == 0
     assert row["confidence_label"] == "unused_exact_zero"
+
+
+def test_topk_mda_supports_fractional_soft_binary_regressor() -> None:
+    X, hard = _fixture_frame(seed=31)
+    soft = (0.10 + 0.80 * hard).astype(np.float32)
+    tr = np.arange(0, 180)
+    va = np.arange(180, len(X))
+    params = lp._base_lgbm_params(
+        31,
+        classifier=False,
+        overrides={
+            "n_estimators": 50,
+            "learning_rate": 0.06,
+            "max_depth": 3,
+            "num_leaves": 8,
+            "min_child_samples": 18,
+            "deterministic": True,
+            "force_col_wise": True,
+        },
+    )
+    model = lp._fit_lgbm_model(
+        X.iloc[tr].reset_index(drop=True),
+        soft[tr],
+        np.ones(len(tr), dtype=np.float32),
+        classifier=False,
+        params=params,
+    )
+    pred = lp._predict_lgbm_raw(model, X.iloc[va].reset_index(drop=True), "regressor")
+    gain, split = lp._feature_importances(model, X.shape[1])
+    audit = lp._compute_topk_mda_audit(
+        model,
+        X.iloc[tr].reset_index(drop=True),
+        soft[tr],
+        np.ones(len(tr), dtype=np.float32),
+        X.iloc[va].reset_index(drop=True),
+        soft[va],
+        base_pred=pred,
+        classifier=False,
+        sample_weight_valid=np.ones(len(va), dtype=np.float32),
+        rng=np.random.default_rng(31),
+        cfg=_mda_cfg(permutation_mode="path_gated_lgbm"),
+        feature_names=list(X.columns),
+        split_counts=split,
+        gain_importance=gain,
+        model_params=params,
+        random_state=31,
+    )[2]
+    assert not audit.empty
+    assert set(audit["feature"]) == set(X.columns)
+    assert np.isfinite(pd.to_numeric(audit["mda_mean"], errors="coerce")).all()
 
 
 def test_path_gated_mda_matches_full_permutation_same_seed():
@@ -284,7 +373,9 @@ def test_time_features_bypass_univariate_but_remain_mda_audited():
             "selected": [True, False, False, False, False],
         }
     )
-    agg = lp._aggregate_mda_feature_audit(selected, audit, cfg=mda_cfg).set_index("feature")
+    agg = lp._aggregate_mda_feature_audit(selected, audit, cfg=mda_cfg).set_index(
+        "feature"
+    )
     for feature in forced:
         assert agg.loc[feature, "confidence_label"] == "forced_keep"
         assert agg.loc[feature, "final_action"] == "keep"
@@ -328,6 +419,44 @@ def test_grouped_mda_keeps_representative_for_correlated_group():
     assert member_rows["selected"].astype(bool).any()
 
 
+def test_group_first_family_screen_skips_null_individual_permutations():
+    X, y, tr, va, params, model, pred, gain, split = _fit_fixture(seed=37)
+    result = lp._compute_topk_mda_audit(
+        model,
+        X.iloc[tr].reset_index(drop=True),
+        y[tr],
+        np.ones(len(tr), dtype=np.float32),
+        X.iloc[va].reset_index(drop=True),
+        y[va],
+        base_pred=pred,
+        classifier=True,
+        sample_weight_valid=np.ones(len(va), dtype=np.float32),
+        rng=np.random.default_rng(91),
+        cfg=_mda_cfg(
+            group_first_screen_enabled=True,
+            group_first_screen_kind="feature_family",
+            group_first_min_repeats=2,
+            group_first_max_repeats=2,
+            group_first_drop_null=True,
+            min_effect_size=999.0,
+            group_mda_enabled=False,
+        ),
+        feature_names=list(X.columns),
+        split_counts=split,
+        gain_importance=gain,
+        model_params=params,
+        random_state=91,
+    )
+    feature_audit, group_audit, _shadow, repeats, diag = result[2:]
+    assert diag["group_first_screen_enabled"]
+    assert diag["group_first_screened_feature_count"] > 0
+    assert group_audit["group_kind"].astype(str).str.startswith("screen_").any()
+    skipped = feature_audit[feature_audit["method"].eq("group_first_null_skip")]
+    assert not skipped.empty
+    assert skipped["n_repeats"].eq(0).all()
+    assert repeats["entity_type"].eq("screen_group").any()
+
+
 def test_shadow_null_calibration_and_report_artifacts(tmp_path):
     X, y, tr, va, params, model, pred, gain, split = _fit_fixture(seed=41)
     del model, pred, gain, split
@@ -353,7 +482,9 @@ def test_shadow_null_calibration_and_report_artifacts(tmp_path):
     )
     assert np.isfinite(threshold)
     assert len(shadow_df) == 3
-    assert {"shadow_feature", "template_feature", "shadow_mda_mean"}.issubset(shadow_df.columns)
+    assert {"shadow_feature", "template_feature", "shadow_mda_mean"}.issubset(
+        shadow_df.columns
+    )
 
     feature_audit = pd.DataFrame(
         {

@@ -197,16 +197,23 @@ Statistical metrics may include:
 
 - AUC
 - log loss
-- precision / recall
+- top-5/10/20/30% precision and recall
 - calibration metrics
 
 Economic metrics should include:
 
-- annualized return
+- mean and sum net EV in the traded top-k tail
+- notional return per trade and bankroll/portfolio PnL
+- trades/day and selected support
+- worst-week and worst-month EV
+- annualized return where the evaluation period supports it
 - Sharpe ratio
 - maximum drawdown
 - turnover
 - transaction cost sensitivity
+- stop, timeout, side, archetype, and concentration diagnostics
+- signed probability/economic residual mean and autocorrelation
+- signed hit-rate surprise at 3d/7d/14d with effective support
 
 Statistical performance alone is insufficient.
 
@@ -346,3 +353,29 @@ A model may be considered credible only if it demonstrates:
 - improvement over reasonable baselines
 
 Passing one backtest is not enough.
+
+---
+
+# 21. Layer-Specific Validation
+
+Validate each layer against its actual responsibility:
+
+- Base: recover a broad, economically useful top-30 candidate stream. Compare
+  side and archetype slices; verify residual structure within confidence and
+  archetype buckets; do not require it to be the final trading policy.
+- Meta: improve ranking/calibration within the identical base candidate pool.
+  Retain base archetypes, add valid meta archetype/reliability context, and
+  compare meta arms against the baseline meta model on overlapping rows.
+- Policy: add value through calibrated top-10 admission, side/archetype geometry,
+  sizing, and portfolio constraints using validation-fold-only metrics.
+- Inference: reproduce frozen feature, score, EV mapping, calibration, threshold,
+  sizing, and execution behavior.
+
+Promotion requires positive cost-aware EV, acceptable worst-period behavior,
+sufficient support, and no unexplained side/archetype or spread concentration.
+
+Residual autocorrelation must be interpreted with signed residual mean. Positive
+autocorrelation can describe persistent favorable underprediction or persistent
+adverse overprediction; report both rather than treating autocorrelation as a
+one-directional risk score. Hit-rate surprise must likewise retain positive and
+negative values.

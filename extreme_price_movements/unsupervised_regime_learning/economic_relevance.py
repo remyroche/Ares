@@ -18,15 +18,16 @@ primary EBM candidate source.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import importlib.util
+from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 
-from extreme_price_movements.evm_latent_state_discovery import is_market_context_shock_entropy_feature
-
+from extreme_price_movements.evm_latent_state_discovery import (
+    is_market_context_shock_entropy_feature,
+)
 
 _LIGHTGBM_AVAILABLE = importlib.util.find_spec("lightgbm") is not None
 
@@ -110,7 +111,9 @@ class EconomicRegimeRelevanceResult:
 
 def _safe_numeric(frame: pd.DataFrame, col: str, default: float = np.nan) -> pd.Series:
     if col in frame.columns:
-        return pd.to_numeric(frame[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        return pd.to_numeric(frame[col], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
     return pd.Series(default, index=frame.index, dtype="float32")
 
 
@@ -128,7 +131,9 @@ def add_global_topk_surprise_targets(
     out = frame.copy()
     score = _safe_numeric(out, config.score_col)
     if config.month_col in out.columns:
-        rank = score.groupby(out[config.month_col], sort=False).rank(pct=True, method="first")
+        rank = score.groupby(out[config.month_col], sort=False).rank(
+            pct=True, method="first"
+        )
     else:
         rank = score.rank(pct=True, method="first")
     out["url_global_score_rank_pct"] = rank.astype("float32")
@@ -137,7 +142,9 @@ def add_global_topk_surprise_targets(
     top15 = rank.ge(1.0 - float(config.negative_diagnostic_top_fractions[0]))
     top20 = rank.ge(1.0 - float(config.negative_diagnostic_top_fractions[1]))
     positive_outer = rank.ge(1.0 - float(config.positive_outer_top_fraction))
-    positive_diag_outer = rank.ge(1.0 - float(config.positive_diagnostic_outer_fraction))
+    positive_diag_outer = rank.ge(
+        1.0 - float(config.positive_diagnostic_outer_fraction)
+    )
     excluded_top = rank.ge(1.0 - float(config.positive_excluded_top_fraction))
     ev = _safe_numeric(out, config.ev_col, 0.0).fillna(0.0)
     clean = _binary(out, config.clean_col)
@@ -150,14 +157,22 @@ def add_global_topk_surprise_targets(
     out["url_trade_top10_population"] = trade_top.astype("int8")
     out["url_demote_top10_population"] = negative_top.astype("int8")
     out["url_demote_top10_target"] = (negative_top & bad_trade).astype("int8")
-    out["url_promote_top20_not_top10_population"] = (positive_outer & ~excluded_top).astype("int8")
-    out["url_promote_top20_not_top10_target"] = (positive_outer & ~excluded_top & good_trade).astype("int8")
+    out["url_promote_top20_not_top10_population"] = (
+        positive_outer & ~excluded_top
+    ).astype("int8")
+    out["url_promote_top20_not_top10_target"] = (
+        positive_outer & ~excluded_top & good_trade
+    ).astype("int8")
     out["url_negative_top15_population"] = top15.astype("int8")
     out["url_negative_top15_target"] = (top15 & bad_trade).astype("int8")
     out["url_negative_top20_population"] = top20.astype("int8")
     out["url_negative_top20_target"] = (top20 & bad_trade).astype("int8")
-    out["url_positive_mid30_population"] = (positive_diag_outer & ~excluded_top).astype("int8")
-    out["url_positive_mid30_target"] = (positive_diag_outer & ~excluded_top & good_trade).astype("int8")
+    out["url_positive_mid30_population"] = (positive_diag_outer & ~excluded_top).astype(
+        "int8"
+    )
+    out["url_positive_mid30_target"] = (
+        positive_diag_outer & ~excluded_top & good_trade
+    ).astype("int8")
     return out
 
 
@@ -168,7 +183,9 @@ def _feature_thresholds(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for feature in feature_columns:
-        if feature not in frame.columns or not pd.api.types.is_numeric_dtype(frame[feature]):
+        if feature not in frame.columns or not pd.api.types.is_numeric_dtype(
+            frame[feature]
+        ):
             continue
         values = _safe_numeric(frame, feature)
         coverage = float(values.notna().mean())
@@ -201,7 +218,9 @@ def _assign_bin(values: pd.Series, threshold: Mapping[str, Any]) -> pd.Series:
     return out
 
 
-def _bin_depth(values: pd.Series, threshold: Mapping[str, Any], bin_name: str) -> pd.Series:
+def _bin_depth(
+    values: pd.Series, threshold: Mapping[str, Any], bin_name: str
+) -> pd.Series:
     """Continuous depth inside a frozen low/mid/high state.
 
     The binary composite says whether a row is in a state.  This depth says how
@@ -223,7 +242,12 @@ def _bin_depth(values: pd.Series, threshold: Mapping[str, Any], bin_name: str) -
         depth = np.minimum(numeric - q_low, q_high - numeric) / width
     else:
         depth = pd.Series(0.0, index=values.index, dtype="float32")
-    return pd.Series(depth, index=values.index).clip(lower=0.0, upper=5.0).fillna(0.0).astype("float32")
+    return (
+        pd.Series(depth, index=values.index)
+        .clip(lower=0.0, upper=5.0)
+        .fillna(0.0)
+        .astype("float32")
+    )
 
 
 def _nonlinear_feature_summary(
@@ -238,7 +262,9 @@ def _nonlinear_feature_summary(
     config: EconomicRegimeRelevanceConfig,
 ) -> dict[str, Any]:
     mask = population & values.notna()
-    if int(mask.sum()) < max(int(config.min_population_rows), int(config.nonlinear_min_bin_rows) * 2):
+    if int(mask.sum()) < max(
+        int(config.min_population_rows), int(config.nonlinear_min_bin_rows) * 2
+    ):
         return {
             "nonlinear_relevance_score": 0.0,
             "nonlinear_target_rate_span": 0.0,
@@ -248,14 +274,18 @@ def _nonlinear_feature_summary(
             "nonlinear_best_bin_target_rate": np.nan,
             "nonlinear_best_bin_ev": np.nan,
         }
-    x = pd.to_numeric(values.loc[mask], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    x = pd.to_numeric(values.loc[mask], errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
     y = target.loc[mask].astype("float32").to_numpy(dtype=np.float32, copy=False)
     e = ev.loc[mask].astype("float32").to_numpy(dtype=np.float32, copy=False)
     finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(e)
     x = x[finite]
     y = y[finite]
     e = e[finite]
-    if x.size < max(int(config.min_population_rows), int(config.nonlinear_min_bin_rows) * 2):
+    if x.size < max(
+        int(config.min_population_rows), int(config.nonlinear_min_bin_rows) * 2
+    ):
         return {
             "nonlinear_relevance_score": 0.0,
             "nonlinear_target_rate_span": 0.0,
@@ -287,9 +317,13 @@ def _nonlinear_feature_summary(
         rate = float(np.mean(y[local]))
         mean_ev = float(np.mean(e[local]))
         if _is_negative_task(task):
-            score = (rate - float(baseline_rate)) + max(float(baseline_ev) - mean_ev, 0.0) * float(config.negative_ev_weight)
+            score = (rate - float(baseline_rate)) + max(
+                float(baseline_ev) - mean_ev, 0.0
+            ) * float(config.negative_ev_weight)
         else:
-            score = (rate - float(baseline_rate)) + max(mean_ev - float(baseline_ev), 0.0) * float(config.positive_ev_weight)
+            score = (rate - float(baseline_rate)) + max(
+                mean_ev - float(baseline_ev), 0.0
+            ) * float(config.positive_ev_weight)
         rows.append((i, n, rate, mean_ev, float(score)))
     if not rows:
         return {
@@ -318,27 +352,39 @@ def _nonlinear_feature_summary(
 def _population_task(frame: pd.DataFrame, task: str) -> tuple[pd.Series, pd.Series]:
     if task == "demote_top10":
         return (
-            _safe_numeric(frame, "url_demote_top10_population", 0.0).fillna(0.0).gt(0.5),
+            _safe_numeric(frame, "url_demote_top10_population", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
             _safe_numeric(frame, "url_demote_top10_target", 0.0).fillna(0.0).gt(0.5),
         )
     if task == "promote_top20_not_top10":
         return (
-            _safe_numeric(frame, "url_promote_top20_not_top10_population", 0.0).fillna(0.0).gt(0.5),
-            _safe_numeric(frame, "url_promote_top20_not_top10_target", 0.0).fillna(0.0).gt(0.5),
+            _safe_numeric(frame, "url_promote_top20_not_top10_population", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
+            _safe_numeric(frame, "url_promote_top20_not_top10_target", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
         )
     if task in {"negative_top15", "diagnostic_negative_top15"}:
         return (
-            _safe_numeric(frame, "url_negative_top15_population", 0.0).fillna(0.0).gt(0.5),
+            _safe_numeric(frame, "url_negative_top15_population", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
             _safe_numeric(frame, "url_negative_top15_target", 0.0).fillna(0.0).gt(0.5),
         )
     if task == "diagnostic_negative_top20":
         return (
-            _safe_numeric(frame, "url_negative_top20_population", 0.0).fillna(0.0).gt(0.5),
+            _safe_numeric(frame, "url_negative_top20_population", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
             _safe_numeric(frame, "url_negative_top20_target", 0.0).fillna(0.0).gt(0.5),
         )
     if task in {"positive_mid30_not_top10", "diagnostic_positive_top30_not_top10"}:
         return (
-            _safe_numeric(frame, "url_positive_mid30_population", 0.0).fillna(0.0).gt(0.5),
+            _safe_numeric(frame, "url_positive_mid30_population", 0.0)
+            .fillna(0.0)
+            .gt(0.5),
             _safe_numeric(frame, "url_positive_mid30_target", 0.0).fillna(0.0).gt(0.5),
         )
     raise ValueError(f"unknown economic relevance task: {task}")
@@ -355,7 +401,16 @@ def _has_shock_entropy(name: str) -> bool:
 
 def _is_market_or_cross_sectional_context_feature(name: str) -> bool:
     lower = str(name).lower()
-    if any(token in lower for token in ("symbol_minus_mkt", "asset_minus_mkt", "peer_resid", "mkt_resid", "ts_resid")):
+    if any(
+        token in lower
+        for token in (
+            "symbol_minus_mkt",
+            "asset_minus_mkt",
+            "peer_resid",
+            "mkt_resid",
+            "ts_resid",
+        )
+    ):
         return False
     if _has_shock_entropy(lower):
         return is_market_context_shock_entropy_feature(lower)
@@ -367,6 +422,11 @@ def _is_market_or_cross_sectional_context_feature(name: str) -> bool:
             "xs_",
             "xs_dispersion",
             "cs_",
+            "pct_assets",
+            "breadth_",
+            "liquidation_",
+            "post_liquidation",
+            "bars_since_mkt",
             "cross_asset",
             "crossasset",
             "cross_section",
@@ -387,7 +447,9 @@ def _is_market_or_cross_sectional_context_feature(name: str) -> bool:
 def _valid_pair_for_shock_entropy_context(feature_a: str, feature_b: str) -> bool:
     if not (_has_shock_entropy(feature_a) or _has_shock_entropy(feature_b)):
         return True
-    return _is_market_or_cross_sectional_context_feature(feature_a) and _is_market_or_cross_sectional_context_feature(feature_b)
+    return _is_market_or_cross_sectional_context_feature(
+        feature_a
+    ) and _is_market_or_cross_sectional_context_feature(feature_b)
 
 
 def _scoring_tasks(config: EconomicRegimeRelevanceConfig) -> tuple[str, ...]:
@@ -407,10 +469,14 @@ def _state_score(
     event_lift = state_rate - baseline_rate
     ev_delta = state_ev - baseline_ev
     if _is_negative_task(task):
-        base = event_lift + float(max(-ev_delta, 0.0)) * float(config.negative_ev_weight)
+        base = event_lift + float(max(-ev_delta, 0.0)) * float(
+            config.negative_ev_weight
+        )
     else:
         base = event_lift + float(max(ev_delta, 0.0)) * float(config.positive_ev_weight)
-    return float(base + float(config.temporal_score_weight) * float(max(temporal_score, 0.0)))
+    return float(
+        base + float(config.temporal_score_weight) * float(max(temporal_score, 0.0))
+    )
 
 
 def _longest_true_run(values: Sequence[bool]) -> int:
@@ -425,7 +491,9 @@ def _longest_true_run(values: Sequence[bool]) -> int:
     return int(best)
 
 
-def _period_keys(frame: pd.DataFrame, config: EconomicRegimeRelevanceConfig) -> tuple[pd.Series, pd.Series]:
+def _period_keys(
+    frame: pd.DataFrame, config: EconomicRegimeRelevanceConfig
+) -> tuple[pd.Series, pd.Series]:
     if config.timestamp_col in frame.columns:
         ts = pd.to_datetime(frame[config.timestamp_col], utc=True, errors="coerce")
         day = ts.dt.floor("D").astype(str)
@@ -484,27 +552,38 @@ def _temporal_state_metrics(
             f"{prefix}_temporal_score": 0.0,
         }
     if _is_negative_task(task):
-        period_score = period["target_rate"] - period["mean_ev"] * float(config.negative_ev_weight)
+        period_score = period["target_rate"] - period["mean_ev"] * float(
+            config.negative_ev_weight
+        )
     else:
-        period_score = period["target_rate"] + period["mean_ev"] * float(config.positive_ev_weight)
+        period_score = period["target_rate"] + period["mean_ev"] * float(
+            config.positive_ev_weight
+        )
     threshold = float(period_score.quantile(1.0 - float(config.temporal_tail_fraction)))
     aligned = period_score.ge(threshold)
     weights = period["rows"].astype("float64")
     base_share = float(np.average(period["state_share"], weights=weights))
     aligned_rows = int(aligned.sum())
     aligned_share = (
-        float(np.average(period.loc[aligned, "state_share"], weights=weights.loc[aligned]))
+        float(
+            np.average(period.loc[aligned, "state_share"], weights=weights.loc[aligned])
+        )
         if aligned_rows
         else base_share
     )
     lift = aligned_share - base_share
-    if period["state_share"].nunique(dropna=True) < 2 or period_score.nunique(dropna=True) < 2:
+    if (
+        period["state_share"].nunique(dropna=True) < 2
+        or period_score.nunique(dropna=True) < 2
+    ):
         corr = 0.0
     else:
         corr = float(period["state_share"].corr(period_score, method="spearman"))
         if not np.isfinite(corr):
             corr = 0.0
-    streak = float(_longest_true_run((aligned & period["state_share"].ge(base_share)).tolist()))
+    streak = float(
+        _longest_true_run((aligned & period["state_share"].ge(base_share)).tolist())
+    )
     temporal_score = max(lift, 0.0) + max(corr, 0.0) * 0.25 + min(streak, 5.0) * 0.02
     return {
         f"{prefix}_aligned_periods": float(aligned_rows),
@@ -628,12 +707,16 @@ def score_side_archetype_economic_relevance(
     """Score univariate and pairwise state relevance per side x archetype."""
 
     work = add_global_topk_surprise_targets(frame, config=config)
-    feature_columns = [str(c) for c in dict.fromkeys(feature_columns) if str(c) in work.columns]
+    feature_columns = [
+        str(c) for c in dict.fromkeys(feature_columns) if str(c) in work.columns
+    ]
     feature_rows: list[dict[str, Any]] = []
     composite_rows: list[dict[str, Any]] = []
     composite_defs: list[dict[str, Any]] = []
     ev = _safe_numeric(work, config.ev_col, 0.0).fillna(0.0)
-    for (side, arch), group_idx in work.groupby([config.side_col, config.archetype_col], observed=True).groups.items():
+    for (side, arch), group_idx in work.groupby(
+        [config.side_col, config.archetype_col], observed=True
+    ).groups.items():
         group = work.loc[group_idx]
         if len(group) < int(config.min_group_rows):
             continue
@@ -696,12 +779,20 @@ def score_side_archetype_economic_relevance(
                         feature_rows.append(row)
 
             local_feature_metrics = pd.DataFrame(
-                [r for r in feature_rows if r["side_name"] == str(side) and r["archetype_policy_key"] == str(arch) and r["task"] == task]
+                [
+                    r
+                    for r in feature_rows
+                    if r["side_name"] == str(side)
+                    and r["archetype_policy_key"] == str(arch)
+                    and r["task"] == task
+                ]
             )
             if local_feature_metrics.empty:
                 continue
             top_features = (
-                local_feature_metrics.sort_values("economic_relevance_score", ascending=False)["feature"]
+                local_feature_metrics.sort_values(
+                    "economic_relevance_score", ascending=False
+                )["feature"]
                 .drop_duplicates()
                 .head(int(config.max_features_for_composites))
                 .tolist()
@@ -709,7 +800,9 @@ def score_side_archetype_economic_relevance(
             composite_count = 0
             for i, feature_a in enumerate(top_features):
                 for feature_b in top_features[i + 1 :]:
-                    if not _valid_pair_for_shock_entropy_context(str(feature_a), str(feature_b)):
+                    if not _valid_pair_for_shock_entropy_context(
+                        str(feature_a), str(feature_b)
+                    ):
                         continue
                     t_a = threshold_by_feature.get(str(feature_a))
                     t_b = threshold_by_feature.get(str(feature_b))
@@ -745,7 +838,9 @@ def score_side_archetype_economic_relevance(
                             )
                             if row is not None:
                                 composite_rows.append(row)
-                                if row["economic_relevance_score"] >= float(config.min_candidate_score):
+                                if row["economic_relevance_score"] >= float(
+                                    config.min_candidate_score
+                                ):
                                     composite_name = _composite_feature_name(row)
                                     composite_defs.append(
                                         {
@@ -761,11 +856,15 @@ def score_side_archetype_economic_relevance(
                                             "feature_b_bin": bin_b,
                                             "q_low_b": float(t_b["q_low"]),
                                             "q_high_b": float(t_b["q_high"]),
-                                            "economic_relevance_score": float(row["economic_relevance_score"]),
+                                            "economic_relevance_score": float(
+                                                row["economic_relevance_score"]
+                                            ),
                                         }
                                     )
                             composite_count += 1
-                            if composite_count >= int(config.max_composites_per_group_task):
+                            if composite_count >= int(
+                                config.max_composites_per_group_task
+                            ):
                                 break
                         if composite_count >= int(config.max_composites_per_group_task):
                             break
@@ -823,7 +922,9 @@ def materialize_composite_features(
         match = bins_a.eq(bin_a) & bins_b.eq(bin_b)
         columns[name] = match.to_numpy(dtype=np.int8, copy=False)
         if include_intensity:
-            depth_a = _bin_depth(frame[feature], definition, bin_a).to_numpy(dtype=np.float32, copy=False)
+            depth_a = _bin_depth(frame[feature], definition, bin_a).to_numpy(
+                dtype=np.float32, copy=False
+            )
             depth_b = _bin_depth(
                 frame[feature_b],
                 {
@@ -833,7 +934,9 @@ def materialize_composite_features(
                 bin_b,
             ).to_numpy(dtype=np.float32, copy=False)
             intensity = np.minimum(depth_a, depth_b)
-            intensity = np.where(match.to_numpy(dtype=bool, copy=False), intensity, 0.0).astype(np.float32, copy=False)
+            intensity = np.where(
+                match.to_numpy(dtype=bool, copy=False), intensity, 0.0
+            ).astype(np.float32, copy=False)
             columns[f"{name}__intensity"] = intensity
     if not columns:
         return pd.DataFrame(index=frame.index)
@@ -844,7 +947,11 @@ def _matrix(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
     cols = [str(c) for c in dict.fromkeys(columns) if str(c) in frame.columns]
     if not cols:
         return pd.DataFrame(index=frame.index)
-    x = frame[cols].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    x = (
+        frame[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+    )
     med = x.median(axis=0, skipna=True).replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return x.fillna(med).astype("float32", copy=False)
 
@@ -879,14 +986,29 @@ def train_local_lgbm_relevance_models(
     lgb = _lightgbm_module()
     if lgb is None:
         return pd.DataFrame(), pd.DataFrame(
-            [{"status": "lightgbm_unavailable", "task": "", "side_name": "", "archetype_policy_key": ""}]
+            [
+                {
+                    "status": "lightgbm_unavailable",
+                    "task": "",
+                    "side_name": "",
+                    "archetype_policy_key": "",
+                }
+            ]
         )
     work = add_global_topk_surprise_targets(frame, config=config)
-    feature_columns = [str(c) for c in dict.fromkeys(feature_columns) if str(c) in work.columns]
+    feature_columns = [
+        str(c) for c in dict.fromkeys(feature_columns) if str(c) in work.columns
+    ]
     feature_rows: list[dict[str, Any]] = []
     model_rows: list[dict[str, Any]] = []
-    for (side, arch), group_idx in work.groupby([config.side_col, config.archetype_col], observed=True).groups.items():
-        group = work.loc[group_idx].sort_values(config.timestamp_col if config.timestamp_col in work.columns else config.score_col)
+    for (side, arch), group_idx in work.groupby(
+        [config.side_col, config.archetype_col], observed=True
+    ).groups.items():
+        group = work.loc[group_idx].sort_values(
+            config.timestamp_col
+            if config.timestamp_col in work.columns
+            else config.score_col
+        )
         if len(group) < int(config.min_group_rows):
             continue
         cols = feature_columns[: int(config.lgbm_max_features)]
@@ -896,7 +1018,11 @@ def train_local_lgbm_relevance_models(
             y = target.loc[population].astype("int8").to_numpy()
             if len(sub) < int(config.lgbm_min_rows) or np.unique(y).size < 2:
                 continue
-            split = int(max(10, round(len(sub) * (1.0 - float(config.lgbm_validation_fraction)))))
+            split = int(
+                max(
+                    10, round(len(sub) * (1.0 - float(config.lgbm_validation_fraction)))
+                )
+            )
             split = min(max(split, 10), len(sub) - 5)
             x = _matrix(sub, cols)
             x_train = x.iloc[:split]
@@ -934,7 +1060,9 @@ def train_local_lgbm_relevance_models(
                     "validation_rows": int(len(x_val)),
                     "baseline_target_rate": baseline,
                     "top15_model_precision": precision,
-                    "top15_model_lift": precision - baseline if np.isfinite(precision) else np.nan,
+                    "top15_model_lift": precision - baseline
+                    if np.isfinite(precision)
+                    else np.nan,
                     "auc": auc,
                 }
             )
@@ -953,7 +1081,9 @@ def train_local_lgbm_relevance_models(
                         "lgbm_gain": float(gain_value),
                         "lgbm_split": int(split_value),
                         "model_auc": auc,
-                        "model_top15_lift": precision - baseline if np.isfinite(precision) else np.nan,
+                        "model_top15_lift": precision - baseline
+                        if np.isfinite(precision)
+                        else np.nan,
                     }
                 )
     return pd.DataFrame(feature_rows), pd.DataFrame(model_rows)
@@ -976,28 +1106,48 @@ def build_ebm_candidate_manifest(
         if df is None or df.empty:
             continue
         cur = df.copy()
-        cur["effective_candidate_score"] = pd.to_numeric(cur["economic_relevance_score"], errors="coerce")
-        if source_name == "feature_bin_relevance" and "nonlinear_relevance_score" in cur.columns:
+        cur["effective_candidate_score"] = pd.to_numeric(
+            cur["economic_relevance_score"], errors="coerce"
+        )
+        if (
+            source_name == "feature_bin_relevance"
+            and "nonlinear_relevance_score" in cur.columns
+        ):
             cur["effective_candidate_score"] = np.maximum(
                 cur["effective_candidate_score"].fillna(0.0),
-                pd.to_numeric(cur["nonlinear_relevance_score"], errors="coerce").fillna(0.0),
+                pd.to_numeric(cur["nonlinear_relevance_score"], errors="coerce").fillna(
+                    0.0
+                ),
             )
-        cur = cur.loc[cur["effective_candidate_score"].ge(float(config.min_candidate_score))]
+        cur = cur.loc[
+            cur["effective_candidate_score"].ge(float(config.min_candidate_score))
+        ]
         cur = cur.loc[cur["task"].astype(str).isin(set(config.candidate_tasks))]
         for _, row in cur.iterrows():
             feature_name = str(row.get("feature") or "")
             source = source_name
             if source_name == "pair_composite_relevance":
                 base_name = _composite_feature_name(row)
-                feature_names = [f"{base_name}__intensity", base_name] if bool(config.materialize_composite_intensity) else [base_name]
+                feature_names = (
+                    [f"{base_name}__intensity", base_name]
+                    if bool(config.materialize_composite_intensity)
+                    else [base_name]
+                )
             else:
                 feature_names = [feature_name]
             for feature_name in feature_names:
-                if source_name == "pair_composite_relevance" and feature_name.endswith("__intensity"):
+                if source_name == "pair_composite_relevance" and feature_name.endswith(
+                    "__intensity"
+                ):
                     source = "pair_composite_intensity"
                 else:
                     source = source_name
-                score = float(row.get("effective_candidate_score", row.get("economic_relevance_score", np.nan)))
+                score = float(
+                    row.get(
+                        "effective_candidate_score",
+                        row.get("economic_relevance_score", np.nan),
+                    )
+                )
                 if source == "pair_composite_intensity":
                     score += 1e-9
                 candidates.append(
@@ -1005,17 +1155,25 @@ def build_ebm_candidate_manifest(
                         "source": source,
                         "task": str(row.get("task") or ""),
                         "side_name": str(row.get("side_name") or ""),
-                        "archetype_policy_key": str(row.get("archetype_policy_key") or ""),
+                        "archetype_policy_key": str(
+                            row.get("archetype_policy_key") or ""
+                        ),
                         "feature": feature_name,
                         "economic_relevance_score": score,
-                        "bin_economic_relevance_score": float(row.get("economic_relevance_score", np.nan)),
-                        "nonlinear_relevance_score": float(row.get("nonlinear_relevance_score", np.nan)),
+                        "bin_economic_relevance_score": float(
+                            row.get("economic_relevance_score", np.nan)
+                        ),
+                        "nonlinear_relevance_score": float(
+                            row.get("nonlinear_relevance_score", np.nan)
+                        ),
                         "target_rate_lift": float(row.get("target_rate_lift", np.nan)),
                         "ev_delta": float(row.get("ev_delta", np.nan)),
                     }
                 )
     if lgbm_feature_metrics is not None and not lgbm_feature_metrics.empty:
-        ranked = lgbm_feature_metrics.sort_values(["model_top15_lift", "lgbm_gain"], ascending=False)
+        ranked = lgbm_feature_metrics.sort_values(
+            ["model_top15_lift", "lgbm_gain"], ascending=False
+        )
         for _, row in ranked.iterrows():
             if str(row.get("task") or "") not in set(config.candidate_tasks):
                 continue
@@ -1026,7 +1184,9 @@ def build_ebm_candidate_manifest(
                     "side_name": str(row.get("side_name") or ""),
                     "archetype_policy_key": str(row.get("archetype_policy_key") or ""),
                     "feature": str(row.get("feature") or ""),
-                    "economic_relevance_score": float(row.get("model_top15_lift", np.nan)),
+                    "economic_relevance_score": float(
+                        row.get("model_top15_lift", np.nan)
+                    ),
                     "lgbm_gain": float(row.get("lgbm_gain", np.nan)),
                     "model_auc": float(row.get("model_auc", np.nan)),
                 }
@@ -1039,8 +1199,16 @@ def build_ebm_candidate_manifest(
             ascending=[True, True, False],
             kind="mergesort",
         )
-        for (side, arch), group in candidates_df.groupby(["side_name", "archetype_policy_key"], observed=True):
-            features = [str(f) for f in group["feature"].dropna().drop_duplicates().head(int(max_features_per_side_archetype))]
+        for (side, arch), group in candidates_df.groupby(
+            ["side_name", "archetype_policy_key"], observed=True
+        ):
+            features = [
+                str(f)
+                for f in group["feature"]
+                .dropna()
+                .drop_duplicates()
+                .head(int(max_features_per_side_archetype))
+            ]
             feature_map[f"{side}|{arch}"] = features
     return {
         "artifact_type": "unsupervised_regime_learning_economic_ebm_candidate_features",
@@ -1066,17 +1234,21 @@ def run_economic_regime_relevance(
     *,
     config: EconomicRegimeRelevanceConfig = EconomicRegimeRelevanceConfig(),
 ) -> EconomicRegimeRelevanceResult:
-    feature_metrics, composite_metrics, composite_definitions = score_side_archetype_economic_relevance(
-        frame,
-        feature_columns,
-        config=config,
+    feature_metrics, composite_metrics, composite_definitions = (
+        score_side_archetype_economic_relevance(
+            frame,
+            feature_columns,
+            config=config,
+        )
     )
     composite_frame = materialize_composite_features(
         frame,
         composite_definitions,
         include_intensity=bool(config.materialize_composite_intensity),
     )
-    model_frame = pd.concat([frame.reset_index(drop=True), composite_frame.reset_index(drop=True)], axis=1)
+    model_frame = pd.concat(
+        [frame.reset_index(drop=True), composite_frame.reset_index(drop=True)], axis=1
+    )
     lgbm_features = [*feature_columns, *list(composite_frame.columns)]
     lgbm_feature_metrics, lgbm_model_metrics = train_local_lgbm_relevance_models(
         model_frame,
@@ -1094,7 +1266,9 @@ def run_economic_regime_relevance(
     for key, features in (manifest.get("feature_map") or {}).items():
         side, arch = str(key).split("|", 1)
         for feature in features:
-            selected_rows.append({"side_name": side, "archetype_policy_key": arch, "feature": feature})
+            selected_rows.append(
+                {"side_name": side, "archetype_policy_key": arch, "feature": feature}
+            )
     return EconomicRegimeRelevanceResult(
         feature_metrics=feature_metrics,
         composite_metrics=composite_metrics,

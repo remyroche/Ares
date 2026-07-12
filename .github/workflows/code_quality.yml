@@ -1,58 +1,57 @@
-name: Code Quality Checks
+name: Repository Checks
 
 on:
-  push:
-    branches:
-      - main # Run on pushes to the main branch
-      - develop # Run on pushes to the develop branch
   pull_request:
-    branches:
-      - main
-      - develop
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-and-typecheck:
-    runs-on: ubuntu-latest # Use a Linux runner
+  pre-commit:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4 # Action to checkout your repository code
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Set up Poetry
-      uses: snok/install-poetry@v1
-      with:
-        version: '1.8.2' # Use a specific version for reproducibility
-        virtualenvs-in-project: true
+      - name: Set up Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "2.1.3"
+          virtualenvs-in-project: true
 
-    - name: Install TA-Lib C Library
-      run: |
-        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz
-        tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp
-        cd /tmp/ta-lib/
-        ./configure --prefix=/usr
-        make
-        sudo make install
-    
-    - name: Install dependencies
-      run: |
-        poetry install --no-root --sync
+      - name: Validate dependency lock
+        run: poetry check --lock
 
-    - name: Run Linters and Formatters
-      run: |
-        poetry run ruff check .
-        poetry run ruff format . --check
+      - name: Install development tools
+        run: poetry sync --only dev --no-root
 
-    - name: Dead code detection
-      run: poetry run vulture src/ --min-confidence 80 || true
-
-    - name: Run MyPy (Static Type Checking)
-      run: poetry run mypy --ignore-missing-imports --package src
-
-    - name: Run Radon (Code Complexity and Maintainability)
-      run: poetry run radon cc src/ -s -nc
+      - name: Run changed-file checks
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            poetry run pre-commit run --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA" --show-diff-on-failure
+          elif [ "$EVENT_NAME" = "push" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            poetry run pre-commit run --from-ref "$BEFORE" --to-ref "$HEAD_SHA" --show-diff-on-failure
+          else
+            poetry run pre-commit run --all-files --show-diff-on-failure
+          fi

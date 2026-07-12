@@ -147,6 +147,9 @@ def is_market_context_shock_entropy_feature(name: str) -> bool:
         "factor",
         "breadth",
         "dispersion",
+        "pct_assets",
+        "liquidation",
+        "bars_since_mkt",
     )
     return any(hint in lower for hint in market_context)
 
@@ -160,6 +163,8 @@ def evm_feature_priority_score(name: str) -> float:
         "market_breadth",
         "market_dispersion",
         "mkt_",
+        "pct_assets",
+        "liquidation",
         "aegmm",
         "gmm",
         "mahalanobis",
@@ -177,6 +182,7 @@ def evm_feature_priority_score(name: str) -> float:
     if any(h in lower for h in medium_priority):
         return 1.0
     return 0.0
+
 
 DEFAULT_TARGET_DERIVED_HINTS: tuple[str, ...] = (
     "target",
@@ -306,12 +312,18 @@ def select_evm_state_feature_columns(
     if max_columns and len(selected) > int(max_columns):
         finite_share = np.asarray(
             [
-                np.isfinite(pd.to_numeric(frame[col], errors="coerce").to_numpy(dtype=np.float64, copy=False)).mean()
+                np.isfinite(
+                    pd.to_numeric(frame[col], errors="coerce").to_numpy(
+                        dtype=np.float64, copy=False
+                    )
+                ).mean()
                 for col in selected
             ],
             dtype=np.float32,
         )
-        priority = np.asarray([evm_feature_priority_score(col) for col in selected], dtype=np.float32)
+        priority = np.asarray(
+            [evm_feature_priority_score(col) for col in selected], dtype=np.float32
+        )
         order = np.lexsort((finite_share, priority))[::-1][: int(max_columns)]
         selected = [selected[int(i)] for i in order]
     return selected
@@ -319,7 +331,9 @@ def select_evm_state_feature_columns(
 
 def _safe_numeric(frame: pd.DataFrame, col: str, default: float = np.nan) -> pd.Series:
     if col in frame.columns:
-        return pd.to_numeric(frame[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        return pd.to_numeric(frame[col], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
     return pd.Series(default, index=frame.index, dtype="float32")
 
 
@@ -330,16 +344,24 @@ def _as_float32(frame: pd.DataFrame, col: str, default: float = np.nan) -> np.nd
 def _as_int8_bool(frame: pd.DataFrame, col: str) -> np.ndarray:
     if col not in frame.columns:
         return np.zeros(len(frame), dtype=np.int8)
-    values = pd.to_numeric(frame[col], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32, copy=False)
+    values = (
+        pd.to_numeric(frame[col], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32, copy=False)
+    )
     return (values > 0.5).astype(np.int8, copy=False)
 
 
-def _rank_mask(frame: pd.DataFrame, score_col: str, month_col: str, top_fraction: float) -> np.ndarray:
+def _rank_mask(
+    frame: pd.DataFrame, score_col: str, month_col: str, top_fraction: float
+) -> np.ndarray:
     if top_fraction >= 0.999:
         return np.ones(len(frame), dtype=bool)
     score = _safe_numeric(frame, score_col)
     if month_col in frame.columns:
-        rank = score.groupby(frame[month_col], sort=False).rank(pct=True, method="first")
+        rank = score.groupby(frame[month_col], sort=False).rank(
+            pct=True, method="first"
+        )
     else:
         rank = score.rank(pct=True, method="first")
     return rank.ge(1.0 - float(top_fraction)).to_numpy(dtype=bool, copy=False)
@@ -410,20 +432,24 @@ def _stats(
 ) -> dict[str, float]:
     mask = np.asarray(mask, dtype=bool)
     if _stats_numba is not None:
-        n, mean_ev, pos, clean_rate, dirty_rate, bad_rate, timeout_rate, stop_rate = _stats_numba(
-            mask,
-            ev,
-            clean,
-            dirty,
-            bad,
-            timeout,
-            stop,
+        n, mean_ev, pos, clean_rate, dirty_rate, bad_rate, timeout_rate, stop_rate = (
+            _stats_numba(
+                mask,
+                ev,
+                clean,
+                dirty,
+                bad,
+                timeout,
+                stop,
+            )
         )
     else:
         valid = mask & np.isfinite(ev)
         n = int(valid.sum())
         if n <= 0:
-            mean_ev = pos = clean_rate = dirty_rate = bad_rate = timeout_rate = stop_rate = np.nan
+            mean_ev = pos = clean_rate = dirty_rate = bad_rate = timeout_rate = (
+                stop_rate
+            ) = np.nan
         else:
             mean_ev = float(ev[valid].mean())
             pos = float((ev[valid] > 0.0).mean())
@@ -444,7 +470,9 @@ def _stats(
     }
 
 
-def _objective_delta(metrics: Mapping[str, float], baseline: Mapping[str, float]) -> float:
+def _objective_delta(
+    metrics: Mapping[str, float], baseline: Mapping[str, float]
+) -> float:
     ev_delta = float(metrics.get("mean_ev_after_1pct", np.nan)) - float(
         baseline.get("mean_ev_after_1pct", np.nan)
     )
@@ -522,7 +550,9 @@ def _assign_bins(values: pd.Series, threshold: FeatureThreshold) -> pd.Series:
     return out
 
 
-def _build_metric_context(frame: pd.DataFrame, config: EvmLatentStateConfig) -> dict[str, np.ndarray]:
+def _build_metric_context(
+    frame: pd.DataFrame, config: EvmLatentStateConfig
+) -> dict[str, np.ndarray]:
     return {
         "ev": _as_float32(frame, config.outcome_col),
         "clean": _as_int8_bool(frame, config.clean_col),
@@ -540,7 +570,12 @@ def _baseline_rows(
     side: str,
     archetype: str,
     config: EvmLatentStateConfig,
-) -> tuple[list[dict[str, Any]], dict[str, dict[str, float]], dict[str, np.ndarray], dict[str, np.ndarray]]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, dict[str, float]],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+]:
     rows: list[dict[str, Any]] = []
     ctx = _build_metric_context(frame, config)
     masks: dict[str, np.ndarray] = {}
@@ -583,7 +618,9 @@ def _state_metric_row(
 ) -> dict[str, Any]:
     train_delta = _objective_delta(train_metrics, train_baseline)
     eval_delta = _objective_delta(eval_metrics, eval_baseline)
-    direction = _state_direction(train_delta, eval_delta, config.min_oos_objective_delta)
+    direction = _state_direction(
+        train_delta, eval_delta, config.min_oos_objective_delta
+    )
     row: dict[str, Any] = {
         "state_kind": kind,
         "state_name": state_name,
@@ -608,10 +645,9 @@ def _state_metric_row(
     ):
         for key, value in metrics.items():
             row[f"{prefix}_{key}"] = value
-        row[f"{prefix}_ev_lift"] = (
-            float(metrics.get("mean_ev_after_1pct", np.nan))
-            - float(baseline.get("mean_ev_after_1pct", np.nan))
-        )
+        row[f"{prefix}_ev_lift"] = float(
+            metrics.get("mean_ev_after_1pct", np.nan)
+        ) - float(baseline.get("mean_ev_after_1pct", np.nan))
         for rate_key in (
             "clean_exec_rate",
             "dirty_positive_rate",
@@ -621,8 +657,12 @@ def _state_metric_row(
         ):
             base = float(baseline.get(rate_key, np.nan))
             value = float(metrics.get(rate_key, np.nan))
-            row[f"{prefix}_{rate_key}_lift"] = value / base if np.isfinite(base) and abs(base) > 1e-12 else np.nan
-            row[f"{prefix}_{rate_key}_delta"] = value - base if np.isfinite(value) and np.isfinite(base) else np.nan
+            row[f"{prefix}_{rate_key}_lift"] = (
+                value / base if np.isfinite(base) and abs(base) > 1e-12 else np.nan
+            )
+            row[f"{prefix}_{rate_key}_delta"] = (
+                value - base if np.isfinite(value) and np.isfinite(base) else np.nan
+            )
     return row
 
 
@@ -641,19 +681,25 @@ def discover_evm_latent_states(
     missing_train = [col for col in required if col not in train.columns]
     missing_oos = [col for col in required if col not in oos.columns]
     if missing_train or missing_oos:
-        raise ValueError(f"Missing required columns: train={missing_train} oos={missing_oos}")
+        raise ValueError(
+            f"Missing required columns: train={missing_train} oos={missing_oos}"
+        )
 
     feature_columns = [
         str(col)
         for col in feature_columns
-        if col in train.columns and col in oos.columns and pd.api.types.is_numeric_dtype(train[col])
+        if col in train.columns
+        and col in oos.columns
+        and pd.api.types.is_numeric_dtype(train[col])
     ]
     feature_rows: list[dict[str, Any]] = []
     pair_rows: list[dict[str, Any]] = []
     baseline_rows: list[dict[str, Any]] = []
     threshold_rows: list[dict[str, Any]] = []
 
-    train_groups = train.groupby([cfg.side_col, cfg.archetype_col], sort=False, observed=True).groups
+    train_groups = train.groupby(
+        [cfg.side_col, cfg.archetype_col], sort=False, observed=True
+    ).groups
     for (side, archetype), train_idx in train_groups.items():
         side_text = str(side)
         arch_text = str(archetype)
@@ -662,7 +708,9 @@ def discover_evm_latent_states(
             oos[cfg.side_col].astype(str).eq(side_text)
             & oos[cfg.archetype_col].astype(str).eq(arch_text)
         ]
-        if len(train_group) < cfg.min_group_rows or len(oos_group) < max(cfg.min_state_rows, 10):
+        if len(train_group) < cfg.min_group_rows or len(oos_group) < max(
+            cfg.min_state_rows, 10
+        ):
             continue
         train_base_rows, train_base, train_masks, train_ctx = _baseline_rows(
             train_group,
@@ -686,9 +734,9 @@ def discover_evm_latent_states(
             continue
         # Prefer features that have enough train coverage and variance, but keep
         # the candidate count bounded for pairwise discovery.
-        thresholds = sorted(thresholds, key=lambda t: (t.coverage, t.n_unique), reverse=True)[
-            : max(1, int(cfg.max_features_per_group))
-        ]
+        thresholds = sorted(
+            thresholds, key=lambda t: (t.coverage, t.n_unique), reverse=True
+        )[: max(1, int(cfg.max_features_per_group))]
         threshold_by_feature = {t.feature: t for t in thresholds}
         for threshold in thresholds:
             threshold_rows.append(
@@ -703,14 +751,18 @@ def discover_evm_latent_states(
             for bin_name in ("low", "mid", "high", "missing"):
                 train_state = train_bins.eq(bin_name).to_numpy(dtype=bool, copy=False)
                 oos_state = oos_bins.eq(bin_name).to_numpy(dtype=bool, copy=False)
-                if int(train_state.sum()) < cfg.min_state_rows or int(oos_state.sum()) < max(10, cfg.min_state_rows // 2):
+                if int(train_state.sum()) < cfg.min_state_rows or int(
+                    oos_state.sum()
+                ) < max(10, cfg.min_state_rows // 2):
                     continue
                 for scope, _top_fraction in cfg.top_fractions:
                     train_mask = train_masks[scope] & train_state
                     oos_mask = oos_masks[scope] & oos_state
                     train_metrics = _stats(train_mask, **train_ctx)
                     oos_metrics = _stats(oos_mask, **oos_ctx)
-                    if train_metrics["rows"] < cfg.min_state_rows or oos_metrics["rows"] < max(10, cfg.min_state_rows // 2):
+                    if train_metrics["rows"] < cfg.min_state_rows or oos_metrics[
+                        "rows"
+                    ] < max(10, cfg.min_state_rows // 2):
                         continue
                     feature_rows.append(
                         _state_metric_row(
@@ -744,11 +796,13 @@ def discover_evm_latent_states(
         ].copy()
         if local.empty:
             continue
-        local["abs_train_delta"] = pd.to_numeric(local["train_objective_delta"], errors="coerce").abs()
+        local["abs_train_delta"] = pd.to_numeric(
+            local["train_objective_delta"], errors="coerce"
+        ).abs()
         top_feature_names = (
-            local.sort_values("abs_train_delta", ascending=False)["feature"].drop_duplicates().head(
-                max(2, int(cfg.top_features_for_pairs))
-            )
+            local.sort_values("abs_train_delta", ascending=False)["feature"]
+            .drop_duplicates()
+            .head(max(2, int(cfg.top_features_for_pairs)))
         ).tolist()
         pair_count = 0
         for i, feature_a in enumerate(top_feature_names):
@@ -763,16 +817,26 @@ def discover_evm_latent_states(
                 oos_b = _assign_bins(oos_group[feature_b], t_b)
                 for bin_a in ("low", "mid", "high"):
                     for bin_b in ("low", "mid", "high"):
-                        train_state = (train_a.eq(bin_a) & train_b.eq(bin_b)).to_numpy(dtype=bool, copy=False)
-                        oos_state = (oos_a.eq(bin_a) & oos_b.eq(bin_b)).to_numpy(dtype=bool, copy=False)
-                        if int(train_state.sum()) < cfg.min_state_rows or int(oos_state.sum()) < max(10, cfg.min_state_rows // 2):
+                        train_state = (train_a.eq(bin_a) & train_b.eq(bin_b)).to_numpy(
+                            dtype=bool, copy=False
+                        )
+                        oos_state = (oos_a.eq(bin_a) & oos_b.eq(bin_b)).to_numpy(
+                            dtype=bool, copy=False
+                        )
+                        if int(train_state.sum()) < cfg.min_state_rows or int(
+                            oos_state.sum()
+                        ) < max(10, cfg.min_state_rows // 2):
                             continue
                         for scope, _top_fraction in cfg.top_fractions:
                             train_mask = train_masks[scope] & train_state
                             oos_mask = oos_masks[scope] & oos_state
                             train_metrics = _stats(train_mask, **train_ctx)
                             oos_metrics = _stats(oos_mask, **oos_ctx)
-                            if train_metrics["rows"] < cfg.min_state_rows or oos_metrics["rows"] < max(10, cfg.min_state_rows // 2):
+                            if train_metrics[
+                                "rows"
+                            ] < cfg.min_state_rows or oos_metrics["rows"] < max(
+                                10, cfg.min_state_rows // 2
+                            ):
                                 continue
                             pair_rows.append(
                                 _state_metric_row(
@@ -816,9 +880,9 @@ def discover_evm_latent_states(
     else:
         catalog = all_metrics.loc[
             all_metrics["direction"].isin(["favorable", "unfavorable"])
-            & pd.to_numeric(all_metrics["oos_objective_delta"], errors="coerce").abs().ge(
-                cfg.min_oos_objective_delta
-            )
+            & pd.to_numeric(all_metrics["oos_objective_delta"], errors="coerce")
+            .abs()
+            .ge(cfg.min_oos_objective_delta)
         ].copy()
         if not catalog.empty:
             catalog["oos_abs_objective_delta"] = pd.to_numeric(
@@ -835,7 +899,15 @@ def discover_evm_latent_states(
         "feature_count": int(len(feature_columns)),
         "train_rows": int(len(train)),
         "oos_rows": int(len(oos)),
-        "groups_evaluated": int(len(pd.DataFrame(baseline_rows)[["side_name", "archetype_policy_key"]].drop_duplicates())) if baseline_rows else 0,
+        "groups_evaluated": int(
+            len(
+                pd.DataFrame(baseline_rows)[
+                    ["side_name", "archetype_policy_key"]
+                ].drop_duplicates()
+            )
+        )
+        if baseline_rows
+        else 0,
         "feature_state_rows": int(len(feature_metrics)),
         "pair_state_rows": int(len(pair_metrics)),
         "catalog_rows": int(len(catalog)),

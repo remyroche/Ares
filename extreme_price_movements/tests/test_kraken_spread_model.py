@@ -45,9 +45,68 @@ def test_parse_kraken_futures_tickers_payload_computes_bps_and_ticks():
     assert out.iloc[0]["ask_size"] == pytest.approx(13.0)
     assert out["spread_ticks"].tolist() == pytest.approx([1.0])
     assert out.iloc[0]["spread_bps"] == pytest.approx(10000.0 * 0.5 / 100.25)
-    assert out.iloc[0]["min_tick_spread_bps"] == pytest.approx(
-        10000.0 * 0.5 / 100.25
+    assert out.iloc[0]["min_tick_spread_bps"] == pytest.approx(10000.0 * 0.5 / 100.25)
+
+
+def test_parse_orderbook_payload_emits_sorted_long_l2_contract():
+    item = ksm.SpreadUniverseItem(
+        base="BTC",
+        perp_symbol="BTC/USD:USD",
+        perp_market_id="PF_XBTUSD",
+        tick_size=0.5,
     )
+    payload = {
+        "result": "success",
+        "serverTime": "2026-01-01T00:00:01Z",
+        "orderBook": {
+            "bids": [[99.0, 2.0], [100.0, 1.0], [98.0, 3.0]],
+            "asks": [[102.0, 3.0], [101.0, 1.5], [103.0, 4.0]],
+        },
+    }
+
+    out = ksm.parse_kraken_futures_orderbook_payload(
+        payload,
+        item=item,
+        observed_ts=pd.Timestamp("2026-01-01T00:00:05Z"),
+        levels=2,
+    )
+
+    assert len(out) == 4
+    assert set(["symbol", "side", "level", "price", "qty"]).issubset(out.columns)
+    bids = out[out["side"] == "bid"].sort_values("level")
+    asks = out[out["side"] == "ask"].sort_values("level")
+    assert bids["price"].tolist() == [100.0, 99.0]
+    assert asks["price"].tolist() == [101.0, 102.0]
+    assert out["qty_unit"].eq("exchange_contracts").all()
+    assert out.index.unique().tolist() == [pd.Timestamp("2026-01-01T00:00:00Z")]
+
+
+def test_orderbook_summary_matches_existing_hourly_sidecar_schema():
+    item = ksm.SpreadUniverseItem("BTC", "BTC/USD:USD", "PF_XBTUSD", 0.5)
+    payload = {
+        "result": "success",
+        "serverTime": "2026-01-01T00:00:01Z",
+        "orderBook": {
+            "bids": [[100.0 - i, float(i + 1)] for i in range(20)],
+            "asks": [[101.0 + i, float(i + 2)] for i in range(20)],
+        },
+    }
+    raw = ksm.parse_kraken_futures_orderbook_payload(
+        payload,
+        item=item,
+        observed_ts=pd.Timestamp("2026-01-01T00:00:05Z"),
+        levels=20,
+    )
+
+    out = ksm.summarize_kraken_futures_orderbooks(raw)
+
+    assert len(out) == 1
+    row = out.iloc[0]
+    assert row["best_bid"] == pytest.approx(100.0)
+    assert row["best_ask"] == pytest.approx(101.0)
+    assert row["cum_bid_qty_l20"] == pytest.approx(sum(range(1, 21)))
+    assert row["cum_ask_qty_l20"] == pytest.approx(sum(range(2, 22)))
+    assert row["source"] == "kraken_futures_l2_snapshot"
 
 
 def test_seconds_until_next_hour_respects_top_of_hour_grace():
@@ -65,7 +124,9 @@ def test_seconds_until_next_hour_respects_top_of_hour_grace():
     ) == pytest.approx(30.0)
 
 
-def test_collect_spread_snapshots_hourly_mode_forces_single_minute(monkeypatch, tmp_path):
+def test_collect_spread_snapshots_hourly_mode_forces_single_minute(
+    monkeypatch, tmp_path
+):
     item = ksm.SpreadUniverseItem(
         base="BTC",
         perp_symbol="BTC/USD:USD",
@@ -114,18 +175,49 @@ def test_collect_spread_snapshots_hourly_mode_forces_single_minute(monkeypatch, 
 
     def fake_collect_candles(**_kwargs):
         candles = pd.DataFrame(
-            {"symbol": [item.perp_symbol], "open": [100.0], "high": [101.0], "low": [99.0], "close": [100.5]},
+            {
+                "symbol": [item.perp_symbol],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+            },
             index=[ts],
         )
         training = candles.assign(spread_bps=49.875, spread_ticks=1.0)
         return candles, training, [{"symbol": item.perp_symbol, "status": "ok"}]
 
-    monkeypatch.setattr(ksm, "collect_kraken_futures_ticker_spreads", fake_collect_spreads)
-    monkeypatch.setattr(ksm, "collect_associated_candles_and_training", fake_collect_candles)
+    def fake_collect_orderbooks(**kwargs):
+        calls["orderbook_levels"] = kwargs["levels"]
+        calls["orderbook_workers"] = kwargs["workers"]
+        raw = pd.DataFrame(
+            {
+                "symbol": [item.perp_symbol, item.perp_symbol],
+                "side": ["bid", "ask"],
+                "level": [1, 1],
+                "price": [100.0, 100.5],
+                "qty": [2.0, 3.0],
+            },
+            index=[ts, ts],
+        )
+        return raw, [{"perp_symbol": item.perp_symbol, "status": "ok"}]
+
+    monkeypatch.setattr(
+        ksm, "collect_kraken_futures_ticker_spreads", fake_collect_spreads
+    )
+    monkeypatch.setattr(
+        ksm, "collect_kraken_futures_orderbooks", fake_collect_orderbooks
+    )
+    monkeypatch.setattr(
+        ksm, "collect_associated_candles_and_training", fake_collect_candles
+    )
     monkeypatch.setattr(
         ksm,
         "save_spread_snapshot_collection",
-        lambda *args, **kwargs: (tmp_path / "snapshot.parquet", tmp_path / "summary.json"),
+        lambda *args, **kwargs: (
+            tmp_path / "snapshot.parquet",
+            tmp_path / "summary.json",
+        ),
     )
 
     rc = ksm.collect_spread_snapshots_main(
@@ -145,9 +237,13 @@ def test_collect_spread_snapshots_hourly_mode_forces_single_minute(monkeypatch, 
     assert rc == 0
     assert calls["snapshot_count"] == 1
     assert calls["snapshot_interval_seconds"] == pytest.approx(0.0)
+    assert calls["orderbook_levels"] == 20
+    assert calls["orderbook_workers"] == 8
 
 
-def test_spread_cost_universe_exclusions_use_average_spread_baseline(monkeypatch, tmp_path):
+def test_spread_cost_universe_exclusions_use_average_spread_baseline(
+    monkeypatch, tmp_path
+):
     baseline_path = tmp_path / "per_asset_spread_baseline_latest.csv"
     baseline_path.write_text(
         "symbol,rows,average_spread_bps,median_spread_bps,p75_spread_bps,average_spread_ticks\n"
@@ -274,13 +370,16 @@ def test_add_spread_model_derived_features_adds_only_ohlcv_time_features():
 
     out = ksm.add_spread_model_derived_features(frame)
 
-    assert out["candle_quote_volume_rank"].tolist() == pytest.approx([0.5, 1.0, 0.5, 1.0])
+    assert out["candle_quote_volume_rank"].tolist() == pytest.approx(
+        [0.5, 1.0, 0.5, 1.0]
+    )
     assert out["hl_range_bps_rank"].tolist() == pytest.approx([0.5, 1.0, 0.5, 1.0])
     assert out["minute_of_day_sin"].notna().all()
     assert out["day_of_week_cos"].notna().all()
-    assert out.iloc[0]["asset_log_candle_quote_volume_lag1"] != out.iloc[0][
-        "asset_log_candle_quote_volume_lag1"
-    ]
+    assert (
+        out.iloc[0]["asset_log_candle_quote_volume_lag1"]
+        != out.iloc[0]["asset_log_candle_quote_volume_lag1"]
+    )
     assert out.iloc[2]["asset_log_candle_quote_volume_lag1"] == pytest.approx(5.0)
     assert out.iloc[3]["asset_log_candle_quote_volume_lag1"] == pytest.approx(6.0)
     forbidden = {
@@ -327,7 +426,10 @@ def test_fit_ridge_spread_model_selects_top5_and_records_diagnostics(tmp_path):
     assert len(artifact["selected_features"]) == 5
     assert artifact["model_type"] == "kraken_spread_deviation_ridge_v3"
     assert "candidate_features" in artifact
-    assert artifact["target"] == "log1p(spread_bps)-log1p(asset_average_spread_bps_baseline)"
+    assert (
+        artifact["target"]
+        == "log1p(spread_bps)-log1p(asset_average_spread_bps_baseline)"
+    )
     assert artifact["baseline_type"] == "per_asset_average_spread_bps"
     assert artifact["predicted_cost_bps"] == pytest.approx(
         artifact["predicted_spread_75th_percentile"]
@@ -341,7 +443,9 @@ def test_fit_ridge_spread_model_selects_top5_and_records_diagnostics(tmp_path):
     assert len(artifact["per_asset_average_spread"]) == 2
     assert len(artifact["per_asset_spread_baseline"]) == 2
     assert (tmp_path / "per_asset_spread_baseline_latest.csv").exists()
-    assert ksm.load_spread_cost_bps(path) == pytest.approx(artifact["predicted_cost_bps"])
+    assert ksm.load_spread_cost_bps(path) == pytest.approx(
+        artifact["predicted_cost_bps"]
+    )
 
 
 def test_save_spread_snapshot_collection_writes_candles_and_training(tmp_path):
@@ -377,6 +481,22 @@ def test_save_spread_snapshot_collection_writes_candles_and_training(tmp_path):
         ksm.compute_spread_relevant_candle_features(candles),
         how="inner",
     )
+    orderbooks = pd.DataFrame(
+        {
+            "observed_ts": [idx[0], idx[0], idx[0], idx[0]],
+            "exchange_timestamp": [idx[0], idx[0], idx[0], idx[0]],
+            "symbol": ["BTC/USD:USD"] * 4,
+            "perp_market_id": ["PF_XBTUSD"] * 4,
+            "base": ["BTC"] * 4,
+            "side": ["bid", "bid", "ask", "ask"],
+            "level": [1, 2, 1, 2],
+            "price": [100.0, 99.5, 100.5, 101.0],
+            "qty": [2.0, 3.0, 4.0, 5.0],
+            "source": ["kraken_futures_l2_snapshot"] * 4,
+        },
+        index=[idx[0]] * 4,
+    )
+    orderbook_hourly_dir = tmp_path / "orderbook_hourly"
 
     parquet_path, summary_path = ksm.save_spread_snapshot_collection(
         spreads,
@@ -392,6 +512,9 @@ def test_save_spread_snapshot_collection_writes_candles_and_training(tmp_path):
         candles=candles,
         training=training,
         candle_audit=[{"symbol": "BTC/USD:USD", "status": "ok"}],
+        orderbooks=orderbooks,
+        orderbook_audit=[{"perp_symbol": "BTC/USD:USD", "status": "ok"}],
+        orderbook_hourly_dir=orderbook_hourly_dir,
         output_dir=tmp_path,
         run_id="test_run",
     )
@@ -404,4 +527,11 @@ def test_save_spread_snapshot_collection_writes_candles_and_training(tmp_path):
     assert summary["rows"] == 2
     assert summary["candle_rows"] == 2
     assert summary["training_rows"] == 2
+    assert summary["orderbook_rows"] == 4
+    assert summary["orderbook_symbols"] == 1
     assert pd.read_parquet(tmp_path / "latest_training.parquet").shape[0] == 2
+    assert pd.read_parquet(tmp_path / "latest_orderbooks.parquet").shape[0] == 4
+    canonical = pd.read_parquet(orderbook_hourly_dir / "BTC_USD_USD.parquet")
+    assert canonical.iloc[-1]["best_bid"] == pytest.approx(100.0)
+    assert canonical.iloc[-1]["best_ask"] == pytest.approx(100.5)
+    assert canonical.iloc[-1]["source"] == "kraken_futures_l2_snapshot"

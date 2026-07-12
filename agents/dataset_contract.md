@@ -1,91 +1,95 @@
 # Dataset Contract
 
-This document defines the **data semantics and guarantees** for datasets used in this repository.
+## 1. Row Identity And Time
 
-All datasets must satisfy these rules.
+Every model or policy row must have a stable identity including timestamp,
+symbol/instrument, and side. Candidate IDs should remain stable across base,
+meta, policy, and replay artifacts.
 
----
+Timestamps represent observability time. For OHLCV, the timestamp is the bar
+close unless a manifest explicitly states otherwise. Features use data at or
+before the timestamp; targets and replay paths start after the decision point.
 
-# 1. Timestamp Semantics
+Higher-frequency and auxiliary data must be joined with causal backward/as-of
+logic. Publication delay, stale limits, and timezone must be explicit.
 
-All timestamps must represent **the time at which the data becomes observable**.
+## 2. Side Semantics
 
-Example:
+- Use canonical `long` and `short` names plus an explicit numeric side sign.
+- Returns, MFE, MAE, TP, SL, EV, and residuals must be transformed consistently
+  into side-relative economic orientation.
+- Never combine long and short rows before verifying that signs cannot cancel.
+- Preserve side through labels, base OOS, meta handoff, policy, and inference.
 
-For OHLCV bars:
+## 3. Features And Targets
 
-timestamp = bar close time
+- `feature_t` uses only data observable by `t`.
+- `target_t` uses the future executable path after `t`.
+- Soft-binary labels, economic utility, clean/dirty path flags, geometry, horizon,
+  and cost assumptions must be recorded in the label manifest.
+- Outcome-derived archetypes may describe training labels or meta targets, but
+  cannot be inference inputs unless predicted from pre-entry features.
 
-This ensures that features derived from a bar are available **only after the bar completes**.
+## 4. AE/GMM And Archetype State
 
----
+Fit scalers, AE, GMM, cluster semantics, and train-derived priors on authorized
+training rows only. Assign validation/OOS rows with frozen state. Keep cluster
+IDs, posteriors, entropy, distance, reconstruction error, speed, and acceleration
+aligned to the same frozen cluster ordering.
 
-# 2. Feature Alignment
+Both base and meta datasets are archetype-aware. Base rows must preserve their
+observable label/state archetype and frozen AE/GMM context. Meta rows must carry
+those base archetypes and may add meta-feature regimes, reliability priors,
+support drift, leaf drift, residual context, and recent-performance context.
 
-Features must satisfy:
+## 5. Residual And Surprise Semantics
 
-feature_t uses data ≤ t
+Name residuals with their units and reference prediction:
 
-Targets must satisfy:
+- probability residual: realized soft/hard outcome minus predicted probability
+- economic residual: realized net EV minus mapped/predicted net EV
 
-target_t uses data > t
+Residual autocorrelation must use time-ordered OOS residuals and state its lag,
+window, grouping, and minimum support. Report its signed value with residual mean:
+positive autocorrelation means errors persist; negative means they alternate.
 
-Example:
+Hit-rate surprise is signed:
 
-feature_t = indicators computed using prices ≤ t  
-target_t = return from t → t + horizon
+`recent_resolved_hit_rate - train_derived_expected_hit_rate`
 
----
+Preserve positive and negative surprise, its standardized value, effective
+support, half-life, and lookback. Current standard horizons are 3, 7, and 14 days
+with each source window capped at four times its half-life. Only outcomes resolved
+before the row timestamp may contribute.
 
-# 3. Target Definition
+## 6. Handoff Contract
 
-Targets must be clearly defined.
+Base-to-meta and meta-to-policy rows must record:
 
-Example:
+- timestamp, symbol, side, candidate ID
+- OOF/frozen base and meta scores
+- score/rank basis and candidate frontier
+- archetype/policy archetype/local side archetype
+- label and geometry manifest IDs
+- feature/model/policy hashes where available
+- decision fold and training cutoff
+- probability/economic residual definitions and lagged history provenance
+- signed hit-rate surprise, expected/actual rate, half-life, and support
 
-target = forward_return(price, horizon)
+## 7. Universe And Missing Data
 
-Horizon must be explicitly documented.
+Universe selection must be deterministic and point-in-time safe. Future listings,
+future liquidity, or full-period survivorship cannot alter historical rows.
 
----
+Missing data behavior must be explicit: drop, mask, causal fill, or fail closed.
+Required inference features may not be silently synthesized. Cached or imputed
+values are allowed only when frozen in the training-time transform contract.
 
-# 4. Universe Definition
+## 8. Storage And Precision
 
-Each dataset must specify the asset universe.
+Prefer `float32`, bounded integer types, categorical encoding, Parquet, and
+partitioned/batched reads. Preserve higher precision only where numerical error
+would affect labels, costs, ordering, or execution.
 
-Examples:
-
-top N by liquidity  
-fixed symbol list  
-dynamic universe with filtering rules
-
-Universe construction must be deterministic.
-
----
-
-# 5. Missing Data
-
-Missing data policy must be explicit.
-
-Options:
-
-- forward fill
-- zero fill
-- drop observations
-- mask invalid rows
-
-Implicit handling is not allowed.
-
----
-
-# 6. Numeric Precision
-
-Datasets must use memory-efficient types when possible.
-
-Preferred types:
-
-float32  
-int32  
-int8
-
-float64 should only be used when required.
+Every published dataset must record run ID, source period, feature contract,
+universe, bar frequency, code revision, and row/column counts.

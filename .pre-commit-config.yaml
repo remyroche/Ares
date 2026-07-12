@@ -1,9 +1,33 @@
+default_install_hook_types: [pre-commit, commit-msg]
+default_language_version:
+  python: python3
+
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-ast
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=20480]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.11
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
   - repo: local
     hooks:
-      - id: temporal-leakage-lint
-        name: Temporal leakage guard
-        entry: python -m src.training.steps.pre_training.validation.temporal_lint
+      - id: conventional-commit
+        name: Conventional commit message
+        entry: python3 scripts/validate_commit_message.py
         language: system
-        types: [python]
-        pass_filenames: true
+        stages: [commit-msg]
+        always_run: true

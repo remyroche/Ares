@@ -1,173 +1,85 @@
 # ML Experiment Discipline
 
-This document defines the **minimum protocol for machine learning experiments** in this repository.
+Experiments must isolate the proposed change and produce reproducible,
+time-ordered economic evidence.
 
-All experiments must prioritize:
+## 1. Fixed Contracts
 
-1. statistical validity
-2. out-of-sample robustness
-3. economic relevance
-4. reproducibility
+Record run ID, dataset/feature store, label and geometry manifest, universe,
+costs, model objective, selected features, parameters, seeds, train/eval dates,
+and code revision. Keep all unrelated contracts fixed in an ablation.
 
-Experiments that violate these rules are considered **invalid research results**.
+When comparing meta arms, use the same base predictions and candidate rows.
+When comparing policy arms, use the same base/meta scores and replay paths.
 
----
+## 2. Time-Based Evaluation
 
-# 1. Dataset Versioning
+Use expanding or rolling walk-forward splits. Purge overlapping label intervals
+and apply an embargo based on the maximum future path used by the target.
 
-Every experiment must reference a **specific dataset version**.
+Distinguish:
 
-Required metadata:
+- training rows
+- feature-selection/HPO validation rows
+- model OOS rows
+- policy-optimization validation rows
+- untouched/frozen replay rows
 
-dataset_version  
-feature_pipeline  
-universe_definition  
-bar_frequency  
-target_definition  
+Rows used for feature selection or HPO are not untouched final-test rows.
 
-Datasets must be **immutable** once published.
+## 3. Feature Selection And HPO
 
----
+For the current LGBM path:
 
-# 2. Train / Validation / Test Splits
+- Run univariate and Relief pre-screening against each relevant archetype and
+  retain a feature when it passes for at least one supported archetype.
+- When MDA is enabled and archetype identity is available, score permutation
+  value with the global, macro-archetype, and worst-supported-archetype top-k
+  objectives. Record any global-only fallback in the selector diagnostics.
+- Run later selection and HPO with explicit side handling.
+- Run feature selection and HPO once on the designated largest training fold,
+  using time-spread samples from its beginning, middle, and end.
+- Freeze selected features and parameters for later growing OOS windows unless
+  the experiment explicitly studies retraining them.
+- Do not hard-code a feature count when the MDA pipeline can select it from its
+  stopping/importance contract.
 
-All ML experiments must use **time-based splits**.
+## 4. AE/GMM State
 
-Example:
+Fit AE/GMM once on authorized pre-OOS data and freeze it across subsequent folds.
+Sample across multiple training subperiods. The current intended scale is about
+15k AE rows and up to 100k GMM rows when available. Record actual support.
 
-train        2010-2018  
-validation   2019-2020  
-test         2021-2023  
+Do not select cluster count or semantics using the OOS months later reported as
+evidence.
 
-Rules:
+Base and meta experiments must preserve archetype identity. Meta experiments
+must compare archetype-aware arms against a matched baseline meta model on the
+same base top-30 candidate rows.
 
-- The **test set must never be used for hyperparameter tuning**
-- Validation is used only for **model selection**
-- Test is used **once** for final evaluation
+## 5. Metrics And Objectives
 
----
+Prioritize the metrics used for trading:
 
-# 3. Walk-Forward Evaluation
+- top-k net EV and precision, especially top 10/20/30%
+- worst-week and worst-month top-k EV
+- clean-positive versus dirty-positive separation in the selected tail
+- stop, timeout, concentration, and side/archetype stability
+- total net PnL, trades/day, and portfolio drawdown
+- signed probability/economic residual mean and autocorrelation
+- signed 3d/7d/14d hit-rate surprise with effective support
 
-Models must be evaluated using **rolling or expanding windows**.
+AUC is diagnostic, not the primary promotion metric.
 
-Example:
+Positive surprise and favorable residual structure are useful opportunity
+signals, not values to discard. Negative surprise and persistent adverse
+residuals are degradation signals. Report the full signed distributions.
 
-train: 2010–2016 → test: 2017  
-train: 2010–2017 → test: 2018  
-train: 2010–2018 → test: 2019  
+## 6. Search Discipline
 
-Single split backtests are insufficient.
+Report search breadth and all arms, not only the winner. Prefer hierarchical or
+staged searches to unconstrained joint grids. Confirm winners on fixed contracts
+and require improvement across relevant folds, not only aggregate PnL.
 
----
-
-# 4. Feature Causality
-
-Features must only use **information available at time t**.
-
-Valid:
-
-feature_t = f(data ≤ t)
-
-Invalid:
-
-feature_t = f(data ≥ t)
-
-Common leakage sources:
-
-- future prices
-- forward-filled labels
-- global normalization
-- improperly aligned rolling statistics
-
----
-
-# 5. Hyperparameter Search
-
-Hyperparameters must be tuned **only on validation data**.
-
-Procedure:
-
-1. train models on training data
-2. evaluate on validation
-3. select best configuration
-4. evaluate once on test
-
-Repeated evaluation on test is prohibited.
-
----
-
-# 6. Reproducibility
-
-Every experiment must record:
-
-experiment_id  
-dataset_version  
-feature_set  
-model_type  
-hyperparameters  
-random_seed  
-training_window  
-evaluation_window  
-git_commit  
-
-Re-running an experiment must reproduce identical results.
-
----
-
-# 7. Random Seeds
-
-All stochastic components must use fixed seeds.
-
-Examples:
-
-numpy  
-torch  
-sklearn  
-model initialization
-
----
-
-# 8. Economic Evaluation
-
-Model evaluation must include **trading performance metrics**.
-
-Required metrics:
-
-Sharpe ratio  
-maximum drawdown  
-turnover  
-transaction cost sensitivity  
-
-Statistical metrics alone are insufficient.
-
----
-
-# 9. Experiment Tracking
-
-All experiments must be logged.
-
-Required fields:
-
-experiment_id  
-timestamp  
-dataset_version  
-features  
-model  
-parameters  
-metrics  
-
-Results must be reproducible from stored metadata.
-
----
-
-# 10. Research Discipline
-
-Avoid excessive researcher degrees of freedom.
-
-Guidelines:
-
-- change one major variable per experiment
-- log every experiment
-- prefer simpler models
-- verify robustness across multiple periods
+Do not repeatedly tune on the same final months and continue calling them an
+untouched test. Promote only after frozen replay or a later unseen window.

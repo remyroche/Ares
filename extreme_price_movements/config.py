@@ -1,17 +1,28 @@
 # Central config. Keep it deterministic and explicit.
-from extreme_price_movements.perp_features import get_perp_feature_names
+from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
 from extreme_price_movements.features_oi import (
+    ASSET_MARKET_LIFECYCLE_RESIDUAL_KEYS,
+    ASSET_OI_LIFECYCLE_FEATURE_KEYS,
+    FUNDING_LIFECYCLE_FEATURE_KEYS,
+    FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS,
+    MARKET_FUNDING_REGIME_FEATURE_KEYS,
+    MARKET_OI_LIFECYCLE_FEATURE_KEYS,
+    MARKET_OI_REGIME_FEATURE_KEYS,
+    MARKET_PRICE_OI_STATE_FEATURE_KEYS,
+    PRICE_OI_QUADRANT_FEATURE_KEYS,
+    PRICE_OI_RECOVERY_FEATURE_KEYS,
+    PRICE_OI_STATE_FEATURE_KEYS,
     get_oi_feature_names,
     get_oi_normalized_feature_names,
     get_oi_trading_feature_names,
 )
 from extreme_price_movements.features_residual import residual_feature_names
-from extreme_price_movements.model_drift_features import MODEL_DRIFT_FEATURE_KEYS
-from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
 from extreme_price_movements.lgbm_archetype_features import (
     RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
     RAW_STATE_SVD_SUMMARY_FEATURE_NAMES,
 )
+from extreme_price_movements.model_drift_features import MODEL_DRIFT_FEATURE_KEYS
+from extreme_price_movements.perp_features import get_perp_feature_names
 from extreme_price_movements.unsupervised_regime_learning.feature_registry import (
     UNSUPERVISED_REGIME_LEARNING_DEFAULTS,
 )
@@ -269,16 +280,20 @@ LGBM_PERP_FEATURE_KEYS = list(
         + ["xasset_asset_minus_mkt_funding"]
     )
 )
-PERP_META_PRIMARY_FEATURE_KEYS = [
-    "mark_price",
-    "funding_abs_z",
-    "funding_persistence",
-    "funding_z",
-    "fund_rate_mom_8h",
-    "leverage_build",
-    "squeeze_prob",
-    "unwind",
-] + PERP_EVENT_RISK_FEATURE_KEYS + OI_TRADING_FEATURE_KEYS
+PERP_META_PRIMARY_FEATURE_KEYS = (
+    [
+        "mark_price",
+        "funding_abs_z",
+        "funding_persistence",
+        "funding_z",
+        "fund_rate_mom_8h",
+        "leverage_build",
+        "squeeze_prob",
+        "unwind",
+    ]
+    + PERP_EVENT_RISK_FEATURE_KEYS
+    + OI_TRADING_FEATURE_KEYS
+)
 
 ORDERBOOK_RAW_BASE_FEATURE_KEYS = [
     # Directional book pressure
@@ -492,6 +507,139 @@ CROSS_ASSET_FEATURE_KEYS = [
     "market_dispersion_4h",
     "market_dispersion_24h",
 ]
+
+OHLCV_BREADTH_FEATURE_KEYS = [
+    "pct_assets_up_15m",
+    "pct_assets_up_1h",
+    "pct_assets_up_4h",
+    "pct_assets_up_24h",
+    "pct_assets_below_minus_1atr_1h",
+    "pct_assets_below_minus_2atr_1h",
+    "pct_assets_below_minus_2atr_4h",
+    "pct_assets_below_minus_3atr_4h",
+    "breadth_chg_15m",
+    "breadth_chg_1h",
+    "breadth_accel_1h",
+    "breadth_min_6h",
+    "breadth_recovery_from_6h_min",
+    "pct_assets_new_low_24h",
+    "pct_assets_new_low_7d",
+    "pct_assets_recovering_from_intraday_low",
+    "pct_assets_above_intraday_vwap",
+]
+
+OHLCV_CRASH_PHASE_FEATURE_KEYS = [
+    "mkt_ret_15m",
+    "mkt_ret_1h",
+    "mkt_ret_4h",
+    "mkt_ret_24h",
+    "mkt_return_accel_1h",
+    "mkt_rv_1h",
+    "mkt_rv_4h",
+    "mkt_rv_24h",
+    "mkt_rv_ratio_1h_24h",
+    "mkt_atr_expansion_1h",
+    "mkt_atr_expansion_4h",
+    "mkt_volume_z_24h",
+    "mkt_quote_volume_z_24h",
+    "pct_assets_volume_z_gt_2",
+    "pct_assets_climax_volume",
+    "mkt_drawdown_from_24h_high_atr",
+    "mkt_drawdown_from_7d_high_atr",
+    "mkt_recovery_from_24h_low_atr",
+    "bars_since_mkt_price_trough",
+    "mkt_lower_wick_ratio_1h",
+    "mkt_close_location_1h",
+    "mkt_range_expansion_1h",
+    "pct_assets_large_lower_wick",
+    "pct_assets_bullish_reversal_candle",
+]
+
+MARKET_SYNCHRONIZATION_FEATURE_KEYS = [
+    "cross_asset_corr_1h",
+    "cross_asset_corr_4h",
+    "cross_asset_corr_chg_1h",
+    "cross_asset_downside_corr_1h",
+    "cross_asset_downside_corr_4h",
+    "mkt_first_pc_variance_share_1h",
+    "mkt_first_pc_variance_share_4h",
+    "return_dispersion_1h",
+    "return_dispersion_4h",
+]
+
+OHLCV_LIFECYCLE_FEATURE_KEYS = [
+    "downside_deceleration_4h_rz",
+    "downside_deceleration_8h_rz",
+    "price_recovery_from_low_24h_atr",
+    "price_recovery_from_low_72h_atr",
+    "bars_since_price_low_24h_norm",
+    "bars_since_price_low_72h_norm",
+    "volume_climax_decay_4h",
+    "range_climax_decay_4h",
+    "wick_recovery_intensity",
+]
+
+MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS = [
+    "market_breadth_recovery_from_24h_min",
+    "market_breadth_drawdown_from_6h_max",
+    "market_pct_recovering_from_24h_low",
+]
+
+MARKET_SYNCHRONIZATION_ADDITION_KEYS = [
+    "market_pc1_variance_share_12h",
+    "market_pc1_variance_share_24h",
+    "market_pc1_variance_share_chg_4h",
+    "market_downside_pairwise_corr_24h",
+    "market_downside_corr_minus_unconditional_corr_24h",
+]
+
+LIQUIDATION_STATE_SCORE_FEATURE_KEYS = [
+    "liquidation_onset_score",
+    "liquidation_climax_score",
+    "post_liquidation_rebound_score",
+]
+
+CRASH_LIFECYCLE_ASSET_FEATURE_KEYS = [
+    *ASSET_OI_LIFECYCLE_FEATURE_KEYS,
+    *PRICE_OI_QUADRANT_FEATURE_KEYS,
+    *PRICE_OI_RECOVERY_FEATURE_KEYS,
+    *FUNDING_LIFECYCLE_FEATURE_KEYS,
+    *OHLCV_LIFECYCLE_FEATURE_KEYS,
+    *ASSET_MARKET_LIFECYCLE_RESIDUAL_KEYS,
+    "asset_liquidation_phase_score",
+    "asset_flush_exhaustion_score",
+    "asset_short_covering_score",
+    "asset_mkt_liquidation_phase_divergence",
+    "asset_mkt_exhaustion_phase_divergence",
+]
+
+CRASH_LIFECYCLE_MARKET_FEATURE_KEYS = [
+    *MARKET_OI_LIFECYCLE_FEATURE_KEYS,
+    *MARKET_PRICE_OI_STATE_FEATURE_KEYS,
+    *MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS,
+    *MARKET_SYNCHRONIZATION_ADDITION_KEYS,
+    "mkt_systemic_deleveraging_score",
+    "mkt_flush_exhaustion_score",
+    "mkt_leverage_rebuild_score",
+]
+
+CRASH_LIFECYCLE_NEW_FEATURE_KEYS = list(
+    dict.fromkeys(
+        CRASH_LIFECYCLE_ASSET_FEATURE_KEYS + CRASH_LIFECYCLE_MARKET_FEATURE_KEYS
+    )
+)
+
+CROSS_ASSET_FEATURE_KEYS = list(
+    dict.fromkeys(
+        CROSS_ASSET_FEATURE_KEYS
+        + OHLCV_BREADTH_FEATURE_KEYS
+        + OHLCV_CRASH_PHASE_FEATURE_KEYS
+        + MARKET_SYNCHRONIZATION_FEATURE_KEYS
+        + MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS
+        + MARKET_SYNCHRONIZATION_ADDITION_KEYS
+        + LIQUIDATION_STATE_SCORE_FEATURE_KEYS
+    )
+)
 
 
 FEATURE_KEYS_15M_OHLCV = [
@@ -1285,8 +1433,14 @@ LOC_CONTINUOUS_FAMILY_MAP = {
     "loc_pivot_ladder_pos_48": "context",
     "vwap_zone_1d_atr": "liquidity",
     "vwap_zone_7d_atr": "liquidity",
-    **{_key: "open_interest_location" for _key in OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS},
-    **{_key: "open_interest_location" for _key in OI_WEIGHTED_LOCATION_META_FEATURE_KEYS},
+    **{
+        _key: "open_interest_location"
+        for _key in OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS
+    },
+    **{
+        _key: "open_interest_location"
+        for _key in OI_WEIGHTED_LOCATION_META_FEATURE_KEYS
+    },
 }
 
 REGIME_FEATURE_KEYS = [
@@ -1411,7 +1565,9 @@ HELPER_BASE_FEATURES = [
     "ffd_strength_06",
 ]
 HELPER_BASE_FEATURES = list(
-    dict.fromkeys(HELPER_BASE_FEATURES + PRICE_MEMORY_FEATURE_KEYS + DAILY_SR_BASE_FEATURE_KEYS)
+    dict.fromkeys(
+        HELPER_BASE_FEATURES + PRICE_MEMORY_FEATURE_KEYS + DAILY_SR_BASE_FEATURE_KEYS
+    )
 )
 
 # Compact feature basket for learnability tests across symbol universes,
@@ -3639,9 +3795,11 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
     out = dict(cfg)
 
     def _is_perp_meta_primary_feature(name: str) -> bool:
-        return name in set(PERP_META_PRIMARY_FEATURE_KEYS) or name.startswith(
-            "funding_mom_"
-        ) or name in set(SPOT_FOR_PERPS_META_FEATURE_KEYS)
+        return (
+            name in set(PERP_META_PRIMARY_FEATURE_KEYS)
+            or name.startswith("funding_mom_")
+            or name in set(SPOT_FOR_PERPS_META_FEATURE_KEYS)
+        )
 
     base_perp_feature_keys = [
         k for k in PERP_FEATURE_KEYS if not _is_perp_meta_primary_feature(k)
@@ -4090,6 +4248,16 @@ CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
 CFG["ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS"] = ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS
 CFG["ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS"] = ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS
 CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
+CFG["MARKET_OI_REGIME_FEATURE_KEYS"] = MARKET_OI_REGIME_FEATURE_KEYS
+CFG["PRICE_OI_STATE_FEATURE_KEYS"] = PRICE_OI_STATE_FEATURE_KEYS
+CFG["MARKET_FUNDING_REGIME_FEATURE_KEYS"] = MARKET_FUNDING_REGIME_FEATURE_KEYS
+CFG["FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS"] = (
+    FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS
+)
+CFG["OHLCV_BREADTH_FEATURE_KEYS"] = OHLCV_BREADTH_FEATURE_KEYS
+CFG["OHLCV_CRASH_PHASE_FEATURE_KEYS"] = OHLCV_CRASH_PHASE_FEATURE_KEYS
+CFG["MARKET_SYNCHRONIZATION_FEATURE_KEYS"] = MARKET_SYNCHRONIZATION_FEATURE_KEYS
+CFG["LIQUIDATION_STATE_SCORE_FEATURE_KEYS"] = LIQUIDATION_STATE_SCORE_FEATURE_KEYS
 CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
 CFG["PERP_META_PRIMARY_FEATURE_KEYS"] = PERP_META_PRIMARY_FEATURE_KEYS
 CFG["PERP_PRICE_RELATION_FEATURE_KEYS"] = PERP_PRICE_RELATION_FEATURE_KEYS
@@ -4119,8 +4287,7 @@ CFG["OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS"] = OI_WEIGHTED_LOCATION_BASE_FEATUR
 CFG["OI_WEIGHTED_LOCATION_META_FEATURE_KEYS"] = OI_WEIGHTED_LOCATION_META_FEATURE_KEYS
 CFG["DAILY_SR_BASE_FEATURE_KEYS"] = DAILY_SR_BASE_FEATURE_KEYS
 CFG["WEEKLY_SR_META_FEATURE_KEYS"] = WEEKLY_SR_META_FEATURE_KEYS
-CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
-]
+CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = []
 CFG["ORDERBOOK_META_FEATURE_KEYS"] = ORDERBOOK_META_FEATURE_KEYS
 CFG["FUNDING_META_FEATURE_KEYS"] = [
     "fund_rate",
@@ -4261,6 +4428,7 @@ MODEL_DIRECT_BASE_FEATURE_KEYS = [
     "funding_per_hour",
     "range_expansion_ratio",
     "efficiency_ratio_20",
+    *CRASH_LIFECYCLE_ASSET_FEATURE_KEYS,
 ]
 
 MODEL_REGIME_CONTEXT_META_FEATURE_KEYS = [
@@ -4272,6 +4440,15 @@ MODEL_REGIME_CONTEXT_META_FEATURE_KEYS = [
     "mkt_ret_eq_4h",
     "xasset_mkt_spread_bps",
     "regime_liquidity_score",
+    *MARKET_OI_REGIME_FEATURE_KEYS,
+    *PRICE_OI_STATE_FEATURE_KEYS,
+    *MARKET_FUNDING_REGIME_FEATURE_KEYS,
+    *FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS,
+    *OHLCV_BREADTH_FEATURE_KEYS,
+    *OHLCV_CRASH_PHASE_FEATURE_KEYS,
+    *MARKET_SYNCHRONIZATION_FEATURE_KEYS,
+    *CRASH_LIFECYCLE_MARKET_FEATURE_KEYS,
+    *LIQUIDATION_STATE_SCORE_FEATURE_KEYS,
 ]
 
 MODEL_REGIME_XS_META_FEATURE_KEYS = [
@@ -4330,114 +4507,129 @@ MODEL_REGIME_XS_META_FEATURE_KEYS = [
 ]
 
 MODEL_REGIME_TAIL_META_FEATURE_KEYS = [
-    *[f"q_lower_tail__{_p}" for _p in [
-        "amihud_z_peer_resid",
-        "liquidity_ratio_peer_resid",
-        "ob_depth_usd_l20_z",
-        "ob_spread_bps_z_24h",
-        "ob_trade_size_to_l1_depth_z_24h",
-        "oi_1d_x_funding",
-        "oi_3d_x_funding",
-        "oi_7d_x_funding",
-        "oi_value_1d_chg_z_90d",
-        "price_x_oi_1d",
-        "ret48h_bench_resid",
-        "vol_z_peer_resid",
-        "volume_z_24",
-        "xasset_mkt_spread_bps",
-        "xasset_ob_liquidity_peer_resid",
-        "xasset_ob_liquidity_ts_resid",
-    ]],
-    *[f"q_upper_tail__{_p}" for _p in [
-        "amihud_z_peer_resid",
-        "bars_in_high_vol_state_log_norm",
-        "liquidity_ratio_peer_resid",
-        "ob_spread_bps_z_24h",
-        "ob_trade_size_to_l1_depth_z_24h",
-        "oi_1d_x_funding",
-        "oi_3d_x_funding",
-        "oi_7d_x_funding",
-        "oi_to_volume_7d_z_180d",
-        "oi_value_1d_chg_z_90d",
-        "oi_value_3d_chg_z_90d",
-        "price_x_oi_1d",
-        "price_x_oi_3d",
-        "price_x_oi_7d",
-        "ret48h_bench_resid",
-        "vol_z_peer_resid",
-        "volume_z_24",
-        "xasset_mkt_spread_bps",
-        "xasset_ob_liquidity_peer_resid",
-        "xasset_ob_liquidity_ts_resid",
-    ]],
-    *[f"q_iqr__{_p}" for _p in [
-        "amihud_z_peer_resid",
-        "bars_in_high_vol_state_log_norm",
-        "ob_trade_size_to_l1_depth_z_24h",
-        "price_x_oi_1d",
-        "ret48h_bench_resid",
-        "vol_z24",
-        "volume_z_12",
-        "xasset_mkt_spread_bps",
-    ]],
-    *[f"q_tail_width__{_p}" for _p in [
-        "amihud_z_peer_resid",
-        "bars_in_high_vol_state_log_norm",
-        "liquidity_ratio_peer_resid",
-        "loc_swing_range_pos_48",
-        "ob_depth_l20_to_qv_24h",
-        "ob_depth_l20_to_qv_z_7d",
-        "ob_spread_z_x_rv_24h",
-        "oi_1d_x_funding",
-        "oi_3d_x_funding",
-        "oi_7d_x_funding",
-        "oi_to_volume_7d_z_180d",
-        "oi_value_1d_chg_z_90d",
-        "oi_value_3d_chg_z_90d",
-        "oi_value_7d_chg_z_180d",
-        "oi_value_7d_chg_z_90d",
-        "oi_value_z_90d",
-        "price_x_oi_1d",
-        "price_x_oi_3d",
-        "price_x_oi_7d",
-        "ret48h_bench_resid",
-        "rvol_z_peer_resid",
-        "vol_z_peer_resid",
-        "volatility_zscore",
-        "volume_z_12",
-        "volume_z_24",
-        "xasset_mkt_spread_bps",
-        "xasset_ob_liquidity_ts_resid",
-    ]],
-    *[f"q_tail_asym__{_p}" for _p in [
-        "amihud_z_peer_resid",
-        "bars_in_high_vol_state_log_norm",
-        "ob_depth_l20_to_qv_z_7d",
-        "ob_depth_to_qv_z_x_rvol_z",
-        "ob_depth_usd_l20_z",
-        "ob_notional_to_depth_l20_z_24h",
-        "ob_spread_bps_z_24h",
-        "ob_spread_bps_z_7d",
-        "ob_spread_mkt_resid",
-        "ob_trade_size_to_l1_depth_z_24h",
-        "oi_1d_x_funding",
-        "oi_3d_x_funding",
-        "oi_7d_x_funding",
-        "oi_to_volume_7d_z_180d",
-        "oi_value_1d_chg_z_90d",
-        "oi_value_z_90d",
-        "price_x_oi_1d",
-        "price_x_oi_3d",
-        "price_x_oi_7d",
-        "ret48h_bench_resid",
-        "vol_z_4h",
-        "vol_z_peer_resid",
-        "volume_z_12",
-        "volume_z_24",
-        "xasset_mkt_spread_bps",
-        "xasset_ob_liquidity_peer_resid",
-        "xasset_ob_liquidity_ts_resid",
-    ]],
+    *[
+        f"q_lower_tail__{_p}"
+        for _p in [
+            "amihud_z_peer_resid",
+            "liquidity_ratio_peer_resid",
+            "ob_depth_usd_l20_z",
+            "ob_spread_bps_z_24h",
+            "ob_trade_size_to_l1_depth_z_24h",
+            "oi_1d_x_funding",
+            "oi_3d_x_funding",
+            "oi_7d_x_funding",
+            "oi_value_1d_chg_z_90d",
+            "price_x_oi_1d",
+            "ret48h_bench_resid",
+            "vol_z_peer_resid",
+            "volume_z_24",
+            "xasset_mkt_spread_bps",
+            "xasset_ob_liquidity_peer_resid",
+            "xasset_ob_liquidity_ts_resid",
+        ]
+    ],
+    *[
+        f"q_upper_tail__{_p}"
+        for _p in [
+            "amihud_z_peer_resid",
+            "bars_in_high_vol_state_log_norm",
+            "liquidity_ratio_peer_resid",
+            "ob_spread_bps_z_24h",
+            "ob_trade_size_to_l1_depth_z_24h",
+            "oi_1d_x_funding",
+            "oi_3d_x_funding",
+            "oi_7d_x_funding",
+            "oi_to_volume_7d_z_180d",
+            "oi_value_1d_chg_z_90d",
+            "oi_value_3d_chg_z_90d",
+            "price_x_oi_1d",
+            "price_x_oi_3d",
+            "price_x_oi_7d",
+            "ret48h_bench_resid",
+            "vol_z_peer_resid",
+            "volume_z_24",
+            "xasset_mkt_spread_bps",
+            "xasset_ob_liquidity_peer_resid",
+            "xasset_ob_liquidity_ts_resid",
+        ]
+    ],
+    *[
+        f"q_iqr__{_p}"
+        for _p in [
+            "amihud_z_peer_resid",
+            "bars_in_high_vol_state_log_norm",
+            "ob_trade_size_to_l1_depth_z_24h",
+            "price_x_oi_1d",
+            "ret48h_bench_resid",
+            "vol_z24",
+            "volume_z_12",
+            "xasset_mkt_spread_bps",
+        ]
+    ],
+    *[
+        f"q_tail_width__{_p}"
+        for _p in [
+            "amihud_z_peer_resid",
+            "bars_in_high_vol_state_log_norm",
+            "liquidity_ratio_peer_resid",
+            "loc_swing_range_pos_48",
+            "ob_depth_l20_to_qv_24h",
+            "ob_depth_l20_to_qv_z_7d",
+            "ob_spread_z_x_rv_24h",
+            "oi_1d_x_funding",
+            "oi_3d_x_funding",
+            "oi_7d_x_funding",
+            "oi_to_volume_7d_z_180d",
+            "oi_value_1d_chg_z_90d",
+            "oi_value_3d_chg_z_90d",
+            "oi_value_7d_chg_z_180d",
+            "oi_value_7d_chg_z_90d",
+            "oi_value_z_90d",
+            "price_x_oi_1d",
+            "price_x_oi_3d",
+            "price_x_oi_7d",
+            "ret48h_bench_resid",
+            "rvol_z_peer_resid",
+            "vol_z_peer_resid",
+            "volatility_zscore",
+            "volume_z_12",
+            "volume_z_24",
+            "xasset_mkt_spread_bps",
+            "xasset_ob_liquidity_ts_resid",
+        ]
+    ],
+    *[
+        f"q_tail_asym__{_p}"
+        for _p in [
+            "amihud_z_peer_resid",
+            "bars_in_high_vol_state_log_norm",
+            "ob_depth_l20_to_qv_z_7d",
+            "ob_depth_to_qv_z_x_rvol_z",
+            "ob_depth_usd_l20_z",
+            "ob_notional_to_depth_l20_z_24h",
+            "ob_spread_bps_z_24h",
+            "ob_spread_bps_z_7d",
+            "ob_spread_mkt_resid",
+            "ob_trade_size_to_l1_depth_z_24h",
+            "oi_1d_x_funding",
+            "oi_3d_x_funding",
+            "oi_7d_x_funding",
+            "oi_to_volume_7d_z_180d",
+            "oi_value_1d_chg_z_90d",
+            "oi_value_z_90d",
+            "price_x_oi_1d",
+            "price_x_oi_3d",
+            "price_x_oi_7d",
+            "ret48h_bench_resid",
+            "vol_z_4h",
+            "vol_z_peer_resid",
+            "volume_z_12",
+            "volume_z_24",
+            "xasset_mkt_spread_bps",
+            "xasset_ob_liquidity_peer_resid",
+            "xasset_ob_liquidity_ts_resid",
+        ]
+    ],
 ]
 
 MODEL_REGIME_EIGEN_META_FEATURE_KEYS = [
@@ -4602,19 +4794,31 @@ MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS = list(
 )
 
 CFG["MODEL_DIRECT_BASE_FEATURE_KEYS"] = MODEL_DIRECT_BASE_FEATURE_KEYS
+CFG["CRASH_LIFECYCLE_ASSET_FEATURE_KEYS"] = CRASH_LIFECYCLE_ASSET_FEATURE_KEYS
+CFG["CRASH_LIFECYCLE_MARKET_FEATURE_KEYS"] = CRASH_LIFECYCLE_MARKET_FEATURE_KEYS
+CFG["CRASH_LIFECYCLE_NEW_FEATURE_KEYS"] = CRASH_LIFECYCLE_NEW_FEATURE_KEYS
+CFG["OHLCV_LIFECYCLE_FEATURE_KEYS"] = OHLCV_LIFECYCLE_FEATURE_KEYS
+CFG["MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS"] = MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS
+CFG["MARKET_SYNCHRONIZATION_ADDITION_KEYS"] = MARKET_SYNCHRONIZATION_ADDITION_KEYS
 CFG["MODEL_REGIME_CONTEXT_META_FEATURE_KEYS"] = MODEL_REGIME_CONTEXT_META_FEATURE_KEYS
 CFG["MODEL_REGIME_XS_META_FEATURE_KEYS"] = MODEL_REGIME_XS_META_FEATURE_KEYS
 CFG["MODEL_REGIME_TAIL_META_FEATURE_KEYS"] = MODEL_REGIME_TAIL_META_FEATURE_KEYS
 CFG["MODEL_REGIME_EIGEN_META_FEATURE_KEYS"] = MODEL_REGIME_EIGEN_META_FEATURE_KEYS
-CFG["MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS"] = MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS
-CFG["MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS"] = MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS
+CFG["MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS"] = (
+    MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS
+)
+CFG["MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS"] = (
+    MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS
+)
 CFG["market_spectral_position_lookback"] = 48
 CFG["market_spectral_position_min_periods"] = 24
 CFG["market_spectral_position_top_k"] = 3
 CFG["market_spectral_position_max_source_features"] = 64
 CFG["market_spectral_position_shrinkage"] = 0.10
 CFG["MODEL_REGIME_COMPOSITE_EIGEN_GROUPS"] = MODEL_REGIME_COMPOSITE_EIGEN_GROUPS
-CFG["MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS"] = MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS
+CFG["MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS"] = (
+    MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS
+)
 CFG["base_shared_feature_keys"] += [
     "MODEL_DIRECT_BASE_FEATURE_KEYS",
     "spread_proxy_features",
@@ -4738,11 +4942,7 @@ CFG["META_ORDERBOOK_BLOCKER_FEATURE_KEYS"] = [
     "obw_blocking_wall_distance_a30",
     "obw_path_depth_to_target_a30",
 ]
-ORDERBOOK_META_FEATURE_KEYS = list(
-    dict.fromkeys(
-        ORDERBOOK_META_FEATURE_KEYS
-    )
-)
+ORDERBOOK_META_FEATURE_KEYS = list(dict.fromkeys(ORDERBOOK_META_FEATURE_KEYS))
 ORDERBOOK_FEATURE_KEYS = sorted(
     set(ORDERBOOK_BASE_FEATURE_KEYS) | set(ORDERBOOK_META_FEATURE_KEYS)
 )
@@ -5229,8 +5429,7 @@ REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_KEYS = tuple(
     )
 )
 REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_FEATURE_KEYS = [
-    f"meta_lgbm_{key}"
-    for key in REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_KEYS
+    f"meta_lgbm_{key}" for key in REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_KEYS
 ]
 REGIME_ADAPTOR_BASE_FEATURE_KEYS += (
     REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_FEATURE_KEYS
@@ -5254,8 +5453,7 @@ try:
     REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS = [
         name
         for name in drift_regime_feature_names()
-        if "_all_score_" not in str(name)
-        and not str(name).endswith(("_10d", "_14d"))
+        if "_all_score_" not in str(name) and not str(name).endswith(("_10d", "_14d"))
     ]
 except Exception:
     REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS = []
@@ -5264,13 +5462,14 @@ REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS
 try:
     from extreme_price_movements.candidate_drift_calibration import (
         CANDIDATE_DRIFT_FEATURE_COLUMNS,
+    )
+    from extreme_price_movements.candidate_drift_calibration import (
         DRIFT_SOURCE_COLUMNS as CANDIDATE_DRIFT_SOURCE_COLUMNS,
     )
 
-    REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS = (
-        list(CANDIDATE_DRIFT_FEATURE_COLUMNS)
-        + [f"{key}_pct" for key in CANDIDATE_DRIFT_SOURCE_COLUMNS]
-    )
+    REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS = list(
+        CANDIDATE_DRIFT_FEATURE_COLUMNS
+    ) + [f"{key}_pct" for key in CANDIDATE_DRIFT_SOURCE_COLUMNS]
 except Exception:
     REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS = []
 REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS
@@ -5326,6 +5525,15 @@ REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     "global_ebm_unc_dispersion_mean_7d",
     "global_ebm_conflict_mean_7d",
     "global_ebm_support_risk_mean_7d",
+    *MARKET_OI_REGIME_FEATURE_KEYS,
+    *PRICE_OI_STATE_FEATURE_KEYS,
+    *MARKET_FUNDING_REGIME_FEATURE_KEYS,
+    *FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS,
+    *OHLCV_BREADTH_FEATURE_KEYS,
+    *OHLCV_CRASH_PHASE_FEATURE_KEYS,
+    *MARKET_SYNCHRONIZATION_FEATURE_KEYS,
+    *CRASH_LIFECYCLE_MARKET_FEATURE_KEYS,
+    *LIQUIDATION_STATE_SCORE_FEATURE_KEYS,
 ]
 
 REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
@@ -5516,6 +5724,15 @@ _REGIME_ADAPTOR_GLOBAL_FEATURE_ALLOWLIST = {
     "btc_eth_trend_proxy",
     "btc_eth_vol_proxy",
     "funding_rate_cross_asset_dispersion",
+    *MARKET_OI_REGIME_FEATURE_KEYS,
+    *PRICE_OI_STATE_FEATURE_KEYS,
+    *MARKET_FUNDING_REGIME_FEATURE_KEYS,
+    *FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS,
+    *OHLCV_BREADTH_FEATURE_KEYS,
+    *OHLCV_CRASH_PHASE_FEATURE_KEYS,
+    *MARKET_SYNCHRONIZATION_FEATURE_KEYS,
+    *CRASH_LIFECYCLE_MARKET_FEATURE_KEYS,
+    *LIQUIDATION_STATE_SCORE_FEATURE_KEYS,
 }
 REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     key
@@ -5867,7 +6084,22 @@ for _bps in (5, 10, 25, 50, 100):
     )
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(RESIDUAL_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(SPREAD_PROXY_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(CROSS_ASSET_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(OI_TRADING_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_OI_REGIME_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(PRICE_OI_STATE_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_FUNDING_REGIME_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(
+    FUNDING_PRICE_OI_INTERACTION_FEATURE_KEYS
+)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(OHLCV_BREADTH_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(OHLCV_CRASH_PHASE_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_SYNCHRONIZATION_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(OHLCV_LIFECYCLE_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_SYNCHRONIZATION_ADDITION_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(LIQUIDATION_STATE_SCORE_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(CRASH_LIFECYCLE_NEW_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(LONG_HORIZON_PERP_META_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(VOLUME_FREE_PERP_BASE_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(VOLUME_FREE_PERP_META_FEATURE_KEYS)
@@ -5893,9 +6125,7 @@ REFERENCE_BASIS_FEATURE_KEYS.update(
         if str(key) == "basis" or str(key).startswith("basis_")
     }
 )
-PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.difference_update(
-    REFERENCE_BASIS_FEATURE_KEYS
-)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.difference_update(REFERENCE_BASIS_FEATURE_KEYS)
 SPARSE_OR_STATE_DEPENDENT_FEATURE_KEYS = set()
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.difference_update(
     SPARSE_OR_STATE_DEPENDENT_FEATURE_KEYS
@@ -6213,15 +6443,15 @@ CFG["position_sizer_features"] = _portable_feature_list(
 REGIME_ADAPTOR_FEATURE_ORDER = _portable_feature_list(REGIME_ADAPTOR_FEATURE_ORDER)
 CFG["REGIME_ADAPTOR_BASE_FEATURE_KEYS"] = REGIME_ADAPTOR_BASE_FEATURE_KEYS
 CFG["REGIME_ADAPTOR_FEATURE_ORDER"] = REGIME_ADAPTOR_FEATURE_ORDER
-REGIME_ADAPTOR_DEFAULT_CONFIG[
-    RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
-] = REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+REGIME_ADAPTOR_DEFAULT_CONFIG[RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS] = (
+    REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+)
 REGIME_ADAPTOR_DEFAULT_CONFIG[
     RegimeAdaptorKey.REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS
 ] = REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS
-REGIME_ADAPTOR_DEFAULT_CONFIG[
-    RegimeAdaptorKey.REGIME_ADAPTOR_FUNDING_FEATURE_KEYS
-] = REGIME_ADAPTOR_FUNDING_FEATURE_KEYS
+REGIME_ADAPTOR_DEFAULT_CONFIG[RegimeAdaptorKey.REGIME_ADAPTOR_FUNDING_FEATURE_KEYS] = (
+    REGIME_ADAPTOR_FUNDING_FEATURE_KEYS
+)
 REGIME_ADAPTOR_DEFAULT_CONFIG[
     RegimeAdaptorKey.REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS
 ] = REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS

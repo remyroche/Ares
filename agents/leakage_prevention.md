@@ -1,78 +1,70 @@
 # Leakage Prevention Rules
 
-Data leakage is one of the most common sources of false alpha.
+## 1. Temporal And Alignment Leakage
 
-All feature pipelines must follow these rules.
+Features use only data observable at decision time. Targets, barrier paths, MFE,
+MAE, timeout, stop, and realized utility begin after that point. Use causal as-of
+joins for 15m, hourly, funding, OI, orderbook, and market data.
 
----
+Purge train rows whose future label intervals overlap validation/OOS intervals.
+Apply an embargo based on the maximum target/execution horizon.
 
-# 1. Temporal Leakage
+## 2. Fitted Transform Leakage
 
-Features must not use future data.
+Fit scalers, imputers, encoders, AE/GMM, calibration maps, cluster priors, and
+drift references on training rows only. OOS rows receive frozen transforms.
 
-Invalid:
+Do not refit AE/GMM on each growing OOS window when posterior semantics are
+expected to remain comparable.
 
-rolling_mean(price, window) computed using future observations
+## 3. Feature Selection And HPO Leakage
 
-Valid:
+Feature selection and HPO may use their designated validation samples, but those
+rows are no longer an untouched final test. In the standard pipeline, run them
+once on the largest authorized training fold using beginning/middle/end samples,
+then freeze features and parameters for later OOS windows.
 
-rolling_mean(price[:t], window)
+Target-derived sample weights are allowed only in training loss. They may not
+become row features or affect OOS rank normalization through future outcomes.
 
----
+## 4. Archetype And Meta Leakage
 
-# 2. Normalization Leakage
+Outcome signatures may define training archetypes or meta targets. At inference,
+use only cluster assignments or classifiers computable from pre-entry features.
+Train-derived outcome priors must be frozen and support-weighted.
 
-Global normalization is prohibited.
+Meta training must consume OOF/frozen base scores. Same-fold fitted base scores
+are not valid meta inputs.
 
-Invalid:
+## 5. Cross-Asset Leakage
 
-zscore = (x - mean(full_dataset)) / std(full_dataset)
+Use only the point-in-time available universe. Future listings, full-period
+liquidity screens, and normalization over future rows are prohibited.
 
-Valid:
+## 6. Policy And Portfolio Leakage
 
-rolling_zscore using past data only.
+Optimize thresholds, geometry, sizing, calibration, recent-performance rules,
+and portfolio limits on training/validation folds only. Compile metrics from
+each fold's non-training rows. Freeze the selected policy before replaying the
+next period.
 
----
+Recent hit-rate or EV surprise at timestamp `t` may use only outcomes resolved
+before `t`.
 
-# 3. Cross-Sectional Leakage
+Residual autocorrelation and hit-rate surprise must be generated sequentially.
+For each row, exclude its own outcome and every still-open/unresolved prior row.
+Expected hit-rate and EV baselines must come from frozen train-derived or
+causally expanding history. Preserve both positive and negative surprise.
 
-When using cross-sectional features:
+## 7. Required Audit Statement
 
-only assets available at time t may be used.
+For every reported result state:
 
-Future asset additions must not influence past features.
-
----
-
-# 4. Label Leakage
-
-Targets must not influence features.
-
-Examples of leakage:
-
-- features derived from forward returns
-- labels used during feature normalization
-
----
-
-# 5. Alignment Errors
-
-Ensure correct alignment between:
-
-features  
-targets  
-timestamps
-
-Common bug:
-
-feature_t aligned with target_t instead of target_{t+1}
-
----
-
-# 6. Validation
-
-Pipelines must include checks for:
-
-timestamp monotonicity  
-feature/target alignment  
-missing timestamps
+- training, feature-selection/HPO, policy-fit, and evaluation dates
+- model OOF versus policy OOS versus frozen replay status
+- purge/embargo horizon
+- base prediction provenance used by meta
+- whether archetype/calibration priors were frozen
+- whether costs and thresholds were selected on the reported period
+- residual definition, lag/window, ordering, and OOS provenance
+- hit-rate surprise half-life, support, and resolved-outcome cutoff

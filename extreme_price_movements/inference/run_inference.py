@@ -53,9 +53,9 @@ import json
 import os
 import re
 import resource
-import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +80,11 @@ except Exception:  # pragma: no cover - optional runtime dependency
     _psutil = None
 
 from extreme_price_movements import hf_data_loader
+from extreme_price_movements.data_store import (
+    _load_local_env_if_present,
+    _resolve_perp_symbol,
+)
+from extreme_price_movements.drift_monitoring import write_live_drift_recap
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.inference.candidate_selector import (
     build_latest_prepared_feature_frames,
@@ -98,14 +103,12 @@ from extreme_price_movements.inference.config import (
     load_inference_config,
     resolve_inference_universes,
 )
-from extreme_price_movements.data_store import (
-    _load_local_env_if_present,
-    _resolve_perp_symbol,
-)
 from extreme_price_movements.inference.daily_reporter import DailyDeploymentReporter
-from extreme_price_movements.inference.dynamic_strategy_performance import (
-    StrategyPerformanceMonitor,
-    meta_head_hash,
+from extreme_price_movements.inference.data_fetcher import (
+    DataFetcher,
+    classify_api_error,
+    fetch_and_build_panel,
+    make_exchange,
 )
 from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
     apply_archetype_hit_surprise_threshold,
@@ -113,28 +116,24 @@ from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
     load_archetype_hit_surprise_policy,
     load_dynamic_hr_surprise_state,
 )
-from extreme_price_movements.inference.data_fetcher import (
-    DataFetcher,
-    classify_api_error,
-    fetch_and_build_panel,
-    fetch_latest_ohlcv,
-    make_exchange,
+from extreme_price_movements.inference.dynamic_strategy_performance import (
+    StrategyPerformanceMonitor,
+    meta_head_hash,
 )
 from extreme_price_movements.inference.feature_generator import (
-    _compute_policy_barrier_pct,
     _coerce_feature_source_run_ids,
+    _compute_policy_barrier_pct,
     _feature_runtime_cfg_hash,
     _hash_values,
     _is_live_source_derived_feature_key,
     _is_live_synthesized_feature_key,
-    _meta_model_derived_raw_dependencies,
     _merge_missing_feature_dicts,
+    _meta_model_derived_raw_dependencies,
     _required_tail_warmup_hours,
     compute_selector_features,
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     is_model_derived_feature_key,
     live_model_feature_store_strict,
     load_or_compute_features,
@@ -144,6 +143,7 @@ from extreme_price_movements.inference.feature_generator import (
 from extreme_price_movements.inference.feature_layer_debug import (
     dump_live_feature_layers,
     feature_layer_debug_enabled,
+    update_live_feature_layer_rank_summary,
 )
 from extreme_price_movements.inference.feature_parity import (
     validate_required_source_panels,
@@ -151,8 +151,11 @@ from extreme_price_movements.inference.feature_parity import (
 from extreme_price_movements.inference.google_sheets_exporter import (
     GoogleSheetsTradeExporter,
 )
-from extreme_price_movements.inference.feature_layer_debug import (
-    update_live_feature_layer_rank_summary,
+from extreme_price_movements.inference.liquidity_precheck import (
+    compute_price_gap_rank_penalty,
+    evaluate_orderbook_liquidity,
+    fetch_ticker_snapshot,
+    marketable_limit_price,
 )
 from extreme_price_movements.inference.live_meta_feature_overlays import (
     apply_live_meta_reliability_priors,
@@ -161,12 +164,6 @@ from extreme_price_movements.inference.live_meta_feature_overlays import (
     load_meta_reliability_prior_payload,
     materialize_live_ae_gmm_features,
     materialize_live_source_regime_features,
-)
-from extreme_price_movements.inference.liquidity_precheck import (
-    compute_price_gap_rank_penalty,
-    evaluate_orderbook_liquidity,
-    fetch_ticker_snapshot,
-    marketable_limit_price,
 )
 from extreme_price_movements.inference.live_policy_archetype import (
     load_live_policy_archetype_classifier,
@@ -200,30 +197,29 @@ from extreme_price_movements.inference.policy_rank_reference import (
     apply_policy_rank_percentile_gate,
     strategy_rank_reference_aliases,
 )
-from extreme_price_movements.inference.threshold_basis_policy import (
-    apply_threshold_basis_policy_to_decisions,
-    load_threshold_basis_policy,
-)
-from extreme_price_movements.regime_ev_calibration import (
-    apply_regime_ev_calibration,
-    load_regime_ev_calibration,
-)
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
     compute_rank_based_position_size,
     load_portfolio_policy_config,
     validate_portfolio_strategy_contract,
 )
+from extreme_price_movements.inference.prediction_ledger import PredictionLedger
 from extreme_price_movements.inference.prehead_symbol_guard import (
     load_prehead_symbol_guard_state,
     prehead_symbol_guard_result,
+)
+from extreme_price_movements.inference.threshold_basis_policy import (
+    apply_threshold_basis_policy_to_decisions,
+    load_threshold_basis_policy,
 )
 from extreme_price_movements.inference.training_live_parity_contract import (
     load_training_live_parity_contract,
     validate_training_live_parity_contract,
 )
-from extreme_price_movements.inference.prediction_ledger import PredictionLedger
-from extreme_price_movements.drift_monitoring import write_live_drift_recap
+from extreme_price_movements.regime_ev_calibration import (
+    apply_regime_ev_calibration,
+    load_regime_ev_calibration,
+)
 
 try:
     from extreme_price_movements.lgbm_pipeline import LGBM_INTERNAL_METRIC_FEATURE_NAMES
@@ -242,12 +238,11 @@ from extreme_price_movements.inference.symbol_mapping import (
     normalise_symbol,
     symbol_base,
 )
-from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
+from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
 
@@ -1888,9 +1883,7 @@ def _model_context_from_scored_decision(
         ),
         "last_model_score_refresh_reason": refresh_reason,
     }
-    for key, value in _copy_model_policy_context_from_decision(
-        decision, chain
-    ).items():
+    for key, value in _copy_model_policy_context_from_decision(decision, chain).items():
         context.setdefault(key, value)
     for metric_key in (
         "inference_drift_score",
@@ -2337,7 +2330,9 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
     if "policy_archetype" in candidates.columns:
         candidates["ev_curve_archetype"] = candidates["policy_archetype"].astype(str)
     elif "local_side_archetype" in candidates.columns:
-        candidates["ev_curve_archetype"] = candidates["local_side_archetype"].astype(str)
+        candidates["ev_curve_archetype"] = candidates["local_side_archetype"].astype(
+            str
+        )
     else:
         candidates["ev_curve_archetype"] = ""
     for col in [
@@ -2426,7 +2421,9 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
             _add_curve(f"{sid}|{side_text}", side_group)
             if core:
                 _add_curve(f"{core}|{side_text}", side_group)
-            for archetype, archetype_group in side_group.groupby("ev_curve_archetype", sort=False):
+            for archetype, archetype_group in side_group.groupby(
+                "ev_curve_archetype", sort=False
+            ):
                 archetype = str(archetype or "").strip()
                 if not archetype:
                     continue
@@ -2795,9 +2792,7 @@ def _ev_adjusted_prediction_after_entry_friction(
     inference_fixed_cost_bps = max(
         0.0, _safe_float(inference_fixed_round_trip_cost_bps, 20.0)
     )
-    inference_spread_mult = max(
-        0.0, _safe_float(inference_spread_multiplier, 1.50)
-    )
+    inference_spread_mult = max(0.0, _safe_float(inference_spread_multiplier, 1.50))
     observed_half_spread_bps = spread_bps / 2.0
     half_spread_baseline = spread_baseline / 2.0
     spread_excess_bps = max(0.0, observed_half_spread_bps - half_spread_baseline)
@@ -2922,7 +2917,9 @@ def _ev_adjusted_prediction_after_entry_friction(
         if len(gross_xs) and len(gross_ys):
             current_gross_ev = float(np.interp(score, gross_xs, gross_ys))
             current_net_ev = historical_net_ev
-            adjusted_net_ev = current_gross_ev - float(inference_total_cost_bps) / 10000.0
+            adjusted_net_ev = (
+                current_gross_ev - float(inference_total_cost_bps) / 10000.0
+            )
             rebase_applied = True
     if np.nanmax(ys) <= np.nanmin(ys):
         adjusted_score = float(score)
@@ -3750,10 +3747,23 @@ def _apply_pre_score_market_masks(
     kept: List[str] = []
     snapshots: Dict[str, Dict[str, Any]] = {}
     reason_counts: Dict[str, int] = {}
-    for symbol in candidates:
+    candidate_symbols = [str(symbol) for symbol in candidates]
+    if not candidate_symbols:
+        return kept, snapshots
+
+    workers = _runtime_int(
+        runtime_config,
+        "live_prescore_market_mask_workers",
+        "EPM_LIVE_PRESCORE_MARKET_MASK_WORKERS",
+        16,
+    )
+    workers = max(1, min(int(workers), int(len(candidate_symbols))))
+    started = time.perf_counter()
+
+    def _snapshot_for_symbol(symbol_s: str) -> tuple[str, Dict[str, Any]]:
         snap = _pre_score_market_mask_snapshot(
             panel=panel,
-            symbol=str(symbol),
+            symbol=symbol_s,
             side=side,
             strategy_id=strategy_id,
             executor=executor,
@@ -3764,43 +3774,91 @@ def _apply_pre_score_market_masks(
             raw_close_reference_gap_bps=raw_close_reference_gap_bps,
             max_signal_close_to_entry_seconds=max_signal_close_to_entry_seconds,
         )
-        snapshots[str(symbol)] = snap
+        return symbol_s, snap
+
+    if workers <= 1:
+        for symbol_s in candidate_symbols:
+            try:
+                sym, snap = _snapshot_for_symbol(symbol_s)
+            except Exception as exc:
+                snap = {
+                    "prescore_market_mask_enabled": True,
+                    "prescore_market_mask_allowed": False,
+                    "prescore_market_mask_reason": "prescore_market_mask_exception",
+                    "prescore_market_mask_error": f"{type(exc).__name__}: {exc}",
+                    "prescore_strategy_id": str(strategy_id),
+                }
+                sym = symbol_s
+            snapshots[sym] = snap
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_symbol = {
+                pool.submit(_snapshot_for_symbol, symbol_s): symbol_s
+                for symbol_s in candidate_symbols
+            }
+            for future in as_completed(future_to_symbol):
+                symbol_s = future_to_symbol[future]
+                try:
+                    sym, snap = future.result()
+                except Exception as exc:
+                    sym = symbol_s
+                    snap = {
+                        "prescore_market_mask_enabled": True,
+                        "prescore_market_mask_allowed": False,
+                        "prescore_market_mask_reason": "prescore_market_mask_exception",
+                        "prescore_market_mask_error": f"{type(exc).__name__}: {exc}",
+                        "prescore_strategy_id": str(strategy_id),
+                    }
+                snapshots[sym] = snap
+
+    snapshots = {
+        symbol_s: snapshots.get(symbol_s)
+        or {
+            "prescore_market_mask_enabled": True,
+            "prescore_market_mask_allowed": False,
+            "prescore_market_mask_reason": "missing_prescore_market_mask_snapshot",
+            "prescore_strategy_id": str(strategy_id),
+        }
+        for symbol_s in candidate_symbols
+    }
+    elapsed = time.perf_counter() - started
+    for symbol_s in candidate_symbols:
+        snap = snapshots[symbol_s]
         side_metrics["prescore_market_mask_input"] += 1
         if bool(snap.get("prescore_market_mask_allowed")):
-            kept.append(str(symbol))
+            kept.append(symbol_s)
             side_metrics["prescore_market_mask_pass"] += 1
             continue
         reason = str(snap.get("prescore_market_mask_reason") or "unknown")
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
         side_metrics["prescore_market_mask_block"] += 1
         side_metrics["non_fatal_issues"] += 1
-    if candidates:
-        side_metrics.setdefault("prescore_market_mask_reasons", {})
-        merged_reasons = dict(side_metrics.get("prescore_market_mask_reasons") or {})
-        for reason, count in reason_counts.items():
-            merged_reasons[reason] = int(merged_reasons.get(reason, 0) or 0) + int(
-                count
-            )
-        side_metrics["prescore_market_mask_reasons"] = merged_reasons
-        _emit_structured_event(
-            "LIVE_PRESCORE_MARKET_MASK",
-            {
-                "side": side,
-                "strategy_id": strategy_core_id(str(strategy_id)),
-                "input": len(candidates),
-                "kept": len(kept),
-                "blocked": int(len(candidates) - len(kept)),
-                "reasons": reason_counts,
-                "sample_blocked": [
-                    {
-                        "symbol": sym,
-                        "reason": snapshots[sym].get("prescore_market_mask_reason"),
-                    }
-                    for sym in snapshots
-                    if not bool(snapshots[sym].get("prescore_market_mask_allowed"))
-                ][:10],
-            },
-        )
+    side_metrics.setdefault("prescore_market_mask_reasons", {})
+    merged_reasons = dict(side_metrics.get("prescore_market_mask_reasons") or {})
+    for reason, count in reason_counts.items():
+        merged_reasons[reason] = int(merged_reasons.get(reason, 0) or 0) + int(count)
+    side_metrics["prescore_market_mask_reasons"] = merged_reasons
+    _emit_structured_event(
+        "LIVE_PRESCORE_MARKET_MASK",
+        {
+            "side": side,
+            "strategy_id": strategy_core_id(str(strategy_id)),
+            "input": len(candidate_symbols),
+            "kept": len(kept),
+            "blocked": int(len(candidate_symbols) - len(kept)),
+            "workers": int(workers),
+            "elapsed_seconds": round(float(elapsed), 3),
+            "reasons": reason_counts,
+            "sample_blocked": [
+                {
+                    "symbol": sym,
+                    "reason": snapshots[sym].get("prescore_market_mask_reason"),
+                }
+                for sym in candidate_symbols
+                if not bool(snapshots[sym].get("prescore_market_mask_allowed"))
+            ][:10],
+        },
+    )
     return kept, snapshots
 
 
@@ -4803,7 +4861,9 @@ def _prediction_ledger_row(
         "auction_ordering_key_json": decision.get(
             "auction_ordering_key_json", chain.get("auction_ordering_key_json")
         ),
-        "auction_sorted_at": decision.get("auction_sorted_at", chain.get("auction_sorted_at")),
+        "auction_sorted_at": decision.get(
+            "auction_sorted_at", chain.get("auction_sorted_at")
+        ),
         "auction_selected_before_capacity": decision.get(
             "auction_selected_before_capacity",
             chain.get("auction_selected_before_capacity"),
@@ -5597,6 +5657,20 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_optional_int(name: str) -> Optional[int]:
+    """Return an optional int from an environment variable."""
+    value = os.getenv(name)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+
 def _ignore_market_kill_switch_for_reconciliation(config: Mapping[str, Any]) -> bool:
     """Allow shadow/live-test reconciliation to observe, not block, market halts."""
     mode = str((config or {}).get("mode", "")).strip().lower()
@@ -5873,7 +5947,9 @@ def _latest_rolling_meta_health(
             "reason": (
                 "ok"
                 if end_ok and age_ok
-                else "stale_end_ts" if not end_ok else "stale_rolling_meta"
+                else "stale_end_ts"
+                if not end_ok
+                else "stale_rolling_meta"
             ),
         }
     )
@@ -5991,6 +6067,8 @@ def _live_warmup_state_health_snapshot(
         "sync_complete_selected_matrix_verified",
         "sync_complete_verified",
         "sync_complete",
+        "incremental_selected_matrix_ready",
+        "incremental_selected_matrix_ready_low_finite_row_strict",
         "no_training_path_features",
         "no_required_features",
     }
@@ -6003,7 +6081,9 @@ def _live_warmup_state_health_snapshot(
     reason = (
         "ok"
         if ok
-        else panel_reason if not panel_ok else "stale_or_missing_rolling_state"
+        else panel_reason
+        if not panel_ok
+        else "stale_or_missing_rolling_state"
     )
     return {
         "ok": ok,
@@ -7803,7 +7883,9 @@ def _auction_ordering_key(decision: Mapping[str, Any]) -> Dict[str, Any]:
             decision.get("portfolio_priority"), -float("inf")
         ),
         "candidate_rank_score": _candidate_rank_score(decision),
-        "calibrated_score": _safe_float(decision.get("calibrated_score"), -float("inf")),
+        "calibrated_score": _safe_float(
+            decision.get("calibrated_score"), -float("inf")
+        ),
         "negative_expected_friction": -_candidate_expected_friction(decision),
     }
 
@@ -7833,8 +7915,7 @@ def _attach_global_auction_metadata(
         row["auction_ordering_key_json"] = _audit_json_dumps(payload)
         row["auction_sorted_at"] = _json_safe_audit_value(sorted_at)
         row["auction_selected_before_capacity"] = bool(
-            idx < max(int(entry_cap), 0)
-            and idx < max(int(max_new_entries_per_bar), 0)
+            idx < max(int(entry_cap), 0) and idx < max(int(max_new_entries_per_bar), 0)
         )
         chain = row.get("chain_results")
         if isinstance(chain, MutableMapping):
@@ -8246,15 +8327,18 @@ def _ledger_strategy_identity(
         or chain.get("strategy_id")
         or ""
     ).strip()
-    side_s = str(side or decision.get("side") or chain.get("side") or "").strip().lower()
+    side_s = (
+        str(side or decision.get("side") or chain.get("side") or "").strip().lower()
+    )
     canonical = strategy_core_id(source_strategy_id) if source_strategy_id else ""
     decision_strategy_id = str(
-        decision.get("decision_strategy_id")
-        or chain.get("decision_strategy_id")
-        or ""
+        decision.get("decision_strategy_id") or chain.get("decision_strategy_id") or ""
     ).strip()
     if not decision_strategy_id:
-        if source_strategy_id and strategy_side(source_strategy_id) in {"long", "short"}:
+        if source_strategy_id and strategy_side(source_strategy_id) in {
+            "long",
+            "short",
+        }:
             decision_strategy_id = source_strategy_id
         elif side_s in {"long", "short"} and canonical:
             decision_strategy_id = f"{side_s}_{canonical}"
@@ -8383,9 +8467,7 @@ def _attach_portfolio_replay_state_for_ledger(
         "wallet_value", state.get("portfolio_value")
     )
     decision["open_notional_before"] = capacity_payload.get("open_notional")
-    decision["available_wallet_before"] = capacity_payload.get(
-        "available_wallet_quote"
-    )
+    decision["available_wallet_before"] = capacity_payload.get("available_wallet_quote")
 
 
 def _attach_portfolio_replay_state_after_for_ledger(
@@ -8423,9 +8505,7 @@ def _attach_portfolio_replay_state_after_for_ledger(
         "wallet_value", state.get("portfolio_value")
     )
     decision["open_notional_after"] = capacity_payload.get("open_notional")
-    decision["available_wallet_after"] = capacity_payload.get(
-        "available_wallet_quote"
-    )
+    decision["available_wallet_after"] = capacity_payload.get("available_wallet_quote")
 
 
 def _model_feature_ledger_snapshot_for_decision(
@@ -8825,14 +8905,18 @@ def _perp_rank_context(
                         try:
                             from sklearn.isotonic import IsotonicRegression
 
-                            iso = IsotonicRegression(increasing=False, out_of_bounds="clip")
+                            iso = IsotonicRegression(
+                                increasing=False, out_of_bounds="clip"
+                            )
                             iso.fit(ranks, target_sorted)
                             expected = np.asarray(iso.predict(ranks), dtype=float)
                         except Exception:
                             expected = None
                     if expected is None:
                         buckets = pd.qcut(
-                            ranks, q=min(50, max(1, len(ranks) // 100)), duplicates="drop"
+                            ranks,
+                            q=min(50, max(1, len(ranks) // 100)),
+                            duplicates="drop",
                         )
                         means = (
                             pd.Series(target_sorted)
@@ -8887,7 +8971,9 @@ def _perp_rank_context(
                         scores = scores[np.isfinite(scores)]
                         if scores.size:
                             scores_sorted = np.sort(scores)[::-1]
-                            rank_x = max(1, int(np.ceil(float(scores_sorted.size) * 0.10)))
+                            rank_x = max(
+                                1, int(np.ceil(float(scores_sorted.size) * 0.10))
+                            )
                             cached = {
                                 "rank_x": rank_x,
                                 "profitable_rank_count": rank_x,
@@ -9333,19 +9419,13 @@ def _email_close_exit_type(closed_trade: Mapping[str, Any]) -> str:
 
 
 def _email_close_cause_plain(closed_trade: Mapping[str, Any]) -> str:
-    reason = str(
-        closed_trade.get("reason")
-        or closed_trade.get("exit_reason")
-        or ""
-    )
+    reason = str(closed_trade.get("reason") or closed_trade.get("exit_reason") or "")
     reason_detail = str(closed_trade.get("exit_reason_detail") or "")
     trigger_type = str(closed_trade.get("close_trigger_type") or "")
     method = str(closed_trade.get("close_execution_method") or "")
     text = " ".join((reason, reason_detail, trigger_type, method)).lower()
     policy_reason = str(
-        closed_trade.get("stop_origin")
-        or closed_trade.get("stop_reason")
-        or ""
+        closed_trade.get("stop_origin") or closed_trade.get("stop_reason") or ""
     ).strip()
     if not policy_reason and ":" in reason:
         policy_reason = reason.rsplit(":", 1)[-1].strip()
@@ -9537,7 +9617,9 @@ def _email_archetype_recent_performance_plain_lines(
         _email_line("local_side_archetype", source.get("local_side_archetype")),
         _email_line("source_archetype", source.get("source_archetype")),
         _email_line("archetype_label_family", source.get("archetype_label_family")),
-        _email_line("recent_performance_mode", source.get("archetype_hit_surprise_mode")),
+        _email_line(
+            "recent_performance_mode", source.get("archetype_hit_surprise_mode")
+        ),
         _email_line(
             "recent_performance_threshold",
             source.get("archetype_hit_surprise_threshold"),
@@ -9677,7 +9759,11 @@ def _email_archetype_recent_performance_html_rows(
             source.get("archetype_hit_surprise_applied"),
             _email_fmt_bool,
         ),
-        ("Recent Performance Reason", source.get("archetype_hit_surprise_reason"), None),
+        (
+            "Recent Performance Reason",
+            source.get("archetype_hit_surprise_reason"),
+            None,
+        ),
         (
             "Recent Performance Matched Key",
             source.get("archetype_hit_surprise_matched_key"),
@@ -9718,7 +9804,11 @@ def _email_archetype_recent_performance_html_rows(
             source.get("archetype_hit_surprise_rows"),
             _email_fmt_float(4),
         ),
-        ("Strategy EV Gate Allowed", source.get("strategy_ev_gate_allowed"), _email_fmt_bool),
+        (
+            "Strategy EV Gate Allowed",
+            source.get("strategy_ev_gate_allowed"),
+            _email_fmt_bool,
+        ),
         ("Strategy EV Gate Reason", source.get("strategy_ev_gate_reason"), None),
         ("Strategy EV Hit Rate", source.get("strategy_ev_hit_rate"), _email_fmt_pct),
         (
@@ -9820,7 +9910,9 @@ def _email_drift_uncertainty_plain_lines(
             source.get("support_drift_score"),
             _email_fmt_float(6),
         ),
-        _email_line("leaf_drift_score", source.get("leaf_drift_score"), _email_fmt_float(6)),
+        _email_line(
+            "leaf_drift_score", source.get("leaf_drift_score"), _email_fmt_float(6)
+        ),
         _email_line(
             "aegmm_regime_drift_score",
             source.get("aegmm_regime_drift_score"),
@@ -9837,7 +9929,9 @@ def _email_drift_uncertainty_plain_lines(
         ),
         _email_line(
             "ae_reconstruction_error",
-            source.get("ae_reconstruction_error", source.get("AE_reconstruction_error")),
+            source.get(
+                "ae_reconstruction_error", source.get("AE_reconstruction_error")
+            ),
             _email_fmt_float(6),
         ),
         _email_line("cluster_speed", source.get("cluster_speed"), _email_fmt_float(6)),
@@ -9864,7 +9958,11 @@ def _email_drift_uncertainty_html_rows(
             source.get("meta_lgbm_inference_drift_score"),
             _email_fmt_float(6),
         ),
-        ("Feature Drift PSI Core", source.get("feature_drift_psi_core"), _email_fmt_float(6)),
+        (
+            "Feature Drift PSI Core",
+            source.get("feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
         (
             "Feature Drift PSI Core 80",
             source.get("feature_drift_psi_core_80"),
@@ -9933,7 +10031,9 @@ def _email_drift_uncertainty_html_rows(
         ),
         (
             "AE Reconstruction Error",
-            source.get("ae_reconstruction_error", source.get("AE_reconstruction_error")),
+            source.get(
+                "ae_reconstruction_error", source.get("AE_reconstruction_error")
+            ),
             _email_fmt_float(6),
         ),
         ("Cluster Speed", source.get("cluster_speed"), _email_fmt_float(6)),
@@ -10965,9 +11065,7 @@ def _build_trade_open_email_body(
             "archetype_hit_surprise_threshold": decision.get(
                 "archetype_hit_surprise_threshold"
             ),
-            "archetype_hit_surprise_mode": decision.get(
-                "archetype_hit_surprise_mode"
-            ),
+            "archetype_hit_surprise_mode": decision.get("archetype_hit_surprise_mode"),
             "archetype_hit_surprise_threshold_delta": decision.get(
                 "archetype_hit_surprise_threshold_delta"
             ),
@@ -11693,7 +11791,9 @@ def _build_trade_close_email_html_body(
                     ),
                     (
                         "EV Rebase Historical Net",
-                        closed_trade.get("ev_adjusted_historical_net_return_before_rebase"),
+                        closed_trade.get(
+                            "ev_adjusted_historical_net_return_before_rebase"
+                        ),
                         _email_fmt_pct,
                     ),
                     (
@@ -11746,7 +11846,9 @@ def _build_trade_close_email_html_body(
         ),
         (
             "Archetype Recent Performance",
-            _email_html_rows(_email_archetype_recent_performance_html_rows(closed_trade)),
+            _email_html_rows(
+                _email_archetype_recent_performance_html_rows(closed_trade)
+            ),
         ),
         (
             "Liquidation Guard",
@@ -12019,7 +12121,9 @@ def _build_trade_open_email_html_body(
         ),
         (
             "Archetype Recent Performance",
-            _email_html_rows(_email_archetype_recent_performance_html_rows(email_context)),
+            _email_html_rows(
+                _email_archetype_recent_performance_html_rows(email_context)
+            ),
         ),
         (
             "Drift, Uncertainty and OOD",
@@ -12128,10 +12232,7 @@ def _build_trade_close_email_subject(closed_trade: Mapping[str, Any]) -> str:
         or closed_trade.get("reason")
         or "closed"
     )
-    return (
-        f"EPM trade closed: {symbol} {side} {outcome} {pnl_text} "
-        f"via {close_method}"
-    )
+    return f"EPM trade closed: {symbol} {side} {outcome} {pnl_text} via {close_method}"
 
 
 def _send_trade_close_email(
@@ -12328,7 +12429,11 @@ def _build_portfolio_risk_guard_email_html_body(
                     ("Event", event.get("event"), None),
                     ("Scope", scope, None),
                     ("Reason", event.get("reason"), None),
-                    ("Policy Archetype", portfolio_result.get("policy_archetype"), None),
+                    (
+                        "Policy Archetype",
+                        portfolio_result.get("policy_archetype"),
+                        None,
+                    ),
                     ("Streak", event.get("streak"), None),
                     ("Threshold", event.get("threshold"), None),
                 ]
@@ -12384,8 +12489,16 @@ def _build_portfolio_risk_guard_email_html_body(
             "Guard State",
             _email_html_rows(
                 [
-                    ("Hard Limit Status", json.dumps(hard_status, sort_keys=True, default=str), None),
-                    ("Disabled Archetypes", json.dumps(disabled, sort_keys=True, default=str), None),
+                    (
+                        "Hard Limit Status",
+                        json.dumps(hard_status, sort_keys=True, default=str),
+                        None,
+                    ),
+                    (
+                        "Disabled Archetypes",
+                        json.dumps(disabled, sort_keys=True, default=str),
+                        None,
+                    ),
                 ]
             ),
         ),
@@ -12433,9 +12546,7 @@ def _send_portfolio_risk_guard_email(
         config=config,
     )
     if result.get("success"):
-        tprint(
-            f"[PortfolioRiskEmail] Sent risk guard email for {scope} to {recipient}"
-        )
+        tprint(f"[PortfolioRiskEmail] Sent risk guard email for {scope} to {recipient}")
         return {"sent": True, "email_result": result}
     tprint(
         "[PortfolioRiskEmail] Risk guard email failed: "
@@ -13523,12 +13634,7 @@ def _persist_live_candidate_feature_matrix(
         f"{run_s}|{side_s}|{ts.isoformat()}|{len(candidate_features)}".encode("utf-8")
     ).hexdigest()[:24]
     out_dir = (
-        data_root
-        / "artifacts"
-        / run_s
-        / "live_candidate_feature_matrix"
-        / side_s
-        / key
+        data_root / "artifacts" / run_s / "live_candidate_feature_matrix" / side_s / key
     )
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -13548,7 +13654,9 @@ def _persist_live_candidate_feature_matrix(
             "symbols": [str(s) for s in frame.index],
             "schema": "live_candidate_feature_matrix_v1",
         }
-        tmp_meta.write_text(json.dumps(meta, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        tmp_meta.write_text(
+            json.dumps(meta, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
         os.replace(tmp_data, data_path)
         os.replace(tmp_meta, meta_path)
         tprint(
@@ -13556,7 +13664,9 @@ def _persist_live_candidate_feature_matrix(
             f"side={side_s} rows={len(frame)} cols={frame.shape[1]} ts={ts}"
         )
     except Exception as exc:
-        tprint(f"Live candidate feature matrix persistence failed: {type(exc).__name__}: {exc}")
+        tprint(
+            f"Live candidate feature matrix persistence failed: {type(exc).__name__}: {exc}"
+        )
 
 
 def _selected_feature_source_groups(feature_name: str) -> List[Dict[str, Any]]:
@@ -13909,7 +14019,8 @@ def _selected_model_feature_store_gap_report(
         {
             str(key)
             for key in raw_required_feature_keys(required_feature_keys)
-            if str(key) and _meta_live_unavailable_neutral_default(str(key)) is None
+            if str(key)
+            and _meta_live_unavailable_neutral_default(str(key)) is None
             and not _is_live_synthesized_feature_key(str(key))
         }
     )
@@ -14377,7 +14488,9 @@ def run_inference_step(
     regime_ev_calibration_path: Optional[Path] = None
     if bool(getattr(portfolio_policy, "regime_ev_calibration_enabled", False)):
         regime_ev_calibration_path = _resolve_policy_sidecar_path(
-            path_value=getattr(portfolio_policy, "regime_ev_calibration_artifact_path", ""),
+            path_value=getattr(
+                portfolio_policy, "regime_ev_calibration_artifact_path", ""
+            ),
             data_root=str(runtime_config.get("data_root") or ""),
             run_id=str(
                 runtime_config.get("policy_artifact_run_id")
@@ -14385,7 +14498,10 @@ def run_inference_step(
                 or ""
             ),
         )
-        if regime_ev_calibration_path is not None and regime_ev_calibration_path.exists():
+        if (
+            regime_ev_calibration_path is not None
+            and regime_ev_calibration_path.exists()
+        ):
             try:
                 regime_ev_calibration_artifact = load_regime_ev_calibration(
                     regime_ev_calibration_path
@@ -14852,9 +14968,9 @@ def run_inference_step(
                     str(selected_strategy)
                 )
                 if alpha_model_info is None:
-                    alpha_model_info = getattr(orchestrator, "alpha_by_strategy", {}).get(
-                        f"{side}_{selected_strategy}"
-                    )
+                    alpha_model_info = getattr(
+                        orchestrator, "alpha_by_strategy", {}
+                    ).get(f"{side}_{selected_strategy}")
                 alpha_feature_contract = (
                     _effective_alpha_feature_contract(alpha_model_info)
                     if isinstance(alpha_model_info, dict)
@@ -15379,7 +15495,9 @@ def run_inference_step(
                     regime_ev_effect_count = 0
                     regime_ev_source = ""
                     regime_ev_protect_admission_rank = bool(
-                        getattr(portfolio_policy, "regime_ev_protect_admission_rank", True)
+                        getattr(
+                            portfolio_policy, "regime_ev_protect_admission_rank", True
+                        )
                     )
                     regime_ev_protected_admission_floor = float(
                         np.clip(
@@ -15387,7 +15505,9 @@ def run_inference_step(
                                 getattr(
                                     portfolio_policy,
                                     "regime_ev_protected_admission_floor",
-                                    getattr(portfolio_policy, "initial_rank_threshold", 0.90),
+                                    getattr(
+                                        portfolio_policy, "initial_rank_threshold", 0.90
+                                    ),
                                 ),
                                 0.90,
                             ),
@@ -15415,10 +15535,14 @@ def run_inference_step(
                             if archetype_meta_input_row is not None:
                                 for col in archetype_meta_input_row.columns:
                                     if col not in regime_frame.columns:
-                                        regime_frame[col] = archetype_meta_input_row[col].to_numpy()
+                                        regime_frame[col] = archetype_meta_input_row[
+                                            col
+                                        ].to_numpy()
                             regime_frame["side_name"] = side
                             regime_frame["archetype_policy_key"] = live_policy_archetype
-                            regime_frame["score_meta_base_soft_label"] = float(calibrated_score)
+                            regime_frame["score_meta_base_soft_label"] = float(
+                                calibrated_score
+                            )
                             regime_frame["calibrated_score"] = float(calibrated_score)
                             regime_frame["score_base"] = _safe_float(
                                 chain_results.get("base_pred"), np.nan
@@ -15485,14 +15609,14 @@ def run_inference_step(
                                     if regime_ev_calibration_path is not None
                                     else ""
                                 )
-                                chain_results["regime_ev_protect_admission_rank"] = bool(
-                                    regime_ev_protect_admission_rank
+                                chain_results["regime_ev_protect_admission_rank"] = (
+                                    bool(regime_ev_protect_admission_rank)
                                 )
-                                chain_results["regime_ev_protected_admission_floor"] = float(
-                                    regime_ev_protected_admission_floor
+                                chain_results["regime_ev_protected_admission_floor"] = (
+                                    float(regime_ev_protected_admission_floor)
                                 )
-                                chain_results["regime_ev_retained_surplus_frac"] = float(
-                                    regime_ev_retained_surplus_frac
+                                chain_results["regime_ev_retained_surplus_frac"] = (
+                                    float(regime_ev_retained_surplus_frac)
                                 )
                         except Exception as exc:
                             tprint(
@@ -15510,9 +15634,7 @@ def run_inference_step(
                         spread_baseline_bps, spread_baseline_source = (
                             _live_ev_haircut_spread_baseline_bps(
                                 symbol=symbol,
-                                data_root=str(
-                                    runtime_config.get("data_root", "data")
-                                ),
+                                data_root=str(runtime_config.get("data_root", "data")),
                                 fallback_bps=(
                                     portfolio_policy.ev_haircut_expected_spread_bps
                                 ),
@@ -15567,12 +15689,12 @@ def run_inference_step(
                                 "ev_inference_cost_rebase_applied", False
                             )
                         ):
-                            estimated_ev[
-                                "estimated_ev_historical_net_return"
-                            ] = estimated_ev.get("estimated_ev_net_return")
-                            estimated_ev[
-                                "estimated_ev_historical_cost_bps"
-                            ] = estimated_ev.get("estimated_ev_cost_bps")
+                            estimated_ev["estimated_ev_historical_net_return"] = (
+                                estimated_ev.get("estimated_ev_net_return")
+                            )
+                            estimated_ev["estimated_ev_historical_cost_bps"] = (
+                                estimated_ev.get("estimated_ev_cost_bps")
+                            )
                             if np.isfinite(adjusted_ev_after):
                                 estimated_ev["estimated_ev_net_return"] = float(
                                     adjusted_ev_after
@@ -15972,22 +16094,24 @@ def run_inference_step(
                     chain_results["archetype_hit_surprise_quality_adjustment"] = float(
                         getattr(archetype_hr_result, "quality_adjustment", 0.0)
                     )
-                    chain_results[
-                        "archetype_hit_surprise_priority_multiplier"
-                    ] = portfolio_priority_multiplier
-                    chain_results[
-                        "archetype_hit_surprise_priority_adjustment"
-                    ] = portfolio_priority_adjustment
-                    chain_results[
-                        "archetype_hit_surprise_rank_adjustment"
-                    ] = portfolio_rank_adjustment
-                    chain_results[
-                        "portfolio_priority_multiplier"
-                    ] = portfolio_priority_multiplier
-                    chain_results[
-                        "portfolio_priority_adjustment"
-                    ] = portfolio_priority_adjustment
-                    chain_results["portfolio_rank_adjustment"] = portfolio_rank_adjustment
+                    chain_results["archetype_hit_surprise_priority_multiplier"] = (
+                        portfolio_priority_multiplier
+                    )
+                    chain_results["archetype_hit_surprise_priority_adjustment"] = (
+                        portfolio_priority_adjustment
+                    )
+                    chain_results["archetype_hit_surprise_rank_adjustment"] = (
+                        portfolio_rank_adjustment
+                    )
+                    chain_results["portfolio_priority_multiplier"] = (
+                        portfolio_priority_multiplier
+                    )
+                    chain_results["portfolio_priority_adjustment"] = (
+                        portfolio_priority_adjustment
+                    )
+                    chain_results["portfolio_rank_adjustment"] = (
+                        portfolio_rank_adjustment
+                    )
                     chain_results["archetype_hit_surprise_actual_hit_rate"] = float(
                         archetype_hr_result.actual_hit_rate
                     )
@@ -16273,8 +16397,12 @@ def run_inference_step(
                             "archetype_hit_surprise_support_confidence": float(
                                 archetype_hr_result.support_confidence
                             ),
-                            "archetype_hit_surprise_n_eff": float(archetype_hr_result.n_eff),
-                            "archetype_hit_surprise_rows": float(archetype_hr_result.rows),
+                            "archetype_hit_surprise_n_eff": float(
+                                archetype_hr_result.n_eff
+                            ),
+                            "archetype_hit_surprise_rows": float(
+                                archetype_hr_result.rows
+                            ),
                             "portfolio_priority_multiplier": portfolio_priority_multiplier,
                             "portfolio_priority_adjustment": portfolio_priority_adjustment,
                             "portfolio_rank_adjustment": portfolio_rank_adjustment,
@@ -18831,7 +18959,10 @@ def run_inference_step(
                 chain_results["global_auction_skip_stage"] = stage
                 chain_results["global_auction_skip_reason"] = reason
                 decision["chain_results"] = chain_results
-                if portfolio_mgr is not None and "portfolio_state_snapshot_json" not in decision:
+                if (
+                    portfolio_mgr is not None
+                    and "portfolio_state_snapshot_json" not in decision
+                ):
                     try:
                         skip_capacity = portfolio_mgr.get_portfolio_capacity(
                             side=side,
@@ -20539,37 +20670,56 @@ def run_inference_step(
                 f"rows={len(prediction_ledger_rows)} "
                 f"path={prediction_ledger.path}"
             )
-            try:
-                live_root = Path(
-                    runtime_config.get("live_data_root")
-                    or runtime_config.get("data_root")
-                    or "data"
-                )
-                artifact_root = Path(runtime_config.get("data_root") or live_root)
-                run_id = str(runtime_config.get("run_id") or "")
-                benchmark_dir = (
-                    artifact_root / "artifacts" / run_id / "drift_benchmarks"
-                    if run_id
-                    else None
-                )
-                drift_recap = write_live_drift_recap(
-                    ledger_path=prediction_ledger.path,
-                    output_root=live_root / "live_state" / "drift_monitoring",
-                    benchmark_dir=benchmark_dir,
-                    asof_ts=pd.Timestamp.now(tz="UTC"),
-                    model_run_id=run_id,
-                    policy_run_id=run_id,
-                )
-                if drift_recap.get("reason") not in {None, ""}:
-                    tprint(f"Live drift recap skipped: {drift_recap.get('reason')}")
-                else:
-                    tprint(
-                        "Live drift recap updated: "
-                        f"rows={drift_recap.get('scored_metric_rows')} "
-                        f"regime_features={drift_recap.get('regime_feature_rows')}"
+            live_root = Path(
+                runtime_config.get("live_data_root")
+                or runtime_config.get("data_root")
+                or "data"
+            )
+            artifact_root = Path(runtime_config.get("data_root") or live_root)
+            run_id = str(runtime_config.get("run_id") or "")
+            benchmark_dir = (
+                artifact_root / "artifacts" / run_id / "drift_benchmarks"
+                if run_id
+                else None
+            )
+            ledger_path = prediction_ledger.path
+
+            def _write_live_drift_recap_task() -> None:
+                try:
+                    drift_recap = write_live_drift_recap(
+                        ledger_path=ledger_path,
+                        output_root=live_root / "live_state" / "drift_monitoring",
+                        benchmark_dir=benchmark_dir,
+                        asof_ts=pd.Timestamp.now(tz="UTC"),
+                        model_run_id=run_id,
+                        policy_run_id=run_id,
                     )
-            except Exception as exc:
-                tprint(f"Warning: live drift recap update failed: {exc}")
+                    if drift_recap.get("reason") not in {None, ""}:
+                        tprint(f"Live drift recap skipped: {drift_recap.get('reason')}")
+                    else:
+                        tprint(
+                            "Live drift recap updated: "
+                            f"rows={drift_recap.get('scored_metric_rows')} "
+                            f"regime_features={drift_recap.get('regime_feature_rows')}"
+                        )
+                except Exception as exc:
+                    tprint(f"Warning: live drift recap update failed: {exc}")
+
+            drift_recap_async = str(
+                runtime_config.get(
+                    "live_drift_recap_async",
+                    os.environ.get("EPM_LIVE_DRIFT_RECAP_ASYNC", "1"),
+                )
+            ).strip().lower() not in {"0", "false", "no", "off"}
+            if drift_recap_async:
+                threading.Thread(
+                    target=_write_live_drift_recap_task,
+                    name="live_drift_recap",
+                    daemon=True,
+                ).start()
+                tprint("Live drift recap update queued asynchronously.")
+            else:
+                _write_live_drift_recap_task()
         except Exception as exc:
             tprint(f"Warning: prediction ledger append failed: {exc}")
     _emit_structured_event("ORDER_HEALTH", results["order_error_summary"])
@@ -20962,11 +21112,9 @@ def _record_portfolio_close_from_trade(
             closed_trade["portfolio_consecutive_losing_trades"] = result.get(
                 "consecutive_losing_trades"
             )
-            closed_trade["portfolio_policy_archetype"] = result.get(
-                "policy_archetype"
-            )
-            closed_trade["portfolio_archetype_consecutive_losing_trades"] = (
-                result.get("archetype_consecutive_losing_trades")
+            closed_trade["portfolio_policy_archetype"] = result.get("policy_archetype")
+            closed_trade["portfolio_archetype_consecutive_losing_trades"] = result.get(
+                "archetype_consecutive_losing_trades"
             )
             closed_trade["portfolio_disabled_archetypes"] = result.get(
                 "disabled_archetypes"
@@ -21622,8 +21770,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
-
     _load_local_env_if_present()
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
@@ -22816,6 +22962,16 @@ def main():
                     f"positions={len(active_position_score_entries)} "
                     f"symbols={active_position_score_symbols[:12]}"
                 )
+            if bool(config.get("hourly_fetch_model_universe_only", True)):
+                panel_symbols = sorted(set(feature_context_symbols_for_scoring))
+            else:
+                panel_symbols = sorted(
+                    set(download_symbols).union(active_position_score_symbols)
+                )
+            panel = data_fetcher.get_panel(
+                panel_symbols, lookback_hours=live_decision_panel_lookback_hours
+            )
+            loop_timer.mark("panel_load")
             prewarm_result: Dict[str, Any] = {}
             if _model_feature_offline_cache_enabled(
                 config
@@ -22838,10 +22994,11 @@ def main():
                         source_run_ids=feature_runtime_cfg.get(
                             "live_feature_source_run_ids"
                         ),
+                        panel=panel,
+                        lookback_hours=live_decision_panel_lookback_hours,
                     )
                     tprint(
-                        "Live selected model-feature prewarm result: "
-                        f"{prewarm_result}"
+                        f"Live selected model-feature prewarm result: {prewarm_result}"
                     )
                     if bool(prewarm_result.get("ok")) or str(
                         prewarm_result.get("status") or ""
@@ -22851,6 +23008,8 @@ def main():
                         "sync_complete",
                         "sync_complete_verified",
                         "sync_complete_selected_matrix_verified",
+                        "incremental_selected_matrix_ready",
+                        "incremental_selected_matrix_ready_low_finite_row_strict",
                     }:
                         feature_runtime_cfg[
                             "_live_model_feature_auto_sync_attempted"
@@ -22866,16 +23025,6 @@ def main():
                     )
                 loop_timer.mark("selected_feature_prewarm")
 
-            if bool(config.get("hourly_fetch_model_universe_only", True)):
-                panel_symbols = sorted(set(feature_context_symbols_for_scoring))
-            else:
-                panel_symbols = sorted(
-                    set(download_symbols).union(active_position_score_symbols)
-                )
-            panel = data_fetcher.get_panel(
-                panel_symbols, lookback_hours=live_decision_panel_lookback_hours
-            )
-            loop_timer.mark("panel_load")
             warmup_state_health = _live_warmup_state_health_snapshot(
                 panel=panel,
                 symbols=symbols,
@@ -23239,6 +23388,26 @@ def main():
                         prehead_guard_path
                     )
 
+            configured_max_entries_total = int(config.get("max_entries_total", 4))
+            env_max_entries_total = _env_optional_int("EPM_LIVE_MAX_ENTRIES_TOTAL")
+            if env_max_entries_total is not None:
+                configured_max_entries_total = env_max_entries_total
+            if _env_flag("EPM_LIVE_DISABLE_NEW_ENTRIES", False) or _env_flag(
+                "EPM_DISABLE_NEW_ENTRIES", False
+            ):
+                configured_max_entries_total = 0
+                scoring_entries_allowed = False
+                tprint(
+                    "Live new-entry block active: model scoring and current-position "
+                    "management continue, but new orders are blocked with "
+                    "max_entries_total=0."
+                )
+            effective_max_entries_total = (
+                max(0, int(configured_max_entries_total))
+                if scoring_entries_allowed
+                else 0
+            )
+
             results = run_inference_step(
                 orchestrator=orchestrator,
                 panel=tradable_panel,
@@ -23268,11 +23437,7 @@ def main():
                 strategy_feature_contracts=strategy_feature_contracts,
                 live_ae_gmm_state_payload=live_ae_gmm_payload,
                 required_feature_keys=required_feature_keys,
-                max_entries_total=(
-                    int(config.get("max_entries_total", 4))
-                    if scoring_entries_allowed
-                    else 0
-                ),
+                max_entries_total=effective_max_entries_total,
                 stale_entry_context=bool(
                     stale_entry_gap_allowed and not late_entries_override
                 ),

@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover
 
 from .features_denoising_ae import (
     fit_denoising_autoencoder_state,
+    refit_denoising_autoencoder_state,
     transform_denoising_autoencoder_features,
 )
 
@@ -38,7 +39,9 @@ def _ae_gmm_json_safe(value: Any) -> Any:
     return value
 
 
-def ae_gmm_state_manifest(state: dict[str, Any], *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+def ae_gmm_state_manifest(
+    state: dict[str, Any], *, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Small JSON-safe manifest for a persisted AE/GMM inference state."""
     selected = dict(state.get("selected_config", {}) or {})
     feature_columns = [str(c) for c in state.get("feature_columns", []) or []]
@@ -57,7 +60,9 @@ def ae_gmm_state_manifest(state: dict[str, Any], *, extra: dict[str, Any] | None
         "gmm_covariance_type": state.get("gmm_covariance_type"),
         "gmm_reg_covar": state.get("gmm_reg_covar"),
         "smooth_lambda": state.get("smooth_lambda"),
-        "max_components": int(state.get("max_components", AE_GMM_MAX_COMPONENTS) or AE_GMM_MAX_COMPONENTS),
+        "max_components": int(
+            state.get("max_components", AE_GMM_MAX_COMPONENTS) or AE_GMM_MAX_COMPONENTS
+        ),
         "train_rows_available": int(state.get("train_rows_available", 0) or 0),
         "ae_fit_rows": int(state.get("ae_fit_rows", 0) or 0),
         "gmm_fit_rows": int(state.get("gmm_fit_rows", 0) or 0),
@@ -123,7 +128,11 @@ def save_ae_gmm_state_artifact(
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with state_path.open("wb") as fh:
         pickle.dump(state, fh, protocol=pickle.HIGHEST_PROTOCOL)
-    manifest_file = Path(manifest_path) if manifest_path is not None else state_path.with_suffix(".manifest.json")
+    manifest_file = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else state_path.with_suffix(".manifest.json")
+    )
     manifest_file.parent.mkdir(parents=True, exist_ok=True)
     manifest = ae_gmm_state_manifest(
         state,
@@ -145,14 +154,20 @@ def load_ae_gmm_state_artifact(path: str | os.PathLike[str]) -> dict[str, Any]:
     if not isinstance(state, dict):
         raise TypeError(f"AE/GMM state artifact must contain a dict: {state_path}")
     if not bool(state.get("enabled", False)):
-        raise ValueError(f"AE/GMM state artifact is disabled: {state_path} reason={state.get('reason')}")
+        raise ValueError(
+            f"AE/GMM state artifact is disabled: {state_path} reason={state.get('reason')}"
+        )
     feature_columns = state.get("feature_columns", [])
     if not isinstance(feature_columns, list) or len(feature_columns) < 2:
-        raise ValueError(f"AE/GMM state artifact has no usable feature_columns: {state_path}")
+        raise ValueError(
+            f"AE/GMM state artifact has no usable feature_columns: {state_path}"
+        )
     return state
 
 
-def _env_int_tuple(name: str, default: Sequence[int], *, min_value: int, max_value: int) -> tuple[int, ...]:
+def _env_int_tuple(
+    name: str, default: Sequence[int], *, min_value: int, max_value: int
+) -> tuple[int, ...]:
     raw = os.environ.get(name, "").strip()
     if not raw:
         return tuple(int(v) for v in default)
@@ -189,7 +204,11 @@ def _env_float_tuple(
             value = float(text)
         except ValueError:
             continue
-        if np.isfinite(value) and float(min_value) <= value <= float(max_value) and value not in out:
+        if (
+            np.isfinite(value)
+            and float(min_value) <= value <= float(max_value)
+            and value not in out
+        ):
             out.append(value)
     return tuple(out) if out else tuple(float(v) for v in default)
 
@@ -217,7 +236,9 @@ AE_GMM_SMOOTH_LAMBDA = 0.925
 AE_GMM_LATENT_DIM = 16
 AE_GMM_MIN_OCCUPANCY = 0.03
 AE_GMM_MAX_OCCUPANCY = 0.75
-AE_GMM_PATH_AWARE_HPO = os.environ.get("EPM_AE_GMM_PATH_AWARE_HPO", "1").strip().lower() not in {
+AE_GMM_PATH_AWARE_HPO = os.environ.get(
+    "EPM_AE_GMM_PATH_AWARE_HPO", "1"
+).strip().lower() not in {
     "0",
     "false",
     "no",
@@ -308,7 +329,9 @@ def _robust_scale_fit(x: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     return med, scale
 
 
-def _robust_scale_apply(x: pd.DataFrame, center: np.ndarray, scale: np.ndarray) -> np.ndarray:
+def _robust_scale_apply(
+    x: pd.DataFrame, center: np.ndarray, scale: np.ndarray
+) -> np.ndarray:
     arr = x.to_numpy(dtype=np.float32, copy=True)
     arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
     out = (arr - center.reshape(1, -1)) / scale.reshape(1, -1)
@@ -335,14 +358,15 @@ def _diag_gmm_predict_proba(z: np.ndarray, state: dict[str, Any]) -> np.ndarray:
     quad = np.sum((diff * diff) / covars[None, :, :], axis=2)
     log_det = np.sum(np.log(covars), axis=1)
     dim = float(means.shape[1])
-    logp = (
-        np.log(weights)[None, :]
-        - 0.5 * (quad + log_det[None, :] + dim * np.log(2.0 * np.pi))
+    logp = np.log(weights)[None, :] - 0.5 * (
+        quad + log_det[None, :] + dim * np.log(2.0 * np.pi)
     )
     return _softmax_log(logp)
 
 
-def _gmm_distances(z: np.ndarray, state: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+def _gmm_distances(
+    z: np.ndarray, state: dict[str, Any]
+) -> tuple[np.ndarray, np.ndarray]:
     means = np.asarray(state.get("gmm_means", []), dtype=np.float32)
     covars = np.asarray(state.get("gmm_covariances", []), dtype=np.float32)
     if means.ndim != 2 or covars.ndim != 2 or len(means) == 0:
@@ -360,7 +384,9 @@ def _gmm_distances(z: np.ndarray, state: dict[str, Any]) -> tuple[np.ndarray, np
 if _numba_njit is not None:
 
     @_numba_njit(cache=True)
-    def _smooth_probabilities_numba(prob_arr: np.ndarray, lam32: np.float32) -> np.ndarray:
+    def _smooth_probabilities_numba(
+        prob_arr: np.ndarray, lam32: np.float32
+    ) -> np.ndarray:
         n_rows = prob_arr.shape[0]
         n_cols = prob_arr.shape[1] if prob_arr.ndim == 2 else 0
         out = np.empty_like(prob_arr, dtype=np.float32)
@@ -418,7 +444,9 @@ def _smooth_probabilities(prob: np.ndarray, lam: float) -> np.ndarray:
     return _smooth_probabilities_python(prob_arr, lam)
 
 
-def _cluster_stability(labels: np.ndarray, window: int = 20) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _cluster_stability(
+    labels: np.ndarray, window: int = 20
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     n = int(len(labels))
     if n <= 0:
         empty = np.zeros(0, dtype=np.float32)
@@ -445,7 +473,9 @@ def _cluster_stability(labels: np.ndarray, window: int = 20) -> tuple[np.ndarray
     starts = np.maximum(0, idx - window_i + 1)
     counts = csum[idx + 1, inv] - csum[starts, inv]
     win_len = (idx - starts + 1).astype(np.float32)
-    stability = (counts.astype(np.float32) / np.maximum(win_len, 1.0)).astype(np.float32)
+    stability = (counts.astype(np.float32) / np.maximum(win_len, 1.0)).astype(
+        np.float32
+    )
 
     flip_step = np.zeros(n, dtype=np.int16)
     if n > 1:
@@ -465,7 +495,9 @@ def _economic_separation(labels: np.ndarray, targets: dict[str, Any] | None) -> 
         return 0.0
     vals: list[float] = []
     for name, arr_like in targets.items():
-        if str(name) in {"side", "time_bucket", "month", "__time_bucket__"} or str(name).startswith("_"):
+        if str(name) in {"side", "time_bucket", "month", "__time_bucket__"} or str(
+            name
+        ).startswith("_"):
             continue
         arr = np.asarray(arr_like, dtype=np.float32)
         if len(arr) != len(labels):
@@ -506,13 +538,18 @@ def _cluster_target_signature_score(
         }
     labels_arr = np.asarray(labels)
     n = int(len(labels_arr))
-    thirds = [np.asarray(b, dtype=np.int32) for b in np.array_split(np.arange(n, dtype=np.int32), min(3, n))]
+    thirds = [
+        np.asarray(b, dtype=np.int32)
+        for b in np.array_split(np.arange(n, dtype=np.int32), min(3, n))
+    ]
     rows: list[dict[str, Any]] = []
     target_scores: list[float] = []
     sign_scores: list[float] = []
     contrast_scores: list[float] = []
     for name, arr_like in targets.items():
-        if str(name) in {"side", "time_bucket", "month", "__time_bucket__"} or str(name).startswith("_"):
+        if str(name) in {"side", "time_bucket", "month", "__time_bucket__"} or str(
+            name
+        ).startswith("_"):
             continue
         arr = np.asarray(arr_like, dtype=np.float32)
         if len(arr) != n:
@@ -563,11 +600,18 @@ def _cluster_target_signature_score(
         if len(cluster_means) < 2:
             continue
         contrast = float(
-            (np.nanpercentile(cluster_means, 90.0) - np.nanpercentile(cluster_means, 10.0))
+            (
+                np.nanpercentile(cluster_means, 90.0)
+                - np.nanpercentile(cluster_means, 10.0)
+            )
             / scale
         )
         sign_stability = float(stable_votes / max(total_votes, 1))
-        target_score = float(np.clip(0.60 * sign_stability + 0.40 * np.tanh(max(contrast, 0.0)), 0.0, 1.0))
+        target_score = float(
+            np.clip(
+                0.60 * sign_stability + 0.40 * np.tanh(max(contrast, 0.0)), 0.0, 1.0
+            )
+        )
         rows.extend(cluster_rows)
         sign_scores.append(sign_stability)
         contrast_scores.append(contrast)
@@ -626,7 +670,7 @@ def _path_cleanliness_separation(
     n = int(len(labels_arr))
     utility = _first_finite_target(
         targets,
-        ("clean_utility", "returns", "utility", "target"),
+        ("top10_ev", "clean_utility", "returns", "utility", "target"),
         n,
     )
     if utility is None:
@@ -639,11 +683,25 @@ def _path_cleanliness_separation(
             "clean_dirty_overlap_penalty": 0.0,
             "rows": [],
         }
-    bad_mae = _first_finite_target(targets, ("bad_mae_1r", "bad_mae", "bad_MAE"), n)
-    timeout = _first_finite_target(targets, ("timeout", "is_timeout"), n)
-    full_stop = _first_finite_target(targets, ("full_stop_loss", "full_sl", "stop_loss"), n)
-    clean_positive_arr = _first_finite_target(targets, ("clean_positive", "clean_executable_positive"), n)
-    dirty_positive_arr = _first_finite_target(targets, ("dirty_positive", "dirty_executable_positive"), n)
+    bad_mae = _first_finite_target(
+        targets, ("top10_bad_mae", "bad_mae_1r", "bad_mae", "bad_MAE"), n
+    )
+    timeout = _first_finite_target(
+        targets, ("top10_timeout", "timeout", "is_timeout"), n
+    )
+    full_stop = _first_finite_target(
+        targets, ("full_stop_loss", "full_sl", "stop_loss"), n
+    )
+    clean_positive_arr = _first_finite_target(
+        targets,
+        ("top10_clean_positive", "clean_positive", "clean_executable_positive"),
+        n,
+    )
+    dirty_positive_arr = _first_finite_target(
+        targets,
+        ("top10_dirty_positive", "dirty_positive", "dirty_executable_positive"),
+        n,
+    )
 
     finite = np.isfinite(utility)
     if bad_mae is None:
@@ -659,11 +717,17 @@ def _path_cleanliness_separation(
     if clean_positive_arr is None:
         clean_positive = positive & ~bad_flag & ~timeout_flag & ~stop_flag
     else:
-        clean_positive = np.asarray(np.nan_to_num(clean_positive_arr, nan=0.0) >= 0.5, dtype=bool) & finite
+        clean_positive = (
+            np.asarray(np.nan_to_num(clean_positive_arr, nan=0.0) >= 0.5, dtype=bool)
+            & finite
+        )
     if dirty_positive_arr is None:
         dirty_positive = positive & (bad_flag | timeout_flag | stop_flag)
     else:
-        dirty_positive = np.asarray(np.nan_to_num(dirty_positive_arr, nan=0.0) >= 0.5, dtype=bool) & finite
+        dirty_positive = (
+            np.asarray(np.nan_to_num(dirty_positive_arr, nan=0.0) >= 0.5, dtype=bool)
+            & finite
+        )
 
     if int(np.sum(finite)) < 50 or int(np.sum(positive)) < 10:
         return {
@@ -747,15 +811,28 @@ def _path_cleanliness_separation(
         corr_penalty = max(corr, 0.0) if math.isfinite(corr) else 0.0
     global_risk = float(np.average(risk_arr, weights=weight_arr))
     top_clean = clean_arr >= float(np.nanpercentile(clean_arr, 75.0))
-    top_clean_risk = float(np.average(risk_arr[top_clean], weights=weight_arr[top_clean])) if np.any(top_clean) else global_risk
-    excess_penalty = max(top_clean_risk - global_risk, 0.0) / max(1.0 - global_risk, 1e-6)
+    top_clean_risk = (
+        float(np.average(risk_arr[top_clean], weights=weight_arr[top_clean]))
+        if np.any(top_clean)
+        else global_risk
+    )
+    excess_penalty = max(top_clean_risk - global_risk, 0.0) / max(
+        1.0 - global_risk, 1e-6
+    )
     overlap_penalty = float(np.clip(max(corr_penalty, excess_penalty), 0.0, 1.0))
     raw_score = float(
         0.36 * np.tanh(clean_contrast / 0.08)
         + 0.22 * np.tanh(dirty_contrast / 0.08)
         + 0.20 * np.tanh(bad_contrast / 0.08)
         + 0.12 * np.tanh(timeout_contrast / 0.06)
-        + 0.10 * np.tanh(abs(float(np.average(clean_arr, weights=weight_arr)) - float(np.average(dirty_arr, weights=weight_arr))) / 0.08)
+        + 0.10
+        * np.tanh(
+            abs(
+                float(np.average(clean_arr, weights=weight_arr))
+                - float(np.average(dirty_arr, weights=weight_arr))
+            )
+            / 0.08
+        )
     )
     score = float(np.clip(raw_score * (1.0 - 0.45 * overlap_penalty), 0.0, 1.0))
     return {
@@ -782,7 +859,11 @@ def _temporal_concentration_score(
             "min_cluster_time_bucket_coverage": 1.0,
             "rows": [],
         }
-    time_arr = _first_finite_target(targets, ("time_bucket", "month", "__time_bucket__", "_time_bucket"), len(labels))
+    time_arr = _first_finite_target(
+        targets,
+        ("time_bucket", "month", "__time_bucket__", "_time_bucket"),
+        len(labels),
+    )
     if time_arr is None:
         return {
             "score": 1.0,
@@ -817,8 +898,13 @@ def _temporal_concentration_score(
         count = int(np.sum(mask))
         if count < 10:
             continue
-        bucket_counts = np.asarray([np.sum(time[mask] == bucket) for bucket in unique_buckets], dtype=np.float32)
-        max_share = float(np.max(bucket_counts) / max(float(np.sum(bucket_counts)), 1.0))
+        bucket_counts = np.asarray(
+            [np.sum(time[mask] == bucket) for bucket in unique_buckets],
+            dtype=np.float32,
+        )
+        max_share = float(
+            np.max(bucket_counts) / max(float(np.sum(bucket_counts)), 1.0)
+        )
         covered = float(np.mean(bucket_counts > 0.0))
         max_shares.append(max_share)
         coverage.append(covered)
@@ -866,11 +952,19 @@ def _temporal_stability_score(labels: np.ndarray) -> dict[str, float]:
     _age, stability, _flips = _cluster_stability(labels, window=20)
     changes = np.flatnonzero(np.r_[True, labels[1:] != labels[:-1], True])
     durations = np.diff(changes).astype(np.float32)
-    avg_duration = float(np.nanmean(durations)) if len(durations) else float(len(labels))
+    avg_duration = (
+        float(np.nanmean(durations)) if len(durations) else float(len(labels))
+    )
     switch_score = 1.0 - min(abs(switch_rate - 0.05) / 0.20, 1.0)
     duration_score = min(avg_duration / 20.0, 1.0)
     stability_score = float(np.nanmean(stability)) if len(stability) else 1.0
-    score = float(np.clip(0.45 * stability_score + 0.35 * switch_score + 0.20 * duration_score, 0.0, 1.0))
+    score = float(
+        np.clip(
+            0.45 * stability_score + 0.35 * switch_score + 0.20 * duration_score,
+            0.0,
+            1.0,
+        )
+    )
     return {
         "switch_rate": switch_rate,
         "stability_20_mean": stability_score,
@@ -898,7 +992,9 @@ def _row_speed(values: np.ndarray) -> np.ndarray:
     return np.sqrt(np.sum(diff * diff, axis=1)).astype(np.float32)
 
 
-def _candidate_ints(values: Any, default: tuple[int, ...], *, min_value: int, max_value: int) -> tuple[int, ...]:
+def _candidate_ints(
+    values: Any, default: tuple[int, ...], *, min_value: int, max_value: int
+) -> tuple[int, ...]:
     if values is None:
         raw = list(default)
     elif isinstance(values, str):
@@ -1078,6 +1174,9 @@ def fit_ae_gmm_state(
     min_side_cluster_rows: int = 10,
     path_aware_hpo: bool | None = None,
     temporal_concentration_hpo: bool | None = None,
+    temporal_stability_hpo: bool = True,
+    component_complexity_penalty: float = 0.0,
+    final_refit_all_rows: bool = False,
 ) -> dict[str, Any]:
     x_df = _as_float_frame(x_reference)
     if len(x_df) < 200 or x_df.shape[1] < 2:
@@ -1161,13 +1260,20 @@ def fit_ae_gmm_state(
         min_value=0.0,
         max_value=0.999,
     )
-    side_values = economic_targets_fit.get("side") if isinstance(economic_targets_fit, dict) else None
-    use_path_aware_hpo = bool(AE_GMM_PATH_AWARE_HPO if path_aware_hpo is None else path_aware_hpo)
+    side_values = (
+        economic_targets_fit.get("side")
+        if isinstance(economic_targets_fit, dict)
+        else None
+    )
+    use_path_aware_hpo = bool(
+        AE_GMM_PATH_AWARE_HPO if path_aware_hpo is None else path_aware_hpo
+    )
     use_temporal_concentration_hpo = bool(
         AE_GMM_TEMPORAL_CONCENTRATION_HPO
         if temporal_concentration_hpo is None
         else temporal_concentration_hpo
     )
+    use_temporal_stability_hpo = bool(temporal_stability_hpo)
     for k in clusters_to_try:
         if len(z_train) < k * 20:
             continue
@@ -1182,14 +1288,28 @@ def fit_ae_gmm_state(
                 )
                 labels_train = gmm.fit_predict(z_train)
                 prob_all = gmm.predict_proba(z)
-                ll_valid = float(gmm.score(z_valid)) if len(z_valid) else float(gmm.score(z_train))
+                ll_valid = (
+                    float(gmm.score(z_valid))
+                    if len(z_valid)
+                    else float(gmm.score(z_train))
+                )
                 latent_quality = float(
-                    1.0 / (1.0 + float((ae_state.get("models") or {}).get("b16", {}).get("selected_score", 0.0)))
+                    1.0
+                    / (
+                        1.0
+                        + float(
+                            (ae_state.get("models") or {})
+                            .get("b16", {})
+                            .get("selected_score", 0.0)
+                        )
+                    )
                 )
                 for smooth_lambda in smooth_to_try:
                     prob_eval = _smooth_probabilities(prob_all, float(smooth_lambda))
                     labels_all = np.argmax(prob_eval, axis=1).astype(np.int32)
-                    counts = np.bincount(labels_all, minlength=int(k)).astype(np.float64)
+                    counts = np.bincount(labels_all, minlength=int(k)).astype(
+                        np.float64
+                    )
                     occupancy = counts / max(float(np.sum(counts)), 1.0)
                     occupancy_ok = bool(
                         float(np.min(occupancy)) >= float(min_occupancy)
@@ -1208,22 +1328,39 @@ def fit_ae_gmm_state(
                         labels_all,
                         economic_targets_fit,
                     )
-                    stability = _temporal_stability_score(labels_all)
-                    side_report = _side_balance_report(
-                        labels_all,
-                        side_values,
-                        min_side_cluster_frac=float(min_side_cluster_frac),
-                        min_side_cluster_rows=int(min_side_cluster_rows),
-                    ) if side_values is not None else {
-                        "side_available": False,
-                        "side_coverage_ok": not bool(require_both_sides),
-                        "side_balance_score": 0.0,
-                        "min_cluster_long_share": float("nan"),
-                        "min_cluster_short_share": float("nan"),
-                        "cluster_side_counts": [],
-                    }
-                    side_ok = bool(side_report.get("side_coverage_ok", False)) or not bool(require_both_sides)
-                    occupancy_balance_score = float(1.0 - min(float(np.max(occupancy) - np.min(occupancy)), 1.0))
+                    stability = (
+                        _temporal_stability_score(labels_all)
+                        if use_temporal_stability_hpo
+                        else {
+                            "score": 0.0,
+                            "switch_rate": float("nan"),
+                            "stability_20_mean": float("nan"),
+                            "avg_duration": float("nan"),
+                        }
+                    )
+                    side_report = (
+                        _side_balance_report(
+                            labels_all,
+                            side_values,
+                            min_side_cluster_frac=float(min_side_cluster_frac),
+                            min_side_cluster_rows=int(min_side_cluster_rows),
+                        )
+                        if side_values is not None
+                        else {
+                            "side_available": False,
+                            "side_coverage_ok": not bool(require_both_sides),
+                            "side_balance_score": 0.0,
+                            "min_cluster_long_share": float("nan"),
+                            "min_cluster_short_share": float("nan"),
+                            "cluster_side_counts": [],
+                        }
+                    )
+                    side_ok = bool(
+                        side_report.get("side_coverage_ok", False)
+                    ) or not bool(require_both_sides)
+                    occupancy_balance_score = float(
+                        1.0 - min(float(np.max(occupancy) - np.min(occupancy)), 1.0)
+                    )
                     report = {
                         "n_components": int(k),
                         "reg_covar": float(reg_covar),
@@ -1231,30 +1368,49 @@ def fit_ae_gmm_state(
                         "validation_log_likelihood": ll_valid,
                         "economic_regime_separation": float(economic),
                         "target_signature_score": float(signature["score"]),
-                        "target_signature_stability": float(signature["sign_stability"]),
+                        "target_signature_stability": float(
+                            signature["sign_stability"]
+                        ),
                         "target_signature_contrast": float(signature["contrast"]),
                         "target_signature_target_count": int(signature["target_count"]),
                         "cluster_target_signatures": signature.get("rows", []),
                         "path_aware_hpo": bool(use_path_aware_hpo),
                         "path_cleanliness_score": float(path_cleanliness["score"]),
-                        "clean_positive_contrast": float(path_cleanliness["clean_positive_contrast"]),
-                        "dirty_positive_contrast": float(path_cleanliness["dirty_positive_contrast"]),
+                        "clean_positive_contrast": float(
+                            path_cleanliness["clean_positive_contrast"]
+                        ),
+                        "dirty_positive_contrast": float(
+                            path_cleanliness["dirty_positive_contrast"]
+                        ),
                         "bad_mae_contrast": float(path_cleanliness["bad_mae_contrast"]),
                         "timeout_contrast": float(path_cleanliness["timeout_contrast"]),
-                        "clean_dirty_overlap_penalty": float(path_cleanliness["clean_dirty_overlap_penalty"]),
-                        "top_clean_path_risk_rate": path_cleanliness.get("top_clean_path_risk_rate"),
-                        "global_path_risk_rate": path_cleanliness.get("global_path_risk_rate"),
+                        "clean_dirty_overlap_penalty": float(
+                            path_cleanliness["clean_dirty_overlap_penalty"]
+                        ),
+                        "top_clean_path_risk_rate": path_cleanliness.get(
+                            "top_clean_path_risk_rate"
+                        ),
+                        "global_path_risk_rate": path_cleanliness.get(
+                            "global_path_risk_rate"
+                        ),
                         "cluster_path_cleanliness": path_cleanliness.get("rows", []),
-                        "temporal_concentration_hpo": bool(use_temporal_concentration_hpo),
-                        "temporal_concentration_score": float(temporal_concentration["score"]),
+                        "temporal_concentration_hpo": bool(
+                            use_temporal_concentration_hpo
+                        ),
+                        "temporal_concentration_score": float(
+                            temporal_concentration["score"]
+                        ),
                         "max_cluster_time_bucket_share": float(
                             temporal_concentration["max_cluster_time_bucket_share"]
                         ),
                         "min_cluster_time_bucket_coverage": float(
                             temporal_concentration["min_cluster_time_bucket_coverage"]
                         ),
-                        "cluster_temporal_concentration": temporal_concentration.get("rows", []),
+                        "cluster_temporal_concentration": temporal_concentration.get(
+                            "rows", []
+                        ),
                         "temporal_stability_score": float(stability["score"]),
+                        "temporal_stability_hpo": bool(use_temporal_stability_hpo),
                         "switch_rate": float(stability["switch_rate"]),
                         "stability_20_mean": float(stability["stability_20_mean"]),
                         "avg_duration": float(stability["avg_duration"]),
@@ -1264,12 +1420,24 @@ def fit_ae_gmm_state(
                         "occupancy_balance_score": occupancy_balance_score,
                         "occupancy": [float(x) for x in occupancy],
                         "occupancy_ok": occupancy_ok,
-                        "side_available": bool(side_report.get("side_available", False)),
-                        "side_coverage_ok": bool(side_report.get("side_coverage_ok", False)),
-                        "side_balance_score": float(side_report.get("side_balance_score", 0.0)),
-                        "min_cluster_long_share": side_report.get("min_cluster_long_share"),
-                        "min_cluster_short_share": side_report.get("min_cluster_short_share"),
-                        "cluster_side_counts": side_report.get("cluster_side_counts", []),
+                        "side_available": bool(
+                            side_report.get("side_available", False)
+                        ),
+                        "side_coverage_ok": bool(
+                            side_report.get("side_coverage_ok", False)
+                        ),
+                        "side_balance_score": float(
+                            side_report.get("side_balance_score", 0.0)
+                        ),
+                        "min_cluster_long_share": side_report.get(
+                            "min_cluster_long_share"
+                        ),
+                        "min_cluster_short_share": side_report.get(
+                            "min_cluster_short_share"
+                        ),
+                        "cluster_side_counts": side_report.get(
+                            "cluster_side_counts", []
+                        ),
                         "converged": bool(getattr(gmm, "converged_", False)),
                     }
                     reports.append(report)
@@ -1313,28 +1481,41 @@ def fit_ae_gmm_state(
                 "require_both_sides": bool(require_both_sides),
                 "path_aware_hpo": bool(use_path_aware_hpo),
                 "temporal_concentration_hpo": bool(use_temporal_concentration_hpo),
+                "temporal_stability_hpo": bool(use_temporal_stability_hpo),
                 "min_side_cluster_frac": float(min_side_cluster_frac),
                 "min_side_cluster_rows": int(min_side_cluster_rows),
             },
             "reports": reports[:12],
         }
     econ_rank = _rank01([r["economic_regime_separation"] for r in valid_reports])
-    signature_rank = _rank01([r.get("target_signature_score", 0.0) for r in valid_reports])
+    signature_rank = _rank01(
+        [r.get("target_signature_score", 0.0) for r in valid_reports]
+    )
     path_rank = _rank01([r.get("path_cleanliness_score", 0.0) for r in valid_reports])
-    concentration_rank = _rank01([r.get("temporal_concentration_score", 1.0) for r in valid_reports])
+    concentration_rank = _rank01(
+        [r.get("temporal_concentration_score", 1.0) for r in valid_reports]
+    )
     stability_rank = _rank01([r["temporal_stability_score"] for r in valid_reports])
     ll_rank = _rank01([r["validation_log_likelihood"] for r in valid_reports])
     latent_rank = _rank01([r["latent_quality_score"] for r in valid_reports])
     side_rank = _rank01([r.get("side_balance_score", 0.0) for r in valid_reports])
-    occupancy_rank = _rank01([r.get("occupancy_balance_score", 0.0) for r in valid_reports])
+    occupancy_rank = _rank01(
+        [r.get("occupancy_balance_score", 0.0) for r in valid_reports]
+    )
     for i, r in enumerate(valid_reports):
         path_weight = 0.18 if use_path_aware_hpo else 0.0
         concentration_weight = 0.08 if use_temporal_concentration_hpo else 0.0
-        stability_weight = 0.13 + (0.18 - path_weight) * 0.45 + (0.08 - concentration_weight) * 0.35
+        stability_weight = (
+            0.13 + (0.18 - path_weight) * 0.45 + (0.08 - concentration_weight) * 0.35
+            if use_temporal_stability_hpo
+            else 0.0
+        )
         side_weight = 0.13 + (0.18 - path_weight) * 0.30
+        economic_weight = 0.18
+        signature_weight = 0.16
         occupancy_weight = 1.0 - (
-            0.18
-            + 0.16
+            economic_weight
+            + signature_weight
             + path_weight
             + concentration_weight
             + stability_weight
@@ -1342,9 +1523,24 @@ def fit_ae_gmm_state(
             + 0.05
             + side_weight
         )
+        if not use_temporal_stability_hpo:
+            # Reallocate the sequence-stability budget to economic separation,
+            # target signatures, and occupancy for interleaved asset rows.
+            economic_weight += 0.06
+            signature_weight += 0.05
+            occupancy_weight = 1.0 - (
+                economic_weight
+                + signature_weight
+                + path_weight
+                + concentration_weight
+                + stability_weight
+                + 0.05
+                + 0.05
+                + side_weight
+            )
         r["final_score"] = float(
-            0.18 * econ_rank[i]
-            + 0.16 * signature_rank[i]
+            economic_weight * econ_rank[i]
+            + signature_weight * signature_rank[i]
             + path_weight * path_rank[i]
             + concentration_weight * concentration_rank[i]
             + stability_weight * stability_rank[i]
@@ -1353,8 +1549,72 @@ def fit_ae_gmm_state(
             + side_weight * side_rank[i]
             + occupancy_weight * occupancy_rank[i]
         )
+        component_span = max(max(clusters_to_try) - min(clusters_to_try), 1)
+        component_fraction = float(
+            (int(r.get("n_components", min(clusters_to_try))) - min(clusters_to_try))
+            / component_span
+        )
+        complexity_cost = max(float(component_complexity_penalty), 0.0) * max(
+            component_fraction, 0.0
+        )
+        r["component_complexity_fraction"] = component_fraction
+        r["component_complexity_cost"] = complexity_cost
+        r["final_score"] = float(r["final_score"] - complexity_cost)
     best_i = int(np.argmax([r["final_score"] for r in valid_reports]))
     best_report, best_gmm = fitted[best_i]
+    refit_rows = 0
+    if bool(final_refit_all_rows):
+        # HPO remains a bounded beginning/middle/end sample.  Refit only the
+        # selected AE and GMM once on all resolved pre-cutoff rows so sparse,
+        # recurring states are retained without rerunning the search grid.
+        final_center, final_scale = _robust_scale_fit(x_df)
+        x_final = _robust_scale_apply(x_df, final_center, final_scale)
+        refit_ae_state = refit_denoising_autoencoder_state(
+            x_final,
+            selected_state=ae_state,
+            random_state=int(random_state) + 70_001,
+            max_iter=int(ae_max_iter),
+        )
+        if bool(refit_ae_state.get("enabled", False)):
+            final_features = transform_denoising_autoencoder_features(
+                x_final,
+                refit_ae_state,
+                index=pd.RangeIndex(len(x_final)),
+            )
+            z_final = final_features[latent_cols].to_numpy(dtype=np.float32, copy=False)
+            try:
+                refit_gmm = GaussianMixture(
+                    n_components=int(best_report["n_components"]),
+                    covariance_type="diag",
+                    reg_covar=float(best_report["reg_covar"]),
+                    random_state=int(random_state) + 70_019,
+                    max_iter=200,
+                ).fit(z_final)
+                center, scale, ae_state, best_gmm = (
+                    final_center,
+                    final_scale,
+                    refit_ae_state,
+                    refit_gmm,
+                )
+                recon_final = pd.to_numeric(
+                    final_features.get("ae_b16_reconstruction_error", 0.0),
+                    errors="coerce",
+                ).to_numpy(dtype=np.float32, copy=False)
+                recon_mean = (
+                    float(np.nanmean(recon_final))
+                    if np.isfinite(recon_final).any()
+                    else 0.0
+                )
+                recon_std = (
+                    float(np.nanstd(recon_final) + 1e-6)
+                    if np.isfinite(recon_final).any()
+                    else 1.0
+                )
+                refit_rows = int(len(x_final))
+            except Exception:
+                # Keep the validated sampled state if a full numerical refit
+                # cannot converge; the caller records this in the manifest.
+                refit_rows = 0
     reports_sorted = sorted(
         reports,
         key=lambda r: float(r.get("final_score", -1e9)),
@@ -1373,6 +1633,10 @@ def fit_ae_gmm_state(
         "gmm_fit_rows": int(len(gmm_fit_df)),
         "ae_max_train_rows": int(max_train_rows),
         "gmm_max_train_rows": int(gmm_cap),
+        "final_refit_all_rows": bool(final_refit_all_rows),
+        "final_refit_rows": int(refit_rows),
+        "hpo_ae_fit_rows": int(len(ae_fit_df)),
+        "hpo_gmm_fit_rows": int(len(gmm_fit_df)),
         "sample_policy": "train_only_time_spread_evenly_spaced",
         "sample_manifest": sample_manifest,
         "latent_columns": list(AE_GMM_LATENT_FEATURE_COLUMNS),
@@ -1400,10 +1664,13 @@ def fit_ae_gmm_state(
             "require_both_sides": bool(require_both_sides),
             "path_aware_hpo": bool(use_path_aware_hpo),
             "temporal_concentration_hpo": bool(use_temporal_concentration_hpo),
+            "temporal_stability_hpo": bool(use_temporal_stability_hpo),
+            "component_complexity_penalty": float(component_complexity_penalty),
             "min_occupancy": float(min_occupancy),
             "max_occupancy": float(max_occupancy),
             "min_side_cluster_frac": float(min_side_cluster_frac),
             "min_side_cluster_rows": int(min_side_cluster_rows),
+            "final_refit_all_rows": bool(final_refit_all_rows),
         },
         "hpo_report_count": int(len(reports)),
         "hpo_reports": sorted(
@@ -1429,8 +1696,12 @@ def transform_ae_gmm_features(
         return pd.DataFrame(0.0, index=idx, columns=out_columns, dtype=np.float32)
     feature_columns = [str(c) for c in state.get("feature_columns", list(x_df.columns))]
     x_aligned = x_df.reindex(columns=feature_columns, fill_value=0.0)
-    center = np.asarray(state.get("center", np.zeros(len(feature_columns))), dtype=np.float32)
-    scale = np.asarray(state.get("scale", np.ones(len(feature_columns))), dtype=np.float32)
+    center = np.asarray(
+        state.get("center", np.zeros(len(feature_columns))), dtype=np.float32
+    )
+    scale = np.asarray(
+        state.get("scale", np.ones(len(feature_columns))), dtype=np.float32
+    )
     x_scaled = _robust_scale_apply(x_aligned, center, scale)
     ae_features = transform_denoising_autoencoder_features(
         x_scaled,
@@ -1455,11 +1726,23 @@ def transform_ae_gmm_features(
         else np.zeros(len(x_df), dtype=np.int32)
     )
     age, stability, flips = _cluster_stability(labels, window=20)
-    entropy = -np.sum(prob_smooth * np.log(np.maximum(prob_smooth, 1e-12)), axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    entropy = (
+        -np.sum(prob_smooth * np.log(np.maximum(prob_smooth, 1e-12)), axis=1)
+        if k > 0
+        else np.zeros(len(x_df), dtype=np.float32)
+    )
     entropy_norm = entropy / max(float(np.log(max(k, 2))), 1e-6)
-    min_mahal = np.min(mahal, axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
-    expected_mahal = np.sum(prob_smooth * mahal, axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
-    posterior_max = np.max(prob_smooth, axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    min_mahal = (
+        np.min(mahal, axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    )
+    expected_mahal = (
+        np.sum(prob_smooth * mahal, axis=1)
+        if k > 0
+        else np.zeros(len(x_df), dtype=np.float32)
+    )
+    posterior_max = (
+        np.max(prob_smooth, axis=1) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    )
     if k > 1:
         posterior_top2 = np.sort(prob_smooth, axis=1)[:, -2:]
         posterior_margin = posterior_top2[:, 1] - posterior_top2[:, 0]
@@ -1485,24 +1768,32 @@ def transform_ae_gmm_features(
     recon_accel = _diff1(recon_delta)
     latent_speed = _row_speed(z)
     latent_acceleration = _diff1(latent_speed)
-    cluster_speed = _row_speed(prob_smooth) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    cluster_speed = (
+        _row_speed(prob_smooth) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    )
     cluster_acceleration = _diff1(cluster_speed)
     data: dict[str, np.ndarray] = {}
     for i in range(AE_GMM_LATENT_DIM):
         data[f"{prefix}dae_b16_{i:02d}"] = z[:, i].astype(np.float32)
     for i in range(AE_GMM_MAX_COMPONENTS):
         data[f"{prefix}gmm_prob_{i}"] = (
-            prob_smooth[:, i].astype(np.float32) if i < k else np.zeros(len(x_df), dtype=np.float32)
+            prob_smooth[:, i].astype(np.float32)
+            if i < k
+            else np.zeros(len(x_df), dtype=np.float32)
         )
     for i in range(AE_GMM_MAX_COMPONENTS):
         data[f"{prefix}gmm_cluster_posterior_{i}"] = data[f"{prefix}gmm_prob_{i}"]
     for i in range(AE_GMM_MAX_COMPONENTS):
         data[f"{prefix}gmm_dist_center_{i}"] = (
-            dist[:, i].astype(np.float32) if i < k else np.zeros(len(x_df), dtype=np.float32)
+            dist[:, i].astype(np.float32)
+            if i < k
+            else np.zeros(len(x_df), dtype=np.float32)
         )
     for i in range(AE_GMM_MAX_COMPONENTS):
         data[f"{prefix}gmm_mahal_{i}"] = (
-            mahal[:, i].astype(np.float32) if i < k else np.zeros(len(x_df), dtype=np.float32)
+            mahal[:, i].astype(np.float32)
+            if i < k
+            else np.zeros(len(x_df), dtype=np.float32)
         )
     data[f"{prefix}gmm_cluster_id"] = labels.astype(np.float32)
     data[f"{prefix}gmm_posterior_max"] = posterior_max.astype(np.float32)
@@ -1518,8 +1809,12 @@ def transform_ae_gmm_features(
     data[f"{prefix}min_mahalanobis"] = min_mahal.astype(np.float32)
     data[f"{prefix}min_mahalanobis_delta_1"] = min_mahal_delta.astype(np.float32)
     data[f"{prefix}expected_mahalanobis"] = expected_mahal.astype(np.float32)
-    data[f"{prefix}expected_mahalanobis_delta_1"] = expected_mahal_delta.astype(np.float32)
-    data[f"{prefix}expected_mahalanobis_accel_1"] = expected_mahal_accel.astype(np.float32)
+    data[f"{prefix}expected_mahalanobis_delta_1"] = expected_mahal_delta.astype(
+        np.float32
+    )
+    data[f"{prefix}expected_mahalanobis_accel_1"] = expected_mahal_accel.astype(
+        np.float32
+    )
     data[f"{prefix}cluster_t"] = labels.astype(np.float32)
     data[f"{prefix}cluster_speed"] = cluster_speed.astype(np.float32)
     data[f"{prefix}cluster_acceleration"] = cluster_acceleration.astype(np.float32)
@@ -1535,7 +1830,11 @@ def transform_ae_gmm_features(
     data[f"{prefix}latent_mahalanobis_drift"] = min_mahal.astype(np.float32)
     data[f"{prefix}latent_speed"] = latent_speed.astype(np.float32)
     data[f"{prefix}latent_acceleration"] = latent_acceleration.astype(np.float32)
-    return pd.DataFrame(data, index=idx).reindex(columns=out_columns, fill_value=0.0).astype(np.float32)
+    return (
+        pd.DataFrame(data, index=idx)
+        .reindex(columns=out_columns, fill_value=0.0)
+        .astype(np.float32)
+    )
 
 
 def fit_transform_ae_gmm_features(
@@ -1569,4 +1868,6 @@ def fit_transform_ae_gmm_features(
         min_side_cluster_frac=float(min_side_cluster_frac),
         min_side_cluster_rows=int(min_side_cluster_rows),
     )
-    return transform_ae_gmm_features(x_reference, state, index=index, prefix=prefix), state
+    return transform_ae_gmm_features(
+        x_reference, state, index=index, prefix=prefix
+    ), state

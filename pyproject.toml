@@ -1,9 +1,15 @@
-[tool.poetry]
+[project]
 name = "ares"
 version = "0.1.0"
 description = "Advanced Regime-based Ensemble System for Financial Market Analysis"
-authors = ["Remy Roche <remy@example.com>"]
-# readme = "README.md"  # Commented out since file doesn't exist
+authors = [{name = "Remy Roche", email = "remy@example.com"}]
+requires-python = ">=3.11,<3.13"
+dynamic = ["dependencies"]
+
+[project.scripts]
+ares = "src.launcher.ares_launcher:main"
+
+[tool.poetry]
 packages = [{include = "src"}]
 package-mode = false
 
@@ -96,10 +102,8 @@ joblib = "^1.5.3"
 
 [tool.poetry.group.dev.dependencies]
 # Code Quality Tools
-black = "^23.0.0"
-isort = "^5.12.0"
-flake8 = "^6.0.0"
-pylint = "^2.17.0"
+pre-commit = "^4.2.0"
+ruff = "0.12.11"
 mypy = "^1.5.0"
 
 # Testing
@@ -135,37 +139,17 @@ squarify = "^0.4.3"
 # cupy-cuda11x = "^12.0.0"  # For CUDA 11.x
 # cupy-cuda12x = "^12.0.0"  # For CUDA 12.x
 
-[tool.poetry.scripts]
-ares = "src.launcher.ares_launcher:main"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+target-version = "py311"
+extend-exclude = ["build", "dist"]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["src"]
-known_third_party = ["numpy", "pandas", "scipy", "sklearn", "matplotlib", "seaborn"]
+[tool.ruff.lint]
+select = ["F401", "I"]
 
 [tool.mypy]
 python_version = "3.11"

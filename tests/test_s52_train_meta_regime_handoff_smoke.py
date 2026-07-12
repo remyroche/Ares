@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -53,7 +53,9 @@ def test_s52_train_meta_handoff_smoke_learns_clean_filter(tmp_path: Path) -> Non
                     "month": month,
                     "score": score,
                     "selected_top10": True,
-                    "source_semantic_family": "quiet_continuation" if clean else "dirty_shock_avoid",
+                    "source_semantic_family": "quiet_continuation"
+                    if clean
+                    else "dirty_shock_avoid",
                     "regime_clean_exec_score": 0.9 if clean else 0.1,
                     "regime_bad_mae_score": 0.1 if clean else 0.9,
                     "gmm_entropy": 0.2 + 0.01 * (idx % 5),
@@ -84,7 +86,9 @@ def test_s52_train_meta_handoff_smoke_learns_clean_filter(tmp_path: Path) -> Non
                     "underwater_bars_before_mfe_1r": 2.0 if clean else 12.0,
                 }
             )
-    pd.DataFrame(handoff_rows).to_parquet(handoff_dir / "train_meta_regime_handoff.parquet", index=False)
+    pd.DataFrame(handoff_rows).to_parquet(
+        handoff_dir / "train_meta_regime_handoff.parquet", index=False
+    )
     ledger_path = handoff_dir / "s52_trailing_regime_scored_ledger.parquet"
     pd.DataFrame(ledger_rows).to_parquet(ledger_path, index=False)
 
@@ -95,6 +99,19 @@ def test_s52_train_meta_handoff_smoke_learns_clean_filter(tmp_path: Path) -> Non
         frontier="top10",
         seed=11,
         train_scope="selected",
+        # This fixture is intentionally below the canonical MDA minimum. The
+        # smoke asserts meta filtering behavior, not feature-selection quality.
+        fixed_selected_features=[
+            "score",
+            "regime_clean_exec_score",
+            "regime_bad_mae_score",
+            "gmm_entropy",
+            "latent_speed",
+            "meta_context_weight_hint",
+            "meta_threshold_adjustment_hint",
+            "aegmm_expected_distance_bin_q1",
+            "aegmm_expected_distance_bin_q3",
+        ],
     )
 
     summary = pd.read_csv(out_dir / "s52_train_meta_regime_handoff_smoke_summary.csv")
@@ -104,7 +121,11 @@ def test_s52_train_meta_handoff_smoke_learns_clean_filter(tmp_path: Path) -> Non
     assert float(meta["mean_keep030_full_path_bad_mae"].min()) < float(
         summary["mean_keep100_full_path_bad_mae"].iloc[0]
     )
-    threshold_summary = pd.read_csv(out_dir / "s52_train_meta_regime_handoff_threshold_policy_summary.csv")
+    threshold_summary = pd.read_csv(
+        out_dir / "s52_train_meta_regime_handoff_threshold_policy_summary.csv"
+    )
     assert not threshold_summary.empty
-    assert {"policy_id", "budget_frac", "threshold_policy_status"}.issubset(threshold_summary.columns)
+    assert {"policy_id", "budget_frac", "threshold_policy_status"}.issubset(
+        threshold_summary.columns
+    )
     assert (out_dir / "s52_train_meta_regime_handoff_smoke.md").exists()

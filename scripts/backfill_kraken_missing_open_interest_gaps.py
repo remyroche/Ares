@@ -43,7 +43,9 @@ def _load_oi(path: Path) -> pd.Series:
     df.index = pd.to_datetime(df.index, utc=True, errors="coerce").floor("h")
     if "open_interest" not in df.columns:
         return pd.Series(dtype=np.float32)
-    s = pd.to_numeric(df["open_interest"], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    s = pd.to_numeric(df["open_interest"], errors="coerce").replace(
+        [np.inf, -np.inf], np.nan
+    )
     s = s.where(s > 0.0).dropna()
     return s[~s.index.duplicated(keep="last")].sort_index().astype(np.float32)
 
@@ -53,6 +55,7 @@ def _gap_ranges(
     *,
     end_ts: pd.Timestamp,
     max_gap_hours: int,
+    start_ts: pd.Timestamp | None = None,
 ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     if series.empty:
         return []
@@ -60,7 +63,16 @@ def _gap_ranges(
     idx = idx[~idx.isna()].drop_duplicates().sort_values()
     if idx.empty:
         return []
-    full = pd.date_range(idx.min(), end_ts, freq="1h", tz="UTC")
+    range_start = idx.min()
+    if start_ts is not None:
+        bounded_start = pd.Timestamp(start_ts)
+        if bounded_start.tzinfo is None:
+            bounded_start = bounded_start.tz_localize("UTC")
+        else:
+            bounded_start = bounded_start.tz_convert("UTC")
+        range_start = max(range_start, bounded_start.floor("h"))
+    idx = idx[(idx >= range_start) & (idx <= end_ts)]
+    full = pd.date_range(range_start, end_ts, freq="1h", tz="UTC")
     missing = full.difference(idx)
     if missing.empty:
         return []
@@ -94,13 +106,29 @@ def _write_oi(path: Path, existing: pd.Series, incoming: pd.Series) -> tuple[int
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", default="data_perp/exchanges/krakenfutures/manifests/kraken_dual_market_verified_universe_latest.json")
-    parser.add_argument("--out-dir", default="data_perp/exchanges/krakenfutures/open_interest_hourly")
-    parser.add_argument("--seed-dir", default="data_perp/exchanges/krakenfutures/funding_hourly")
+    parser.add_argument(
+        "--manifest",
+        default="data_perp/exchanges/krakenfutures/manifests/kraken_dual_market_verified_universe_latest.json",
+    )
+    parser.add_argument(
+        "--out-dir", default="data_perp/exchanges/krakenfutures/open_interest_hourly"
+    )
+    parser.add_argument(
+        "--seed-dir", default="data_perp/exchanges/krakenfutures/funding_hourly"
+    )
     parser.add_argument("--end-ts", default="")
     parser.add_argument("--partition-count", type=int, default=1)
     parser.add_argument("--partition-id", type=int, default=0)
     parser.add_argument("--max-gap-hours", type=int, default=720)
+    parser.add_argument(
+        "--lookback-days",
+        type=float,
+        default=0.0,
+        help=(
+            "Only inspect gaps in the trailing N days before --end-ts. "
+            "Use 0 to scan from each symbol's first local row."
+        ),
+    )
     parser.add_argument("--rate-limit-ms", type=int, default=150)
     parser.add_argument("--sleep", type=float, default=0.02)
     parser.add_argument("--dry-run", action="store_true")
@@ -117,10 +145,22 @@ def main() -> int:
         if args.end_ts
         else pd.Timestamp.utcnow().floor("h")
     )
+    start_ts = (
+        end_ts - pd.Timedelta(days=float(args.lookback_days))
+        if float(args.lookback_days or 0.0) > 0.0
+        else None
+    )
     out_dir = Path(args.out_dir)
     seed_dir = Path(args.seed_dir)
     exchange = None
-    stats = {"symbols": len(symbols), "updated": 0, "no_gaps": 0, "skipped_no_seed": 0, "fetched_rows": 0, "failed": []}
+    stats = {
+        "symbols": len(symbols),
+        "updated": 0,
+        "no_gaps": 0,
+        "skipped_no_seed": 0,
+        "fetched_rows": 0,
+        "failed": [],
+    }
     for i, symbol in enumerate(symbols, start=1):
         try:
             filename = f"{_safe_symbol(symbol)}.parquet"
@@ -128,18 +168,29 @@ def main() -> int:
             existing = _load_oi(out_path)
             seed = _load_oi(seed_dir / filename)
             combined = pd.concat([seed, existing]).sort_index().groupby(level=0).last()
-            combined = combined.replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0).dropna()
+            combined = (
+                combined.replace([np.inf, -np.inf], np.nan)
+                .where(lambda s: s > 0.0)
+                .dropna()
+            )
             if combined.empty:
                 stats["skipped_no_seed"] += 1
                 tprint(f"[{i:04d}/{len(symbols):04d}] {symbol}: skip no local OI seed")
                 continue
-            ranges = _gap_ranges(combined, end_ts=end_ts, max_gap_hours=int(args.max_gap_hours))
+            ranges = _gap_ranges(
+                combined,
+                end_ts=end_ts,
+                max_gap_hours=int(args.max_gap_hours),
+                start_ts=start_ts,
+            )
             if not ranges:
                 stats["no_gaps"] += 1
                 if not args.dry_run and not out_path.exists():
                     _write_oi(out_path, combined.iloc[:0], combined)
                 continue
-            tprint(f"[{i:04d}/{len(symbols):04d}] {symbol}: oi_gap_ranges={len(ranges)}")
+            tprint(
+                f"[{i:04d}/{len(symbols):04d}] {symbol}: oi_gap_ranges={len(ranges)}"
+            )
             if args.dry_run:
                 continue
             if exchange is None:
@@ -165,8 +216,16 @@ def main() -> int:
                     _write_oi(out_path, combined.iloc[:0], combined)
                 continue
             incoming = pd.concat(fetched_parts).sort_index().groupby(level=0).last()
-            incoming = incoming.replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0).dropna()
-            incoming = incoming.loc[~incoming.index.floor("h").isin(pd.DatetimeIndex(combined.index).floor("h"))]
+            incoming = (
+                incoming.replace([np.inf, -np.inf], np.nan)
+                .where(lambda s: s > 0.0)
+                .dropna()
+            )
+            incoming = incoming.loc[
+                ~incoming.index.floor("h").isin(
+                    pd.DatetimeIndex(combined.index).floor("h")
+                )
+            ]
             if incoming.empty:
                 if not args.dry_run and not out_path.exists():
                     _write_oi(out_path, combined.iloc[:0], combined)
@@ -175,7 +234,9 @@ def main() -> int:
             stats["updated"] += 1
             if not args.dry_run:
                 before, after = _write_oi(out_path, combined, incoming)
-                tprint(f"  {symbol}: oi_rows={before}->{after} added_missing={len(incoming)}")
+                tprint(
+                    f"  {symbol}: oi_rows={before}->{after} added_missing={len(incoming)}"
+                )
         except Exception as exc:
             stats["failed"].append(f"{symbol}: {exc.__class__.__name__}: {exc}")
             tprint(f"[{i:04d}/{len(symbols):04d}] {symbol}: FAIL {exc}")

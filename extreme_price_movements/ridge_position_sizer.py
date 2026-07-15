@@ -1521,12 +1521,21 @@ def compute_policy_aware_labels(
     # Results storage
     results = []
     
+    # Extract arrays for fast iteration
+    idx_array = candidates_df.index.to_numpy()
+    ts_array = candidates_df.get('timestamp', pd.Series(pd.NaT, index=candidates_df.index)).to_numpy()
+    symbol_array = candidates_df.get('symbol', pd.Series("", index=candidates_df.index)).to_numpy()
+    is_long_array = candidates_df.get('is_long', pd.Series(False, index=candidates_df.index)).to_numpy()
+    entry_price_array = candidates_df.get('entry_price', pd.Series(np.nan, index=candidates_df.index)).to_numpy()
+
     # Process each candidate trade
-    for idx, row in candidates_df.iterrows():
-        ts = row['timestamp']
-        symbol = row['symbol']
-        is_long = bool(row['is_long'])
-        entry_price = row['entry_price']
+    for _idx, _ts, _symbol, _is_long, _entry_price in zip(idx_array, ts_array, symbol_array, is_long_array, entry_price_array):
+        # Keep original loop variable assignments
+        idx = _idx
+        ts = _ts
+        symbol = _symbol
+        is_long = bool(_is_long)
+        entry_price = _entry_price
         
         # Get ATR for this symbol
         if isinstance(atr_dict, dict):

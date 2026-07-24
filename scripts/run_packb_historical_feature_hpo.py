@@ -372,7 +372,7 @@ class ApprovedHistoricalSelector:
             "selection_scope": "side_local",
             "fallback_used": False,
             "selection_methods": [
-                "historical_side_local_mda",
+                "mda",
                 "user_approved_feature_selection_timing_exception",
             ],
             "search_breadth": len(self.expected),

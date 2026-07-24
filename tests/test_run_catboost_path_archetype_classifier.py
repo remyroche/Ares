@@ -30,7 +30,9 @@ runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 
 
-def test_hpo_sample_time_spreads_each_side_class_stratum_in_chronological_regions() -> None:
+def test_hpo_sample_time_spreads_each_side_class_stratum_in_chronological_regions() -> (
+    None
+):
     rows = 1_200
     frame = pd.DataFrame(
         {
@@ -67,7 +69,9 @@ def test_hpo_sample_time_spreads_each_side_class_stratum_in_chronological_region
         }
 
 
-def test_hpo_sample_rejects_validation_class_without_prior_sampled_train_support() -> None:
+def test_hpo_sample_rejects_validation_class_without_prior_sampled_train_support() -> (
+    None
+):
     rows = 300
     frame = pd.DataFrame(
         {
@@ -93,7 +97,9 @@ def test_hpo_sample_rejects_validation_class_without_prior_sampled_train_support
         oof_folds=2,
         embargo=pd.Timedelta(hours=2),
     )
-    with pytest.raises(ValueError, match="validation classes absent from prior sampled"):
+    with pytest.raises(
+        ValueError, match="validation classes absent from prior sampled"
+    ):
         runner._validate_hpo_sample_class_support(
             frame.iloc[positions],
             labels.iloc[positions],
@@ -280,20 +286,22 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     ) -> tuple[list[str], pd.DataFrame]:
         captured["stages"] = kwargs["stages"]
         return ["base_x"], pd.DataFrame(
-            [{
-                "stage": 32,
-                "feature": "base_x",
-                "selected": True,
-                "stage_acceleration_algorithm_version": "test-v1",
-                "stage_input_feature_count": 2,
-                "stage_keep_count": 1,
-                "stage_full_mda_candidate_count": 2,
-                "stage_screened_out_count": 0,
-                "stage_screening_used": False,
-                "stage_fit_calls": 0,
-                "stage_permutation_predict_calls": 1,
-                "stage_total_seconds": 0.25,
-            }]
+            [
+                {
+                    "stage": 32,
+                    "feature": "base_x",
+                    "selected": True,
+                    "stage_acceleration_algorithm_version": "test-v1",
+                    "stage_input_feature_count": 2,
+                    "stage_keep_count": 1,
+                    "stage_full_mda_candidate_count": 2,
+                    "stage_screened_out_count": 0,
+                    "stage_screening_used": False,
+                    "stage_fit_calls": 0,
+                    "stage_permutation_predict_calls": 1,
+                    "stage_total_seconds": 0.25,
+                }
+            ]
         )
 
     def fake_final(
@@ -353,14 +361,18 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     }.issubset(oof.columns)
     assert oof["probability_entropy"].notna().all()
     assert np.allclose(
-        oof.loc[:, [f"probability__{label}" for label in runner.MERGED_PATH_ARCHETYPE_CLASSES]].sum(axis=1),
+        oof.loc[
+            :,
+            [f"probability__{label}" for label in runner.MERGED_PATH_ARCHETYPE_CLASSES],
+        ].sum(axis=1),
         1.0,
     )
     role_manifest = json.loads(
         (output / "oof_probabilities.role_manifest.json").read_text()
     )
-    assert role_manifest["future_training_taxonomy"]["probability_contract"] == (
-        runner.FUTURE_TRAINING_TAXONOMY_CONTRACT["probability_contract"]
+    assert (
+        role_manifest["future_training_taxonomy"]["probability_contract"]
+        == (runner.FUTURE_TRAINING_TAXONOMY_CONTRACT["probability_contract"])
     )
     assert oof["candidate_id"].notna().all()
     assert {
@@ -379,28 +391,30 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     assert role_manifest["source_artifact_sha256"] == runner._sha256_file(
         output / "oof_probabilities.parquet"
     )
-    assert role_manifest["prediction_role_manifest_sha256"] == runner._signed_manifest_hash(
-        role_manifest
-    )
+    assert role_manifest[
+        "prediction_role_manifest_sha256"
+    ] == runner._signed_manifest_hash(role_manifest)
     feature_manifest = json.loads(
         (output / "feature_selection_manifest.json").read_text()
     )
     assert feature_manifest["final_selected_features"] == ["base_x"]
-    assert feature_manifest["permutation_stage_metrics"] == [{
-        "stage": 32,
-        "stage_acceleration_algorithm_version": "test-v1",
-        "stage_input_feature_count": 2,
-        "stage_keep_count": 1,
-        "stage_full_mda_candidate_count": 2,
-        "stage_screened_out_count": 0,
-        "stage_screening_used": False,
-        "stage_fit_calls": 0,
-        "stage_permutation_predict_calls": 1,
-        "stage_total_seconds": 0.25,
-    }]
-    assert feature_manifest["permutation_acceleration_contract"]["algorithm_version"] == (
-        archetype.STAGED_PERMUTATION_ACCELERATION_VERSION
-    )
+    assert feature_manifest["permutation_stage_metrics"] == [
+        {
+            "stage": 32,
+            "stage_acceleration_algorithm_version": "test-v1",
+            "stage_input_feature_count": 2,
+            "stage_keep_count": 1,
+            "stage_full_mda_candidate_count": 2,
+            "stage_screened_out_count": 0,
+            "stage_screening_used": False,
+            "stage_fit_calls": 0,
+            "stage_permutation_predict_calls": 1,
+            "stage_total_seconds": 0.25,
+        }
+    ]
+    assert feature_manifest["permutation_acceleration_contract"][
+        "algorithm_version"
+    ] == (archetype.STAGED_PERMUTATION_ACCELERATION_VERSION)
     assert "path_arch" not in " ".join(feature_manifest["configured_universe"])
     hpo_manifest = json.loads((output / "hpo_manifest.json").read_text())
     assert hpo_manifest["feature_contract_frozen_before_hpo"] is True
@@ -413,18 +427,23 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         (output / runner.FEATURE_SELECTION_HPO_CONTRACT_FILENAME).read_text()
     )
     assert (
-        selection_contract["fingerprint_inputs"]["selection_hpo_settings"]
-        ["catboost_resource_contract"]
+        selection_contract["fingerprint_inputs"]["selection_hpo_settings"][
+            "catboost_resource_contract"
+        ]
         == resource
     )
     assert (
-        selection_contract["fingerprint_inputs"]["selection_hpo_settings"]
-        ["permutation_execution_contract"]["algorithm_version"]
+        selection_contract["fingerprint_inputs"]["selection_hpo_settings"][
+            "permutation_execution_contract"
+        ]["algorithm_version"]
         == archetype.STAGED_PERMUTATION_ACCELERATION_VERSION
     )
-    assert selection_contract["fingerprint_inputs"]["selection_hpo_settings"][
-        "hpo_sampling_contract"
-    ]["version"] == runner.HPO_SAMPLING_CONTRACT_VERSION
+    assert (
+        selection_contract["fingerprint_inputs"]["selection_hpo_settings"][
+            "hpo_sampling_contract"
+        ]["version"]
+        == runner.HPO_SAMPLING_CONTRACT_VERSION
+    )
     assert hpo_manifest["hpo_sampling_contract"]["purged_fold_support"]
     assert manifest["training_phase_order"] == [
         "fast_feature_selection",
@@ -465,25 +484,35 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
             proxy_backend="test_proxy",
         )
 
-    def fake_oof(features: pd.DataFrame, target: pd.Series, *args: object, **kwargs: object) -> archetype.OOFPathArchetypeResult:
+    def fake_oof(
+        features: pd.DataFrame, target: pd.Series, *args: object, **kwargs: object
+    ) -> archetype.OOFPathArchetypeResult:
         classes = np.asarray(sorted(pd.unique(target.astype(str))))
         return archetype.OOFPathArchetypeResult(
             probabilities=np.full((len(features), len(classes)), 1.0 / len(classes)),
             fold_ids=np.where(np.arange(len(features)) < len(features) // 4, -1, 0),
-            folds=[], models=[], classes=classes, feature_columns=tuple(features.columns),
+            folds=[],
+            models=[],
+            classes=classes,
+            feature_columns=tuple(features.columns),
             diagnostics={"logloss": 1.0},
         )
 
-    def fake_permutation(*args: object, **kwargs: object) -> tuple[list[str], pd.DataFrame]:
+    def fake_permutation(
+        *args: object, **kwargs: object
+    ) -> tuple[list[str], pd.DataFrame]:
         calls["permutation"] += 1
-        return ["base_x"], pd.DataFrame([{"stage": 32, "feature": "base_x", "selected": True}])
+        return ["base_x"], pd.DataFrame(
+            [{"stage": 32, "feature": "base_x", "selected": True}]
+        )
 
     def fake_hpo(*args: object, **kwargs: object) -> SimpleNamespace:
         calls["hpo"] += 1
         if calls["hpo"] == 1:
             raise RuntimeError("simulated HPO interruption")
         return SimpleNamespace(
-            best_params={"iterations": 4}, report=lambda: {"best_params": {"iterations": 4}}
+            best_params={"iterations": 4},
+            report=lambda: {"best_params": {"iterations": 4}},
         )
 
     monkeypatch.setattr(archetype, "fast_select_preentry_features", fake_selector)
@@ -493,7 +522,9 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
     monkeypatch.setattr(
         runner,
         "_fit_final_classifier",
-        lambda *args, **kwargs: archetype.PathArchetypeClassifier(("base_x",), ("a", "b", "c", "d"), _PickleModel()),
+        lambda *args, **kwargs: archetype.PathArchetypeClassifier(
+            ("base_x",), ("a", "b", "c", "d"), _PickleModel()
+        ),
     )
 
     output = tmp_path / "interrupted"
@@ -513,6 +544,7 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
     assert {path.name for path in output.iterdir()} == {
         "feature_selection_checkpoint.json",
         runner.MDA_PROGRESS_FILENAME,
+        runner.RESOURCE_TELEMETRY_FILENAME,
     }
 
     manifest = runner.run_pipeline(_frame(), output, **kwargs)
@@ -521,16 +553,20 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
 
 
 def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     captured: dict[str, object] = {"oof_params": []}
 
     def fake_selector(*args: object, **kwargs: object) -> archetype.FastSelectorResult:
         return archetype.FastSelectorResult(
-            selected_features=("base_x",), candidate_features=("base_x",),
-            mandatory_features=("base_x",), availability={"base_x": 1.0},
+            selected_features=("base_x",),
+            candidate_features=("base_x",),
+            mandatory_features=("base_x",),
+            availability={"base_x": 1.0},
             scores=pd.DataFrame({"mi": [1.0]}, index=["base_x"]),
-            correlation_clusters=(("base_x",),), proxy_backend="test_proxy",
+            correlation_clusters=(("base_x",),),
+            proxy_backend="test_proxy",
         )
 
     def fake_oof(
@@ -541,12 +577,19 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
         return archetype.OOFPathArchetypeResult(
             probabilities=np.full((len(features), len(classes)), 1.0 / len(classes)),
             fold_ids=np.where(np.arange(len(features)) < len(features) // 4, -1, 0),
-            folds=[], models=[], classes=classes, feature_columns=tuple(features.columns),
+            folds=[],
+            models=[],
+            classes=classes,
+            feature_columns=tuple(features.columns),
             diagnostics={"logloss": 1.0},
         )
 
-    def fake_permutation(*args: object, **kwargs: object) -> tuple[list[str], pd.DataFrame]:
-        return ["base_x"], pd.DataFrame([{"stage": 150, "feature": "base_x", "selected": True}])
+    def fake_permutation(
+        *args: object, **kwargs: object
+    ) -> tuple[list[str], pd.DataFrame]:
+        return ["base_x"], pd.DataFrame(
+            [{"stage": 150, "feature": "base_x", "selected": True}]
+        )
 
     def fake_hpo(*args: object, **kwargs: object) -> SimpleNamespace:
         captured["hpo_iterations"] = kwargs["search_iterations"]
@@ -572,10 +615,18 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
 
     output = tmp_path / "proxy"
     runner.run_pipeline(
-        _frame(), output, discovery_end="2026-01-05T00:00:00Z",
-        config_mapping=_config(), mandatory_features=["base_x"], hpo_trials=20,
-        hpo_rows=8_000, hpo_folds=2, hpo_iterations=400, hpo_od_wait=40,
-        selection_iterations=500, selection_od_wait=50,
+        _frame(),
+        output,
+        discovery_end="2026-01-05T00:00:00Z",
+        config_mapping=_config(),
+        mandatory_features=["base_x"],
+        hpo_trials=20,
+        hpo_rows=8_000,
+        hpo_folds=2,
+        hpo_iterations=400,
+        hpo_od_wait=40,
+        selection_iterations=500,
+        selection_od_wait=50,
     )
 
     assert captured["oof_params"][0] == {"iterations": 500, "od_wait": 50}
@@ -591,17 +642,21 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
 
 
 def test_interrupted_mda_resumes_only_remaining_exact_stages(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     calls = {"selector": 0, "mda": 0}
 
     def fake_selector(*args: object, **kwargs: object) -> archetype.FastSelectorResult:
         calls["selector"] += 1
         return archetype.FastSelectorResult(
-            selected_features=("base_x",), candidate_features=("base_x",),
-            mandatory_features=("base_x",), availability={"base_x": 1.0},
+            selected_features=("base_x",),
+            candidate_features=("base_x",),
+            mandatory_features=("base_x",),
+            availability={"base_x": 1.0},
             scores=pd.DataFrame({"mi": [1.0]}, index=["base_x"]),
-            correlation_clusters=(("base_x",),), proxy_backend="test_proxy",
+            correlation_clusters=(("base_x",),),
+            proxy_backend="test_proxy",
         )
 
     def fake_oof(
@@ -611,7 +666,10 @@ def test_interrupted_mda_resumes_only_remaining_exact_stages(
         return archetype.OOFPathArchetypeResult(
             probabilities=np.full((len(features), len(classes)), 1.0 / len(classes)),
             fold_ids=np.where(np.arange(len(features)) < len(features) // 4, -1, 0),
-            folds=[], models=[], classes=classes, feature_columns=tuple(features.columns),
+            folds=[],
+            models=[],
+            classes=classes,
+            feature_columns=tuple(features.columns),
             diagnostics={"logloss": 1.0},
         )
 
@@ -619,17 +677,22 @@ def test_interrupted_mda_resumes_only_remaining_exact_stages(
         calls["mda"] += 1
         completed = kwargs["completed_stages"]
         if not completed:
-            kwargs["stage_callback"]({
-                "stage_index": 0,
-                "stage": runner.SMOKE_PERMUTATION_STAGES[0],
-                "input_features": ["base_x"],
-                "selected_features": ["base_x"],
-                "records": [{
+            kwargs["stage_callback"](
+                {
+                    "stage_index": 0,
                     "stage": runner.SMOKE_PERMUTATION_STAGES[0],
-                    "feature": "base_x", "selected": True,
-                }],
-                "stage_total_seconds": 0.25,
-            })
+                    "input_features": ["base_x"],
+                    "selected_features": ["base_x"],
+                    "records": [
+                        {
+                            "stage": runner.SMOKE_PERMUTATION_STAGES[0],
+                            "feature": "base_x",
+                            "selected": True,
+                        }
+                    ],
+                    "stage_total_seconds": 0.25,
+                }
+            )
             raise RuntimeError("simulated MDA interruption")
         assert completed[0]["selected_features"] == ["base_x"]
         return ["base_x"], pd.DataFrame(completed[0]["records"])
@@ -672,16 +735,22 @@ def test_interrupted_mda_resumes_only_remaining_exact_stages(
     assert manifest["feature_selection_hpo_reuse"]["mode"] == "interrupted_mda_resume"
 
 
-def test_intermediate_selection_checkpoint_requires_exact_current_contract(tmp_path: Path) -> None:
+def test_intermediate_selection_checkpoint_requires_exact_current_contract(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "feature_selection_checkpoint.json"
-    path.write_text(json.dumps({
-        "schema": runner.RUNNER_SCHEMA,
-        "status": "feature_selection_complete",
-        "fingerprint": "stale",
-        "selected_features": ["base_x"],
-        "selection": {},
-        "permutation": [],
-    }))
+    path.write_text(
+        json.dumps(
+            {
+                "schema": runner.RUNNER_SCHEMA,
+                "status": "feature_selection_complete",
+                "fingerprint": "stale",
+                "selected_features": ["base_x"],
+                "selection": {},
+                "permutation": [],
+            }
+        )
+    )
     with pytest.raises(ValueError, match="does not match the current exact contract"):
         runner._read_resumable_feature_selection_checkpoint(path, "current")
 
@@ -1321,6 +1390,34 @@ def test_parquet_input_requires_feature_dir(tmp_path: Path) -> None:
             discovery_end="2026-01-02T00:00:00Z",
             config_mapping=_config(),
             hpo_trials=1,
+        )
+
+
+def test_runner_resource_preflight_happens_before_input_load(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+
+    class Guard:
+        def preflight(self, stage: str) -> None:
+            events.append(stage)
+
+        def checkpoint(self, stage: str) -> None:
+            events.append(stage)
+
+    def fail_load(_input_data: object) -> tuple[pd.DataFrame, str]:
+        assert events == ["input_load"]
+        raise RuntimeError("stop after preflight")
+
+    monkeypatch.setattr(runner, "_load_frame", fail_load)
+    with pytest.raises(RuntimeError, match="stop after preflight"):
+        runner.run_pipeline(
+            _frame(40),
+            tmp_path / "artifacts",
+            discovery_end="2026-01-02T00:00:00Z",
+            config_mapping=_config(),
+            hpo_trials=1,
+            resource_guard=Guard(),
         )
 
 

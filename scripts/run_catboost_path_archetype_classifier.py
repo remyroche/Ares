@@ -51,6 +51,11 @@ from extreme_price_movements.static_feature_store import (  # noqa: E402
     STATIC_FEATURE_ENDPOINT_VERSION,
     read_static_features,
 )
+from extreme_price_movements.training_resource_guard import (  # noqa: E402
+    GIB,
+    TrainingResourceGuard,
+    TrainingResourceLimits,
+)
 
 RUNNER_SCHEMA = "run_catboost_path_archetype_classifier_v9_merged_raw_probability"
 FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = (
@@ -77,6 +82,7 @@ PROXY_SELECTION_OD_WAIT = 50
 HPO_STUDY_FILENAME = "hpo_study.sqlite3"
 HPO_PROGRESS_FILENAME = "hpo_progress.json"
 MDA_PROGRESS_FILENAME = "mda_progress.json"
+RESOURCE_TELEMETRY_FILENAME = "training_resource_telemetry.jsonl"
 LOGGER = logging.getLogger(__name__)
 IDENTITY_SYMBOL_COLUMN = "__symbol__"
 IDENTITY_SIDE_COLUMNS = ("side", "side_name", "__side__")
@@ -207,9 +213,13 @@ def _catboost_oof_provenance(
         "label_resolution_available_at",
         "train_decision_cutoff",
     ):
-        output[column] = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+        output[column] = pd.Series(
+            pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+        )
     fold_lookup = {int(fold.fold_id): fold for fold in oof.folds}
-    for fold_id in sorted(int(value) for value in np.unique(oof.fold_ids) if value >= 0):
+    for fold_id in sorted(
+        int(value) for value in np.unique(oof.fold_ids) if value >= 0
+    ):
         validation_rows = np.flatnonzero(oof.fold_ids == fold_id)
         if not len(validation_rows):
             continue
@@ -224,8 +234,7 @@ def _catboost_oof_provenance(
             train_rows = prior[
                 (label_end.iloc[prior] < validation_start).to_numpy()
                 & (
-                    timestamps.iloc[prior]
-                    < validation_start - config.embargo
+                    timestamps.iloc[prior] < validation_start - config.embargo
                 ).to_numpy()
             ]
         if not len(train_rows):
@@ -293,6 +302,69 @@ def _read_config_mapping(path: Path | None) -> Mapping[str, Any] | None:
     if not isinstance(payload, Mapping):
         raise ValueError("config JSON must contain an object")
     return payload
+
+
+def _gib_to_bytes(value: float, *, name: str) -> int:
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative GiB value")
+    return int(value * GIB)
+
+
+def _resource_disk_path(output_dir: Path) -> Path:
+    """Use an existing ancestor on the output filesystem for disk telemetry."""
+
+    path = Path(output_dir)
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
+def _build_resource_guard(
+    *,
+    output_dir: Path,
+    min_free_ram_gib: float,
+    max_process_rss_gib: float,
+    min_free_disk_gib: float,
+    check_interval_seconds: float,
+    telemetry_path: Path | None,
+) -> TrainingResourceGuard:
+    if not np.isfinite(check_interval_seconds) or check_interval_seconds < 0:
+        raise ValueError(
+            "resource_check_interval_seconds must be finite and non-negative"
+        )
+    limits = TrainingResourceLimits(
+        min_free_ram_bytes=_gib_to_bytes(
+            min_free_ram_gib, name="resource_min_free_ram_gib"
+        ),
+        max_process_rss_bytes=_gib_to_bytes(
+            max_process_rss_gib, name="resource_max_process_rss_gib"
+        ),
+        min_free_disk_bytes=_gib_to_bytes(
+            min_free_disk_gib, name="resource_min_free_disk_gib"
+        ),
+        check_interval_seconds=float(check_interval_seconds),
+    )
+    return TrainingResourceGuard(
+        limits=limits,
+        disk_path=_resource_disk_path(output_dir),
+        telemetry_path=telemetry_path or output_dir / RESOURCE_TELEMETRY_FILENAME,
+    )
+
+
+def _resource_guard_contract(guard: TrainingResourceGuard) -> dict[str, Any]:
+    return {
+        "limits": {
+            "min_free_ram_bytes": guard.limits.min_free_ram_bytes,
+            "max_process_rss_bytes": guard.limits.max_process_rss_bytes,
+            "min_free_disk_bytes": guard.limits.min_free_disk_bytes,
+            "check_interval_seconds": guard.limits.check_interval_seconds,
+        },
+        "disk_path": str(guard.disk_path),
+        "telemetry_path": (
+            str(guard.telemetry_path) if guard.telemetry_path is not None else None
+        ),
+        "contract": "fail_closed_preflight_and_boundary_checkpoints_v1",
+    }
 
 
 def _load_frame(input_data: pd.DataFrame | Path) -> tuple[pd.DataFrame, str]:
@@ -737,11 +809,17 @@ def _support_records(
     return {
         "class_support": [
             {"class": str(name), "rows": int(rows)}
-            for name, rows in support["class"].value_counts(sort=False).sort_index().items()
+            for name, rows in support["class"]
+            .value_counts(sort=False)
+            .sort_index()
+            .items()
         ],
         "side_support": [
             {"side": str(name), "rows": int(rows)}
-            for name, rows in support["side"].value_counts(sort=False).sort_index().items()
+            for name, rows in support["side"]
+            .value_counts(sort=False)
+            .sort_index()
+            .items()
         ],
         "side_class_support": [
             {"side": str(side), "class": str(label), "rows": int(rows)}
@@ -777,7 +855,9 @@ def _stratified_time_spread_positions(
     )
     groups = [
         positions.to_numpy(dtype=np.int64, copy=False)
-        for _key, positions in strata.groupby(["side", "class"], sort=True).groups.items()
+        for _key, positions in strata.groupby(
+            ["side", "class"], sort=True
+        ).groups.items()
     ]
     if target_rows < len(groups):
         raise ValueError(
@@ -797,7 +877,11 @@ def _stratified_time_spread_positions(
         remaining -= int(additions.sum())
         order = sorted(
             np.flatnonzero(capacity > 0),
-            key=lambda index: (-float(raw[index] - additions[index]), -int(counts[index]), int(index)),
+            key=lambda index: (
+                -float(raw[index] - additions[index]),
+                -int(counts[index]),
+                int(index),
+            ),
         )
         for index in order[:remaining]:
             quotas[index] += 1
@@ -1060,8 +1144,12 @@ def _aligned_oof_probabilities(
     """Align OOF output to the frozen future-training class order."""
 
     observed = tuple(map(str, class_names))
-    aligned = np.zeros((len(probabilities), len(MERGED_PATH_ARCHETYPE_CLASSES)), dtype=float)
-    positions = {name: index for index, name in enumerate(MERGED_PATH_ARCHETYPE_CLASSES)}
+    aligned = np.zeros(
+        (len(probabilities), len(MERGED_PATH_ARCHETYPE_CLASSES)), dtype=float
+    )
+    positions = {
+        name: index for index, name in enumerate(MERGED_PATH_ARCHETYPE_CLASSES)
+    }
     for source, name in enumerate(observed):
         if name not in positions:
             raise ValueError(f"OOF emitted a class outside the merged taxonomy: {name}")
@@ -1308,7 +1396,9 @@ def _permutation_stage_metrics(
     )
     if "stage" not in frame:
         return []
-    available = [column for column in _PERMUTATION_STAGE_METRIC_COLUMNS if column in frame]
+    available = [
+        column for column in _PERMUTATION_STAGE_METRIC_COLUMNS if column in frame
+    ]
     if not available:
         return []
     return (
@@ -1456,9 +1546,7 @@ def _feature_selection_hpo_fingerprint(
             "hpo_search_od_wait": int(hpo_od_wait),
             "selection_proxy_iterations": int(selection_iterations),
             "selection_proxy_od_wait": int(selection_od_wait),
-            "hpo_no_improvement_patience_trials": int(
-                hpo_no_improvement_trials
-            ),
+            "hpo_no_improvement_patience_trials": int(hpo_no_improvement_trials),
             "hpo_sampling_contract": dict(hpo_sample_contract),
             "smoke": bool(smoke),
         },
@@ -1525,15 +1613,27 @@ def _read_resumable_feature_selection_checkpoint(
 ) -> dict[str, Any]:
     """Read only this runner's exact pre-HPO selection checkpoint."""
     payload = _read_json_object(path, artifact_name="feature-selection checkpoint")
-    required = {"schema", "status", "fingerprint", "selected_features", "selection", "permutation"}
+    required = {
+        "schema",
+        "status",
+        "fingerprint",
+        "selected_features",
+        "selection",
+        "permutation",
+    }
     missing = sorted(required.difference(payload))
     if missing:
         raise ValueError(
             "feature-selection checkpoint is incomplete and cannot be resumed: "
             + ", ".join(missing)
         )
-    if payload["schema"] != RUNNER_SCHEMA or payload["status"] != "feature_selection_complete":
-        raise ValueError("feature-selection checkpoint is not a resumable current-run checkpoint")
+    if (
+        payload["schema"] != RUNNER_SCHEMA
+        or payload["status"] != "feature_selection_complete"
+    ):
+        raise ValueError(
+            "feature-selection checkpoint is not a resumable current-run checkpoint"
+        )
     stored_fingerprint = payload.get("selection_fingerprint", payload["fingerprint"])
     if stored_fingerprint != expected_selection_fingerprint:
         raise ValueError(
@@ -1543,7 +1643,9 @@ def _read_resumable_feature_selection_checkpoint(
         isinstance(value, str) for value in payload["selected_features"]
     ):
         raise ValueError("feature-selection checkpoint has invalid selected features")
-    if not isinstance(payload["selection"], Mapping) or not isinstance(payload["permutation"], list):
+    if not isinstance(payload["selection"], Mapping) or not isinstance(
+        payload["permutation"], list
+    ):
         raise ValueError("feature-selection checkpoint has invalid selection evidence")
     return payload
 
@@ -1556,8 +1658,12 @@ def _read_resumable_mda_progress(
     if payload.get("status") == "mda_complete":
         return None
     required = {
-        "schema", "status", "fingerprint", "initial_selected_features",
-        "selection", "completed_stages",
+        "schema",
+        "status",
+        "fingerprint",
+        "initial_selected_features",
+        "selection",
+        "completed_stages",
     }
     missing = sorted(required.difference(payload))
     if missing:
@@ -1566,11 +1672,15 @@ def _read_resumable_mda_progress(
         raise ValueError("MDA progress checkpoint is not resumable for this runner")
     stored_fingerprint = payload.get("selection_fingerprint", payload["fingerprint"])
     if stored_fingerprint != expected_selection_fingerprint:
-        raise ValueError("MDA progress checkpoint does not match the current exact selection contract")
+        raise ValueError(
+            "MDA progress checkpoint does not match the current exact selection contract"
+        )
     if not isinstance(payload["initial_selected_features"], list) or not all(
         isinstance(value, str) for value in payload["initial_selected_features"]
     ):
-        raise ValueError("MDA progress checkpoint has invalid initial selected features")
+        raise ValueError(
+            "MDA progress checkpoint has invalid initial selected features"
+        )
     if not isinstance(payload["selection"], Mapping) or not isinstance(
         payload["completed_stages"], list
     ):
@@ -1751,25 +1861,38 @@ def _find_reusable_feature_selection_hpo_contract(
 
 def _read_reusable_selection_checkpoint(path: Path) -> dict[str, Any]:
     """Read completed MDA evidence after a parent contract proves its identity."""
-    payload = _read_json_object(path, artifact_name="reusable feature-selection checkpoint")
+    payload = _read_json_object(
+        path, artifact_name="reusable feature-selection checkpoint"
+    )
     required = {"schema", "status", "selected_features", "selection", "permutation"}
     missing = sorted(required.difference(payload))
     if missing:
         raise ValueError(
             "reusable feature-selection checkpoint is incomplete: " + ", ".join(missing)
         )
-    if payload["schema"] != RUNNER_SCHEMA or payload["status"] != "feature_selection_complete":
+    if (
+        payload["schema"] != RUNNER_SCHEMA
+        or payload["status"] != "feature_selection_complete"
+    ):
         raise ValueError("reusable feature-selection checkpoint is not complete")
     if not isinstance(payload["selected_features"], list) or not all(
         isinstance(value, str) for value in payload["selected_features"]
     ):
-        raise ValueError("reusable feature-selection checkpoint has invalid selected features")
-    if not isinstance(payload["selection"], Mapping) or not isinstance(payload["permutation"], list):
-        raise ValueError("reusable feature-selection checkpoint has invalid selection evidence")
+        raise ValueError(
+            "reusable feature-selection checkpoint has invalid selected features"
+        )
+    if not isinstance(payload["selection"], Mapping) or not isinstance(
+        payload["permutation"], list
+    ):
+        raise ValueError(
+            "reusable feature-selection checkpoint has invalid selection evidence"
+        )
     return payload
 
 
-def _selection_fingerprint_from_completed_contract(contract: Mapping[str, Any]) -> str | None:
+def _selection_fingerprint_from_completed_contract(
+    contract: Mapping[str, Any],
+) -> str | None:
     value = contract.get("selection_fingerprint")
     if isinstance(value, str) and value:
         return value
@@ -1801,7 +1924,10 @@ def _find_reusable_feature_selection_checkpoint(
             selection = _read_reusable_selection_checkpoint(selection_path)
         except (OSError, ValueError, json.JSONDecodeError):
             return None
-        if _selection_fingerprint_from_completed_contract(contract) != expected_selection_fingerprint:
+        if (
+            _selection_fingerprint_from_completed_contract(contract)
+            != expected_selection_fingerprint
+        ):
             return None
         return selection, contract_path
 
@@ -1908,6 +2034,12 @@ def run_pipeline(
     hpo_study_path: Path | None = None,
     hpo_progress_path: Path | None = None,
     hpo_proxy: bool = False,
+    resource_min_free_ram_gib: float = 2.0,
+    resource_max_process_rss_gib: float = 12.0,
+    resource_min_free_disk_gib: float = 10.0,
+    resource_check_interval_seconds: float = 60.0,
+    resource_telemetry_path: Path | None = None,
+    resource_guard: TrainingResourceGuard | None = None,
 ) -> dict[str, Any]:
     """Run deterministic-label feature selection, HPO, OOF, and final fit."""
     if hpo_trials < 1:
@@ -1928,6 +2060,14 @@ def run_pipeline(
         hpo_folds = PROXY_HPO_FOLDS
         hpo_iterations = PROXY_HPO_ITERATIONS
         hpo_od_wait = PROXY_HPO_OD_WAIT
+    resource_guard = resource_guard or _build_resource_guard(
+        output_dir=output_dir,
+        min_free_ram_gib=resource_min_free_ram_gib,
+        max_process_rss_gib=resource_max_process_rss_gib,
+        min_free_disk_gib=resource_min_free_disk_gib,
+        check_interval_seconds=resource_check_interval_seconds,
+        telemetry_path=resource_telemetry_path,
+    )
     selection_checkpoint_path = output_dir / "feature_selection_checkpoint.json"
     mda_progress_path = output_dir / MDA_PROGRESS_FILENAME
     hpo_study_path = Path(hpo_study_path or output_dir / HPO_STUDY_FILENAME)
@@ -1937,13 +2077,21 @@ def run_pipeline(
         mda_progress_path.name,
         hpo_progress_path.name,
     }
+    guard_telemetry_path = getattr(resource_guard, "telemetry_path", None)
+    if (
+        guard_telemetry_path is not None
+        and Path(guard_telemetry_path).parent.resolve() == output_dir.resolve()
+    ):
+        resumable_names.add(Path(guard_telemetry_path).name)
     if hpo_study_path.parent == output_dir:
-        resumable_names.update({
-            hpo_study_path.name,
-            f"{hpo_study_path.name}-wal",
-            f"{hpo_study_path.name}-shm",
-            f"{hpo_study_path.name}-journal",
-        })
+        resumable_names.update(
+            {
+                hpo_study_path.name,
+                f"{hpo_study_path.name}-wal",
+                f"{hpo_study_path.name}-shm",
+                f"{hpo_study_path.name}-journal",
+            }
+        )
     if output_dir.exists() and any(output_dir.iterdir()):
         existing = {path.name for path in output_dir.iterdir()}
         if not existing.issubset(resumable_names):
@@ -1951,6 +2099,8 @@ def run_pipeline(
                 f"refusing to overwrite non-empty output directory: {output_dir}"
             )
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    resource_guard.preflight("input_load")
 
     effective_max_rows = (
         min(max_rows, SMOKE_MAX_ROWS)
@@ -2217,7 +2367,7 @@ def run_pipeline(
                     ],
                 ]
             )
-    )
+        )
     effective_hpo_rows = min(int(hpo_rows), len(frame))
     effective_hpo_folds = min(int(hpo_folds), effective_folds)
     hpo_config = archetype.PathArchetypeConfig(
@@ -2274,9 +2424,7 @@ def run_pipeline(
         else None
     )
     resumed_mda_progress = (
-        _read_resumable_mda_progress(
-            mda_progress_path, selection_fingerprint
-        )
+        _read_resumable_mda_progress(mda_progress_path, selection_fingerprint)
         if mda_progress_path.is_file()
         and not selection_checkpoint_path.is_file()
         and not force_feature_selection_hpo
@@ -2284,12 +2432,14 @@ def run_pipeline(
     )
     full_contract_error: ValueError | None = None
     try:
-        reused_checkpoint, reuse_provenance = _find_reusable_feature_selection_hpo_contract(
-            selection_hpo_contract,
-            output_dir=output_dir,
-            checkpoint_path=feature_selection_hpo_checkpoint,
-            registry_root=feature_selection_hpo_registry_root,
-            force=force_feature_selection_hpo,
+        reused_checkpoint, reuse_provenance = (
+            _find_reusable_feature_selection_hpo_contract(
+                selection_hpo_contract,
+                output_dir=output_dir,
+                checkpoint_path=feature_selection_hpo_checkpoint,
+                registry_root=feature_selection_hpo_registry_root,
+                force=force_feature_selection_hpo,
+            )
         )
     except ValueError as exc:
         full_contract_error = exc
@@ -2347,7 +2497,10 @@ def run_pipeline(
         )
         hpo_report = dict(reused_checkpoint.get("hpo", {}))
         params = dict(reused_checkpoint["effective_model_params"])
-    elif resumed_selection_checkpoint is not None or reused_selection_checkpoint is not None:
+    elif (
+        resumed_selection_checkpoint is not None
+        or reused_selection_checkpoint is not None
+    ):
         selection_checkpoint = (
             resumed_selection_checkpoint
             if resumed_selection_checkpoint is not None
@@ -2359,11 +2512,10 @@ def run_pipeline(
         )
         selection_frame = (
             frame.iloc[
-                _beginning_middle_end_positions(
-                    len(frame), config.selector_sample_rows
-                )
+                _beginning_middle_end_positions(len(frame), config.selector_sample_rows)
             ].copy()
-            if canonical_store_mode else frame
+            if canonical_store_mode
+            else frame
         )
         selector_manifest = dict(selection_checkpoint["selection"])
         permutation_records = list(selection_checkpoint["permutation"])
@@ -2387,11 +2539,10 @@ def run_pipeline(
         )
         selection_frame = (
             frame.iloc[
-                _beginning_middle_end_positions(
-                    len(frame), config.selector_sample_rows
-                )
+                _beginning_middle_end_positions(len(frame), config.selector_sample_rows)
             ].copy()
-            if canonical_store_mode else frame
+            if canonical_store_mode
+            else frame
         )
         selector_manifest = dict(resumed_mda_progress["selection"])
         permutation_records = [
@@ -2530,6 +2681,7 @@ def run_pipeline(
                 label_end=selection_frame[label_end_column],
                 config=config,
             )
+            resource_guard.checkpoint("feature_selection_oof")
             pre_permutation_oof = archetype.fit_purged_chronological_oof_catboost(
                 mda_features,
                 selection_labels,
@@ -2539,13 +2691,22 @@ def run_pipeline(
                 params=selection_params,
                 staged_matrix_cache=mda_cache,
                 force_classes_count=False,
+                fold_callback=lambda fold_index, _probabilities, _fold_ids: (
+                    resource_guard.checkpoint(
+                        f"feature_selection_oof_fold:{fold_index}"
+                    )
+                ),
             )
             mda_completed_stages = (
                 list(resumed_mda_progress["completed_stages"])
-                if resumed_mda_progress is not None else []
+                if resumed_mda_progress is not None
+                else []
             )
 
             def write_mda_progress(stage: Mapping[str, Any]) -> None:
+                resource_guard.checkpoint(
+                    f"permutation_mda_stage:{int(stage['stage_index'])}"
+                )
                 completed = [*mda_completed_stages, dict(stage)]
                 mda_completed_stages[:] = completed
                 _write_json(
@@ -2632,7 +2793,9 @@ def run_pipeline(
                     "permutation_acceleration_contract": (
                         archetype.staged_permutation_acceleration_contract(config)
                     ),
-                    "catboost_resource_contract": archetype.catboost_resource_contract(config),
+                    "catboost_resource_contract": archetype.catboost_resource_contract(
+                        config
+                    ),
                 },
             )
         if canonical_store_mode:
@@ -2648,6 +2811,7 @@ def run_pipeline(
             )
         else:
             hpo_features = frame.iloc[hpo_positions].loc[:, selected]
+        resource_guard.checkpoint("hpo")
         hpo = archetype.optimize_purged_catboost_hpo(
             hpo_features.loc[:, selected],
             hpo_labels,
@@ -2655,16 +2819,14 @@ def run_pipeline(
             label_end=hpo_frame[label_end_column],
             config=hpo_config,
             n_trials=effective_trials,
-            study_name=(
-                "path_archetype_"
-                f"{selection_hpo_contract['fingerprint'][:16]}"
-            ),
+            study_name=(f"path_archetype_{selection_hpo_contract['fingerprint'][:16]}"),
             storage=f"sqlite:///{hpo_study_path.resolve()}",
             search_iterations=int(hpo_iterations),
             search_od_wait=int(hpo_od_wait),
             no_improvement_trials=int(hpo_no_improvement_trials),
             progress_path=hpo_progress_path,
         )
+        resource_guard.checkpoint("hpo_complete")
         params = dict(hpo.best_params)
         # HPO uses a bounded proxy fit on the frozen final feature contract.
         params["iterations"] = 3_000
@@ -2779,6 +2941,7 @@ def run_pipeline(
         _write_json(output_dir / "run_manifest.json", checkpoint_manifest)
         return checkpoint_manifest
     if canonical_store_mode:
+        resource_guard.checkpoint("final_feature_load")
         features, full_availability = _load_model_feature_matrix(
             frame,
             selected,
@@ -2793,6 +2956,7 @@ def run_pipeline(
         static_store_manifest["full_selected_feature_read"] = full_availability
     else:
         features = frame.loc[:, selected].copy()
+    resource_guard.checkpoint("final_oof")
     oof = archetype.fit_purged_chronological_oof_catboost(
         features.loc[:, selected],
         labels,
@@ -2800,7 +2964,11 @@ def run_pipeline(
         label_end=frame[label_end_column],
         config=config,
         params=params,
+        fold_callback=lambda fold_index, _probabilities, _fold_ids: (
+            resource_guard.checkpoint(f"final_oof_fold:{fold_index}")
+        ),
     )
+    resource_guard.checkpoint("final_refit")
     classifier = _fit_final_classifier(
         features, labels, selected, config=config, params=params
     )
@@ -2916,7 +3084,12 @@ def run_pipeline(
         "source_artifact_sha256": _sha256_file(oof_path),
         "source_artifact": str(oof_path),
         "prediction_columns": prediction_columns,
-        "identity_columns": [timestamp_column, "__symbol__", "side_name", "candidate_id"],
+        "identity_columns": [
+            timestamp_column,
+            "__symbol__",
+            "side_name",
+            "candidate_id",
+        ],
         "fold_provenance_columns": {
             "fold": "oof_fold_id",
             "validation_start": "validation_start",
@@ -2989,9 +3162,7 @@ def run_pipeline(
             "feature_contract_frozen_before_hpo": True,
             "hpo_feature_count": int(len(selected)),
             "hpo_features": list(selected),
-            "no_improvement_patience_trials": int(
-                hpo_no_improvement_trials
-            ),
+            "no_improvement_patience_trials": int(hpo_no_improvement_trials),
             "hpo": hpo_report,
             "selection_proxy_params": {
                 "iterations": int(selection_iterations),
@@ -3078,9 +3249,7 @@ def run_pipeline(
         "hpo_study_path": hpo_study_path,
         "hpo_progress_path": hpo_progress_path,
         "no_wall_clock_timeout": True,
-        "hpo_no_improvement_patience_trials": int(
-            hpo_no_improvement_trials
-        ),
+        "hpo_no_improvement_patience_trials": int(hpo_no_improvement_trials),
         "feature_selection_hpo_fingerprint": selection_hpo_contract["fingerprint"],
         "feature_selection_fingerprint": selection_fingerprint,
         "feature_selection_hpo_reuse": reuse_provenance,
@@ -3091,6 +3260,7 @@ def run_pipeline(
             "final_oof_and_refit",
         ],
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
+        "training_resource_guard": _resource_guard_contract(resource_guard),
         "selection_rows_requested": int(selection_rows),
         "selection_rows_effective": int(len(selection_frame)),
         "permutation_stage_metrics": permutation_stage_metrics,
@@ -3227,6 +3397,39 @@ def main() -> None:
     parser.add_argument("--max-rows", type=int, default=0)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument(
+        "--resource-min-free-ram-gib",
+        type=float,
+        default=2.0,
+        help="Fail closed when available RAM is below this threshold (default: 2 GiB).",
+    )
+    parser.add_argument(
+        "--resource-max-process-rss-gib",
+        type=float,
+        default=12.0,
+        help="Fail closed when this process exceeds this RSS threshold (default: 12 GiB).",
+    )
+    parser.add_argument(
+        "--resource-min-free-disk-gib",
+        type=float,
+        default=10.0,
+        help="Fail closed when free output-filesystem disk is below this threshold (default: 10 GiB).",
+    )
+    parser.add_argument(
+        "--resource-check-interval-seconds",
+        type=float,
+        default=60.0,
+        help="Minimum interval between boundary resource samples (default: 60 seconds).",
+    )
+    parser.add_argument(
+        "--resource-telemetry-path",
+        type=Path,
+        default=None,
+        help=(
+            "Append guard events as JSONL here; defaults to "
+            "OUTPUT_DIR/training_resource_telemetry.jsonl."
+        ),
+    )
+    parser.add_argument(
         "--feature-selection-hpo-checkpoint",
         type=Path,
         default=None,
@@ -3289,6 +3492,11 @@ def main() -> None:
         hpo_study_path=args.hpo_study_path,
         hpo_progress_path=args.hpo_progress_path,
         hpo_proxy=args.hpo_proxy,
+        resource_min_free_ram_gib=args.resource_min_free_ram_gib,
+        resource_max_process_rss_gib=args.resource_max_process_rss_gib,
+        resource_min_free_disk_gib=args.resource_min_free_disk_gib,
+        resource_check_interval_seconds=args.resource_check_interval_seconds,
+        resource_telemetry_path=args.resource_telemetry_path,
     )
     print(json.dumps(_json_safe(manifest), indent=2, sort_keys=True))
 

@@ -54,6 +54,11 @@ from extreme_price_movements.path_auxiliary_targets import (  # noqa: E402
     TARGET_SCHEMA,
 )
 from extreme_price_movements.side_aware import candidate_id_series  # noqa: E402
+from extreme_price_movements.training_resource_guard import (  # noqa: E402
+    GIB,
+    TrainingResourceGuard,
+    TrainingResourceLimits,
+)
 
 RUNNER_SCHEMA = "run_path_auxiliary_lgbm_models_v5_resumable_expanding_oos"
 SELECTION_HPO_REUSE_SCHEMA = "path_auxiliary_selection_hpo_reuse_v1"
@@ -97,6 +102,7 @@ PREDICTION_ROLES = {
     "bars_before_price_stops_decreasing": "adverse_turn_oof",
     "future_slope_atr_per_hour": "path_slope_oof",
 }
+RESOURCE_TELEMETRY_FILENAME = "training_resource_telemetry.jsonl"
 
 
 def _json_safe(value: Any) -> Any:
@@ -118,7 +124,11 @@ def _json_safe(value: Any) -> Any:
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
     ) as handle:
         temp_path = Path(handle.name)
         try:
@@ -132,9 +142,74 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
                 temp_path.unlink()
 
 
+def _gib_to_bytes(value: float, *, name: str) -> int:
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative GiB value")
+    return int(value * GIB)
+
+
+def _resource_disk_path(output_dir: Path) -> Path:
+    """Use an existing ancestor on the output filesystem for disk telemetry."""
+
+    path = Path(output_dir)
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
+def _build_resource_guard(
+    *,
+    output_dir: Path,
+    min_free_ram_gib: float,
+    max_process_rss_gib: float,
+    min_free_disk_gib: float,
+    check_interval_seconds: float,
+    telemetry_path: Path | None,
+) -> TrainingResourceGuard:
+    if not np.isfinite(check_interval_seconds) or check_interval_seconds < 0:
+        raise ValueError(
+            "resource_check_interval_seconds must be finite and non-negative"
+        )
+    limits = TrainingResourceLimits(
+        min_free_ram_bytes=_gib_to_bytes(
+            min_free_ram_gib, name="resource_min_free_ram_gib"
+        ),
+        max_process_rss_bytes=_gib_to_bytes(
+            max_process_rss_gib, name="resource_max_process_rss_gib"
+        ),
+        min_free_disk_bytes=_gib_to_bytes(
+            min_free_disk_gib, name="resource_min_free_disk_gib"
+        ),
+        check_interval_seconds=float(check_interval_seconds),
+    )
+    return TrainingResourceGuard(
+        limits=limits,
+        disk_path=_resource_disk_path(output_dir),
+        telemetry_path=telemetry_path or output_dir / RESOURCE_TELEMETRY_FILENAME,
+    )
+
+
+def _resource_guard_contract(guard: TrainingResourceGuard) -> dict[str, Any]:
+    return {
+        "limits": {
+            "min_free_ram_bytes": guard.limits.min_free_ram_bytes,
+            "max_process_rss_bytes": guard.limits.max_process_rss_bytes,
+            "min_free_disk_bytes": guard.limits.min_free_disk_bytes,
+            "check_interval_seconds": guard.limits.check_interval_seconds,
+        },
+        "disk_path": str(guard.disk_path),
+        "telemetry_path": (
+            str(guard.telemetry_path) if guard.telemetry_path is not None else None
+        ),
+        "contract": "fail_closed_preflight_and_boundary_checkpoints_v1",
+    }
+
+
 def _atomic_joblib_dump(payload: Any, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
         temp_path = Path(handle.name)
     try:
         joblib.dump(payload, temp_path)
@@ -157,7 +232,9 @@ def _atomic_to_parquet(frame: pd.DataFrame, path: Path) -> None:
             temp_path.unlink()
 
 
-def _progress(stage: str, *, head: str | None = None, side: str | None = None, **detail: Any) -> None:
+def _progress(
+    stage: str, *, head: str | None = None, side: str | None = None, **detail: Any
+) -> None:
     """Emit machine-readable, UTC progress without mixing it into artifact JSON."""
 
     payload: dict[str, Any] = {
@@ -181,7 +258,9 @@ def _checkpoint_path(output_dir: Path) -> Path:
     return output_dir / "checkpoint.json"
 
 
-def _checkpoint_artifact_path(output_dir: Path, head: str, side: str, name: str) -> Path:
+def _checkpoint_artifact_path(
+    output_dir: Path, head: str, side: str, name: str
+) -> Path:
     return output_dir / ".checkpoints" / head / side / name
 
 
@@ -194,14 +273,19 @@ def _artifact_record(path: Path, *, stage: str, fingerprint: str) -> dict[str, s
     }
 
 
-def _load_checkpoint_artifact(record: Mapping[str, Any], *, stage: str, fingerprint: str) -> Any:
+def _load_checkpoint_artifact(
+    record: Mapping[str, Any], *, stage: str, fingerprint: str
+) -> Any:
     if record.get("stage") != stage or record.get("fingerprint_sha256") != fingerprint:
         raise ValueError(f"checkpoint {stage} fingerprint mismatch")
     path = Path(str(record.get("path", "")))
     if not path.is_file() or _file_sha256(path) != record.get("sha256"):
         raise ValueError(f"checkpoint {stage} artifact is missing or corrupt")
     payload = joblib.load(path)
-    if not isinstance(payload, Mapping) or payload.get("fingerprint_sha256") != fingerprint:
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("fingerprint_sha256") != fingerprint
+    ):
         raise ValueError(f"checkpoint {stage} payload fingerprint mismatch")
     return payload.get("payload")
 
@@ -211,6 +295,7 @@ def _load_or_initialize_checkpoint(
     *,
     fingerprint: Mapping[str, Any],
     overwrite: bool,
+    allowed_preflight_paths: Sequence[Path] = (),
 ) -> tuple[dict[str, Any], bool]:
     """Return a complete exact run or a validated in-progress checkpoint.
 
@@ -220,53 +305,99 @@ def _load_or_initialize_checkpoint(
 
     manifest_path = output_dir / "manifest.json"
     checkpoint_path = _checkpoint_path(output_dir)
-    if output_dir.exists() and any(output_dir.iterdir()):
+    allowed = {Path(path).resolve() for path in allowed_preflight_paths}
+    existing_entries = (
+        [path for path in output_dir.iterdir() if path.resolve() not in allowed]
+        if output_dir.exists()
+        else []
+    )
+    if existing_entries:
         if manifest_path.is_file():
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise ValueError(f"unreadable existing auxiliary manifest: {manifest_path}") from exc
-            if manifest.get("run_fingerprint", {}).get("sha256") == fingerprint["sha256"]:
+                raise ValueError(
+                    f"unreadable existing auxiliary manifest: {manifest_path}"
+                ) from exc
+            if (
+                manifest.get("run_fingerprint", {}).get("sha256")
+                == fingerprint["sha256"]
+            ):
                 if not checkpoint_path.is_file():
-                    raise ValueError("completed auxiliary manifest is missing its checkpoint ledger")
+                    raise ValueError(
+                        "completed auxiliary manifest is missing its checkpoint ledger"
+                    )
                 checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
                 for target_name in TARGET_COLUMNS:
-                    record = checkpoint.get("heads", {}).get(target_name, {}).get("complete")
+                    record = (
+                        checkpoint.get("heads", {}).get(target_name, {}).get("complete")
+                    )
                     if record is None:
-                        raise ValueError(f"completed auxiliary manifest has no complete checkpoint for {target_name}")
+                        raise ValueError(
+                            f"completed auxiliary manifest has no complete checkpoint for {target_name}"
+                        )
                     payload = _load_checkpoint_artifact(
                         record, stage="head_complete", fingerprint=fingerprint["sha256"]
                     )
-                    paths = payload.get("paths", {}) if isinstance(payload, Mapping) else {}
-                    required_paths = [paths.get("oof_predictions"), paths.get("oof_prediction_manifest")]
+                    paths = (
+                        payload.get("paths", {}) if isinstance(payload, Mapping) else {}
+                    )
+                    required_paths = [
+                        paths.get("oof_predictions"),
+                        paths.get("oof_prediction_manifest"),
+                    ]
                     required_paths.extend((paths.get("bundles") or {}).values())
-                    if not all(value and Path(str(value)).is_file() for value in required_paths):
-                        raise ValueError(f"completed auxiliary head {target_name} has missing artifacts")
+                    if not all(
+                        value and Path(str(value)).is_file() for value in required_paths
+                    ):
+                        raise ValueError(
+                            f"completed auxiliary head {target_name} has missing artifacts"
+                        )
                     oof_path = Path(str(paths["oof_predictions"]))
                     oof_manifest = json.loads(
-                        Path(str(paths["oof_prediction_manifest"])).read_text(encoding="utf-8")
+                        Path(str(paths["oof_prediction_manifest"])).read_text(
+                            encoding="utf-8"
+                        )
                     )
                     if (
-                        oof_manifest.get("source_artifact_sha256") != _file_sha256(oof_path)
-                        or oof_manifest.get("prediction_role") != PREDICTION_ROLES[target_name]
+                        oof_manifest.get("source_artifact_sha256")
+                        != _file_sha256(oof_path)
+                        or oof_manifest.get("prediction_role")
+                        != PREDICTION_ROLES[target_name]
                     ):
-                        raise ValueError(f"completed auxiliary head {target_name} has mismatched OOF artifacts")
+                        raise ValueError(
+                            f"completed auxiliary head {target_name} has mismatched OOF artifacts"
+                        )
                     for side, bundle_path in (paths.get("bundles") or {}).items():
                         bundle = joblib.load(bundle_path)
-                        if bundle.get("target_name") != target_name or bundle.get("side") != side:
-                            raise ValueError(f"completed auxiliary head {target_name} has mismatched {side} bundle")
+                        if (
+                            bundle.get("target_name") != target_name
+                            or bundle.get("side") != side
+                        ):
+                            raise ValueError(
+                                f"completed auxiliary head {target_name} has mismatched {side} bundle"
+                            )
                 return manifest, True
             if not overwrite:
-                raise ValueError("existing auxiliary manifest has a mismatched run fingerprint")
+                raise ValueError(
+                    "existing auxiliary manifest has a mismatched run fingerprint"
+                )
         if checkpoint_path.is_file():
             try:
                 checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise ValueError(f"unreadable auxiliary checkpoint: {checkpoint_path}") from exc
+                raise ValueError(
+                    f"unreadable auxiliary checkpoint: {checkpoint_path}"
+                ) from exc
             if checkpoint.get("schema") != CHECKPOINT_SCHEMA:
                 raise ValueError("legacy or invalid auxiliary checkpoint schema")
-            if checkpoint.get("run_fingerprint", {}).get("sha256") != fingerprint["sha256"]:
-                raise ValueError("existing auxiliary checkpoint has a mismatched run fingerprint")
+            if (
+                checkpoint.get("run_fingerprint", {}).get("sha256")
+                != fingerprint["sha256"]
+            ):
+                raise ValueError(
+                    "existing auxiliary checkpoint has a mismatched run fingerprint"
+                )
             return checkpoint, False
         if not overwrite:
             raise FileExistsError(
@@ -289,7 +420,9 @@ def _save_checkpoint(output_dir: Path, checkpoint: Mapping[str, Any]) -> None:
     _write_json(_checkpoint_path(output_dir), payload)
 
 
-def _require_explicit_utc_timestamp(value: str | pd.Timestamp | None, *, name: str) -> pd.Timestamp:
+def _require_explicit_utc_timestamp(
+    value: str | pd.Timestamp | None, *, name: str
+) -> pd.Timestamp:
     """Reject implicit/local cutoffs; this audit boundary must be explicit UTC."""
 
     if value is None:
@@ -378,7 +511,11 @@ def _label_source_signature(files: Sequence[Path]) -> dict[str, Any]:
     file_rows: list[dict[str, Any]] = []
     for path in files:
         stat = path.stat()
-        item = {"name": path.name, "bytes": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
+        item = {
+            "name": path.name,
+            "bytes": int(stat.st_size),
+            "mtime_ns": int(stat.st_mtime_ns),
+        }
         digest.update(json.dumps(item, sort_keys=True).encode("utf-8"))
         file_rows.append(item)
     return {"files": file_rows, "signature_sha256": digest.hexdigest()}
@@ -396,7 +533,10 @@ def _tree_stat_signature(path: Path) -> dict[str, Any]:
         return {"exists": False, "signature_sha256": _stable_sha256({"exists": False})}
     digest = hashlib.sha256()
     rows = 0
-    for item in sorted((value for value in path.rglob("*") if value.is_file()), key=lambda value: str(value)):
+    for item in sorted(
+        (value for value in path.rglob("*") if value.is_file()),
+        key=lambda value: str(value),
+    ):
         stat = item.stat()
         payload = {
             "relative_path": str(item.relative_to(path)),
@@ -482,7 +622,9 @@ def _read_reusable_selection_hpo(
     *,
     fingerprint: Mapping[str, Any],
     force_selection_hpo: bool,
-) -> tuple[dict[str, dict[str, Any]] | None, dict[str, dict[str, Any]] | None, dict[str, Any]]:
+) -> tuple[
+    dict[str, dict[str, Any]] | None, dict[str, dict[str, Any]] | None, dict[str, Any]
+]:
     """Reuse only complete current-schema sibling artifacts with an exact fingerprint."""
 
     audit: dict[str, Any] = {
@@ -509,11 +651,17 @@ def _read_reusable_selection_hpo(
         except (OSError, json.JSONDecodeError):
             reason = "unreadable_manifest"
         else:
-            if manifest.get("selection_hpo_reuse_contract_schema") != SELECTION_HPO_REUSE_SCHEMA:
+            if (
+                manifest.get("selection_hpo_reuse_contract_schema")
+                != SELECTION_HPO_REUSE_SCHEMA
+            ):
                 reason = "legacy_or_missing_reuse_contract"
             elif not isinstance(manifest.get("selection_hpo_fingerprint"), Mapping):
                 reason = "missing_fingerprint"
-            elif manifest["selection_hpo_fingerprint"].get("sha256") != fingerprint["sha256"]:
+            elif (
+                manifest["selection_hpo_fingerprint"].get("sha256")
+                != fingerprint["sha256"]
+            ):
                 reason = "fingerprint_mismatch"
             else:
                 selections: dict[str, dict[str, Any]] = {}
@@ -528,7 +676,9 @@ def _read_reusable_selection_hpo(
                             Path(paths["params"]).read_text(encoding="utf-8")
                         )
                         selected_by_side = selection.get("selected_features_by_side")
-                        best_params_by_side = parameter_payload.get("best_params_by_side")
+                        best_params_by_side = parameter_payload.get(
+                            "best_params_by_side"
+                        )
                         if (
                             not isinstance(selected_by_side, Mapping)
                             or set(selected_by_side) != {"long", "short"}
@@ -541,7 +691,9 @@ def _read_reusable_selection_hpo(
                             if (
                                 not isinstance(values, list)
                                 or not values
-                                or not all(isinstance(value, str) and value for value in values)
+                                or not all(
+                                    isinstance(value, str) and value for value in values
+                                )
                                 or not isinstance(best_params_by_side[side], Mapping)
                                 or not best_params_by_side[side]
                             ):
@@ -563,9 +715,9 @@ def _read_reusable_selection_hpo(
                         }
                     )
                     return selections, params, audit
-        audit["rejection_counts"][reason] = int(
-            audit["rejection_counts"].get(reason, 0)
-        ) + 1
+        audit["rejection_counts"][reason] = (
+            int(audit["rejection_counts"].get(reason, 0)) + 1
+        )
     audit["reason"] = "no_exact_current_schema_sibling_match"
     return None, None, audit
 
@@ -576,7 +728,10 @@ def _normalize_side(values: pd.Series) -> pd.Series:
     side = pd.Series(np.where(numeric < 0.0, "short", "long"), index=values.index)
     side.loc[raw.isin(("short", "sell", "-1", "-1.0"))] = "short"
     side.loc[raw.isin(("long", "buy", "1", "1.0"))] = "long"
-    invalid = values.isna() | ~(raw.isin(("short", "sell", "-1", "-1.0", "long", "buy", "1", "1.0")) | numeric.notna())
+    invalid = values.isna() | ~(
+        raw.isin(("short", "sell", "-1", "-1.0", "long", "buy", "1", "1.0"))
+        | numeric.notna()
+    )
     side.loc[invalid] = np.nan
     return side
 
@@ -605,14 +760,14 @@ def _read_context_for_label_keys(
     keys["__ts__"] = pd.to_datetime(keys["__ts__"], utc=True, errors="raise")
     keys["__symbol__"] = keys["__symbol__"].astype(str)
     keys["side"] = keys["side"].astype(str)
+
     def quote(value: str) -> str:
         return '"' + str(value).replace('"', '""') + '"'
+
     # Alias every projection back to the exact requested spelling. DuckDB
     # resolves source identifiers case-insensitively, while pandas/config
     # contracts are case-sensitive.
-    selected = ", ".join(
-        f"c.{quote(column)} AS {quote(column)}" for column in wanted
-    )
+    selected = ", ".join(f"c.{quote(column)} AS {quote(column)}" for column in wanted)
     connection = duckdb.connect()
     try:
         # DuckDB otherwise renders/compares TIMESTAMPTZ values in the host
@@ -694,7 +849,9 @@ def _load_labels(
         source_columns.update(columns)
         missing = required.difference(columns)
         if missing:
-            raise ValueError(f"{file} is missing path auxiliary columns: {sorted(missing)}")
+            raise ValueError(
+                f"{file} is missing path auxiliary columns: {sorted(missing)}"
+            )
         wanted = [
             column
             for column in [
@@ -757,9 +914,7 @@ def _load_labels(
             ["__ts__", "__symbol__", "side"], kind="mergesort"
         ).drop_duplicates(list(STRICT_IDENTITY_COLUMNS), keep="last")
         cap = min(int(max_rows), len(identity))
-        positions = np.linspace(
-            0, max(len(identity) - 1, 0), num=cap, dtype=np.int64
-        )
+        positions = np.linspace(0, max(len(identity) - 1, 0), num=cap, dtype=np.int64)
         requested = identity.iloc[np.unique(positions)][
             [CANDIDATE_ID_COLUMN]
         ].drop_duplicates()
@@ -775,8 +930,7 @@ def _load_labels(
             for file in files:
                 wanted = wanted_by_file[file]
                 quoted = ", ".join(
-                    'p."' + str(column).replace('"', '""') + '"'
-                    for column in wanted
+                    'p."' + str(column).replace('"', '""') + '"' for column in wanted
                 )
                 query = f"""
                     SELECT {quoted}
@@ -793,7 +947,9 @@ def _load_labels(
         for file in files:
             frames.append(pd.read_parquet(file, columns=wanted_by_file[file]))
     frame = pd.concat(frames, ignore_index=True, copy=False)
-    frame["__ts__"] = pd.to_datetime(frame["__ts__"], format="mixed", utc=True, errors="coerce")
+    frame["__ts__"] = pd.to_datetime(
+        frame["__ts__"], format="mixed", utc=True, errors="coerce"
+    )
     frame[label_resolution_column] = pd.to_datetime(
         frame[label_resolution_column], format="mixed", utc=True, errors="coerce"
     )
@@ -804,20 +960,28 @@ def _load_labels(
         frame["__ts__"], frame["__symbol__"], "1h", frame["side"]
     ).to_numpy()
     if not np.array_equal(frame[CANDIDATE_ID_COLUMN].to_numpy(), expected_candidate_id):
-        raise ValueError("label candidate_id does not match canonical UTC/symbol/1h/side identity")
+        raise ValueError(
+            "label candidate_id does not match canonical UTC/symbol/1h/side identity"
+        )
     for column in [*TARGET_COLUMNS.values(), *ALL_SUPPORTIVE_LABEL_COLUMNS]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").astype(np.float32)
     for column in CONTEXT_COLUMNS:
         if column not in frame:
             frame[column] = "unknown"
         frame[column] = frame[column].fillna("unknown").astype(str)
-    valid_identity = frame["__ts__"].notna() & frame["__symbol__"].ne("") & frame["side"].isin(("long", "short"))
+    valid_identity = (
+        frame["__ts__"].notna()
+        & frame["__symbol__"].ne("")
+        & frame["side"].isin(("long", "short"))
+    )
     frame = frame.loc[valid_identity].copy()
     if start is not None:
         frame = frame.loc[frame["__ts__"] >= start]
     if end is not None:
         frame = frame.loc[frame["__ts__"] <= end]
-    frame = frame.sort_values(["__ts__", "__symbol__", "side"], kind="mergesort").drop_duplicates(list(STRICT_IDENTITY_COLUMNS), keep="last")
+    frame = frame.sort_values(
+        ["__ts__", "__symbol__", "side"], kind="mergesort"
+    ).drop_duplicates(list(STRICT_IDENTITY_COLUMNS), keep="last")
     if max_rows > 0:
         cap = min(int(max_rows), len(frame))
         positions = np.linspace(0, max(len(frame) - 1, 0), num=cap, dtype=np.int64)
@@ -876,7 +1040,9 @@ def _join_archetype_context(
         if selected.empty:
             raise ValueError("labels selected_top40 filter produced no rows")
         if selected.duplicated(list(STRICT_IDENTITY_COLUMNS), keep=False).any():
-            raise ValueError("labels canonical selected_top40 population has duplicate UTC keys")
+            raise ValueError(
+                "labels canonical selected_top40 population has duplicate UTC keys"
+            )
         if CANDIDATE_ID_COLUMN not in selected:
             raise ValueError(
                 "labels-only canonical population requires preserved candidate_id values"
@@ -885,7 +1051,9 @@ def _join_archetype_context(
             selected[CANDIDATE_ID_COLUMN], source="labels"
         )
         if selected[CANDIDATE_ID_COLUMN].duplicated(keep=False).any():
-            raise ValueError("labels canonical population has duplicate candidate_id values")
+            raise ValueError(
+                "labels canonical population has duplicate candidate_id values"
+            )
         selected = selected.drop(columns=[SELECTED_TOP40_COLUMN], errors="ignore")
         return selected, {
             "source": "labels_explicit_canonical_top40",
@@ -903,7 +1071,9 @@ def _join_archetype_context(
             "selected_population_identity_sha256": candidate_identity_sha256(
                 selected, columns=STRICT_IDENTITY_COLUMNS
             ),
-            "selected_population_timestamp_bounds": _timestamp_bounds(selected["__ts__"]),
+            "selected_population_timestamp_bounds": _timestamp_bounds(
+                selected["__ts__"]
+            ),
             "rows_before": rows_before,
             "rows_matched": int(len(selected)),
             "rows_unmatched": int(rows_before - len(selected)),
@@ -1018,7 +1188,9 @@ def _join_archetype_context(
         & context["side"].isin(("long", "short"))
     ].copy()
     if context.empty:
-        raise ValueError(f"{context_path} selected_top40 filter produced no valid UTC rows")
+        raise ValueError(
+            f"{context_path} selected_top40 filter produced no valid UTC rows"
+        )
     context[CANDIDATE_ID_COLUMN] = _candidate_ids(
         context[CANDIDATE_ID_COLUMN], source=str(context_path)
     )
@@ -1056,9 +1228,7 @@ def _join_archetype_context(
         if CANDIDATE_ID_COLUMN in labels
         else None
     )
-    base = labels.drop(
-        columns=[*label_context, SELECTED_TOP40_COLUMN], errors="ignore"
-    )
+    base = labels.drop(columns=[*label_context, SELECTED_TOP40_COLUMN], errors="ignore")
     rows_before = len(base)
     joined = base.merge(
         context,
@@ -1067,9 +1237,9 @@ def _join_archetype_context(
         validate="one_to_one",
         sort=False,
     )
-    joined = joined.sort_values(list(STRICT_IDENTITY_COLUMNS), kind="mergesort").reset_index(
-        drop=True
-    )
+    joined = joined.sort_values(
+        list(STRICT_IDENTITY_COLUMNS), kind="mergesort"
+    ).reset_index(drop=True)
     if labels_candidate_id is not None:
         expected_candidate_ids = pd.DataFrame(
             {
@@ -1151,7 +1321,9 @@ def _overlay_handoff_model_features(
     report = dict(static_report)
     report["available_feature_names"] = available
     report["available_features"] = int(len(available))
-    report["missing_features"] = sorted(set(map(str, requested_features)) - set(available))
+    report["missing_features"] = sorted(
+        set(map(str, requested_features)) - set(available)
+    )
     report["handoff_overlay_features"] = sorted(overlaid)
     report["handoff_overlay_feature_count"] = int(len(overlaid))
     report["feature_source_contract"] = (
@@ -1202,9 +1374,13 @@ def _coalesced_selection_static_read_periods(
 ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """Bound sparse B/M/E reads to short UTC blocks without widening cache coverage."""
 
-    unique = pd.DatetimeIndex(
-        pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce").dropna()
-    ).unique().sort_values()
+    unique = (
+        pd.DatetimeIndex(
+            pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce").dropna()
+        )
+        .unique()
+        .sort_values()
+    )
     periods: list[tuple[pd.Timestamp, pd.Timestamp]] = []
     block_start: pd.Timestamp | None = None
     block_end: pd.Timestamp | None = None
@@ -1277,9 +1453,7 @@ def _static_reader_loaded_nbytes(loaded: Any) -> int:
     seen: set[int] = set()
     return (
         _static_reader_payload_nbytes(getattr(loaded, "_raw", None), seen)
-        + _static_reader_payload_nbytes(
-            getattr(loaded, "_symbol_indices", None), seen
-        )
+        + _static_reader_payload_nbytes(getattr(loaded, "_symbol_indices", None), seen)
         + _static_reader_payload_nbytes(getattr(loaded, "_assembled", None), seen)
     )
 
@@ -1318,9 +1492,8 @@ class _StaticFeatureReadCache:
     ) -> _StaticFeatureReadCacheEntry | None:
         key = tuple(map(str, symbols))
         entry = self._entries.get(key)
-        if (
-            entry is None
-            or not set(map(str, requested_features)).issubset(entry.feature_names)
+        if entry is None or not set(map(str, requested_features)).issubset(
+            entry.feature_names
         ):
             self.misses += 1
             return None
@@ -1362,7 +1535,9 @@ class _StaticFeatureReadCache:
         self._entries[key] = _StaticFeatureReadCacheEntry(
             symbols=key,
             feature_names=frozenset(map(str, requested_features)),
-            periods=tuple((pd.Timestamp(start), pd.Timestamp(end)) for start, end in periods),
+            periods=tuple(
+                (pd.Timestamp(start), pd.Timestamp(end)) for start, end in periods
+            ),
             loaded=loaded,
             retained_bytes=retained_bytes,
         )
@@ -1406,9 +1581,7 @@ def _load_static_features(
             "feature_dir must end in the canonical YYYYMMDD_HHMMSS store id"
         ) from exc
     if feature_dir.parent.name != "features":
-        raise ValueError(
-            "feature_dir must be <data_root>/features/<YYYYMMDD_HHMMSS>"
-        )
+        raise ValueError("feature_dir must be <data_root>/features/<YYYYMMDD_HHMMSS>")
     data_root = feature_dir.parents[1]
     requested = list(dict.fromkeys(map(str, requested_features)))
     out = pd.DataFrame(
@@ -1504,7 +1677,9 @@ def _load_static_features(
                 if not isinstance(symbol_frame, pd.DataFrame) or symbol_frame.empty:
                     continue
                 symbol_available = [
-                    feature for feature in batch_available if feature in symbol_frame.columns
+                    feature
+                    for feature in batch_available
+                    if feature in symbol_frame.columns
                 ]
                 if not symbol_available:
                     continue
@@ -1537,7 +1712,9 @@ def _load_static_features(
         "read_errors": read_errors,
         "sampled_period_read": bool(sampled_periods),
         "allowed_period_count": int(allowed_period_count),
-        "read_cache": read_cache.report() if read_cache is not None else {"enabled": False},
+        "read_cache": read_cache.report()
+        if read_cache is not None
+        else {"enabled": False},
     }
 
 
@@ -1573,8 +1750,13 @@ def _selection_hpo_reference_contract(
         )
     decision = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
     resolved = pd.to_datetime(frame[label_resolution_column], utc=True, errors="coerce")
-    reference_mask = (decision.lt(selection_hpo_reference_end) & resolved.lt(selection_hpo_reference_end)).to_numpy(dtype=bool)
-    oof_mask = (decision.ge(selection_hpo_reference_end) & resolved.notna()).to_numpy(dtype=bool)
+    reference_mask = (
+        decision.lt(selection_hpo_reference_end)
+        & resolved.lt(selection_hpo_reference_end)
+    ).to_numpy(dtype=bool)
+    oof_mask = (decision.ge(selection_hpo_reference_end) & resolved.notna()).to_numpy(
+        dtype=bool
+    )
     contract: dict[str, Any] = {
         "schema": "path_auxiliary_selection_hpo_reference_split_v1",
         "selection_hpo_reference_end": selection_hpo_reference_end.isoformat(),
@@ -1589,7 +1771,9 @@ def _selection_hpo_reference_contract(
         "decision_bounds": _timestamp_bounds(decision),
         "label_resolved_bounds": _timestamp_bounds(resolved),
         "reference_decision_bounds": _timestamp_bounds(decision.loc[reference_mask]),
-        "reference_label_resolved_bounds": _timestamp_bounds(resolved.loc[reference_mask]),
+        "reference_label_resolved_bounds": _timestamp_bounds(
+            resolved.loc[reference_mask]
+        ),
         "oof_decision_bounds": _timestamp_bounds(decision.loc[oof_mask]),
         "oof_label_resolved_bounds": _timestamp_bounds(resolved.loc[oof_mask]),
         "reference_rows": int(reference_mask.sum()),
@@ -1614,27 +1798,39 @@ def _assert_oof_identities_subset_selected_population(
     oof = np.asarray(oof_predictions, dtype=np.float32)
     fold_ids = np.asarray(oof_fold_ids, dtype=np.int16)
     if len(oof) != len(frame) or len(fold_ids) != len(frame):
-        raise ValueError("auxiliary OOF arrays must align exactly with selected identities")
+        raise ValueError(
+            "auxiliary OOF arrays must align exactly with selected identities"
+        )
     if frame.duplicated(list(STRICT_IDENTITY_COLUMNS), keep=False).any():
-        raise ValueError("selected auxiliary population has duplicate strict UTC candidate identities")
+        raise ValueError(
+            "selected auxiliary population has duplicate strict UTC candidate identities"
+        )
     available = np.isfinite(oof)
     if not bool(available.any()):
         raise ValueError("auxiliary OOF emission produced no finite predictions")
     decision = pd.to_datetime(frame["__ts__"], utc=True, errors="raise")
     if bool((decision.loc[available] < selection_hpo_reference_end).any()):
-        raise ValueError("auxiliary OOF identities must be at or after the reference end")
+        raise ValueError(
+            "auxiliary OOF identities must be at or after the reference end"
+        )
     if bool((fold_ids[available] < 0).any()):
-        raise ValueError("finite auxiliary OOF predictions require a non-negative fold id")
+        raise ValueError(
+            "finite auxiliary OOF predictions require a non-negative fold id"
+        )
     selected_identity_hash = candidate_identity_sha256(
         frame, columns=STRICT_IDENTITY_COLUMNS
     )
     oof_identity = frame.loc[available, list(STRICT_IDENTITY_COLUMNS)]
     # ``frame`` is the post-filter inner join; this explicit subset assertion
     # guards future changes that might construct OOF rows from another source.
-    selected_index = pd.MultiIndex.from_frame(frame.loc[:, list(STRICT_IDENTITY_COLUMNS)])
+    selected_index = pd.MultiIndex.from_frame(
+        frame.loc[:, list(STRICT_IDENTITY_COLUMNS)]
+    )
     oof_index = pd.MultiIndex.from_frame(oof_identity)
     if not bool(oof_index.isin(selected_index).all()):
-        raise ValueError("auxiliary OOF identities are outside the selected_top40 population")
+        raise ValueError(
+            "auxiliary OOF identities are outside the selected_top40 population"
+        )
     return {
         "selected_joined_population_identity_sha256": selected_identity_hash,
         "canonical_selected_population_identity_sha256": selected_population_identity_sha256,
@@ -1667,42 +1863,64 @@ def _strict_oof_fold_evidence(
     required = set(IDENTITY_COLUMNS) | {CANDIDATE_ID_COLUMN, label_resolution_column}
     missing = sorted(required.difference(frame.columns))
     if missing:
-        raise ValueError(f"strict auxiliary OOF provenance is missing columns: {missing}")
+        raise ValueError(
+            f"strict auxiliary OOF provenance is missing columns: {missing}"
+        )
     oof = np.asarray(fitted["oof_predictions"], dtype=np.float32)
     fold_ids = np.asarray(fitted["oof_fold_ids"], dtype=np.int64)
     if len(oof) != len(frame) or len(fold_ids) != len(frame):
-        raise ValueError("strict auxiliary OOF provenance arrays must align with target rows")
+        raise ValueError(
+            "strict auxiliary OOF provenance arrays must align with target rows"
+        )
     decision = pd.to_datetime(frame["__ts__"], utc=True, errors="raise")
     resolved = pd.to_datetime(frame[label_resolution_column], utc=True, errors="raise")
     side_values = frame["side"].astype(str)
     available = np.isfinite(oof)
     evidence = pd.DataFrame(
         {
-            "validation_start": pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"),
-            "train_decision_cutoff": pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"),
-            "label_resolution_available_at": pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"),
+            "validation_start": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
+            "train_decision_cutoff": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
+            "label_resolution_available_at": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
         }
     )
     persisted_metrics: dict[str, list[dict[str, Any]]] = {}
     for side in ("long", "short"):
         bundle = fitted["models_by_side"].get(side)
         if not isinstance(bundle, Mapping):
-            raise ValueError(f"strict auxiliary OOF provenance lacks fitted {side!r} bundle")
+            raise ValueError(
+                f"strict auxiliary OOF provenance lacks fitted {side!r} bundle"
+            )
         metrics = bundle.get("fold_metrics")
         if not isinstance(metrics, list) or not metrics:
-            raise ValueError(f"strict auxiliary OOF provenance lacks actual fitted fold metrics for {side!r}")
+            raise ValueError(
+                f"strict auxiliary OOF provenance lacks actual fitted fold metrics for {side!r}"
+            )
         side_mask = side_values.eq(side)
-        by_fold: dict[int, tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]] = {}
+        by_fold: dict[
+            int, tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]
+        ] = {}
         persisted: list[dict[str, Any]] = []
         for raw_metric in metrics:
             if not isinstance(raw_metric, Mapping):
-                raise ValueError(f"strict auxiliary OOF provenance has invalid {side!r} fold metric")
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has invalid {side!r} fold metric"
+                )
             try:
                 fold = int(raw_metric["fold"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"strict auxiliary OOF provenance has invalid {side!r} fold ID") from exc
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has invalid {side!r} fold ID"
+                ) from exc
             if fold < 0 or fold in by_fold:
-                raise ValueError(f"strict auxiliary OOF provenance has duplicate/invalid {side!r} fold ID")
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has duplicate/invalid {side!r} fold ID"
+                )
             valid_start = _require_explicit_utc_timestamp(
                 raw_metric.get("valid_start"), name=f"{side} fold {fold} valid_start"
             )
@@ -1713,12 +1931,16 @@ def _strict_oof_fold_evidence(
                 raw_metric.get("train_end"), name=f"{side} fold {fold} train_end"
             )
             if valid_end < valid_start or recorded_train_end >= valid_start:
-                raise ValueError(f"strict auxiliary OOF provenance has invalid {side!r} fold interval")
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has invalid {side!r} fold interval"
+                )
             train_mask = side_mask & decision.lt(valid_start) & resolved.lt(valid_start)
             train_decisions = decision.loc[train_mask]
             train_resolved = resolved.loc[train_mask]
             if train_decisions.empty or train_resolved.empty:
-                raise ValueError(f"strict auxiliary OOF provenance found no resolved training rows for {side!r} fold {fold}")
+                raise ValueError(
+                    f"strict auxiliary OOF provenance found no resolved training rows for {side!r} fold {fold}"
+                )
             actual_train_end = train_decisions.max()
             if actual_train_end != recorded_train_end:
                 raise ValueError(
@@ -1726,8 +1948,15 @@ def _strict_oof_fold_evidence(
                 )
             resolution_cutoff = train_resolved.max()
             if resolution_cutoff >= valid_start:
-                raise ValueError(f"strict auxiliary OOF provenance has unresolved training labels for {side!r} fold {fold}")
-            by_fold[fold] = (valid_start, valid_end, resolution_cutoff, actual_train_end)
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has unresolved training labels for {side!r} fold {fold}"
+                )
+            by_fold[fold] = (
+                valid_start,
+                valid_end,
+                resolution_cutoff,
+                actual_train_end,
+            )
             metric = dict(raw_metric)
             metric.update(
                 {
@@ -1743,13 +1972,23 @@ def _strict_oof_fold_evidence(
         for position in positions:
             fold = int(fold_ids[position])
             if fold not in by_fold:
-                raise ValueError(f"strict auxiliary OOF provenance has no actual {side!r} fold evidence for fold {fold}")
+                raise ValueError(
+                    f"strict auxiliary OOF provenance has no actual {side!r} fold evidence for fold {fold}"
+                )
             valid_start, valid_end, resolution_cutoff, _ = by_fold[fold]
             if not (valid_start <= decision.iloc[position] <= valid_end):
-                raise ValueError(f"strict auxiliary OOF row is outside its actual {side!r} fitted validation fold")
-            evidence.iloc[position] = (valid_start, resolution_cutoff, resolution_cutoff)
+                raise ValueError(
+                    f"strict auxiliary OOF row is outside its actual {side!r} fitted validation fold"
+                )
+            evidence.iloc[position] = (
+                valid_start,
+                resolution_cutoff,
+                resolution_cutoff,
+            )
     if available.any() and evidence.loc[available].isna().any(axis=None):
-        raise ValueError("strict auxiliary OOF provenance failed to bind every finite prediction")
+        raise ValueError(
+            "strict auxiliary OOF provenance failed to bind every finite prediction"
+        )
     return evidence, persisted_metrics
 
 
@@ -1772,7 +2011,9 @@ def _metric_slices(
         out["by_side"][side] = metrics(valid & frame["side"].eq(side).to_numpy())
     archetypes = _archetype_context(frame)
     for archetype in sorted(archetypes.unique()):
-        out["by_archetype"][str(archetype)] = metrics(valid & archetypes.eq(archetype).to_numpy())
+        out["by_archetype"][str(archetype)] = metrics(
+            valid & archetypes.eq(archetype).to_numpy()
+        )
     return out
 
 
@@ -1864,17 +2105,13 @@ def _persist_head(
         natural = np.clip(np.expm1(oof), 0.0, PEAK_MFE_ATR_CLIP)
         oof_frame["pred_peak_mfe_12h_atr"] = natural
     elif target_name == "mae_before_meaningful_mfe_atr":
-        natural = np.clip(
-            np.expm1(oof), 0.0, MAE_BEFORE_MEANINGFUL_MFE_ATR_CLIP
-        )
+        natural = np.clip(np.expm1(oof), 0.0, MAE_BEFORE_MEANINGFUL_MFE_ATR_CLIP)
         oof_frame["pred_mae_before_meaningful_mfe_atr_12h"] = natural
     elif target_name == "bars_before_price_stops_decreasing":
         natural = np.clip(np.expm1(oof), 0.0, 12.0)
         oof_frame["pred_bars_before_price_stops_decreasing_12h"] = natural
     elif target_name == "future_slope_atr_per_hour":
-        natural = np.clip(
-            np.expm1(oof), 0.0, FUTURE_SLOPE_ATR_PER_HOUR_CLIP
-        )
+        natural = np.clip(np.expm1(oof), 0.0, FUTURE_SLOPE_ATR_PER_HOUR_CLIP)
         oof_frame["pred_future_slope_atr_per_hour_12h"] = natural
     else:  # pragma: no cover - guarded by the fixed TARGET_COLUMNS contract.
         raise ValueError(f"unknown auxiliary target {target_name!r}")
@@ -1903,7 +2140,9 @@ def _persist_head(
         column for column in oof_frame.columns if column.startswith("pred_")
     ]
     if len(prediction_columns) != 1:
-        raise ValueError(f"strict auxiliary OOF requires exactly one natural prediction column for {target_name}")
+        raise ValueError(
+            f"strict auxiliary OOF requires exactly one natural prediction column for {target_name}"
+        )
     oof_manifest = {
         "schema": "path_auxiliary_oof_prediction_role_v1",
         "prediction_role": PREDICTION_ROLES[target_name],
@@ -1942,7 +2181,9 @@ def _persist_head(
                 "purge_hours": fitted["purge_hours"],
                 "sample_weight_contract": fitted.get("sample_weight_contract"),
                 "sample_weight_summary": bundle.get("sample_weight_summary"),
-                "reference_split_contract": fitted.get("selection_hpo_reference_contract")
+                "reference_split_contract": fitted.get(
+                    "selection_hpo_reference_contract"
+                )
                 or fitted.get("reference_split_contract"),
                 "oof_population_report": fitted.get("oof_population_report"),
                 "hpo_reused": bool(bundle.get("hpo_reused")),
@@ -2001,12 +2242,44 @@ def run(
     hpo_rows: int = 45_000,
     force_selection_hpo: bool = False,
     overwrite: bool = False,
+    resource_min_free_ram_gib: float = 2.0,
+    resource_max_process_rss_gib: float = 12.0,
+    resource_min_free_disk_gib: float = 10.0,
+    resource_check_interval_seconds: float = 60.0,
+    resource_telemetry_path: Path | None = None,
+    resource_guard: TrainingResourceGuard | None = None,
 ) -> dict[str, Any]:
     """Materialize the causal head inputs once, then select and fit each target once."""
 
+    resource_guard = resource_guard or _build_resource_guard(
+        output_dir=output_dir,
+        min_free_ram_gib=resource_min_free_ram_gib,
+        max_process_rss_gib=resource_max_process_rss_gib,
+        min_free_disk_gib=resource_min_free_disk_gib,
+        check_interval_seconds=resource_check_interval_seconds,
+        telemetry_path=resource_telemetry_path,
+    )
+    guard_telemetry_path = getattr(resource_guard, "telemetry_path", None)
+    allowed_preflight_paths = (
+        [Path(guard_telemetry_path)]
+        if (
+            guard_telemetry_path is not None
+            and Path(guard_telemetry_path).parent.resolve() == output_dir.resolve()
+        )
+        else []
+    )
+    existing_entries = (
+        [
+            path
+            for path in output_dir.iterdir()
+            if path.resolve()
+            not in {allowed.resolve() for allowed in allowed_preflight_paths}
+        ]
+        if output_dir.exists()
+        else []
+    )
     if (
-        output_dir.exists()
-        and any(output_dir.iterdir())
+        existing_entries
         and not overwrite
         and not _checkpoint_path(output_dir).is_file()
         and not (output_dir / "manifest.json").is_file()
@@ -2017,12 +2290,21 @@ def run(
     reference_end_ts = _require_explicit_utc_timestamp(
         selection_hpo_reference_end, name="selection_hpo_reference_end"
     )
+    resource_guard.preflight("labels_load")
     start_ts = pd.Timestamp(start) if start else None
     end_ts = pd.Timestamp(end) if end else None
     if start_ts is not None:
-        start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+        start_ts = (
+            start_ts.tz_localize("UTC")
+            if start_ts.tzinfo is None
+            else start_ts.tz_convert("UTC")
+        )
     if end_ts is not None:
-        end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+        end_ts = (
+            end_ts.tz_localize("UTC")
+            if end_ts.tzinfo is None
+            else end_ts.tz_convert("UTC")
+        )
     labels, label_report = _load_labels(
         labels_path,
         label_resolution_column=label_resolution_column,
@@ -2050,7 +2332,9 @@ def run(
     if not bool(reference_mask.any()):
         raise ValueError("No selected rows satisfy the selection/HPO reference cutoff")
     if not bool(oof_mask.any()):
-        raise ValueError("No selected rows at or after the reference end are available for OOF emission")
+        raise ValueError(
+            "No selected rows at or after the reference end are available for OOF emission"
+        )
     reference_labels = labels.loc[reference_mask].reset_index(drop=True)
     complete_archetype_sources = [
         column
@@ -2090,7 +2374,9 @@ def run(
         [*static_columns, *handoff_feature_columns]
     )
     if not requested_features:
-        raise RuntimeError("No config-driven base/meta features are available in the canonical static store")
+        raise RuntimeError(
+            "No config-driven base/meta features are available in the canonical static store"
+        )
     selection_hpo_fingerprint = _selection_hpo_fingerprint(
         selected_population_identity_sha256=archetype_context_report[
             "selected_population_identity_sha256"
@@ -2110,9 +2396,13 @@ def run(
     run_fingerprint_payload = {
         "schema": CHECKPOINT_SCHEMA,
         "selection_hpo_fingerprint_sha256": selection_hpo_fingerprint["sha256"],
-        "label_source_signature_sha256": label_report.get("source", {}).get("signature_sha256"),
+        "label_source_signature_sha256": label_report.get("source", {}).get(
+            "signature_sha256"
+        ),
         "feature_store_tree_signature": _tree_stat_signature(feature_dir),
-        "candidate_identity_sha256": candidate_identity_sha256(labels, columns=IDENTITY_COLUMNS),
+        "candidate_identity_sha256": candidate_identity_sha256(
+            labels, columns=IDENTITY_COLUMNS
+        ),
         "selected_population_identity_sha256": archetype_context_report[
             "selected_population_identity_sha256"
         ],
@@ -2120,9 +2410,15 @@ def run(
         "labels_are_canonical_top40": bool(labels_are_canonical_top40),
         "label_resolution_column": label_resolution_column,
     }
-    run_fingerprint = {"payload": run_fingerprint_payload, "sha256": _stable_sha256(run_fingerprint_payload)}
+    run_fingerprint = {
+        "payload": run_fingerprint_payload,
+        "sha256": _stable_sha256(run_fingerprint_payload),
+    }
     checkpoint, already_complete = _load_or_initialize_checkpoint(
-        output_dir, fingerprint=run_fingerprint, overwrite=overwrite
+        output_dir,
+        fingerprint=run_fingerprint,
+        overwrite=overwrite,
+        allowed_preflight_paths=allowed_preflight_paths,
     )
     if already_complete:
         _progress("run_reused", fingerprint_sha256=run_fingerprint["sha256"])
@@ -2143,12 +2439,17 @@ def run(
                 record, stage="selection", fingerprint=run_fingerprint["sha256"]
             )
             selected_by_side = payload.get("selected_features_by_side")
-            if not isinstance(selected_by_side, Mapping) or set(selected_by_side) != {"long", "short"}:
+            if not isinstance(selected_by_side, Mapping) or set(selected_by_side) != {
+                "long",
+                "short",
+            }:
                 raise ValueError("missing long/short selections")
             local_selections[target_name] = dict(payload)
             _progress("selection_reused", head=target_name)
         except (OSError, ValueError, TypeError, KeyError):
-            raise ValueError(f"invalid selection checkpoint for auxiliary head {target_name}")
+            raise ValueError(
+                f"invalid selection checkpoint for auxiliary head {target_name}"
+            )
     if local_selections:
         sibling_selections = selections or {}
         selections = {**sibling_selections, **local_selections}
@@ -2156,7 +2457,9 @@ def run(
     reusable_feature_universe = set(requested_features).union(
         archetype_feature_contract["features"]
     )
-    static_cache_max_bytes, static_cache_max_entries = _static_feature_read_cache_limits()
+    static_cache_max_bytes, static_cache_max_entries = (
+        _static_feature_read_cache_limits()
+    )
     static_feature_read_cache = _StaticFeatureReadCache(
         max_bytes=static_cache_max_bytes,
         max_entries=static_cache_max_entries,
@@ -2199,6 +2502,7 @@ def run(
         )
         selection_idx = reference_positions[selection_relative_idx]
         selection_labels = labels.iloc[selection_idx].reset_index(drop=True)
+        resource_guard.checkpoint("selection_feature_load")
         selection_matrix, static_report = _load_static_features(
             selection_labels,
             feature_dir=feature_dir,
@@ -2226,7 +2530,9 @@ def run(
             [*found_columns, *archetype_feature_contract["features"]]
         )
         if not available_features:
-            raise RuntimeError("Canonical static-store load retained no config-driven auxiliary features")
+            raise RuntimeError(
+                "Canonical static-store load retained no config-driven auxiliary features"
+            )
         selection_matrix = selection_matrix.reindex(columns=available_features).astype(
             np.float32, copy=False
         )
@@ -2257,9 +2563,9 @@ def run(
                         feature
                         for feature in archetype_feature_contract["canonical_features"]
                         if bool(
-                            target_matrix.loc[
-                                target_frame["side"].eq(side), feature
-                            ].to_numpy(dtype=np.float32).any()
+                            target_matrix.loc[target_frame["side"].eq(side), feature]
+                            .to_numpy(dtype=np.float32)
+                            .any()
                         )
                     ]
                     for side in ("long", "short")
@@ -2273,7 +2579,9 @@ def run(
             )
             selections[target_name]["selection_reference_bounds"] = {
                 "decision": _timestamp_bounds(target_frame["__ts__"]),
-                "label_resolved": _timestamp_bounds(target_frame[label_resolution_column]),
+                "label_resolved": _timestamp_bounds(
+                    target_frame[label_resolution_column]
+                ),
                 "rows": int(len(target_frame)),
                 "selection_hpo_reference_end": reference_end_ts.isoformat(),
             }
@@ -2290,7 +2598,9 @@ def run(
                 },
                 selection_checkpoint_path,
             )
-            checkpoint.setdefault("heads", {}).setdefault(target_name, {})["selection"] = _artifact_record(
+            checkpoint.setdefault("heads", {}).setdefault(target_name, {})[
+                "selection"
+            ] = _artifact_record(
                 selection_checkpoint_path,
                 stage="selection",
                 fingerprint=run_fingerprint["sha256"],
@@ -2336,12 +2646,16 @@ def run(
         if completed_record is not None:
             try:
                 results[target_name] = _load_checkpoint_artifact(
-                    completed_record, stage="head_complete", fingerprint=run_fingerprint["sha256"]
+                    completed_record,
+                    stage="head_complete",
+                    fingerprint=run_fingerprint["sha256"],
                 )
                 _progress("head_reused", head=target_name)
                 continue
             except (OSError, ValueError, TypeError, KeyError):
-                raise ValueError(f"invalid completed checkpoint for auxiliary head {target_name}")
+                raise ValueError(
+                    f"invalid completed checkpoint for auxiliary head {target_name}"
+                )
         eligible = np.isfinite(
             labels[target_column].to_numpy(dtype=np.float32, copy=False)
         )
@@ -2360,6 +2674,7 @@ def run(
             rows=int(len(target_frame)),
             selected_features=int(len(selected_union)),
         )
+        resource_guard.checkpoint(f"head_feature_load:{target_name}")
         target_matrix, full_static_report = _load_static_features(
             target_frame,
             feature_dir=feature_dir,
@@ -2379,17 +2694,15 @@ def run(
             if feature in archetype_features.columns
         ]
         if selected_archetype_features:
-            target_matrix.loc[:, selected_archetype_features] = (
-                archetype_features.loc[
-                    eligible, selected_archetype_features
-                ].to_numpy(dtype=np.float32, copy=False)
-            )
+            target_matrix.loc[:, selected_archetype_features] = archetype_features.loc[
+                eligible, selected_archetype_features
+            ].to_numpy(dtype=np.float32, copy=False)
         target_matrix = target_matrix.reindex(columns=selected_union).astype(
             np.float32, copy=False
         )
-        availability["full_selected_static_store_read_by_head"][
-            target_name
-        ] = full_static_report
+        availability["full_selected_static_store_read_by_head"][target_name] = (
+            full_static_report
+        )
         _write_json(output_dir / "input_universe_availability.json", availability)
         _progress(
             "head_feature_load_complete",
@@ -2419,14 +2732,28 @@ def run(
             if resumed:
                 resume_by_side[side] = resumed
 
-        def checkpoint_progress(event: str, side: str, payload: Mapping[str, Any]) -> None:
-            _progress(event, head=target_name, side=side, **{
-                key: value for key, value in payload.items() if key not in {"model", "prediction", "valid_idx", "metric", "best_params"}
-            })
+        def checkpoint_progress(
+            event: str, side: str, payload: Mapping[str, Any]
+        ) -> None:
+            resource_guard.checkpoint(f"{target_name}:{side}:{event}")
+            _progress(
+                event,
+                head=target_name,
+                side=side,
+                **{
+                    key: value
+                    for key, value in payload.items()
+                    if key
+                    not in {"model", "prediction", "valid_idx", "metric", "best_params"}
+                },
+            )
             side_state = head_checkpoint.setdefault("sides", {}).setdefault(side, {})
             stage_map = {
                 "hpo_complete": ("hpo", "hpo.joblib"),
-                "oof_fold_complete": ("oof_fold", f"oof_fold_{int(payload['fold']):03d}.joblib"),
+                "oof_fold_complete": (
+                    "oof_fold",
+                    f"oof_fold_{int(payload['fold']):03d}.joblib",
+                ),
                 "final_model_complete": ("final_model", "final_model.joblib"),
             }
             if event not in stage_map:
@@ -2446,13 +2773,23 @@ def run(
                     "metric": dict(payload["metric"]),
                 }
             else:
-                checkpoint_payload = {"model": payload["model"], "contract": dict(payload["contract"])}
-            artifact_path = _checkpoint_artifact_path(output_dir, target_name, side, filename)
+                checkpoint_payload = {
+                    "model": payload["model"],
+                    "contract": dict(payload["contract"]),
+                }
+            artifact_path = _checkpoint_artifact_path(
+                output_dir, target_name, side, filename
+            )
             _atomic_joblib_dump(
-                {"fingerprint_sha256": run_fingerprint["sha256"], "payload": checkpoint_payload},
+                {
+                    "fingerprint_sha256": run_fingerprint["sha256"],
+                    "payload": checkpoint_payload,
+                },
                 artifact_path,
             )
-            record = _artifact_record(artifact_path, stage=stage, fingerprint=run_fingerprint["sha256"])
+            record = _artifact_record(
+                artifact_path, stage=stage, fingerprint=run_fingerprint["sha256"]
+            )
             if event == "oof_fold_complete":
                 side_state.setdefault("oof_folds", {})[str(payload["fold"])] = record
             else:
@@ -2460,6 +2797,7 @@ def run(
             _save_checkpoint(output_dir, checkpoint)
 
         _progress("head_start", head=target_name)
+        resource_guard.checkpoint(f"head_fit:{target_name}")
         fitted = fit_side_aware_auxiliary_models(
             target_matrix,
             target_frame[target_column].to_numpy(dtype=np.float32, copy=False),
@@ -2482,13 +2820,12 @@ def run(
             resume_by_side=resume_by_side,
             progress_callback=checkpoint_progress,
         )
+        resource_guard.checkpoint(f"head_fit_complete:{target_name}")
         fitted["sample_weight_contract"] = (
             "head_specific_supportive_labels_clipped_0.5_2.0_v1; training_loss_only; "
             "validation_mda_hpo_early_stopping_oof_metrics_unweighted"
         )
-        fitted["selection_hpo_reference_contract"] = (
-            selection_hpo_reference_contract
-        )
+        fitted["selection_hpo_reference_contract"] = selection_hpo_reference_contract
         fitted["selection_hpo_reuse"] = selection_hpo_reuse
         fitted["oof_population_report"] = (
             _assert_oof_identities_subset_selected_population(
@@ -2514,11 +2851,16 @@ def run(
             output_dir, target_name, "shared", "head_complete.joblib"
         )
         _atomic_joblib_dump(
-            {"fingerprint_sha256": run_fingerprint["sha256"], "payload": results[target_name]},
+            {
+                "fingerprint_sha256": run_fingerprint["sha256"],
+                "payload": results[target_name],
+            },
             head_complete_path,
         )
         head_checkpoint["complete"] = _artifact_record(
-            head_complete_path, stage="head_complete", fingerprint=run_fingerprint["sha256"]
+            head_complete_path,
+            stage="head_complete",
+            fingerprint=run_fingerprint["sha256"],
         )
         _save_checkpoint(output_dir, checkpoint)
         _progress("head_complete", head=target_name)
@@ -2530,12 +2872,8 @@ def run(
         "model_schema": MODEL_SCHEMA,
         "target_schema": TARGET_SCHEMA,
         "peak_mfe_atr_clip": float(PEAK_MFE_ATR_CLIP),
-        "mae_before_meaningful_mfe_atr_clip": float(
-            MAE_BEFORE_MEANINGFUL_MFE_ATR_CLIP
-        ),
-        "future_slope_atr_per_hour_clip": float(
-            FUTURE_SLOPE_ATR_PER_HOUR_CLIP
-        ),
+        "mae_before_meaningful_mfe_atr_clip": float(MAE_BEFORE_MEANINGFUL_MFE_ATR_CLIP),
+        "future_slope_atr_per_hour_clip": float(FUTURE_SLOPE_ATR_PER_HOUR_CLIP),
         "usable_mfe_floor": {
             "atr_multiple": float(MIN_USABLE_MFE_ATR),
             "minimum_return": float(MIN_USABLE_MFE_RETURN),
@@ -2601,6 +2939,7 @@ def run(
         "archetype_context_report": archetype_context_report,
         "availability_report": str(output_dir / "input_universe_availability.json"),
         "checkpoint": str(_checkpoint_path(output_dir)),
+        "training_resource_guard": _resource_guard_contract(resource_guard),
         "heads": results,
     }
     _write_json(output_dir / "manifest.json", manifest)
@@ -2646,7 +2985,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--purge-hours", type=float, default=13.0)
     parser.add_argument("--start", help="Inclusive UTC date/timestamp cap")
     parser.add_argument("--end", help="Inclusive UTC date/timestamp cap")
-    parser.add_argument("--max-rows", type=int, default=0, help="Deterministic smoke cap after UTC sorting; 0 disables it")
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=0,
+        help="Deterministic smoke cap after UTC sorting; 0 disables it",
+    )
     parser.add_argument(
         "--selection-rows",
         type=int,
@@ -2664,7 +3008,44 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ignore exact sibling selection/HPO reuse and rerun both high-CPU stages",
     )
-    parser.add_argument("--overwrite", action="store_true", help="Explicitly allow replacing files under --output-dir")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Explicitly allow replacing files under --output-dir",
+    )
+    parser.add_argument(
+        "--resource-min-free-ram-gib",
+        type=float,
+        default=2.0,
+        help="Fail closed when available RAM is below this threshold (default: 2 GiB).",
+    )
+    parser.add_argument(
+        "--resource-max-process-rss-gib",
+        type=float,
+        default=12.0,
+        help="Fail closed when this process exceeds this RSS threshold (default: 12 GiB).",
+    )
+    parser.add_argument(
+        "--resource-min-free-disk-gib",
+        type=float,
+        default=10.0,
+        help="Fail closed when free output-filesystem disk is below this threshold (default: 10 GiB).",
+    )
+    parser.add_argument(
+        "--resource-check-interval-seconds",
+        type=float,
+        default=60.0,
+        help="Minimum interval between boundary resource samples (default: 60 seconds).",
+    )
+    parser.add_argument(
+        "--resource-telemetry-path",
+        type=Path,
+        default=None,
+        help=(
+            "Append guard events as JSONL here; defaults to "
+            "OUTPUT_DIR/training_resource_telemetry.jsonl."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -2688,8 +3069,18 @@ def main() -> int:
         hpo_rows=args.hpo_rows,
         force_selection_hpo=args.force_selection_hpo,
         overwrite=args.overwrite,
+        resource_min_free_ram_gib=args.resource_min_free_ram_gib,
+        resource_max_process_rss_gib=args.resource_max_process_rss_gib,
+        resource_min_free_disk_gib=args.resource_min_free_disk_gib,
+        resource_check_interval_seconds=args.resource_check_interval_seconds,
+        resource_telemetry_path=args.resource_telemetry_path,
     )
-    print(json.dumps({"output_dir": str(args.output_dir), "heads": list(manifest["heads"])}, sort_keys=True))
+    print(
+        json.dumps(
+            {"output_dir": str(args.output_dir), "heads": list(manifest["heads"])},
+            sort_keys=True,
+        )
+    )
     return 0
 
 

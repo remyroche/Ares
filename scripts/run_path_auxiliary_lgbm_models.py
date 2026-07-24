@@ -44,6 +44,10 @@ from extreme_price_movements.path_auxiliary_lgbm import (  # noqa: E402
     select_features_with_current_pipeline,
     transform_base_archetype_label_features,
 )
+from extreme_price_movements.path_auxiliary_model_families import (  # noqa: E402
+    PATH_VALID_COLUMN,
+    ROLE_SPECS,
+)
 from extreme_price_movements.path_auxiliary_targets import (  # noqa: E402
     ALL_MODEL_FAMILY_LABEL_COLUMNS,
     ALL_SUPPORTIVE_LABEL_COLUMNS,
@@ -65,6 +69,11 @@ RUNNER_SCHEMA = "run_path_auxiliary_lgbm_models_v5_resumable_expanding_oos"
 SELECTION_HPO_REUSE_SCHEMA = "path_auxiliary_selection_hpo_reuse_v1"
 CHECKPOINT_SCHEMA = "path_auxiliary_lgbm_checkpoint_v1"
 STATIC_FEATURE_READ_CACHE_DEFAULT_MAX_BYTES = 192 * 1024 * 1024
+MODEL_FAMILY_ROLE_SOURCE_COLUMNS = tuple(
+    dict.fromkeys(
+        column for role_spec in ROLE_SPECS for column in role_spec.target_columns
+    )
+)
 STATIC_FEATURE_READ_CACHE_HARD_MAX_BYTES = 512 * 1024 * 1024
 STATIC_FEATURE_READ_CACHE_HARD_MAX_ENTRIES = 8
 SELECTION_STATIC_READ_COALESCE_GAP = pd.Timedelta(hours=1)
@@ -869,6 +878,8 @@ def _load_labels(
                 *TARGET_COLUMNS.values(),
                 *ALL_SUPPORTIVE_LABEL_COLUMNS,
                 *ALL_MODEL_FAMILY_LABEL_COLUMNS,
+                PATH_VALID_COLUMN,
+                *MODEL_FAMILY_ROLE_SOURCE_COLUMNS,
             ]
             if column in columns
         ]
@@ -974,6 +985,11 @@ def _load_labels(
         *TARGET_COLUMNS.values(),
         *ALL_SUPPORTIVE_LABEL_COLUMNS,
         *ALL_MODEL_FAMILY_LABEL_COLUMNS,
+        *[
+            column
+            for column in (PATH_VALID_COLUMN, *MODEL_FAMILY_ROLE_SOURCE_COLUMNS)
+            if column in frame.columns
+        ],
     ]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").astype(np.float32)
     for column in CONTEXT_COLUMNS:

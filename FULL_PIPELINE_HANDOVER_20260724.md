@@ -582,11 +582,11 @@ Head-specific intent and downstream use:
 
 | Head | Primary question | Target treatment | Intended execution-EV contribution |
 |---|---|---|---|
-| `peak_mfe_12h_atr` | How much favorable excursion remains over the causal 12h path? | ATR-normalized peak MFE; log/robust treatment and capped tail diagnostics | Opportunity magnitude, reachable profit geometry, ranking |
-| `time_to_first_meaningful_mfe` | How long until the path first reaches meaningful MFE? | Unreached rows right-censored at 12h; meaningful MFE is `max(1.5 ATR, 1.5% entry return)` | Realization speed, timeout risk, whether opportunity is too slow |
-| `mae_before_meaningful_mfe_atr` | How much adverse excursion occurs before the useful favorable move? | ATR-normalized pre-event MAE; reached-event and unreached-path supportive labels | Stop/adverse-path risk, entry quality, geometry tolerance |
-| `bars_before_price_stops_decreasing` | How long until the adverse move forms and confirms its trough? | Bars to confirmed adverse trough plus recovery/supportive events | Early adverse timing, whether immediate entry is premature |
-| `future_slope_atr_per_hour` | How efficiently does favorable excursion accumulate? | Signed ATR/hour slope through the defined favorable-path fraction, with 2/4/8/12h support | Path efficiency, continuation strength, timing complement to peak MFE |
+| `peak_mfe_12h_atr` | How much favorable excursion remains over the causal 12h path? | One exact meaningful-event probability plus natural-unit conditional mean and q80 models; the canonical target is capped at 10 ATR | Opportunity magnitude, reachable profit geometry, ranking |
+| `time_to_first_meaningful_mfe` | How long until the path first reaches meaningful MFE? | Side-local 2/4/8/12h CDF with one jointly tuned parameter contract; unreached rows are right-censored at 12h and meaningful MFE is `max(1.5 ATR, 1.5% entry return)` | Realization speed, timeout risk, whether opportunity is too slow |
+| `mae_before_meaningful_mfe_atr` | How much adverse excursion occurs before the useful favorable move? | Shared exact event probability plus separate natural-unit hit and no-hit conditional risks; the canonical target is capped at 10 ATR | Stop/adverse-path risk, entry quality, geometry tolerance |
+| `bars_before_price_stops_decreasing` | How long until the adverse move forms and confirms its trough? | Persist both the legacy adverse-extreme clock and confirmed-trough clock; choose neither from target loss alone | Early adverse timing, whether immediate entry is premature |
+| `future_slope_atr_per_hour` | How efficiently does favorable excursion accumulate? | Non-negative favorable-path ATR/hour slope capped at 8; diagnostic-only until an incremental execution-EV ablation passes | Path efficiency, continuation strength, timing complement to peak MFE |
 
 All five heads:
 

@@ -126,7 +126,7 @@
           "task": "binary"
         }
       },
-      "transform": "project every row to nondecreasing CDF_2h <= CDF_4h <= CDF_8h <= CDF_12h"
+      "transform": "hold the shared exact meaningful-event CDF_12h fixed; cap and PAV-project only CDF_2h/CDF_4h/CDF_8h so CDF_2h <= CDF_4h <= CDF_8h <= CDF_12h"
     }
   },
   "hpo": {
@@ -163,6 +163,11 @@
     "meaningful_event_forbidden_alias": "__mfe_ge_1_5atr__",
     "path": "data_perp/artifacts/packb_path_auxiliary_targets_20260725_v1_31_8/targets.parquet",
     "sha256": "f9c98d6234e4334c0f5003ab822a2d0208c86c9034da3ddcedcdfd27ffce929d"
+  },
+  "sample_weights": {
+    "default": "unit weights for all direct roles",
+    "reason": "preserve the declared probability and conditional-mean estimands; target-derived weights would change calibration or the estimand",
+    "weighted_variants": "allowed only as a separately named OOF ablation and never as the default production contract"
   },
   "promotion_gates": {
     "adverse_variant": "side-local aggregate and worst-month OOF winner; fail closed on mixed result",

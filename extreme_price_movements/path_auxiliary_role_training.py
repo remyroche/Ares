@@ -13,12 +13,14 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
 
 from extreme_price_movements.path_auxiliary_lgbm import (
+    MODEL_SCHEMA,
+    configured_auxiliary_feature_universe,
     default_auxiliary_lgbm_n_jobs,
     expanding_purged_folds,
 )
@@ -26,6 +28,221 @@ from extreme_price_movements.path_auxiliary_lgbm import (
 ROLE_TRAINER_SCHEMA = "path_auxiliary_role_training_v1_strict_oof"
 FIXED_MAY_JULY_OOF_MONTHS: tuple[str, ...] = ("2026-05", "2026-06", "2026-07")
 TaskKind = Literal["binary", "regression", "quantile"]
+
+
+def select_auxiliary_role_features(
+    X: pd.DataFrame,
+    role_target: Sequence[Any],
+    *,
+    task_kind: TaskKind,
+    timestamps: Sequence[Any],
+    assets: Sequence[Any],
+    sides: Sequence[Any],
+    archetypes: Sequence[Any],
+    role_name: str,
+    sample_weight: Sequence[Any] | None = None,
+    mandatory_features_by_side: Mapping[str, Sequence[str]] | None = None,
+    random_state: int = 42,
+    cfg: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the full feature selector independently per side for one role.
+
+    Binary roles use the classifier selector and hard 0/1 labels. Regression
+    and quantile roles use the regression selector; a quantile role may reuse
+    the selection of another role only when its target and conditioning mask
+    are exactly identical (for example peak conditional mean and q80).
+    """
+
+    from extreme_price_movements.lgbm_pipeline import (
+        LGBM_PER_SIDE_FEATURE_SELECTION,
+        train_lgbm_stability_candidate,
+    )
+
+    if not isinstance(X, pd.DataFrame) or X.empty:
+        raise ValueError("X must be a non-empty pandas DataFrame")
+    kind = _validate_task(str(task_kind), 0.80)
+    rows = len(X)
+    target = pd.to_numeric(pd.Series(role_target), errors="coerce").to_numpy(
+        dtype=np.float32
+    )
+    if len(target) != rows or not np.isfinite(target).all():
+        raise ValueError("role_target must be finite and aligned to X")
+    if kind == "binary":
+        _validate_binary_target(target, where=np.ones(rows, dtype=bool))
+    side_values = np.asarray(sides).astype(str)
+    timestamp_values = np.asarray(timestamps)
+    asset_values = np.asarray(assets).astype(str)
+    archetype_values = np.asarray(archetypes).astype(str)
+    for name, values in {
+        "timestamps": timestamp_values,
+        "assets": asset_values,
+        "sides": side_values,
+        "archetypes": archetype_values,
+    }.items():
+        if len(values) != rows:
+            raise ValueError(f"{name} must align to X")
+    weights = (
+        np.ones(rows, dtype=np.float32)
+        if sample_weight is None
+        else np.asarray(sample_weight, dtype=np.float32)
+    )
+    if (
+        weights.shape != target.shape
+        or not np.isfinite(weights).all()
+        or np.any(weights <= 0.0)
+    ):
+        raise ValueError("sample_weight must be finite, positive, and aligned to X")
+    if not bool(LGBM_PER_SIDE_FEATURE_SELECTION):
+        raise RuntimeError(
+            "auxiliary roles require independent long/short feature selection"
+        )
+
+    local_cfg = dict(cfg or {})
+    local_mda = dict(local_cfg.get("mda_config", {}) or {})
+    local_mda.update(
+        {
+            "archetype_conditioned_enabled": True,
+            "archetype_univariate_prescreen_enabled": False,
+            "archetype_relief_prescreen_enabled": False,
+            "side_tail_across_archetypes_unweighted": True,
+            "use_sample_weight": False,
+            "correlation_pruning_before_prescreen": True,
+            "correlation_pruning_threshold": 0.88,
+            "correlation_threshold": 0.88,
+            "correlation_pruning_floor_ratio": 0.50,
+            "correlation_pruning_floor_count": 300,
+        }
+    )
+    if kind != "binary":
+        local_mda["objective"] = "auxiliary_regression"
+    local_cfg.update(
+        {
+            "mda_config": local_mda,
+            "archetype_univariate_prescreen_enabled": False,
+            "archetype_relief_prescreen_enabled": False,
+            "low_performance_period_weights_enabled": False,
+            "lgbm_ae_gmm_features_enabled": False,
+            "lgbm_joint_complete_case_filter_enabled": False,
+        }
+    )
+    candidates, universe_report = configured_auxiliary_feature_universe(
+        X.columns, cfg=local_cfg
+    )
+    if not candidates:
+        raise RuntimeError("no configured auxiliary role features are available")
+    matrix = X.loc[:, candidates]
+    mandatory = {
+        side: [
+            feature
+            for feature in map(str, (mandatory_features_by_side or {}).get(side, ()))
+            if feature in matrix.columns
+        ]
+        for side in ("long", "short")
+    }
+    selected_by_side: dict[str, list[str]] = {}
+    metrics_by_side: dict[str, dict[str, Any]] = {}
+    for side in ("long", "short"):
+        side_idx = np.flatnonzero(side_values == side)
+        if len(side_idx) < 200:
+            raise RuntimeError(
+                f"auxiliary role selection has fewer than 200 {side} rows "
+                f"for {role_name}"
+            )
+        local_target = target[side_idx]
+        local_archetype = np.char.add(
+            np.char.add(side_values[side_idx], "__"), archetype_values[side_idx]
+        )
+        binary = kind == "binary"
+        params = {
+            "objective": "binary" if binary else "huber",
+            "n_estimators": 500,
+            "learning_rate": 0.03,
+            "max_depth": 4,
+            "num_leaves": 16,
+            "min_child_samples": 300,
+            "min_split_gain": 0.01,
+            "reg_alpha": 1.0,
+            "reg_lambda": 8.0,
+            "subsample": 0.75,
+            "colsample_bytree": 0.70,
+            "verbosity": -1,
+        }
+        label_context = {
+            "feature_selection_archetype": local_archetype,
+            "archetype": local_archetype,
+            "side_name": side_values[side_idx],
+            "side": side_values[side_idx],
+            "y_ret": local_target,
+            "side_mda_sample_weight": np.ones(len(side_idx), dtype=np.float32),
+        }
+        if binary:
+            label_context["y_bin"] = local_target
+        result = train_lgbm_stability_candidate(
+            matrix.iloc[side_idx].reset_index(drop=True),
+            local_target,
+            sample_weight=weights[side_idx],
+            random_state=int(random_state) + (1009 if side == "long" else 2017),
+            mode="classifier" if binary else "regressor",
+            timestamps=timestamp_values[side_idx],
+            assets=asset_values[side_idx],
+            returns=local_target,
+            hard_labels=local_target if binary else None,
+            hpo_objective_mode="train_base" if binary else "auxiliary_regression",
+            preset_best_params=params,
+            preset_source=f"{MODEL_SCHEMA}:{role_name}:{side}:selection_only",
+            cfg=local_cfg,
+            label_context=label_context,
+        )
+        if not result:
+            raise RuntimeError(f"feature selection failed for {role_name}/{side}")
+        side_metrics = dict(result.get("metrics") or {})
+        selected = [
+            str(feature)
+            for feature in result.get("selected_feature_names", ())
+            if str(feature) in matrix.columns
+        ]
+        if not selected:
+            selected = list(
+                map(
+                    str,
+                    dict(
+                        side_metrics.get("per_side_feature_selection_selected_features")
+                        or {}
+                    ).get(side, ()),
+                )
+            )
+        if not selected:
+            raise RuntimeError(
+                f"feature selection returned no features for {role_name}/{side}"
+            )
+        selected_by_side[side] = list(dict.fromkeys([*selected, *mandatory[side]]))
+        metrics_by_side[side] = side_metrics
+    return {
+        "role_name": str(role_name),
+        "task_kind": kind,
+        "selected_features_by_side": selected_by_side,
+        "selected_features": list(
+            dict.fromkeys(
+                feature
+                for side in ("long", "short")
+                for feature in selected_by_side[side]
+            )
+        ),
+        "selection_metrics": {
+            "contract": "strict_independent_side_role_selector_runs_v1",
+            "by_side": metrics_by_side,
+        },
+        "feature_universe_report": universe_report,
+        "mandatory_features_by_side": mandatory,
+        "sample_weight_contract": (
+            "training loss only; selector MDA and validation metrics unweighted"
+        ),
+        "prescreen_contract": (
+            "strict side-local univariate plus Relief plus MDA; "
+            "binary roles use classifier semantics"
+        ),
+        "correlation_pruning_threshold": 0.88,
+    }
 
 
 @dataclass(frozen=True)
@@ -345,6 +562,7 @@ def _continuous_metrics(
         metrics["pinball_loss_alpha_0_8"] = float(
             np.mean(np.maximum(alpha * residual, (alpha - 1.0) * residual))
         )
+        metrics["empirical_coverage_alpha_0_8"] = float(np.mean(observed <= estimate))
     return metrics
 
 
@@ -531,6 +749,7 @@ def fit_auxiliary_role_model(
     quantile_alpha: float = 0.80,
     n_jobs: int | None = None,
     role_name: str = "auxiliary_role",
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Fit one role with strict reference HPO and full-row May--July OOF.
 
@@ -656,6 +875,11 @@ def fit_auxiliary_role_model(
         hpo_weight = weights[hpo_rows_global]
 
         def objective(trial: Any) -> float:
+            if progress_callback is not None:
+                progress_callback(
+                    "hpo_trial_start",
+                    {"role": role_name, "trial": int(trial.number)},
+                )
             params = _suggest_params(
                 trial,
                 task_kind=kind,
@@ -665,7 +889,16 @@ def fit_auxiliary_role_model(
             )
             scores: list[float] = []
             iterations: list[int] = []
-            for fold in inner_folds:
+            for fold_index, fold in enumerate(inner_folds):
+                if progress_callback is not None:
+                    progress_callback(
+                        "hpo_fold_start",
+                        {
+                            "role": role_name,
+                            "trial": int(trial.number),
+                            "fold": int(fold_index),
+                        },
+                    )
                 model, best_iteration = _fit_with_inner_validation(
                     hpo_X.iloc[fold.train_idx],
                     hpo_y[fold.train_idx],
@@ -687,6 +920,15 @@ def fit_auxiliary_role_model(
                 )
                 scores.append(_hpo_score(metrics, task_kind=kind))
                 iterations.append(best_iteration)
+                if progress_callback is not None:
+                    progress_callback(
+                        "hpo_fold_complete",
+                        {
+                            "role": role_name,
+                            "trial": int(trial.number),
+                            "fold": int(fold_index),
+                        },
+                    )
             trial_iterations[int(trial.number)] = iterations
             return float(np.mean(scores) - 0.25 * np.std(scores))
 
@@ -744,6 +986,15 @@ def fit_auxiliary_role_model(
     oof_models: list[Any] = []
     fold_provenance: list[dict[str, Any]] = []
     for fold_i, fold in enumerate(outer_folds):
+        if progress_callback is not None:
+            progress_callback(
+                "oof_fold_start",
+                {
+                    "role": role_name,
+                    "fold": int(fold_i),
+                    "fold_month": fold.fold_month,
+                },
+            )
         train_idx = fold.base_train_idx[
             role_mask[fold.base_train_idx] & np.isfinite(target[fold.base_train_idx])
         ]
@@ -812,6 +1063,15 @@ def fit_auxiliary_role_model(
             }
         )
         oof_models.append(model)
+        if progress_callback is not None:
+            progress_callback(
+                "oof_fold_complete",
+                {
+                    "role": role_name,
+                    "fold": int(fold_i),
+                    "fold_month": fold.fold_month,
+                },
+            )
 
     oof_prediction_mask = np.isfinite(oof_predictions)
     oof_metrics = _role_metrics(
@@ -835,9 +1095,19 @@ def fit_auxiliary_role_model(
         _validate_binary_target(target, where=final_mask)
     final_model = _make_model(kind, best_params)
     final_idx = np.flatnonzero(final_mask)
+    if progress_callback is not None:
+        progress_callback(
+            "final_model_start",
+            {"role": role_name, "rows": int(len(final_idx))},
+        )
     final_model.fit(
         matrix.iloc[final_idx], target[final_idx], sample_weight=weights[final_idx]
     )
+    if progress_callback is not None:
+        progress_callback(
+            "final_model_complete",
+            {"role": role_name, "rows": int(len(final_idx))},
+        )
     reference_contract = {
         "selection_hpo_reference_end": cutoff.isoformat(),
         "row_rule": (

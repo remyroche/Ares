@@ -535,13 +535,15 @@ def project_monotone_timing_cdf(
     cdf_by_horizon: Mapping[int | float, Any],
     *,
     horizons: Sequence[int | float] = TIMING_HORIZONS_HOURS,
+    preserve_final_horizon: bool = True,
 ) -> dict[float, np.ndarray]:
-    """Clip and isotonic-project CDF probabilities across increasing horizons.
+    """Validate and isotonic-project CDF probabilities across horizons.
 
     The projection is the least non-decreasing vector in squared-error space
     for each row (pool-adjacent-violators), rather than merely a cumulative
-    maximum.  It preserves calibrated levels better when independently fitted
-    horizon classifiers cross one another.
+    maximum.  By default the final-horizon probability is an immutable shared
+    meaningful-event prediction: earlier horizons are capped at that value and
+    projected without changing it.
     """
 
     ordered = tuple(float(hour) for hour in horizons)
@@ -559,9 +561,13 @@ def project_monotone_timing_cdf(
         )
     matrix = np.column_stack([normalized[hour] for hour in ordered])
     _same_length(**{str(hour): normalized[hour] for hour in ordered})
+    final = matrix[:, -1].copy()
+    projected_input = (
+        np.minimum(matrix[:, :-1], final[:, None]) if preserve_final_horizon else matrix
+    )
     # PAV with unit weights; number of timing bins is intentionally tiny.
-    projected = np.empty_like(matrix)
-    for row_i, row in enumerate(matrix):
+    projected = np.empty_like(projected_input)
+    for row_i, row in enumerate(projected_input):
         levels: list[float] = []
         counts: list[int] = []
         for value in row:
@@ -576,6 +582,8 @@ def project_monotone_timing_cdf(
         for level, count in zip(levels, counts):
             projected[row_i, pos : pos + count] = level
             pos += count
+    if preserve_final_horizon:
+        projected = np.column_stack([projected, final])
     return {hour: projected[:, i] for i, hour in enumerate(ordered)}
 
 

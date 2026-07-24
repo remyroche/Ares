@@ -163,14 +163,14 @@ def test_timing_cdf_projection_is_isotonic_and_composition_is_in_natural_hours()
     projected = project_monotone_timing_cdf(
         {2: [0.8, 0.1], 4: [0.2, 0.5], 8: [0.7, 0.4], 12: [0.6, 0.9]}
     )
-    assert np.allclose(projected[2.0], [0.5, 0.1])
-    assert np.allclose(projected[4.0], [0.5, 0.45])
-    assert np.allclose(projected[8.0], [0.65, 0.45])
-    assert np.allclose(projected[12.0], [0.65, 0.9])
+    assert np.allclose(projected[2.0], [0.4, 0.1])
+    assert np.allclose(projected[4.0], [0.4, 0.45])
+    assert np.allclose(projected[8.0], [0.6, 0.45])
+    assert np.allclose(projected[12.0], [0.6, 0.9])
     composed = compose_timing_cdf_predictions(
         {2: [0.8, 0.1], 4: [0.2, 0.5], 8: [0.7, 0.4], 12: [0.6, 0.9]}
     )
-    assert np.allclose(composed["p_hit_12h"], [0.65, 0.9])
+    assert np.allclose(composed["p_hit_12h"], [0.6, 0.9])
     assert np.all(composed["expected_censored_time_hours"] <= 12.0)
     assert np.all(composed["expected_censored_time_hours"] >= 0.0)
     never_hits = compose_timing_cdf_predictions(

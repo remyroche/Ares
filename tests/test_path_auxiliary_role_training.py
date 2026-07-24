@@ -5,6 +5,7 @@ import pytest
 from extreme_price_movements.path_auxiliary_role_training import (
     FIXED_MAY_JULY_OOF_MONTHS,
     fit_auxiliary_role_model,
+    select_auxiliary_role_features,
 )
 
 
@@ -129,6 +130,7 @@ def test_binary_calibration_and_quantile_alpha_are_role_specific() -> None:
     assert quantile["best_params"]["objective"] == "quantile"
     assert quantile["best_params"]["alpha"] == 0.8
     assert np.isfinite(quantile["oof_metrics"]["pinball_loss_alpha_0_8"])
+    assert np.isfinite(quantile["oof_metrics"]["empirical_coverage_alpha_0_8"])
 
 
 def test_role_hpo_rejects_runs_longer_than_the_production_cap() -> None:
@@ -145,3 +147,53 @@ def test_role_hpo_rejects_runs_longer_than_the_production_cap() -> None:
             selection_hpo_reference_end="2026-05-01T00:00:00Z",
             n_trials=41,
         )
+
+
+def test_binary_role_feature_selection_is_independent_per_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = 800
+    sides = np.repeat(["long", "short"], rows // 2)
+    calls: list[tuple[str, str]] = []
+
+    def fake_selector(
+        X: pd.DataFrame,
+        y: np.ndarray,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        local_side = str(np.asarray(kwargs["label_context"]["side"])[0])  # type: ignore[index]
+        calls.append((local_side, str(kwargs["mode"])))
+        assert len(X) == rows // 2
+        assert np.isin(y, (0.0, 1.0)).all()
+        return {
+            "selected_feature_names": [
+                "efficiency_ratio_20" if local_side == "long" else "prog_eff_24"
+            ],
+            "metrics": {},
+        }
+
+    monkeypatch.setattr(
+        "extreme_price_movements.lgbm_pipeline.train_lgbm_stability_candidate",
+        fake_selector,
+    )
+    result = select_auxiliary_role_features(
+        pd.DataFrame(
+            {
+                "efficiency_ratio_20": np.linspace(0.0, 1.0, rows),
+                "prog_eff_24": np.linspace(1.0, 0.0, rows),
+            }
+        ),
+        np.arange(rows) % 2,
+        task_kind="binary",
+        timestamps=pd.date_range("2026-04-01", periods=rows, freq="h", tz="UTC"),
+        assets=np.repeat(["AAA", "BBB"], rows // 2),
+        sides=sides,
+        archetypes=np.repeat("base", rows),
+        role_name="meaningful_mfe_event",
+    )
+
+    assert calls == [("long", "classifier"), ("short", "classifier")]
+    assert result["selected_features_by_side"] == {
+        "long": ["efficiency_ratio_20"],
+        "short": ["prog_eff_24"],
+    }

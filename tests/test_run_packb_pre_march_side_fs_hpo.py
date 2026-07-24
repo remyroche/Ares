@@ -96,12 +96,53 @@ def test_economic_objective_rewards_correct_ranking_and_net_lift() -> None:
     weights = np.ones(4, dtype=np.float64)
     net = np.asarray([-0.02, -0.01, 0.02, 0.04], dtype=np.float64)
 
-    good = runner._economic_objective(target, target, weights, net)
-    bad = runner._economic_objective(target[::-1], target, weights, net)
+    timestamps = pd.to_datetime(["2025-01-01T00:00:00Z"] * 4)
+    symbols = ["A", "B", "C", "D"]
+    good = runner._economic_objective(
+        target,
+        target,
+        weights,
+        net,
+        timestamps=timestamps,
+        symbols=symbols,
+    )
+    bad = runner._economic_objective(
+        target[::-1],
+        target,
+        weights,
+        net,
+        timestamps=timestamps,
+        symbols=symbols,
+    )
 
     assert good["objective"] > bad["objective"]
     assert good["weighted_rank_ic"] == pytest.approx(1.0)
     assert good["top10_mean_net_return"] == pytest.approx(0.04)
+
+
+def test_top_fraction_is_per_timestamp_with_symbol_tie_break() -> None:
+    predictions = np.ones(20, dtype=np.float64)
+    timestamps = pd.to_datetime(
+        ["2025-01-01T00:00:00Z"] * 10 + ["2025-01-01T01:00:00Z"] * 10
+    )
+    symbols = [
+        "J",
+        "I",
+        "H",
+        "G",
+        "F",
+        "E",
+        "D",
+        "C",
+        "B",
+        "A",
+    ] * 2
+
+    selected = runner._top_fraction_indices(
+        predictions, timestamps=timestamps, symbols=symbols
+    )
+
+    assert selected.tolist() == [9, 19]
 
 
 def test_hpo_selector_requires_three_folds_and_uses_worst_fold_tie_break() -> None:

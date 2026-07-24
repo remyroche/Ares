@@ -381,11 +381,63 @@ def _weighted_rank_ic(
     )
 
 
+def _top_fraction_indices(
+    predictions: np.ndarray,
+    *,
+    timestamps: Sequence[Any] | None,
+    symbols: Sequence[Any] | None,
+    fraction: float = 0.10,
+) -> np.ndarray:
+    """Select the exact per-timestamp side-local fraction with lexical ties."""
+
+    predictions = np.asarray(predictions, dtype=np.float64)
+    if timestamps is None:
+        timestamp_values = pd.Series(
+            pd.Timestamp("1970-01-01T00:00:00Z"), index=range(len(predictions))
+        )
+    else:
+        timestamp_values = pd.to_datetime(
+            pd.Series(timestamps).reset_index(drop=True),
+            utc=True,
+            errors="coerce",
+        )
+    if timestamp_values.isna().any():
+        raise PackBSideFSHPORunnerError(
+            "economic objective received invalid ranking timestamps"
+        )
+    symbol_values = (
+        np.arange(len(predictions)).astype(str)
+        if symbols is None
+        else np.asarray(symbols, dtype=str)
+    )
+    if len(timestamp_values) != len(predictions) or len(symbol_values) != len(
+        predictions
+    ):
+        raise PackBSideFSHPORunnerError(
+            "economic ranking timestamps/symbols are not aligned"
+        )
+    selected: list[np.ndarray] = []
+    encoded = timestamp_values.astype("int64").to_numpy()
+    for timestamp in np.unique(encoded):
+        rows = np.flatnonzero(encoded == timestamp)
+        count = max(1, int(math.ceil(float(fraction) * len(rows))))
+        order = np.lexsort((symbol_values[rows], -predictions[rows]))
+        selected.append(rows[order[:count]])
+    return (
+        np.concatenate(selected).astype(np.int64, copy=False)
+        if selected
+        else np.asarray([], dtype=np.int64)
+    )
+
+
 def _economic_objective(
     predictions: np.ndarray,
     target: np.ndarray,
     weights: np.ndarray,
     net_return: np.ndarray,
+    *,
+    timestamps: Sequence[Any] | None = None,
+    symbols: Sequence[Any] | None = None,
 ) -> dict[str, float]:
     predictions = np.asarray(predictions, dtype=np.float64)
     target = np.asarray(target, dtype=np.float64)
@@ -396,9 +448,12 @@ def _economic_objective(
     rmse = math.sqrt(_weighted_mean(residual**2, weights))
     target_mean = _weighted_mean(target, weights)
     baseline_rmse = math.sqrt(_weighted_mean((target - target_mean) ** 2, weights))
-    count = max(1, int(math.ceil(0.10 * len(predictions))))
-    order = np.argsort(-predictions, kind="mergesort")
-    top = order[:count]
+    top = _top_fraction_indices(
+        predictions,
+        timestamps=timestamps,
+        symbols=symbols,
+        fraction=0.10,
+    )
     top10_net = float(np.mean(net_return[top]))
     overall_net = float(np.mean(net_return))
     net_lift = top10_net - overall_net
@@ -417,7 +472,9 @@ def _economic_objective(
         "top10_mean_net_return": float(top10_net),
         "overall_mean_net_return": float(overall_net),
         "top10_net_return_lift": float(net_lift),
-        "top10_rows": int(count),
+        "top10_rows": int(len(top)),
+        "ranking_scope": "within_utc_timestamp_and_side",
+        "ranking_tie_break": "score_desc_symbol_asc",
     }
 
 
@@ -469,7 +526,11 @@ def _fit_predict(
 
 
 def _normalise_scores(values: Mapping[str, float]) -> dict[str, float]:
-    series = pd.Series(values, dtype=np.float64)
+    series = (
+        pd.Series(values, dtype=np.float64)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
     if series.empty:
         return {}
     low = float(series.min())
@@ -525,15 +586,16 @@ def _screen_features(
 ) -> tuple[list[str], dict[str, Any]]:
     from sklearn.feature_selection import mutual_info_regression
 
-    correlations = {
-        str(column): abs(
-            float(
-                pd.Series(train_x[column], copy=False).corr(train_y, method="spearman")
-                or 0.0
-            )
+    correlations: dict[str, float] = {}
+    for column in train_x.columns:
+        raw_correlation = pd.Series(train_x[column], copy=False).corr(
+            train_y, method="spearman"
         )
-        for column in train_x.columns
-    }
+        correlations[str(column)] = (
+            abs(float(raw_correlation))
+            if pd.notna(raw_correlation) and np.isfinite(raw_correlation)
+            else 0.0
+        )
     mi_rows = min(len(train_x), 20_000)
     positions = np.linspace(0, len(train_x) - 1, num=mi_rows, dtype=np.int64)
     mi_values = mutual_info_regression(
@@ -657,6 +719,8 @@ class SideFeatureSelector:
             value.validation.target.to_numpy(dtype=np.float64),
             value.validation.weights.to_numpy(dtype=np.float64),
             net_return,
+            timestamps=value.validation.ledger["__ts__"],
+            symbols=value.validation.ledger["__symbol__"],
         )
         rng = np.random.default_rng(self.seed)
         mda_rows: list[dict[str, Any]] = []
@@ -677,6 +741,8 @@ class SideFeatureSelector:
                     value.validation.target.to_numpy(dtype=np.float64),
                     value.validation.weights.to_numpy(dtype=np.float64),
                     net_return,
+                    timestamps=value.validation.ledger["__ts__"],
+                    symbols=value.validation.ledger["__symbol__"],
                 )
                 drops.append(float(baseline["objective"] - score["objective"]))
             mda_rows.append(
@@ -733,6 +799,8 @@ class SideFeatureSelector:
                 value.validation.target.to_numpy(dtype=np.float64),
                 value.validation.weights.to_numpy(dtype=np.float64),
                 net_return,
+                timestamps=value.validation.ledger["__ts__"],
+                symbols=value.validation.ledger["__symbol__"],
             )
             prefix_rows.append(
                 {
@@ -857,6 +925,8 @@ class SideHPOEvaluator:
             value.validation.target.to_numpy(dtype=np.float64),
             value.validation.weights.to_numpy(dtype=np.float64),
             self.labels.economic(value.validation.ledger),
+            timestamps=value.validation.ledger["__ts__"],
+            symbols=value.validation.ledger["__symbol__"],
         )
         return {
             **metrics,
@@ -1162,10 +1232,7 @@ def run(
                         Path(ae_root) / "summary.json"
                     ),
                     "side_ae_manifest_sha256": stage_manifest.sha256_file(
-                        Path(ae_root)
-                        / side
-                        / "ae_gmm"
-                        / "ae_gmm_side_stage_manifest.json"
+                        Path(ae_root) / side / "ae_gmm" / "side_stage_manifest.json"
                     ),
                 },
                 fs_train_max_rows=60_000,

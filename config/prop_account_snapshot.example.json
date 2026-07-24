@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-07-18T12:00:00Z",
+  "equity": 5000.0,
+  "day_start_equity": 5000.0,
+  "high_water_equity": 5000.0,
+  "starting_equity": 5000.0,
+  "positions": [
+    {
+      "symbol": "BTC/USD:USD",
+      "side": "long",
+      "marked_notional": 500.0,
+      "mark_price": 120000.0,
+      "stop_price": 117600.0,
+      "policy_archetype": "long__long_breakout_precision",
+      "leverage": 2.0
+    }
+  ]
+}

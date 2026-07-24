@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from extreme_price_movements.inference.liquidity_precheck import (
     compute_price_gap_rank_penalty,
@@ -180,3 +181,40 @@ def test_price_gap_penalty_and_marketable_limit():
         )
         < 1e-12
     )
+
+
+def test_price_gap_penalty_uses_deadband_and_asymmetric_favorable_slope():
+    policy = PortfolioPolicyConfig(
+        price_gap_deadband_bps=25.0,
+        price_gap_favorable_penalty_multiplier=0.25,
+        max_signal_gap_bps_default=150.0,
+        price_gap_penalty_max=0.05,
+    )
+    inside_deadband, _ = compute_price_gap_rank_penalty(
+        strategy_id="long_s52_meta_threshold_handoff",
+        side="long",
+        signal_price=100.0,
+        decision_mid=100.20,
+        policy=policy,
+    )
+    adverse, adverse_info = compute_price_gap_rank_penalty(
+        strategy_id="long_s52_meta_threshold_handoff",
+        side="long",
+        signal_price=100.0,
+        decision_mid=100.75,
+        policy=policy,
+    )
+    favorable, favorable_info = compute_price_gap_rank_penalty(
+        strategy_id="long_s52_meta_threshold_handoff",
+        side="long",
+        signal_price=100.0,
+        decision_mid=99.25,
+        policy=policy,
+    )
+
+    assert inside_deadband == pytest.approx(0.0)
+    assert adverse_info["price_gap_adverse_excess_bps"] == pytest.approx(50.0)
+    assert favorable_info["price_gap_favorable_excess_bps"] == pytest.approx(
+        50.0
+    )
+    assert favorable == pytest.approx(adverse * 0.25)

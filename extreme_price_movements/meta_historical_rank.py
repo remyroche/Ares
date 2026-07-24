@@ -21,6 +21,7 @@ class HistoricalScoreRankReference:
     )
     fit_start: str | None = None
     fit_end: str | None = None
+    rank_method: str = "right"
 
     def fit(self, frame: pd.DataFrame) -> "HistoricalScoreRankReference":
         if self.score_col not in frame.columns:
@@ -48,14 +49,24 @@ class HistoricalScoreRankReference:
         return self
 
     @staticmethod
-    def _rank(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    def _rank(
+        values: np.ndarray,
+        reference: np.ndarray,
+        *,
+        method: str = "right",
+    ) -> np.ndarray:
         out = np.full(len(values), np.nan, dtype=np.float32)
         finite = np.isfinite(values)
         if reference.size and finite.any():
-            out[finite] = (
-                np.searchsorted(reference, values[finite], side="right")
-                / float(reference.size)
-            ).astype(np.float32)
+            if method == "right":
+                rank = np.searchsorted(reference, values[finite], side="right")
+            elif method == "midrank":
+                left = np.searchsorted(reference, values[finite], side="left")
+                right = np.searchsorted(reference, values[finite], side="right")
+                rank = (left + right) / 2.0
+            else:
+                raise ValueError(f"Unsupported historical rank method: {method!r}")
+            out[finite] = (rank / float(reference.size)).astype(np.float32)
         return out
 
     def transform(self, frame: pd.DataFrame, score_col: str | None = None) -> pd.Series:
@@ -78,7 +89,11 @@ class HistoricalScoreRankReference:
             reference = self.sorted_scores_by_side.get(
                 str(key), self.sorted_scores_global
             )
-            output[idx] = self._rank(scores[idx], reference)
+            output[idx] = self._rank(
+                scores[idx],
+                reference,
+                method=str(getattr(self, "rank_method", "right")),
+            )
         return pd.Series(output, index=frame.index, dtype=np.float32)
 
     def manifest(self) -> dict[str, Any]:
@@ -93,6 +108,6 @@ class HistoricalScoreRankReference:
                 key: int(value.size)
                 for key, value in self.sorted_scores_by_side.items()
             },
-            "rank_method": "right_continuous_empirical_cdf",
+            "rank_method": str(getattr(self, "rank_method", "right")),
             "leakage_contract": "Reference scores precede every transformed OOS row; no outcomes are used.",
         }

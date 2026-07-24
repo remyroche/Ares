@@ -62,6 +62,70 @@ def _json_float_map(raw: Any) -> dict[str, float]:
     return out
 
 
+def _raw_json_map(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        if not raw.strip():
+            return {}
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return {}
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _logged_feature_quality(
+    ledger: pd.DataFrame, layers: set[str], max_rows: int | None
+) -> dict[str, Any]:
+    work = ledger.tail(int(max_rows)) if max_rows and max_rows > 0 else ledger
+    output: dict[str, Any] = {}
+    for layer, column in (
+        ("base", "base_model_feature_values_json"),
+        ("meta", "meta_model_feature_values_json"),
+    ):
+        if layer not in layers:
+            continue
+        feature_values: dict[str, list[float]] = {}
+        missing_payload_rows = 0
+        nonfinite_cells = 0
+        null_cells = 0
+        for raw in work.get(column, pd.Series(index=work.index, dtype=object)):
+            values = _raw_json_map(raw)
+            if not values:
+                missing_payload_rows += 1
+                continue
+            for feature, value in values.items():
+                if value is None:
+                    null_cells += 1
+                    continue
+                numeric = _safe_float(value)
+                if not math.isfinite(numeric):
+                    nonfinite_cells += 1
+                    continue
+                feature_values.setdefault(str(feature), []).append(numeric)
+        all_zero = sorted(
+            feature
+            for feature, values in feature_values.items()
+            if values and np.all(np.asarray(values, dtype=np.float64) == 0.0)
+        )
+        output[layer] = {
+            "ledger_rows": int(len(work)),
+            "features_observed": int(len(feature_values)),
+            "finite_cells": int(sum(len(values) for values in feature_values.values())),
+            "missing_payload_rows": int(missing_payload_rows),
+            "null_cells": int(null_cells),
+            "nonfinite_cells": int(nonfinite_cells),
+            "all_zero_feature_count": int(len(all_zero)),
+            "all_zero_features": all_zero[:100],
+            "all_zero_note": (
+                "Zeros can be valid for binary, sparse event, centered, and inactive "
+                "regime features; this list is diagnostic, not an automatic failure."
+            ),
+        }
+    return output
+
+
 def _load_matrix(path: Path) -> pd.DataFrame:
     matrix = pd.read_parquet(path)
     out = matrix.copy()
@@ -256,6 +320,7 @@ def _compare_ledger_to_logical_store(
         "tolerance": float(tolerance),
         "start_ts": min_ts.isoformat(),
         "end_ts": max_ts.isoformat(),
+        "logged_feature_quality": _logged_feature_quality(work, layers, max_rows),
     }
     return comparisons, missing, summary
 
@@ -389,6 +454,7 @@ def _compare_ledger_to_sidecars(
         "max_abs_diff": float(comparisons["abs_diff"].max()) if not comparisons.empty else float("nan"),
         "mean_abs_diff": float(comparisons["abs_diff"].mean()) if not comparisons.empty else float("nan"),
         "tolerance": float(tolerance),
+        "logged_feature_quality": _logged_feature_quality(work, layers, max_rows),
     }
     return comparisons, missing, summary
 
@@ -418,6 +484,41 @@ def _parse_layers(raw: str) -> set[str]:
     return layers or {"base", "meta"}
 
 
+def _coverage_gate_failures(
+    summary: dict[str, Any],
+    *,
+    min_compared_rows: int,
+    min_common_cells: int,
+    require_complete_sidecar_coverage: bool,
+) -> list[str]:
+    failures: list[str] = []
+    compared_rows = int(summary.get("compared_rows", 0) or 0)
+    common_cells = int(summary.get("common_cells", 0) or 0)
+    if compared_rows <= 0:
+        failures.append("no_compared_rows")
+    elif compared_rows < int(min_compared_rows):
+        failures.append(
+            f"compared_rows={compared_rows}<min_compared_rows={int(min_compared_rows)}"
+        )
+    if common_cells <= 0:
+        failures.append("no_common_cells")
+    elif common_cells < int(min_common_cells):
+        failures.append(
+            f"common_cells={common_cells}<min_common_cells={int(min_common_cells)}"
+        )
+    if require_complete_sidecar_coverage:
+        ledger_rows = int(summary.get("ledger_rows", 0) or 0)
+        missing_exact = int(summary.get("missing_exact_sidecar_rows", 0) or 0)
+        missing_symbols = int(summary.get("missing_symbol_rows", 0) or 0)
+        if compared_rows != ledger_rows or missing_exact or missing_symbols:
+            failures.append(
+                "incomplete_exact_sidecar_coverage:"
+                f"compared={compared_rows} ledger={ledger_rows} "
+                f"missing_sidecar={missing_exact} missing_symbol={missing_symbols}"
+            )
+    return failures
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ledger", required=True, type=Path)
@@ -427,6 +528,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--layers", default="base,meta", type=_parse_layers)
     parser.add_argument("--tolerance", type=float, default=1e-7)
     parser.add_argument("--max-rows", type=int, default=0)
+    parser.add_argument("--min-compared-rows", type=int, default=1)
+    parser.add_argument("--min-common-cells", type=int, default=1)
+    parser.add_argument(
+        "--require-complete-sidecar-coverage",
+        action="store_true",
+        help="Fail unless every audited ledger row has an exact timestamp/symbol sidecar.",
+    )
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -458,6 +566,17 @@ def main(argv: Iterable[str] | None = None) -> int:
             tolerance=float(args.tolerance),
             max_rows=args.max_rows if args.max_rows > 0 else None,
         )
+    coverage_failures = _coverage_gate_failures(
+        summary,
+        min_compared_rows=max(0, int(args.min_compared_rows)),
+        min_common_cells=max(0, int(args.min_common_cells)),
+        require_complete_sidecar_coverage=bool(
+            args.require_complete_sidecar_coverage
+        ),
+    )
+    mismatch_cells = int(summary.get("mismatch_cells", 0) or 0)
+    summary["coverage_gate_failures"] = coverage_failures
+    summary["parity_gate_pass"] = bool(not coverage_failures and mismatch_cells == 0)
     _write_outputs(
         output_dir=args.output_dir,
         comparisons=comparisons,
@@ -471,7 +590,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(worst.to_string(index=False))
     if not missing.empty:
         print(missing.head(20).to_string(index=False))
-    return 1 if int(summary.get("mismatch_cells", 0)) > 0 else 0
+    return 1 if not summary["parity_gate_pass"] else 0
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ class EconomicRegimeRelevanceConfig:
     side_col: str = "side_name"
     archetype_col: str = "archetype_policy_key"
     score_col: str = "score_meta_base_soft_label"
+    score_is_percentile: bool = False
     month_col: str = "month"
     timestamp_col: str = "__ts__"
     ev_col: str = "ev_after_1pct"
@@ -109,6 +110,197 @@ class EconomicRegimeRelevanceResult:
     ebm_candidate_manifest: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class TailEpisodeCompositeConfig:
+    """Constraints for sparse, reusable high-surprise episode rules."""
+
+    quantiles: tuple[float, ...] = (0.05, 0.10, 0.90, 0.95)
+    min_event_days: int = 4
+    max_term_false_positive_rate: float = 0.25
+    min_term_lift: float = 0.80
+    max_false_positive_rate: float = 0.08
+    min_lift: float = 1.5
+    max_single_candidates: int = 40
+    max_pair_candidates: int = 600
+    max_selected: int = 12
+    max_activation_jaccard: float = 0.85
+
+
+def _tail_depth(values: np.ndarray, threshold: float, direction: str, scale: float) -> np.ndarray:
+    if direction == "low":
+        return np.maximum((threshold - values) / max(scale, 1e-6), 0.0)
+    return np.maximum((values - threshold) / max(scale, 1e-6), 0.0)
+
+
+def materialize_tail_episode_composites(
+    frame: pd.DataFrame, definitions: Sequence[Mapping[str, Any]]
+) -> pd.DataFrame:
+    """Materialize binary and continuous tail-rule intensity features."""
+    output: dict[str, np.ndarray] = {}
+    for definition in definitions:
+        name = str(definition["name"])
+        term_masks: list[np.ndarray] = []
+        term_depths: list[np.ndarray] = []
+        for term in definition["terms"]:
+            values = pd.to_numeric(frame[str(term["feature"])], errors="coerce").to_numpy(
+                dtype=np.float32
+            )
+            threshold = float(term["threshold"])
+            direction = str(term["direction"])
+            valid = np.isfinite(values)
+            mask = valid & (values <= threshold if direction == "low" else values >= threshold)
+            depth = np.where(
+                valid,
+                _tail_depth(values, threshold, direction, float(term["scale"])),
+                0.0,
+            )
+            term_masks.append(mask)
+            term_depths.append(depth)
+        active = np.logical_and.reduce(term_masks)
+        intensity = np.minimum.reduce(term_depths)
+        output[name] = active.astype(np.float32)
+        output[f"{name}__intensity"] = np.where(active, intensity, 0.0).astype(np.float32)
+    return pd.DataFrame(output, index=frame.index)
+
+
+def discover_tail_episode_composites(
+    frame: pd.DataFrame,
+    *,
+    event_col: str,
+    feature_columns: Sequence[str],
+    config: TailEpisodeCompositeConfig = TailEpisodeCompositeConfig(),
+) -> tuple[list[dict[str, Any]], pd.DataFrame]:
+    """Find train-only single/pair tail rules with explicit non-event control."""
+    from itertools import combinations
+
+    event = frame[event_col].fillna(0).astype(bool).to_numpy()
+    prevalence = float(event.mean())
+    non_event_count = max(int((~event).sum()), 1)
+    terms: list[dict[str, Any]] = []
+    activations: list[np.ndarray] = []
+    for feature in feature_columns:
+        values = pd.to_numeric(frame[feature], errors="coerce").to_numpy(dtype=np.float32)
+        finite = values[np.isfinite(values)]
+        if len(finite) < 100 or np.nanstd(finite) <= 1e-8:
+            continue
+        q25, q75 = np.nanquantile(finite, [0.25, 0.75])
+        scale = float(max(q75 - q25, np.nanstd(finite) * 0.25, 1e-6))
+        for quantile in config.quantiles:
+            threshold = float(np.nanquantile(finite, quantile))
+            direction = "low" if quantile < 0.5 else "high"
+            active = np.isfinite(values) & (
+                values <= threshold if direction == "low" else values >= threshold
+            )
+            event_hits = int((active & event).sum())
+            fpr = float((active & ~event).sum() / non_event_count)
+            precision = float(event[active].mean()) if active.any() else 0.0
+            lift = precision / max(prevalence, 1e-9)
+            if event_hits >= config.min_event_days and fpr <= config.max_term_false_positive_rate and lift >= config.min_term_lift:
+                terms.append({"feature": str(feature), "direction": direction, "quantile": float(quantile), "threshold": threshold, "scale": scale, "event_hits": event_hits, "fpr": fpr, "lift": lift})
+                activations.append(active)
+    order = np.argsort([-(term["lift"] * np.sqrt(term["event_hits"])) for term in terms])
+    diverse_terms: list[dict[str, Any]] = []
+    diverse_activations: list[np.ndarray] = []
+    for index in order:
+        active = activations[index]
+        if any(
+            float((active & prior).sum() / max((active | prior).sum(), 1)) > 0.92
+            for prior in diverse_activations
+        ):
+            continue
+        diverse_terms.append(terms[index])
+        diverse_activations.append(active)
+        if len(diverse_terms) >= config.max_single_candidates:
+            break
+    terms = diverse_terms
+    activations = diverse_activations
+
+    candidates: list[tuple[list[dict[str, Any]], np.ndarray]] = [([term], active) for term, active in zip(terms, activations)]
+    for left, right in list(combinations(range(len(terms)), 2))[: config.max_pair_candidates]:
+        if terms[left]["feature"] == terms[right]["feature"]:
+            continue
+        candidates.append(([terms[left], terms[right]], activations[left] & activations[right]))
+    scored: list[dict[str, Any]] = []
+    for terms_local, active in candidates:
+        event_hits = int((active & event).sum())
+        if event_hits < config.min_event_days or not active.any():
+            continue
+        precision = float(event[active].mean())
+        recall = float(event_hits / max(event.sum(), 1))
+        fpr = float((active & ~event).sum() / non_event_count)
+        lift = precision / max(prevalence, 1e-9)
+        correlation = float(np.corrcoef(active.astype(float), event.astype(float))[0, 1])
+        if fpr > config.max_false_positive_rate or lift < config.min_lift or not np.isfinite(correlation):
+            continue
+        scored.append({"terms": terms_local, "activation": active, "event_hits": event_hits, "precision": precision, "recall": recall, "false_positive_rate": fpr, "lift": lift, "correlation": correlation, "objective": correlation + 0.15 * recall + 0.05 * np.log1p(lift) - 0.25 * fpr})
+    scored.sort(key=lambda row: float(row["objective"]), reverse=True)
+    def semantic_family(row: Mapping[str, Any]) -> tuple[str, ...]:
+        families = []
+        for term in row["terms"]:
+            feature = str(term["feature"])
+            if "__" in feature:
+                feature = feature.rsplit("__", 1)[-1]
+            for prefix in ("mkt_", "market_", "full_universe_", "universe_", "selected_"):
+                feature = feature.removeprefix(prefix)
+            families.append(feature)
+        return tuple(sorted(set(families)))
+
+    selected: list[dict[str, Any]] = []
+    selected_activation: list[np.ndarray] = []
+    selected_families: set[tuple[str, ...]] = set()
+    covered_event = np.zeros(len(event), dtype=bool)
+    remaining = list(scored)
+    coverage_slots = max(1, int(config.max_selected * 0.60))
+    while remaining and len(selected) < coverage_slots:
+        eligible = []
+        for remaining_index, row in enumerate(remaining):
+            active = row["activation"]
+            if any(
+                float((active & prior).sum() / max((active | prior).sum(), 1))
+                > config.max_activation_jaccard
+                for prior in selected_activation
+            ):
+                continue
+            marginal = int((active & event & ~covered_event).sum())
+            diversity_objective = (
+                marginal / max(int(event.sum()), 1) + 0.25 * float(row["objective"])
+            )
+            eligible.append((diversity_objective, marginal, remaining_index, row))
+        if not eligible:
+            break
+        _, marginal, remaining_index, row = max(
+            eligible, key=lambda item: (item[0], item[1])
+        )
+        active = row["activation"]
+        name = f"tail_episode_composite_{len(selected)}"
+        selected.append({"name": name, "terms": row["terms"]})
+        selected_activation.append(active)
+        selected_families.add(semantic_family(row))
+        covered_event |= active & event
+        remaining.pop(remaining_index)
+    # Reserve capacity for economically distinct interaction mechanisms even
+    # when their event dates overlap a more common state already selected.
+    for row in scored:
+        if len(selected) >= config.max_selected:
+            break
+        family = semantic_family(row)
+        if family in selected_families:
+            continue
+        active = row["activation"]
+        name = f"tail_episode_composite_{len(selected)}"
+        selected.append({"name": name, "terms": row["terms"]})
+        selected_activation.append(active)
+        selected_families.add(family)
+    report = pd.DataFrame(
+        [
+            {key: value for key, value in row.items() if key not in {"terms", "activation"}}
+            | {"terms": " & ".join(f"{term['feature']}:{term['direction']}@{term['quantile']:.2f}" for term in row["terms"])}
+            for row in scored
+        ]
+    )
+    return selected, report
+
+
 def _safe_numeric(frame: pd.DataFrame, col: str, default: float = np.nan) -> pd.Series:
     if col in frame.columns:
         return pd.to_numeric(frame[col], errors="coerce").replace(
@@ -130,7 +322,9 @@ def add_global_topk_surprise_targets(
 
     out = frame.copy()
     score = _safe_numeric(out, config.score_col)
-    if config.month_col in out.columns:
+    if bool(config.score_is_percentile):
+        rank = score.clip(lower=0.0, upper=1.0)
+    elif config.month_col in out.columns:
         rank = score.groupby(out[config.month_col], sort=False).rank(
             pct=True, method="first"
         )

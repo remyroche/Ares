@@ -40,7 +40,10 @@ DEFAULT_SPREAD_COST_BLACKLIST_BASELINE_PATH = (
     "data_perp/exchanges/krakenfutures/spread_model/"
     "per_asset_spread_baseline_latest.csv"
 )
-DEFAULT_SPREAD_COST_BLACKLIST_THRESHOLD_BPS = 125.0
+# The broad deployment contract targets roughly 170 Kraken USD perps.  On the
+# frozen spread baseline this corresponds to about 70 bps average spread; the
+# candle-level ticker guard remains a separate, stricter execution check.
+DEFAULT_SPREAD_COST_BLACKLIST_THRESHOLD_BPS = 70.0
 _SPREAD_COST_EXCLUSION_CACHE: dict[tuple[str, float, float], set[str]] = {}
 DEDUP_QUOTES = ("USD", "USDC", "USDT")
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}

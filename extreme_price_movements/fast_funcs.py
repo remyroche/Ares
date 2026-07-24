@@ -2345,6 +2345,79 @@ def _numba_live_zscore_update(
 
 
 @jit(nopython=True, parallel=True, cache=True)
+def _numba_raw_rolling_state_update(
+    buffer,
+    valid,
+    ptr,
+    count,
+    sums,
+    sum_sq,
+    latest,
+    op_code,
+    out,
+):
+    """Append one row to a persisted per-symbol rolling primitive state.
+
+    ``op_code``: 0=sum, 1=mean, 2=std, 3=max, 4=min.  This mirrors the
+    previously Python-level ``RawRollingFeatureState.update`` calculation, but
+    updates all symbols in parallel without allocating a pandas object.
+    """
+    n_symbols = latest.shape[0]
+    window = buffer.shape[1]
+    for j in prange(n_symbols):
+        slot = ptr[j]
+        if valid[j, slot]:
+            old = buffer[j, slot]
+            if np.isfinite(old):
+                sums[j] -= old
+                sum_sq[j] -= old * old
+                count[j] = max(count[j] - 1, 0)
+
+        value = latest[j]
+        if np.isfinite(value):
+            buffer[j, slot] = value
+            valid[j, slot] = True
+            sums[j] += value
+            sum_sq[j] += value * value
+            count[j] += 1
+        else:
+            buffer[j, slot] = np.nan
+            valid[j, slot] = False
+        ptr[j] = (slot + 1) % window
+
+        n = count[j]
+        if n <= 0:
+            out[j] = np.nan
+        elif op_code == 0:
+            out[j] = np.float32(sums[j])
+        elif op_code == 1:
+            out[j] = np.float32(sums[j] / n)
+        elif op_code == 2:
+            if n <= 1:
+                out[j] = np.nan
+            else:
+                variance = (sum_sq[j] - (sums[j] * sums[j] / n)) / (n - 1)
+                out[j] = np.float32(np.sqrt(max(variance, 0.0)))
+        else:
+            found = False
+            extreme = 0.0
+            for k in range(window):
+                if not valid[j, k]:
+                    continue
+                candidate = buffer[j, k]
+                if not np.isfinite(candidate):
+                    continue
+                if not found:
+                    extreme = candidate
+                    found = True
+                elif op_code == 3 and candidate > extreme:
+                    extreme = candidate
+                elif op_code == 4 and candidate < extreme:
+                    extreme = candidate
+            out[j] = np.float32(extreme) if found else np.nan
+
+
+@jit(nopython=True, parallel=True, cache=True)
 def _numba_causal_clip_parallel(mat, lo_mat, hi_mat):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)

@@ -385,6 +385,181 @@ def _global_topk_breakdown_metrics(
     return pd.DataFrame(rows)
 
 
+def _topk_selected(frame: pd.DataFrame, score_col: str, top_frac: float = 0.10) -> pd.DataFrame:
+    score = _num(frame, score_col)
+    valid = frame.loc[score.notna()].copy()
+    if valid.empty:
+        return valid
+    valid["_score"] = score.loc[valid.index].astype(np.float32)
+    n = max(1, int(math.ceil(len(valid) * float(top_frac))))
+    return valid.sort_values("_score", ascending=False).head(n)
+
+
+def _high_surprise_event_metrics(
+    frame: pd.DataFrame,
+    *,
+    arm: str,
+    selector: str,
+    score_col: str,
+    top_frac: float = 0.10,
+    min_event_rows: int = 3,
+) -> pd.DataFrame:
+    """Daily side x archetype surprise events on the actual selected top tail."""
+
+    selected = _topk_selected(frame, score_col, top_frac)
+    if selected.empty or "__ts__" not in selected.columns:
+        return pd.DataFrame()
+    ts = pd.to_datetime(selected["__ts__"], utc=True, errors="coerce")
+    clean = _num(selected, "clean_exec")
+    clean_label = _num(selected, "clean_exec_label")
+    if clean.isna().all() and clean_label.notna().any():
+        clean = clean_label
+    score = _num(selected, score_col).clip(0.0, 1.0)
+    ev = _num(selected, "ev_after_1pct")
+    dirty = _num(selected, "dirty_positive")
+    bad = _num(selected, "full_path_bad_mae_1r")
+    timeout = _num(selected, "timeout")
+    arch = (
+        selected["archetype_policy_key"].astype(str)
+        if "archetype_policy_key" in selected.columns
+        else selected.get(
+            "archetype_label_family",
+            pd.Series("missing", index=selected.index),
+        ).astype(str)
+    )
+    work = pd.DataFrame(
+        {
+            "event_day": ts.dt.floor("D").dt.tz_localize(None),
+            "side_name": selected.get(
+                "side_name", pd.Series("missing", index=selected.index)
+            )
+            .astype(str)
+            .str.lower(),
+            "archetype_policy_key": arch,
+            "signed_hit_surprise": clean.astype(float) - score.astype(float),
+            "positive_hit_surprise": (clean.astype(float) - score.astype(float)).clip(
+                lower=0.0
+            ),
+            "negative_hit_surprise": (
+                -(clean.astype(float) - score.astype(float))
+            ).clip(lower=0.0),
+            "ev_after_1pct": ev,
+            "clean_exec": clean,
+            "dirty_positive": dirty,
+            "full_path_bad_mae_1r": bad,
+            "timeout": timeout,
+            "score": score,
+        }
+    )
+    work = work.loc[work["event_day"].notna()]
+    if work.empty:
+        return pd.DataFrame()
+    grouped = work.groupby(
+        ["event_day", "side_name", "archetype_policy_key"],
+        sort=True,
+        dropna=False,
+    ).agg(
+        selected_rows=("signed_hit_surprise", "size"),
+        mean_score=("score", "mean"),
+        signed_hit_surprise_mean=("signed_hit_surprise", "mean"),
+        positive_hit_surprise_mean=("positive_hit_surprise", "mean"),
+        negative_hit_surprise_mean=("negative_hit_surprise", "mean"),
+        mean_ev_after_1pct=("ev_after_1pct", "mean"),
+        clean_exec_precision=("clean_exec", "mean"),
+        dirty_positive_rate=("dirty_positive", "mean"),
+        full_path_bad_mae_rate=("full_path_bad_mae_1r", "mean"),
+        timeout_rate=("timeout", "mean"),
+    )
+    grouped = grouped.loc[grouped["selected_rows"].ge(int(min_event_rows))].reset_index()
+    if grouped.empty:
+        return grouped
+    grouped.insert(0, "top_frac", float(top_frac))
+    grouped.insert(0, "score_col", score_col)
+    grouped.insert(0, "selector", selector)
+    grouped.insert(0, "arm", arm)
+    grouped["abs_hit_surprise_mean"] = grouped["signed_hit_surprise_mean"].abs()
+    grouped["surprise_direction"] = np.where(
+        grouped["signed_hit_surprise_mean"].lt(0.0), "negative", "positive"
+    )
+    return grouped
+
+
+def _high_surprise_event_deltas(events: pd.DataFrame) -> pd.DataFrame:
+    if events.empty or "arm" not in events.columns:
+        return pd.DataFrame()
+    key_cols = [
+        "selector",
+        "score_col",
+        "top_frac",
+        "event_day",
+        "side_name",
+        "archetype_policy_key",
+    ]
+    metric_cols = [
+        "selected_rows",
+        "signed_hit_surprise_mean",
+        "positive_hit_surprise_mean",
+        "negative_hit_surprise_mean",
+        "abs_hit_surprise_mean",
+        "mean_ev_after_1pct",
+        "clean_exec_precision",
+        "dirty_positive_rate",
+        "full_path_bad_mae_rate",
+        "timeout_rate",
+    ]
+    baseline = events.loc[
+        events["arm"].eq(BASELINE_ARM), key_cols + metric_cols
+    ].copy()
+    if baseline.empty:
+        return pd.DataFrame()
+    quantile_rows = []
+    for keys, group in baseline.groupby(["selector", "score_col", "top_frac"], sort=False):
+        cut = float(group["abs_hit_surprise_mean"].quantile(0.90))
+        for _, row in group.iterrows():
+            quantile_rows.append(
+                {
+                    "selector": keys[0],
+                    "score_col": keys[1],
+                    "top_frac": keys[2],
+                    "event_day": row["event_day"],
+                    "side_name": row["side_name"],
+                    "archetype_policy_key": row["archetype_policy_key"],
+                    "baseline_high_surprise_cut": cut,
+                    "baseline_high_surprise_event": bool(
+                        float(row["abs_hit_surprise_mean"]) >= cut
+                    ),
+                }
+            )
+    high_flags = pd.DataFrame(quantile_rows)
+    baseline = baseline.rename(columns={col: f"baseline_{col}" for col in metric_cols})
+    merged = events.merge(baseline, on=key_cols, how="left").merge(
+        high_flags, on=key_cols, how="left"
+    )
+    for col in metric_cols:
+        merged[f"delta_vs_{BASELINE_ARM}__{col}"] = pd.to_numeric(
+            merged[col], errors="coerce"
+        ) - pd.to_numeric(merged[f"baseline_{col}"], errors="coerce")
+    baseline_abs = pd.to_numeric(
+        merged["baseline_abs_hit_surprise_mean"], errors="coerce"
+    )
+    current_abs = pd.to_numeric(merged["abs_hit_surprise_mean"], errors="coerce")
+    ev_delta = pd.to_numeric(
+        merged[f"delta_vs_{BASELINE_ARM}__mean_ev_after_1pct"], errors="coerce"
+    )
+    merged["surprise_abs_contraction"] = baseline_abs - current_abs
+    merged["surprise_abs_contraction_frac"] = (
+        merged["surprise_abs_contraction"] / baseline_abs.replace(0.0, np.nan)
+    )
+    merged["high_surprise_significantly_improved"] = (
+        merged["baseline_high_surprise_event"].fillna(False).astype(bool)
+        & (
+            merged["surprise_abs_contraction_frac"].ge(0.20)
+            | ev_delta.ge(0.0)
+        )
+    )
+    return merged
+
+
 def _load_arm_predictions(arm_dir: Path) -> pd.DataFrame | None:
     path = arm_dir / PREDICTION_NAME
     if path.exists():
@@ -499,6 +674,7 @@ def build_report(
         )
     )
     all_rows: list[pd.DataFrame] = []
+    event_rows: list[pd.DataFrame] = []
     arm_summary_rows: list[dict[str, Any]] = []
     group_specs = [
         ("overall", []),
@@ -559,6 +735,15 @@ def build_report(
                 if score_col == "score_base"
                 else score_col.removeprefix("score_")
             )
+            events = _high_surprise_event_metrics(
+                frame,
+                arm=arm,
+                selector=selector,
+                score_col=score_col,
+                top_frac=0.10,
+            )
+            if not events.empty:
+                event_rows.append(events)
             for scope, group_cols in group_specs:
                 missing = [col for col in group_cols if col not in frame.columns]
                 if missing:
@@ -587,6 +772,10 @@ def build_report(
     metrics_df = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
     delta_df = _add_baseline_deltas(metrics_df)
     base_delta_df = _add_base_score_deltas(metrics_df)
+    events_df = (
+        pd.concat(event_rows, ignore_index=True) if event_rows else pd.DataFrame()
+    )
+    event_delta_df = _high_surprise_event_deltas(events_df)
     arm_summary = pd.DataFrame(arm_summary_rows)
     metrics_path = out_dir / "train_meta_extended_pool_ablation_topk_metrics.csv"
     delta_path = out_dir / "train_meta_extended_pool_ablation_delta_vs_baseline.csv"
@@ -594,14 +783,22 @@ def build_report(
         out_dir / "train_meta_extended_pool_ablation_delta_vs_base_score.csv"
     )
     summary_path = out_dir / "train_meta_extended_pool_ablation_arm_summary.csv"
+    events_path = out_dir / "train_meta_extended_pool_ablation_high_surprise_events.csv"
+    event_delta_path = (
+        out_dir / "train_meta_extended_pool_ablation_high_surprise_event_deltas.csv"
+    )
     metrics_df.to_csv(metrics_path, index=False)
     delta_df.to_csv(delta_path, index=False)
     base_delta_df.to_csv(base_delta_path, index=False)
+    events_df.to_csv(events_path, index=False)
+    event_delta_df.to_csv(event_delta_path, index=False)
     arm_summary.to_csv(summary_path, index=False)
     outputs: dict[str, str] = {
         "all_metrics": str(metrics_path),
         "delta_vs_baseline": str(delta_path),
         "delta_vs_base_score": str(base_delta_path),
+        "high_surprise_events": str(events_path),
+        "high_surprise_event_deltas": str(event_delta_path),
         "arm_summary": str(summary_path),
     }
     for scope in (
@@ -619,6 +816,13 @@ def build_report(
         "top_fracs": list(TOP_FRACS),
         "baseline_arm": BASELINE_ARM,
         "min_group_rows": int(min_group_rows),
+        "high_surprise_event_contract": (
+            "Daily side x archetype cells are built from selected top10 rows. "
+            "Baseline high-surprise events are baseline-current cells above the "
+            "90th percentile of absolute mean hit surprise for each selector. "
+            "An arm significantly improves an event when absolute surprise "
+            "contracts by at least 20% or mean EV is no worse."
+        ),
         "outputs": outputs,
     }
     (out_dir / "manifest.json").write_text(

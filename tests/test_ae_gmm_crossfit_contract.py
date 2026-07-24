@@ -92,6 +92,7 @@ def test_ae_gmm_crossfit_availability_features_are_materialized(monkeypatch: pyt
         lambda **kwargs: [(np.arange(0, 600, dtype=np.int64), np.arange(600, 1000, dtype=np.int64))],
     )
 
+    full_valid_context: dict[str, object] = {}
     x_train_out, x_valid_out, emitted, diag = smoke._append_fold_ae_gmm_state_features(
         x_train=x_train,
         x_valid=x_valid,
@@ -102,6 +103,18 @@ def test_ae_gmm_crossfit_availability_features_are_materialized(monkeypatch: pyt
         max_train_rows=1000,
         ae_max_iter=2,
         random_state=17,
+        output_feature_subset=[
+            "f0",
+            "f1",
+            "f2",
+            "gmm_prob_0",
+            "ae_gmm_oof_available",
+            "long_gmm_prob_0",
+            "long_ae_gmm_oof_available",
+            "short_gmm_prob_0",
+            "short_ae_gmm_oof_available",
+        ],
+        valid_context_output=full_valid_context,
     )
 
     assert "ae_gmm_oof_available" in emitted
@@ -119,3 +132,6 @@ def test_ae_gmm_crossfit_availability_features_are_materialized(monkeypatch: pyt
     assert diag["ae_gmm_state_crossfit_transformed_rows"] == 400
     assert diag["ae_gmm_state_crossfit_uncovered_rows"] == 600
     assert fit_time_bucket_lengths
+    assert "cluster_speed" not in x_valid_out
+    assert isinstance(full_valid_context.get("frame"), pd.DataFrame)
+    assert "cluster_speed" in full_valid_context["frame"].columns

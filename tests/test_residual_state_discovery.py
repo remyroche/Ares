@@ -23,6 +23,7 @@ from extreme_price_movements.global_residual_latent_state import (
     archetype_state_token,
     build_global_residual_signature,
     build_side_timestamp_states,
+    latent_geometry_diagnostics,
     prepare_archetype_state_partition,
     select_partition_state_features,
 )
@@ -355,6 +356,9 @@ def test_side_timestamp_state_is_shared_input_for_archetype_partition_models() -
     state = gmm.transform(latent)
     temporal = add_temporal_state_features(state, long["__ts__"])
     assert state.filter(regex="^global_state_posterior_[0-9]+$").shape[1] in {2, 3}
+    assert np.isfinite(state["global_state_posterior_max"]).all()
+    assert (state["global_state_posterior_margin"] >= 0.0).all()
+    assert (state["global_state_effective_components"] >= 1.0).all()
     assert "global_state_latent_speed" in temporal
     wrong_partition = long.copy()
     wrong_partition["archetype_policy_key"] = "breakout"
@@ -427,10 +431,52 @@ def test_global_signature_and_hybrid_encoder_are_outcome_free_at_transform() -> 
     assert np.isfinite(transformed["global_state_input_novelty"]).all()
     assert "recent model outcomes" in encoder.manifest()["inference_contract"]
     assert encoder.manifest()["partition"]["token"] == "long_mixed"
+    assert encoder.manifest()["training_report"]["mean_sample_weight"] >= 1.0
+    assert encoder.manifest()["training_report"]["latent_covariance_weight"] > 0.0
     wrong_partition = oos.copy()
     wrong_partition["archetype_policy_key"] = "breakout"
     with pytest.raises(ValueError, match="partition mismatch"):
         encoder.transform(wrong_partition)
+
+
+def test_variational_encoder_is_deterministic_oos_and_gmm_ready() -> None:
+    rows = _reliability_rows()
+    rows["selected_for_monitor"] = True
+    rows["score_meta_base_soft_label"] = rows["hit_probability"].astype(np.float32)
+    rows["mkt_systemic_deleveraging_score"] = np.sin(np.arange(len(rows)) / 9.0)
+    states, features, _ = build_side_timestamp_states(
+        rows,
+        ["mkt_systemic_deleveraging_score"],
+        [],
+        StateVectorConfig(min_feature_coverage=0.1),
+    )
+    local = prepare_archetype_state_partition(
+        states, side="long", archetype="mixed"
+    ).reset_index(drop=True)
+    encoder = GlobalResidualSignatureEncoder(
+        ResidualEncoderConfig(
+            encoder_kind="variational_ae",
+            latent_dim=3,
+            hidden_dims=(12, 6),
+            epochs=5,
+            patience=2,
+            batch_size=64,
+            kl_warmup_epochs=2,
+        )
+    ).fit(local, features)
+    oos = local.drop(
+        columns=[name for name in local if name.startswith("target_")],
+        errors="ignore",
+    )
+    first = encoder.transform(oos)
+    second = encoder.transform(oos)
+    np.testing.assert_allclose(first, second, atol=1e-7)
+    geometry = latent_geometry_diagnostics(
+        first.filter(regex=r"^global_state_latent_").to_numpy()
+    )
+    assert geometry["finite_row_share"] == pytest.approx(1.0)
+    assert geometry["dimensions"] == 3
+    assert encoder.manifest()["training_report"]["effective_kl_weight"] > 0.0
 
 
 def test_side_archetype_state_priors_transform_without_outcomes() -> None:

@@ -8,6 +8,7 @@ __all__ = [
     "make_exchange",
     "fetch_ohlcv_for_symbols",
     "select_candidates",
+    "load_or_compute_features",
     "generate_features",
     "ModelOrchestrator",
     "run_inference_chain",
@@ -24,6 +25,10 @@ _EXPORTS = {
     "make_exchange": ("extreme_price_movements.inference.data_fetcher", "make_exchange"),
     "fetch_ohlcv_for_symbols": ("extreme_price_movements.inference.data_fetcher", "fetch_ohlcv_for_symbols"),
     "select_candidates": ("extreme_price_movements.inference.candidate_selector", "select_candidates"),
+    "load_or_compute_features": (
+        "extreme_price_movements.inference.feature_generator",
+        "load_or_compute_features",
+    ),
     "generate_features": ("extreme_price_movements.inference.feature_generator", "generate_features"),
     "ModelOrchestrator": ("extreme_price_movements.inference.model_orchestrator", "ModelOrchestrator"),
     "run_inference_chain": ("extreme_price_movements.inference.model_orchestrator", "run_inference_chain"),

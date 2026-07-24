@@ -26,6 +26,12 @@ from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
     _effective_selected_feature_contract,
 )
+from extreme_price_movements.inference.canonical_meta_postprocessor import (
+    CanonicalMetaPostprocessor,
+)
+from extreme_price_movements.inference.side_residual_expert import (
+    SideResidualExpertBundle,
+)
 from extreme_price_movements.inference.parity import (
     calibrated_score_and_threshold,
     strategy_core_id,
@@ -33,8 +39,13 @@ from extreme_price_movements.inference.parity import (
 from extreme_price_movements.inference.policy_rank_reference import (
     PolicyRankReferenceStore,
 )
+from extreme_price_movements.inference.threshold_basis_policy import (
+    apply_threshold_basis_policy_to_decisions,
+    load_threshold_basis_policy,
+)
 from extreme_price_movements.model_loader import load_full_state
 from extreme_price_movements.portfolio_policy_replay import (
+    dynamic_threshold_for_count,
     load_portfolio_policy_params,
     replay_candidates,
 )
@@ -42,6 +53,26 @@ from extreme_price_movements.simple_position_sizer import load_calibration_curve
 
 
 JOIN_KEYS = ["timestamp", "symbol", "side", "strategy_id"]
+
+ACTIVE_CHAIN_FIELDS = (
+    "base_pred",
+    "meta_pred",
+    "v9_tail95_predecessor_rank",
+    "score_regime_calibrated",
+    "expected_net_ev_after_1pct",
+    "expected_ev_rank_score",
+)
+
+ACTIVE_ADMISSION_FIELDS = (
+    "threshold_basis_selected",
+    "threshold_basis_rank_score",
+    "threshold_basis_corrected_expected_ev",
+    "threshold_basis_corrected_expected_ev_rank",
+    "threshold_basis_side_archetype_recent_ev_correction",
+    "threshold_basis_ev_target_local_support",
+    "threshold_basis_reference_asof",
+    "threshold_basis_reason",
+)
 
 
 REPLAY_FIELD_GROUPS: tuple[dict[str, Any], ...] = (
@@ -142,6 +173,74 @@ def _read_table(path: str | Path | None) -> pd.DataFrame:
     raise ValueError(f"Unsupported table type: {p}")
 
 
+def _filter_table_since(frame: pd.DataFrame, since: str | pd.Timestamp | None) -> pd.DataFrame:
+    """Restrict live audit inputs to the current supervised inference session."""
+    if frame.empty or since is None:
+        return frame
+    cutoff = pd.to_datetime(since, utc=True, errors="coerce")
+    if pd.isna(cutoff):
+        raise ValueError(f"Invalid reconciliation --since timestamp: {since!r}")
+
+    # Lifecycle audit rows historically stored a host-local, timezone-naive
+    # display timestamp even though entry_time/exit_time were canonical UTC.
+    # Prefer the event-specific contract and only accept the generic timestamp
+    # as a fallback when it carries an explicit timezone. This prevents an old
+    # CEST row from being interpreted as UTC and leaking into the current live
+    # session audit.
+    if "lifecycle_event" in frame.columns:
+        event = frame["lifecycle_event"].fillna("").astype(str).str.lower()
+        action = (
+            frame["action"].fillna("").astype(str).str.lower()
+            if "action" in frame.columns
+            else pd.Series("", index=frame.index, dtype=object)
+        )
+        is_exit = event.str.contains("exit|close", regex=True) | action.eq("exit")
+        is_entry = event.str.contains("entry", regex=False) | action.eq("enter")
+        event_ts = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+        if "exit_time" in frame.columns:
+            exit_ts = pd.to_datetime(frame["exit_time"], utc=True, errors="coerce")
+            event_ts.loc[is_exit] = exit_ts.loc[is_exit]
+        if "entry_time" in frame.columns:
+            entry_ts = pd.to_datetime(frame["entry_time"], utc=True, errors="coerce")
+            event_ts.loc[is_entry] = entry_ts.loc[is_entry]
+        if "timestamp" in frame.columns:
+            raw_timestamp = frame["timestamp"]
+
+            def _has_explicit_timezone(value: Any) -> bool:
+                if value is None or pd.isna(value):
+                    return False
+                try:
+                    return pd.Timestamp(value).tzinfo is not None
+                except (TypeError, ValueError):
+                    return False
+
+            def _parse_explicit_utc(value: Any) -> pd.Timestamp:
+                if not _has_explicit_timezone(value):
+                    return pd.NaT
+                return pd.Timestamp(value).tz_convert("UTC")
+
+            timezone_aware = raw_timestamp.map(_has_explicit_timezone)
+            fallback = event_ts.isna() & timezone_aware
+            if bool(fallback.any()):
+                generic_ts = raw_timestamp.map(_parse_explicit_utc)
+                event_ts.loc[fallback] = generic_ts.loc[fallback]
+        return frame.loc[event_ts >= cutoff].copy()
+
+    for column in (
+        "decision_ts",
+        "timestamp",
+        "entry_time",
+        "exit_time",
+        "created_at",
+        "updated_at",
+    ):
+        if column not in frame.columns:
+            continue
+        values = pd.to_datetime(frame[column], utc=True, errors="coerce")
+        return frame.loc[values >= cutoff].copy()
+    return frame.iloc[0:0].copy()
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(k): _json_safe(v) for k, v in value.items()}
@@ -231,6 +330,30 @@ def _feature_frame_from_json(value: Any, *, symbol: str) -> pd.DataFrame:
     return pd.DataFrame([numeric], index=[str(symbol)])
 
 
+def _feature_frame_from_snapshot(
+    value: Any,
+    *,
+    symbol: str,
+    categorical: Sequence[str] = (),
+) -> pd.DataFrame:
+    """Decode a logged model snapshot without destroying categorical keys."""
+    mapping = _json_mapping(value)
+    if not mapping:
+        return pd.DataFrame()
+    categorical_set = {str(name) for name in categorical}
+    decoded: dict[str, Any] = {}
+    for key, raw in mapping.items():
+        name = str(key)
+        if name in categorical_set:
+            decoded[name] = str(raw)
+            continue
+        try:
+            decoded[name] = float(raw)
+        except (TypeError, ValueError):
+            decoded[name] = np.nan
+    return pd.DataFrame([decoded], index=[str(symbol)])
+
+
 def _normalise_side(value: Any, strategy_id: Any = "") -> str:
     raw = str(value or "").lower()
     if raw in {"1", "1.0", "long", "buy"}:
@@ -315,11 +438,133 @@ def _logged_meta_prediction(
     if missing:
         return np.nan, f"incomplete_logged_meta_features:{len(missing)}"
     X = meta_features.reindex(columns=feat_cols)
-    X = X.apply(pd.to_numeric, errors="coerce").astype(np.float32)
+    # Training uses lgbm_pipeline._frame(), which maps every non-finite model
+    # input to the neutral value zero.  Reconciliation must use the same
+    # adapter; relying on LightGBM's native missing-value branch here can
+    # produce a different score from the live/training contract.
+    X = (
+        X.apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], 0.0)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
     pred = meta_model.predict(X)
+    score_alignment = getattr(meta_model, "s52_meta_score_alignment_", None)
+    if isinstance(score_alignment, dict) and score_alignment.get("enabled"):
+        from extreme_price_movements.inference.s52_meta_score_alignment import (
+            apply_s52_meta_score_alignment,
+        )
+
+        pred = apply_s52_meta_score_alignment(pred, score_alignment, side=side)
     if len(pred) <= 0:
         return np.nan, "empty_meta_prediction"
-    return float(pred[0]), "logged_final_meta_input"
+    source = (
+        "logged_final_meta_input_with_score_alignment"
+        if isinstance(score_alignment, dict) and score_alignment.get("enabled")
+        else "logged_final_meta_input"
+    )
+    return float(pred[0]), source
+
+
+def _load_active_post_meta_chain(
+    data_root: str | Path,
+    run_id: str,
+) -> tuple[SideResidualExpertBundle | None, CanonicalMetaPostprocessor | None]:
+    """Load the active side expert and V9/MLP chain when packaged.
+
+    Older bundles do not have these layers, so reconciliation retains the
+    shared-meta fallback for them. Current bundles must replay the exact active
+    chain rather than incorrectly comparing their expert rank with the shared
+    meta backbone score.
+    """
+    policy_root = Path(data_root) / "artifacts" / str(run_id) / "policy_params"
+    expert_path = policy_root / "side_residual_expert.joblib"
+    post_paths = (
+        policy_root / "v9_tail95_predecessor_bundle.joblib",
+        policy_root / "residual_event_state.joblib",
+        policy_root / "composite_policy_regime_ev_calibration.json",
+    )
+    expert = SideResidualExpertBundle.load(expert_path) if expert_path.is_file() else None
+    postprocessor = (
+        CanonicalMetaPostprocessor.load(
+            predecessor_bundle_path=post_paths[0],
+            residual_event_state_path=post_paths[1],
+            regime_ev_artifact_path=post_paths[2],
+        )
+        if all(path.is_file() for path in post_paths)
+        else None
+    )
+    return expert, postprocessor
+
+
+def _replay_active_post_meta_row(
+    row: pd.Series,
+    *,
+    side: str,
+    symbol: str,
+    replay_base: float,
+    side_expert: SideResidualExpertBundle | None,
+    postprocessor: CanonicalMetaPostprocessor | None,
+) -> dict[str, Any]:
+    """Replay active post-meta stages from exact ledger input snapshots."""
+    output: dict[str, Any] = {}
+    expert_rank = np.nan
+    if side_expert is not None:
+        expert_input = _feature_frame_from_snapshot(
+            row.get("side_residual_expert_input_values_json"),
+            symbol=symbol,
+            categorical=("side_name", "archetype_policy_key"),
+        )
+        if not expert_input.empty:
+            expert_output = side_expert.transform(expert_input)
+            complete = bool(
+                expert_output["meta_residual_expert_complete_case"].iloc[0]
+            )
+            if not complete:
+                raise RuntimeError("logged side-residual expert row is incomplete")
+            expert_rank = _safe_float_series_value(
+                expert_output["score_base_residual_ev_rank_train_reference"].iloc[0]
+            )
+            output["replay_meta_pred"] = expert_rank
+            output["replay_meta_source"] = "logged_side_residual_expert_input"
+
+    if postprocessor is None:
+        return output
+    post_input = _feature_frame_from_json(
+        row.get("meta_postprocessor_input_values_json"), symbol=symbol
+    )
+    if post_input.empty:
+        return output
+    stored_meta = _safe_float_series_value(row.get("meta_pred"))
+    meta_score = expert_rank if np.isfinite(expert_rank) else stored_meta
+    post_input["score"] = float(replay_base)
+    post_input["score_base"] = float(replay_base)
+    post_input["score_meta_base_soft_label"] = float(meta_score)
+    post_input["score_meta_base_soft_label_raw_refit"] = float(meta_score)
+    post_input["side_name"] = str(side)
+    post_input["archetype_policy_key"] = str(
+        row.get("policy_archetype") or "missing"
+    )
+    post_input["__symbol__"] = str(symbol)
+    post_input["__ts__"] = pd.to_datetime(
+        row.get("signal_bar_ts") or row.get("timestamp"),
+        utc=True,
+        errors="coerce",
+    )
+    transformed = postprocessor.transform(post_input)
+    source_map = {
+        "v9_tail95_predecessor_rank": "historical_rank",
+        "score_regime_calibrated": "score_regime_calibrated",
+        "expected_net_ev_after_1pct": "expected_net_ev_after_1pct",
+        "expected_ev_rank_score": "expected_ev_rank_score",
+    }
+    for target, source in source_map.items():
+        if source in transformed:
+            output[f"replay_{target}"] = _safe_float_series_value(
+                transformed[source].iloc[0]
+            )
+    output["replay_post_meta_source"] = "logged_canonical_postprocessor_input"
+    return output
 
 
 def _normalise_ledger(ledger: pd.DataFrame) -> pd.DataFrame:
@@ -347,6 +592,167 @@ def _normalise_ledger(ledger: pd.DataFrame) -> pd.DataFrame:
     out["_ledger_row_id"] = np.arange(len(out), dtype=np.int64)
     out["_join_seq"] = out.groupby(JOIN_KEYS, dropna=False).cumcount()
     return out
+
+
+def _active_threshold_policy_path(
+    *, data_root: str | Path, run_id: str
+) -> Path | None:
+    artifact_root = Path(data_root) / "artifacts" / str(run_id)
+    config_path = artifact_root / "policy_params" / "optimized_portfolio_policy_config.json"
+    if not config_path.is_file():
+        return None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    raw = str(config.get("threshold_basis_policy_path") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.is_file():
+        return path
+    local = artifact_root / "policy_params" / path.name
+    return local if local.is_file() else None
+
+
+def _replay_active_threshold_policy(
+    report: pd.DataFrame,
+    ledger: pd.DataFrame,
+    *,
+    policy_path: str | Path | None,
+    tolerance: float,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Replay the deployed threshold policy from reconstructed active outputs.
+
+    Logged threshold fields are comparators only. The replay inputs are the
+    independently reproduced V9/MLP/hierarchical-EV outputs plus observable
+    side/archetype identity from the live decision.
+    """
+    out = report.copy()
+    if policy_path is None:
+        return out, {"pass": False, "reason": "missing_active_policy_path"}
+    policy = load_threshold_basis_policy(policy_path)
+    if not policy:
+        return out, {"pass": False, "reason": "unreadable_active_policy"}
+    if "_ledger_row_id" not in out.columns or "_ledger_row_id" not in ledger.columns:
+        return out, {"pass": False, "reason": "missing_ledger_row_id"}
+
+    source = ledger.set_index("_ledger_row_id", drop=False)
+    decisions: list[dict[str, Any]] = []
+    report_indices: list[Any] = []
+    for report_idx, row in out.iterrows():
+        if str(row.get("replay_status") or "") != "ok":
+            continue
+        ledger_id = row.get("_ledger_row_id")
+        if ledger_id not in source.index:
+            continue
+        live = source.loc[ledger_id]
+        if isinstance(live, pd.DataFrame):
+            live = live.iloc[-1]
+        archetype = "missing"
+        for field in (
+            "archetype_policy_key",
+            "policy_archetype",
+            "local_side_archetype",
+        ):
+            value = live.get(field)
+            if value is None or pd.isna(value):
+                continue
+            text = str(value).strip()
+            if text and text.lower() not in {"nan", "none", "null", "<na>"}:
+                archetype = text
+                break
+        decisions.append(
+            {
+                "signal_bar_ts": live.get("signal_bar_ts"),
+                "decision_ts": live.get("decision_ts", live.get("timestamp")),
+                "symbol": str(live.get("symbol") or ""),
+                "side": str(live.get("side") or ""),
+                "side_name": str(live.get("side") or ""),
+                "strategy_id": str(live.get("strategy_id") or ""),
+                "archetype_policy_key": str(archetype),
+                "policy_archetype": str(archetype),
+                "policy_rank_pct": _safe_float_series_value(
+                    live.get("policy_rank_pct")
+                ),
+                "expected_ev_rank_score": _safe_float_series_value(
+                    row.get("replay_expected_ev_rank_score")
+                ),
+                "expected_net_ev_after_1pct_side_archetype": (
+                    _safe_float_series_value(
+                        row.get("replay_expected_net_ev_after_1pct")
+                    )
+                ),
+                "expected_net_ev_after_1pct": _safe_float_series_value(
+                    row.get("replay_expected_net_ev_after_1pct")
+                ),
+                "v9_tail95_predecessor_rank": _safe_float_series_value(
+                    row.get("replay_v9_tail95_predecessor_rank")
+                ),
+            }
+        )
+        report_indices.append(report_idx)
+
+    if not decisions:
+        return out, {"pass": False, "reason": "no_replayable_active_rows"}
+    apply_threshold_basis_policy_to_decisions(decisions, policy=policy, store=None)
+
+    for report_idx, decision in zip(report_indices, decisions):
+        for field in ACTIVE_ADMISSION_FIELDS:
+            out.at[report_idx, f"replay_{field}"] = decision.get(field)
+
+    mismatch_total = 0
+    field_summary: dict[str, Any] = {}
+    scoped = out.loc[report_indices]
+    for field in ACTIVE_ADMISSION_FIELDS:
+        stored_col = f"stored_{field}"
+        replay_col = f"replay_{field}"
+        if stored_col not in scoped.columns or replay_col not in scoped.columns:
+            field_summary[field] = {"n": 0, "mismatch_rows": len(scoped)}
+            mismatch_total += len(scoped)
+            continue
+        stored = scoped[stored_col]
+        replay = scoped[replay_col]
+        if field == "threshold_basis_selected":
+            matches = stored.astype("boolean").eq(replay.astype("boolean")).fillna(False)
+            max_delta = 0.0 if matches.all() else np.nan
+        elif field in {
+            "threshold_basis_reference_asof",
+            "threshold_basis_reason",
+        }:
+            matches = stored.fillna("<NA>").astype(str).eq(
+                replay.fillna("<NA>").astype(str)
+            )
+            max_delta = 0.0 if matches.all() else np.nan
+        else:
+            delta = _abs_delta(stored, replay)
+            both_missing = stored.isna() & replay.isna()
+            matches = both_missing | (
+                delta.le(float(tolerance)) & stored.notna() & replay.notna()
+            )
+            max_delta = float(delta.max()) if delta.notna().any() else np.nan
+        out.loc[report_indices, f"{field}_matches"] = matches.to_numpy(dtype=bool)
+        mismatches = int((~matches).sum())
+        mismatch_total += mismatches
+        field_summary[field] = {
+            "n": int(len(matches)),
+            "mismatch_rows": mismatches,
+            "max_abs_delta": max_delta,
+        }
+    return out, {
+        "pass": mismatch_total == 0,
+        "policy_id": str(policy.get("policy_id") or ""),
+        "policy_path": str(policy_path),
+        "rows": int(len(scoped)),
+        "selected_rows": int(
+            pd.Series([d.get("threshold_basis_selected", False) for d in decisions])
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
+        "mismatch_rows": int(mismatch_total),
+        "fields": field_summary,
+    }
 
 
 def _dedupe_latest_decision_rows(ledger: pd.DataFrame) -> pd.DataFrame:
@@ -730,6 +1136,195 @@ def _build_live_candidate_table(ledger: pd.DataFrame) -> pd.DataFrame:
     return out.dropna(subset=["timestamp", "symbol", "strategy_id", "normalized_rank_score"])
 
 
+def _truthy(value: Any) -> bool:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "1.0", "true", "yes", "y"}
+
+
+def _persisted_auction_state_decisions(
+    ledger: pd.DataFrame,
+    params: Any,
+) -> pd.DataFrame | None:
+    """Replay a live auction from persisted pre-decision state.
+
+    The generic historical replay fits an EV-priority curve from realized
+    outcomes. A live decision ledger has no realized outcomes yet, so fitting
+    that curve to placeholder returns is both unnecessary and numerically
+    unstable. Current live ledgers persist the exact auction order and the
+    portfolio state available before each candidate. Recompute the dynamic
+    threshold from those causal inputs, then apply observable source-quality
+    gates and capacity in auction order.
+    """
+    required = {
+        "auction_rank_number",
+        "portfolio_gate_rank_score",
+        "portfolio_gate_initial_threshold",
+        "portfolio_state_snapshot_json",
+    }
+    if not required.issubset(ledger.columns):
+        return None
+    auction_rank = pd.to_numeric(ledger["auction_rank_number"], errors="coerce")
+    auction = ledger.loc[auction_rank.notna()].copy()
+    if auction.empty:
+        return None
+    auction["_auction_group_ts"] = pd.to_datetime(
+        auction.get("signal_bar_ts", auction["timestamp"]),
+        utc=True,
+        errors="coerce",
+    )
+
+    records: list[dict[str, Any]] = []
+    for timestamp, group in auction.groupby(
+        "_auction_group_ts", sort=True, dropna=False
+    ):
+        group = group.assign(
+            _auction_rank=pd.to_numeric(
+                group["auction_rank_number"], errors="coerce"
+            )
+        ).sort_values(["_auction_rank", "_ledger_row_id"], kind="stable")
+        entries_this_bar = 0
+        for _, row in group.iterrows():
+            snapshot = _json_mapping(row.get("portfolio_state_snapshot_json"))
+            capacity = snapshot.get("capacity") if isinstance(snapshot, Mapping) else None
+            if not isinstance(capacity, Mapping):
+                return None
+            try:
+                open_positions = int(capacity.get("open_positions"))
+                open_notional = float(capacity.get("open_notional"))
+                wallet = float(
+                    capacity.get(
+                        "wallet_value",
+                        capacity.get("total_assets_quote"),
+                    )
+                )
+                allocation_share_raw = capacity.get(
+                    "wallet_investment_utilization"
+                )
+                allocation_share = (
+                    float(allocation_share_raw)
+                    if allocation_share_raw not in (None, "")
+                    else float(open_notional) / float(wallet)
+                )
+            except (TypeError, ValueError):
+                return None
+            if not (
+                np.isfinite(open_notional)
+                and np.isfinite(wallet)
+                and wallet > 0.0
+                and np.isfinite(allocation_share)
+            ):
+                return None
+
+            rank_score = float(
+                pd.to_numeric(
+                    pd.Series([row.get("portfolio_gate_rank_score")]),
+                    errors="coerce",
+                ).iloc[0]
+            )
+            initial_threshold = float(
+                pd.to_numeric(
+                    pd.Series([row.get("portfolio_gate_initial_threshold")]),
+                    errors="coerce",
+                ).iloc[0]
+            )
+            entry_cap = pd.to_numeric(
+                pd.Series([row.get("auction_entry_cap")]), errors="coerce"
+            ).iloc[0]
+            capacity_already_full = (
+                np.isfinite(entry_cap) and entries_this_bar >= int(entry_cap)
+            ) or open_positions >= int(params.max_concurrent_positions)
+            raw_signal_unreliable = _truthy(
+                row.get("raw_signal_close_unreliable")
+            )
+            if np.isfinite(rank_score) and np.isfinite(initial_threshold):
+                dynamic_threshold = dynamic_threshold_for_count(
+                    max(
+                        float(initial_threshold),
+                        float(params.global_threshold_floor),
+                    ),
+                    int(open_positions),
+                    params,
+                    allocation_share=float(allocation_share),
+                )
+            elif capacity_already_full or raw_signal_unreliable:
+                # A diagnostics-only auction can persist candidates after the
+                # global entry cap has already fallen to zero, or after a raw
+                # data-quality guard has failed. Their rank and threshold
+                # fields are intentionally absent because no rank evaluation
+                # occurred. The preceding deterministic rejection is enough
+                # to replay the row exactly; do not abandon the entire
+                # stateful audit for a synthetic generic replay.
+                dynamic_threshold = np.nan
+            else:
+                return None
+            logged_threshold = pd.to_numeric(
+                pd.Series([row.get("portfolio_gate_final_threshold")]),
+                errors="coerce",
+            ).iloc[0]
+            threshold_delta = (
+                float(dynamic_threshold - logged_threshold)
+                if np.isfinite(logged_threshold)
+                else np.nan
+            )
+
+            accepted = False
+            if raw_signal_unreliable:
+                detail = str(row.get("raw_signal_close_unreliable_reason") or "")
+                reason = "unreliable_raw_signal_close"
+                if detail and detail.lower() not in {"nan", "none"}:
+                    reason = f"{reason}:{detail}"
+            elif capacity_already_full:
+                reason = "auction_entry_cap_reached"
+            elif rank_score < dynamic_threshold + float(
+                params.threshold_viability_margin
+            ):
+                reason = "below_dynamic_threshold"
+            elif open_positions >= int(params.max_concurrent_positions):
+                reason = "max_concurrent_positions_reached"
+            elif entries_this_bar >= int(params.max_new_entries_per_bar):
+                reason = "max_new_entries_per_bar_reached"
+            else:
+                accepted = True
+                entries_this_bar += 1
+                reason = "accepted"
+
+            records.append(
+                {
+                    "_ledger_row_id": row["_ledger_row_id"],
+                    "timestamp": timestamp,
+                    "symbol": str(row["symbol"]),
+                    "side": str(row["side"]),
+                    "strategy_id": str(row["strategy_id"]),
+                    "accepted": bool(accepted),
+                    "rejection_reason": reason,
+                    "dynamic_threshold": float(dynamic_threshold),
+                    "portfolio_priority": pd.to_numeric(
+                        pd.Series([row.get("portfolio_priority")]),
+                        errors="coerce",
+                    ).iloc[0],
+                    "position_size": pd.to_numeric(
+                        pd.Series(
+                            [
+                                row.get(
+                                    "position_size_quote",
+                                    row.get("position_size"),
+                                )
+                            ]
+                        ),
+                        errors="coerce",
+                    ).iloc[0],
+                    "open_positions_before": int(open_positions),
+                    "open_positions_after": int(open_positions + int(accepted)),
+                    "replay_logged_threshold": logged_threshold,
+                    "replay_threshold_delta": threshold_delta,
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
 def _live_traded(row: pd.Series) -> bool:
     if "was_traded" in row and pd.notna(row["was_traded"]):
         try:
@@ -818,19 +1413,23 @@ def build_live_decision_replay_reconciliation(
         ledger = _dedupe_latest_decision_rows(ledger)
     candidates = _build_live_candidate_table(ledger)
     params = load_portfolio_policy_params(portfolio_policy_config_path)
-    params = replace(
-        params,
-        global_threshold_floor=0.0,
-        occupancy_threshold_alpha=0.0,
-        threshold_viability_margin=0.0,
-    )
-    decisions, _, _ = replay_candidates(
-        candidates,
-        params,
-        mode="global_auction",
-        initial_wallet=float(initial_wallet),
-        market_mode="perps",
-    )
+    decisions = _persisted_auction_state_decisions(ledger, params)
+    replay_mode = "persisted_auction_state"
+    if decisions is None:
+        replay_mode = "generic_candidate_replay"
+        generic_params = replace(
+            params,
+            global_threshold_floor=0.0,
+            occupancy_threshold_alpha=0.0,
+            threshold_viability_margin=0.0,
+        )
+        decisions, _, _ = replay_candidates(
+            candidates,
+            generic_params,
+            mode="global_auction",
+            initial_wallet=float(initial_wallet),
+            market_mode="perps",
+        )
     if decisions is None or decisions.empty:
         merged = ledger.copy()
         merged["live_traded"] = merged.apply(_live_traded, axis=1)
@@ -845,6 +1444,7 @@ def build_live_decision_replay_reconciliation(
         merged = _add_direct_gate_reconciliation(merged)
         summary = {
             "rows": int(len(merged)),
+            "replay_mode": replay_mode,
             "candidate_rows": int(len(candidates)),
             "replay_rows": 0,
             "live_traded": int(merged["live_traded"].sum()),
@@ -900,11 +1500,17 @@ def build_live_decision_replay_reconciliation(
         frame["side"] = frame["side"].astype(str)
         frame["strategy_id"] = frame["strategy_id"].astype(str)
     candidate_map = candidate_map.drop_duplicates(key, keep="last")
-    replay_join = replay_join.merge(
-        candidate_map[key + ["_ledger_row_id"]],
-        on=key,
-        how="left",
-    )
+    if "_ledger_row_id" not in replay_join.columns:
+        replay_join = replay_join.merge(
+            candidate_map[key + ["_ledger_row_id"]],
+            on=key,
+            how="left",
+        )
+    optional_replay_cols = [
+        name
+        for name in ("replay_logged_threshold", "replay_threshold_delta")
+        if name in replay_join.columns
+    ]
     merged = ledger.merge(
         replay_join[
             [
@@ -916,6 +1522,7 @@ def build_live_decision_replay_reconciliation(
                 "position_size",
                 "open_positions_before",
                 "open_positions_after",
+                *optional_replay_cols,
             ]
         ],
         on="_ledger_row_id",
@@ -951,6 +1558,7 @@ def build_live_decision_replay_reconciliation(
     merged = _add_direct_gate_reconciliation(merged)
     summary = {
         "rows": int(len(merged)),
+        "replay_mode": replay_mode,
         "candidate_rows": int(len(candidates)),
         "replay_rows": int(len(decisions)),
         "live_traded": int(merged["live_traded"].sum()),
@@ -985,6 +1593,19 @@ def build_live_decision_replay_reconciliation(
         "exact_portfolio_state_replayable_note": (
             "Rows without persisted portfolio state are candidate/rank replay rows, "
             "not exact stateful portfolio replay proof."
+        ),
+        "recomputed_threshold_max_abs_delta": (
+            float(
+                pd.to_numeric(
+                    merged.get("replay_threshold_delta", pd.Series(dtype=float)),
+                    errors="coerce",
+                ).abs().max()
+            )
+            if "replay_threshold_delta" in merged.columns
+            and pd.to_numeric(
+                merged["replay_threshold_delta"], errors="coerce"
+            ).notna().any()
+            else np.nan
         ),
     }
     return merged, summary
@@ -1031,15 +1652,21 @@ def build_prediction_rank_parity_reconciliation(
             {
                 "inference_model_timing_enabled": False,
                 "preserve_logged_meta_model_derived_features": True,
+                "strict_feature_parity_neutral_fill_nonfinite": True,
             },
         )
         calibration_data = load_calibration_curves(data_root_s, run_id_s)
         rank_store = PolicyRankReferenceStore(data_root=data_root_s, run_id=run_id_s)
+        side_expert, canonical_postprocessor = _load_active_post_meta_chain(
+            data_root_s, run_id_s
+        )
         setup_error = ""
     except Exception as exc:
         orchestrator = None
         calibration_data = {}
         rank_store = None
+        side_expert = None
+        canonical_postprocessor = None
         setup_error = str(exc)
 
     for _, row in ledger.iterrows():
@@ -1052,6 +1679,7 @@ def build_prediction_rank_parity_reconciliation(
         stored_policy_rank = _safe_float_series_value(row.get("policy_rank_pct"))
         stored_auction_rank = _safe_float_series_value(row.get("auction_rank_pct"))
         out = {
+            "_ledger_row_id": row.get("_ledger_row_id"),
             "timestamp": row.get("timestamp"),
             "symbol": symbol,
             "side": side,
@@ -1061,11 +1689,25 @@ def build_prediction_rank_parity_reconciliation(
             "stored_base_pred": stored_base,
             "stored_meta_pred": stored_meta,
             "stored_calibrated_score": stored_calibrated,
+            "stored_v9_tail95_predecessor_rank": _safe_float_series_value(
+                row.get("v9_tail95_predecessor_rank")
+            ),
+            "stored_score_regime_calibrated": _safe_float_series_value(
+                row.get("score_regime_calibrated")
+            ),
+            "stored_expected_net_ev_after_1pct": _safe_float_series_value(
+                row.get("expected_net_ev_after_1pct")
+            ),
+            "stored_expected_ev_rank_score": _safe_float_series_value(
+                row.get("expected_ev_rank_score")
+            ),
             "stored_policy_rank_pct": stored_policy_rank,
             "stored_auction_rank_pct": stored_auction_rank,
             "replay_status": "not_run",
             "replay_error": "",
         }
+        for admission_field in ACTIVE_ADMISSION_FIELDS:
+            out[f"stored_{admission_field}"] = row.get(admission_field)
         if orchestrator is None or rank_store is None:
             out["replay_status"] = "setup_failed"
             out["replay_error"] = setup_error
@@ -1113,6 +1755,17 @@ def build_prediction_rank_parity_reconciliation(
                 if isinstance(base_pred, pd.Series) and not base_pred.empty
                 else np.nan
             )
+            active_chain = _replay_active_post_meta_row(
+                row,
+                side=side,
+                symbol=symbol,
+                replay_base=replay_base,
+                side_expert=side_expert,
+                postprocessor=canonical_postprocessor,
+            )
+            if "replay_meta_pred" in active_chain:
+                replay_meta = float(active_chain["replay_meta_pred"])
+                meta_replay_source = str(active_chain.get("replay_meta_source") or "")
             replay_calibrated, _ = calibrated_score_and_threshold(
                 raw_score=replay_meta,
                 strategy_id=strategy_id,
@@ -1142,13 +1795,29 @@ def build_prediction_rank_parity_reconciliation(
                     "replay_status": "ok",
                 }
             )
+            out.update(active_chain)
         except Exception as exc:
             out["replay_status"] = "replay_failed"
             out["replay_error"] = str(exc)
         rows.append(out)
 
     report = pd.DataFrame(rows)
-    for name in ("base_pred", "meta_pred", "calibrated_score", "policy_rank_pct", "auction_rank_pct"):
+    report, admission_summary = _replay_active_threshold_policy(
+        report,
+        ledger,
+        policy_path=_active_threshold_policy_path(
+            data_root=data_root_s,
+            run_id=run_id_s,
+        ),
+        tolerance=float(tolerance),
+    )
+    compared_fields = (
+        *ACTIVE_CHAIN_FIELDS,
+        "calibrated_score",
+        "policy_rank_pct",
+        "auction_rank_pct",
+    )
+    for name in compared_fields:
         stored = f"stored_{name}"
         replay = f"replay_{name}"
         if stored in report.columns and replay in report.columns:
@@ -1168,7 +1837,7 @@ def build_prediction_rank_parity_reconciliation(
         .value_counts(dropna=False)
         .to_dict(),
     }
-    for name in ("base_pred", "meta_pred", "calibrated_score", "policy_rank_pct", "auction_rank_pct"):
+    for name in compared_fields:
         delta_col = f"{name}_abs_delta"
         match_col = f"{name}_matches"
         if delta_col not in report.columns:
@@ -1182,6 +1851,28 @@ def build_prediction_rank_parity_reconciliation(
             if match_col in report.columns
             else 0,
         }
+    active_required = [
+        name
+        for name in ACTIVE_CHAIN_FIELDS
+        if f"{name}_matches" in report.columns
+    ]
+    summary["active_chain_fields"] = active_required
+    summary["active_chain_mismatch_rows"] = int(
+        sum(
+            (~report.loc[ok, f"{name}_matches"].fillna(False).astype(bool)).sum()
+            for name in active_required
+        )
+    )
+    summary["active_chain_pass"] = bool(
+        active_required
+        and len(active_required) == len(ACTIVE_CHAIN_FIELDS)
+        and summary["active_chain_mismatch_rows"] == 0
+    )
+    summary["active_admission"] = admission_summary
+    summary["active_admission_pass"] = bool(admission_summary.get("pass", False))
+    summary["active_decision_chain_pass"] = bool(
+        summary["active_chain_pass"] and summary["active_admission_pass"]
+    )
     if "strategy_id" in report.columns:
         by_strategy: dict[str, Any] = {}
         for strategy_id, group in report.groupby("strategy_id", dropna=False):
@@ -1405,6 +2096,31 @@ def _safe_float_series_value(value: Any) -> float:
     return out if np.isfinite(out) else float("nan")
 
 
+def execution_parity_audit_status(
+    shadow_trade_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Classify the current-run exit reconciliation without conflating no evidence with pass."""
+    current_run = shadow_trade_summary.get("current_run")
+    scope = current_run if isinstance(current_run, Mapping) else shadow_trade_summary
+    raw_status = str(scope.get("exit_execution_parity_status") or "")
+    closed_shadow_rows = int(scope.get("closed_shadow_rows", 0) or 0)
+    if raw_status == "pass" and closed_shadow_rows > 0:
+        status = "pass"
+    elif raw_status == "fail":
+        status = "fail"
+    else:
+        status = "pending"
+    return {
+        "status": status,
+        "reason": raw_status or "missing_exit_execution_parity_status",
+        "scope": "current_run" if isinstance(current_run, Mapping) else "all_rows",
+        "shadow_rows": int(scope.get("shadow_rows", 0) or 0),
+        "closed_shadow_rows": closed_shadow_rows,
+        "open_shadow_rows": int(scope.get("open_shadow_rows", 0) or 0),
+        "exit_gap_mismatch_rows": int(scope.get("exit_gap_mismatch_rows", 0) or 0),
+    }
+
+
 def _render_markdown(
     *,
     spread_summary: dict[str, Any],
@@ -1436,10 +2152,14 @@ def _render_markdown(
             "## Prediction / Rank Parity",
             f"- Replayed rows: `{prediction_summary.get('success_rows', 0)}` / `{prediction_summary.get('attempted_rows', 0)}`",
             f"- Status counts: `{prediction_summary.get('status_counts', {})}`",
+            f"- Active model/postprocessor chain pass: `{prediction_summary.get('active_chain_pass', False)}`",
+            f"- Active 21-day EV70 admission pass: `{prediction_summary.get('active_admission_pass', False)}`",
+            f"- Active decision chain pass: `{prediction_summary.get('active_decision_chain_pass', False)}`",
+            f"- Active admission detail: `{prediction_summary.get('active_admission', {})}`",
             f"- Meta prediction delta: `{prediction_summary.get('meta_pred', {})}`",
-            f"- Calibrated score delta: `{prediction_summary.get('calibrated_score', {})}`",
-            f"- Policy rank delta: `{prediction_summary.get('policy_rank_pct', {})}`",
-            f"- Auction rank delta: `{prediction_summary.get('auction_rank_pct', {})}`",
+            f"- Legacy shared-meta calibrated-score diagnostic: `{prediction_summary.get('calibrated_score', {})}`",
+            f"- Legacy rank-reference diagnostic: `{prediction_summary.get('policy_rank_pct', {})}`",
+            f"- Legacy auction-reference diagnostic: `{prediction_summary.get('auction_rank_pct', {})}`",
             "",
             "## Shadow Execution Realism",
             f"- Shadow rows: `{shadow_trade_summary.get('shadow_rows', 0)}`",
@@ -1498,9 +2218,10 @@ def run_reconciliation(
     prediction_parity_max_rows: int = 500,
     shadow_tolerance_bps: float = 50.0,
     initial_wallet: float = 10_000.0,
+    since: str | pd.Timestamp | None = None,
 ) -> dict[str, Any]:
-    ledger = _read_table(prediction_ledger_path)
-    candidates = _read_table(candidate_path)
+    ledger = _filter_table_since(_read_table(prediction_ledger_path), since)
+    candidates = _filter_table_since(_read_table(candidate_path), since)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1530,12 +2251,13 @@ def run_reconciliation(
             "failed_rows": 0,
             "reason": "data_root_or_run_id_not_provided",
         }
-    trade_log = _read_table(trade_log_path)
+    trade_log = _filter_table_since(_read_table(trade_log_path), since)
     shadow_rows, shadow_summary = build_shadow_trade_reconciliation(
         trade_log,
         tolerance_bps=float(shadow_tolerance_bps),
         run_id=run_id,
     )
+    execution_audit = execution_parity_audit_status(shadow_summary)
     spread_rows.to_csv(out_dir / "spread_slippage_reconciliation.csv", index=False)
     field_rows.to_csv(out_dir / "ledger_replay_field_coverage.csv", index=False)
     decision_rows.to_csv(out_dir / "live_decision_replay_reconciliation.csv", index=False)
@@ -1561,6 +2283,10 @@ def run_reconciliation(
         json.dumps(_json_safe(shadow_summary), indent=2),
         encoding="utf-8",
     )
+    (out_dir / "execution_parity_audit_status.json").write_text(
+        json.dumps(_json_safe(execution_audit), indent=2),
+        encoding="utf-8",
+    )
     markdown = _render_markdown(
         spread_summary=spread_summary,
         decision_summary=decision_summary,
@@ -1578,6 +2304,7 @@ def run_reconciliation(
         "decision_replay": decision_summary,
         "prediction_rank_parity": prediction_summary,
         "shadow_trade_reconciliation": shadow_summary,
+        "execution_parity_audit": execution_audit,
         "output_dir": str(out_dir),
     }
 
@@ -1594,6 +2321,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--prediction-parity-max-rows", type=int, default=500)
     parser.add_argument("--shadow-tolerance-bps", type=float, default=50.0)
     parser.add_argument("--initial-wallet", type=float, default=10_000.0)
+    parser.add_argument(
+        "--since",
+        help="Audit only rows at or after this UTC timestamp (ISO-8601).",
+    )
     args = parser.parse_args(argv)
     result = run_reconciliation(
         prediction_ledger_path=args.prediction_ledger,
@@ -1606,9 +2337,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prediction_parity_max_rows=args.prediction_parity_max_rows,
         shadow_tolerance_bps=args.shadow_tolerance_bps,
         initial_wallet=args.initial_wallet,
+        since=args.since,
     )
     print(json.dumps(_json_safe(result), indent=2))
-    return 0
+    return 1 if result["execution_parity_audit"]["status"] == "fail" else 0
 
 
 if __name__ == "__main__":

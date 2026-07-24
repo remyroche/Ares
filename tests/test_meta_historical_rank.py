@@ -44,3 +44,18 @@ def test_true_monday_week_start_is_index_safe() -> None:
         "2026-03-30 00:00:00+00:00",
         "2026-03-30 00:00:00+00:00",
     ]
+
+
+def test_historical_rank_supports_global_tie_aware_midrank() -> None:
+    state = HistoricalScoreRankReference(
+        rank_method="midrank",
+        sorted_scores_global=np.asarray([0.1, 0.2, 0.2, 0.9], dtype=np.float32),
+    )
+    query = pd.DataFrame(
+        {
+            "side_name": ["long", "short"],
+            "score_alternative": [0.2, 0.2],
+        }
+    )
+    expected = np.asarray([0.5, 0.5], dtype=np.float32)
+    assert np.allclose(state.transform(query).to_numpy(), expected)

@@ -41,6 +41,7 @@ def test_policy_aware_labelers_use_full_horizon_window():
         max_hold_hours=1,
         bars_per_hour=3,
         cost_pct=0.0,
+        signal_timeframe="15m",
     )
     out_batch = compute_policy_aware_labels_batch(
         candidates,
@@ -49,6 +50,7 @@ def test_policy_aware_labelers_use_full_horizon_window():
         max_hold_hours=1,
         bars_per_hour=3,
         cost_pct=0.0,
+        signal_timeframe="15m",
     )
 
     assert len(out_single) == 1
@@ -61,7 +63,9 @@ def test_policy_aware_labelers_use_full_horizon_window():
     assert out_single.iloc[0]["exit_reason"] == ExitReason.TIMEOUT
     assert out_batch.iloc[0]["exit_reason"] == ExitReason.TIMEOUT
 
-    expected_exit_time = panel["open"].index[2]
+    assert out_single.iloc[0]["decision_ts"] == panel["open"].index[1]
+    assert out_batch.iloc[0]["decision_ts"] == panel["open"].index[1]
+    expected_exit_time = panel["open"].index[3]
     assert out_single.iloc[0]["exit_time"] == expected_exit_time
     assert out_batch.iloc[0]["exit_time"] == expected_exit_time
 
@@ -85,6 +89,7 @@ def test_policy_aware_batch_runs_without_missing_array_initialization():
         max_hold_hours=1,
         bars_per_hour=4,
         cost_pct=0.0,
+        signal_timeframe="15m",
     )
 
     assert len(out) == 2
@@ -117,6 +122,7 @@ def test_policy_aware_batch_produces_stop_loss_hits_when_price_crosses_sl():
         max_hold_hours=1,
         bars_per_hour=4,
         cost_pct=0.0,
+        signal_timeframe="15m",
     )
 
     assert len(out) == 1

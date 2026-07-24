@@ -25,14 +25,17 @@ from extreme_price_movements.inference.training_live_parity_contract import (
 from extreme_price_movements.portfolio_manager import PortfolioManager
 
 
-def test_portfolio_policy_defaults_resolve_to_8_and_dynamic_75pct_caps():
+def test_portfolio_policy_defaults_use_pre_leverage_70pct_capacity():
     policy = PortfolioPolicyConfig()
-    assert policy.max_concurrent_positions == 8
+    assert policy.schema_version == "portfolio_policy_v2"
+    assert policy.capacity_mode == "pre_leverage_wallet"
+    assert policy.enforce_position_count_cap is False
+    assert policy.max_concurrent_positions == 64
     assert policy.max_concurrent_per_side is None
     assert policy.max_concurrent_per_strategy is None
-    assert policy.resolved_max_concurrent_per_side() == 8
-    assert policy.resolved_max_concurrent_per_strategy() == 6
-    assert policy.max_total_wallet_allocation_pct == 0.75
+    assert policy.resolved_max_concurrent_per_side() == 64
+    assert policy.resolved_max_concurrent_per_strategy() == 64
+    assert policy.max_total_wallet_allocation_pct == 0.70
     assert policy.max_available_wallet_position_pct == 0.50
     assert policy.book_notional_multiplier == 1.0
     assert policy.leverage_wallet_multiplier == 1.0
@@ -580,7 +583,7 @@ def test_portfolio_policy_does_not_fallback_to_legacy_flat_artifact(tmp_path):
 
     policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
 
-    assert policy.max_concurrent_positions == 8
+    assert policy.max_concurrent_positions == 64
     assert policy.initial_rank_threshold == 0.90
 
 
@@ -631,10 +634,11 @@ def test_training_live_parity_contract_can_be_required_and_validated(tmp_path):
 def test_portfolio_manager_from_policy_config_enforces_caps():
     policy = PortfolioPolicyConfig()
     mgr = PortfolioManager.from_policy_config(policy, portfolio_value=10000.0)
-    assert mgr.max_positions == 8
-    assert mgr.max_same_side == 8
-    assert mgr.max_same_strategy == 6
-    assert mgr.max_portfolio_pct == 0.75
+    assert mgr.max_positions == 64
+    assert mgr.enforce_position_count_cap is False
+    assert mgr.max_same_side == 64
+    assert mgr.max_same_strategy == 64
+    assert mgr.max_portfolio_pct == 0.70
     assert mgr.max_position_usdt == 5000.0
 
 
@@ -658,7 +662,7 @@ def test_portfolio_manager_dynamic_threshold_uses_allocated_share():
         {"is_open": True, "position_size": 7000.0},
     )()
 
-    assert mgr.calculate_dynamic_threshold(0.60) == pytest.approx(0.88)
+    assert mgr.calculate_dynamic_threshold(0.60) == pytest.approx(0.99)
 
 
 def test_rank_based_position_size_caps_and_live_test_override():
@@ -743,6 +747,33 @@ def test_rank_based_position_size_rank_scales_under_position_cap():
     assert low_rank["size_after_liquidity"] < high_rank["size_after_liquidity"]
 
 
+def test_rank_based_position_size_canonical_policy_has_two_x_range():
+    policy = PortfolioPolicyConfig(
+        rank_multiplier_min=0.75,
+        rank_multiplier_max=1.50,
+    )
+    low_rank = compute_rank_based_position_size(
+        wallet_value=10000.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.90,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+    high_rank = compute_rank_based_position_size(
+        wallet_value=10000.0,
+        open_notional=0.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+
+    assert high_rank["size_after_liquidity"] / low_rank[
+        "size_after_liquidity"
+    ] == pytest.approx(2.0)
+
+
 def test_perps_rank_sizing_uses_same_default_leverage_in_live_and_live_test():
     policy = PortfolioPolicyConfig()
     prod = compute_rank_based_position_size(
@@ -786,7 +817,7 @@ def test_perps_rank_sizing_uses_same_default_leverage_in_live_and_live_test():
 
 
 def test_perps_rank_sizing_scales_with_adjusted_rank_above_threshold():
-    policy = PortfolioPolicyConfig()
+    policy = PortfolioPolicyConfig(max_position_wallet_pct=1.0)
     low_rank = compute_rank_based_position_size(
         wallet_value=100.0,
         open_notional=0.0,
@@ -825,7 +856,7 @@ def test_perps_rank_sizing_scales_with_adjusted_rank_above_threshold():
 
 
 def test_perps_rank_sizing_caps_request_to_remaining_total_notional():
-    policy = PortfolioPolicyConfig()
+    policy = PortfolioPolicyConfig(max_position_wallet_pct=1.0)
     sizing = compute_rank_based_position_size(
         wallet_value=100.0,
         open_notional=58.0,
@@ -851,7 +882,7 @@ def test_perps_rank_sizing_caps_request_to_remaining_total_notional():
     assert sizing["size_after_liquidity"] == 17.0
 
 
-def test_perps_rank_sizing_applies_position_pct_before_leverage():
+def test_perps_rank_sizing_applies_wallet_cap_before_leverage():
     policy = PortfolioPolicyConfig(
         max_total_wallet_allocation_pct=1.0,
         max_position_wallet_pct=0.01,
@@ -921,7 +952,77 @@ def test_capacity_api_reports_remaining_slots_and_notional():
     )
     cap = mgr.get_portfolio_capacity(side="long", strategy_id="s1")
     assert cap["open_positions"] == 1
-    assert cap["remaining_position_slots"] == 9
-    assert cap["remaining_side_slots"] == 5
-    assert cap["remaining_strategy_slots"] == 5
-    assert cap["remaining_total_notional"] == 6500.0
+    assert cap["remaining_position_slots"] == 63
+    assert cap["remaining_side_slots"] == 63
+    assert cap["remaining_strategy_slots"] == 63
+    assert cap["remaining_total_notional"] == 6000.0
+
+
+def test_marked_notional_wallet_cap_tracks_marks_and_ignores_leverage():
+    mgr = PortfolioManager(
+        portfolio_value=10_000.0,
+        max_portfolio_pct=0.80,
+        max_position_pct=1.0,
+        max_position_usdt=None,
+        leverage_wallet_multiplier=10.0,
+    )
+    mgr.record_position_open(
+        "BTC/USD", "long", "global", position_size=4_000.0, entry_price=100.0
+    )
+    assert mgr.update_position_mark("BTC/USD", mark_price=110.0)
+    cap = mgr.get_portfolio_capacity(side="long", strategy_id="global")
+
+    assert cap["open_marked_notional"] == pytest.approx(4_400.0)
+    assert cap["max_total_notional"] == pytest.approx(8_000.0)
+    assert cap["remaining_total_notional"] == pytest.approx(3_600.0)
+    assert cap["wallet_investment_utilization"] == pytest.approx(0.55)
+
+
+def test_more_than_eight_positions_are_allowed_below_marked_notional_cap():
+    mgr = PortfolioManager(
+        portfolio_value=10_000.0,
+        max_portfolio_pct=0.80,
+        max_position_pct=1.0,
+        max_position_usdt=None,
+        max_positions=64,
+        enforce_position_count_cap=False,
+        max_same_side=64,
+        max_same_strategy=64,
+    )
+    for idx in range(9):
+        mgr.record_position_open(
+            f"ASSET{idx}/USD",
+            "long",
+            "global",
+            position_size=500.0,
+            entry_price=100.0,
+        )
+
+    allowed, info = mgr.can_enter_position(
+        symbol="ASSET9/USD",
+        side="long",
+        strategy_id="global",
+        rank_score=0.99,
+        initial_threshold=0.90,
+        requested_position_size=500.0,
+    )
+    assert allowed is True
+    assert info["position_size_cap"] == pytest.approx(500.0)
+
+
+def test_pending_notional_is_included_and_final_candidate_is_clipped():
+    mgr = PortfolioManager(
+        portfolio_value=10_000.0,
+        max_portfolio_pct=0.80,
+        max_position_pct=1.0,
+        max_position_usdt=None,
+    )
+    mgr.record_position_open(
+        "BTC/USD", "long", "global", position_size=7_000.0, entry_price=100.0
+    )
+    mgr.reserve_pending_notional("pending-1", 800.0)
+
+    cap = mgr.get_portfolio_capacity(side="long", strategy_id="global")
+    assert cap["pending_reserved_notional"] == pytest.approx(800.0)
+    assert cap["remaining_total_notional"] == pytest.approx(200.0)
+    assert mgr.calculate_position_size_cap(500.0) == pytest.approx(200.0)

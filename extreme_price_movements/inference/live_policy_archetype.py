@@ -13,6 +13,34 @@ import pandas as pd
 ARTIFACT_FILENAME = "live_policy_archetype_classifier.joblib"
 MANIFEST_FILENAME = "live_policy_archetype_classifier_manifest.json"
 
+OBSERVABLE_REGIME_FAMILY_SCORE_COLUMNS = {
+    "trend_following": "__regime_source_trend_following_score__",
+    "mean_reversion": "__regime_source_mean_reversion_score__",
+    "vol_compression": "__regime_source_vol_compression_score__",
+    "breakout_impulse": "__regime_source_breakout_impulse_score__",
+    "dirty_avoid": "__regime_source_dirty_avoid_score__",
+}
+OBSERVABLE_REGIME_FAMILY_MIN_SCORE = 0.55
+OBSERVABLE_REGIME_FAMILY_MIN_SCORE_GAP = 0.03
+_POLICY_KEY_BY_SIDE_FAMILY = {
+    "long": {
+        "mixed": "long_mixed_wideslow_tentative",
+        "vol_compression": "long_volcompression_wideslow_candidate",
+        "breakout_impulse": "long_breakout_diagnostic_candidate",
+        "dirty_avoid": "long_dirtyavoid_sparse_questionable",
+        "trend_following": "long_default_wideslow_pathquality",
+        "mean_reversion": "long_default_wideslow_pathquality",
+    },
+    "short": {
+        "mixed": "short_mixed_clean_path",
+        "breakout_impulse": "short_breakout_precision",
+        "trend_following": "short_default_clean_path",
+        "mean_reversion": "short_default_clean_path",
+        "vol_compression": "short_default_clean_path",
+        "dirty_avoid": "short_default_clean_path",
+    },
+}
+
 
 def _side_norm(side: Any) -> str:
     text = str(side or "").strip().lower()
@@ -109,6 +137,40 @@ def _coerce_single_row(
                 fval = 0.0
         values[col] = fval
     return pd.DataFrame([values], columns=list(feature_columns))
+
+
+def predict_observable_policy_archetype(
+    *,
+    side: Any,
+    candidate_feature_row: Optional[pd.DataFrame] = None,
+    meta_model_input_row: Optional[pd.DataFrame] = None,
+    min_score: float = OBSERVABLE_REGIME_FAMILY_MIN_SCORE,
+    min_score_gap: float = OBSERVABLE_REGIME_FAMILY_MIN_SCORE_GAP,
+) -> str:
+    """Reproduce the label-time observable regime-family assignment live."""
+    raw: dict[str, Any] = {}
+    raw.update(_first_row_mapping(candidate_feature_row))
+    raw.update(_first_row_mapping(meta_model_input_row))
+    scores: dict[str, float] = {}
+    for family, column in OBSERVABLE_REGIME_FAMILY_SCORE_COLUMNS.items():
+        try:
+            value = float(raw.get(column, np.nan))
+        except (TypeError, ValueError):
+            value = float("nan")
+        if not np.isfinite(value):
+            return ""
+        scores[family] = value
+
+    ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    family = ordered[0][0]
+    if (
+        ordered[0][1] < float(min_score)
+        or (ordered[0][1] - ordered[1][1]) < float(min_score_gap)
+    ):
+        family = "mixed"
+    side_name = _side_norm(side)
+    policy_key = _POLICY_KEY_BY_SIDE_FAMILY[side_name].get(family, "")
+    return normalize_policy_archetype_label(side_name, policy_key)
 
 
 def predict_live_policy_archetype(

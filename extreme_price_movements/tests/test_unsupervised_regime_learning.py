@@ -31,6 +31,9 @@ from extreme_price_movements.unsupervised_regime_learning.feature_registry impor
     SESSION_MICROSTRUCTURE_FEATURES,
     UNSUPERVISED_REGIME_PRIMITIVE_FEATURES,
 )
+from extreme_price_movements.market_regime_change_contract import (
+    MARKET_REGIME_CHANGE_FEATURE_KEYS,
+)
 from extreme_price_movements.unsupervised_regime_learning.lgbm_feature_filter import (
     _LIGHTGBM_AVAILABLE,
     RegimeFeatureLGBMFilterConfig,
@@ -139,6 +142,9 @@ def test_unsupervised_regime_learning_config_wires_primitives():
         set(cfg["primitive_feature_keys"])
     )
     assert set(MARKET_LIQUIDATION_COMPOSITE_FEATURES).issubset(
+        set(cfg["primitive_feature_keys"])
+    )
+    assert set(MARKET_REGIME_CHANGE_FEATURE_KEYS).issubset(
         set(cfg["primitive_feature_keys"])
     )
     assert "mkt_oi_flush_breadth_recovery_4h" in cfg["primitive_feature_keys"]

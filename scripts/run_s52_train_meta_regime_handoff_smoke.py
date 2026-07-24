@@ -21,6 +21,7 @@ import gc
 import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -28,6 +29,17 @@ from typing import Any, Sequence
 import joblib
 import numpy as np
 import pandas as pd
+
+from extreme_price_movements.meta_input_contract import (
+    materialize_legacy_constant_zeros,
+    require_encoded_meta_matrix,
+    require_resolved_meta_input_contract,
+    resolve_meta_input_contract,
+)
+from extreme_price_movements.hierarchical_label_weights import (
+    TargetStrengthWeightSpec,
+    build_target_strength_weights,
+)
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.metrics import average_precision_score, roc_auc_score
 
@@ -46,10 +58,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from extreme_price_movements.lgbm_pipeline import (
+    LGBM_HPO_SAMPLE_ROWS,
+    LGBM_TWO_PHASE_SELECTION_CONTRACT,
+    LGBM_TWO_PHASE_FULL_FIT_ROW_CAP,
+    LGBM_TWO_PHASE_SELECTION_SAMPLE_ROWS,
     train_lgbm_stability_candidate,  # noqa: E402
+    use_canonical_two_phase_feature_selection,
 )
 from scripts.run_label_weighted_proxy_ablation import (
     _weight_series as _base_weight_series,  # noqa: E402
+)
+from scripts.materialize_meta_bme_feature_selection_sample import (  # noqa: E402
+    materialize_sample as materialize_meta_bme_sample,
 )
 
 DEFAULT_REPORT_ROOT = Path(
@@ -58,14 +78,33 @@ DEFAULT_REPORT_ROOT = Path(
 DEFAULT_HANDOFF_DIR = DEFAULT_REPORT_ROOT / "s52_trailing_regime_meta_handoff_v1"
 DEFAULT_LEDGER = DEFAULT_HANDOFF_DIR / "s52_trailing_regime_scored_ledger.parquet"
 DEFAULT_OUT_DIR = DEFAULT_HANDOFF_DIR / "train_meta_regime_handoff_smoke_v1"
+DEFAULT_META_CHAMPION_CONTRACT = (
+    ROOT
+    / "extreme_price_movements"
+    / "config"
+    / "meta_v9_anchor_oldparams_residual_backbone_v1.json"
+)
 
 KEY_COLUMNS = ("__ts__", "__symbol__", "side_name")
+HANDOFF_RANK_SCOPE = "timestamp_side"
+HANDOFF_RANK_SCOPE_COLUMN = "candidate_handoff_rank_scope"
+BASE_TARGET_CONTRACT_HASH_COLUMN = "base_target_contract_hash"
+BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN = "base_sample_weight_spec_hash"
+HANDOFF_PROVENANCE_COLUMNS = (
+    HANDOFF_RANK_SCOPE_COLUMN,
+    BASE_TARGET_CONTRACT_HASH_COLUMN,
+    BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN,
+)
 TOP_KEEP_FRACTIONS = (1.00, 0.50, 0.30, 0.20, 0.15, 0.10, 0.05)
 POLICY_BUDGET_FRACTIONS = (0.30, 0.20, 0.15, 0.10)
 BAD_PATH_CAPS = (0.45, 0.50, 0.55, 0.60, 0.65)
 CLEAN_EXEC_FLOORS = (0.0, 0.45, 0.55, 0.65)
 POSITIVE_MARGIN_FLOORS = (0.0, 0.45, 0.55)
 OUTCOME_COLUMNS = (
+    "__decision_ts__",
+    "__first_path_ts__",
+    "__label_path_end_ts__",
+    "__first_touch_bar__",
     "__first_touch_target_soft__",
     "__first_touch_policy_soft__",
     "base_model_target_mode",
@@ -101,7 +140,7 @@ BASE_SOFT_LABEL_COLUMNS = (
     "target_soft",
     "__target_soft__",
 )
-META_POST_SELECTION_OOD_FEATURE_NAMES = (
+ALL_META_POST_SELECTION_OOD_FEATURE_NAMES = (
     "meta_sel_ood_abs_z_mean",
     "meta_sel_ood_abs_z_max",
     "meta_sel_ood_abs_z_p95",
@@ -109,6 +148,10 @@ META_POST_SELECTION_OOD_FEATURE_NAMES = (
     "meta_sel_ood_missing_frac",
     "meta_sel_ood_centroid_l2",
 )
+# Post-selection OOD metrics are derived from the chosen core contract.  They
+# must earn admission in a second conditional MDA pass; keeping a hard-coded
+# pair here would make the meta contract drift-heavy by construction.
+META_POST_SELECTION_OOD_FEATURE_NAMES: tuple[str, ...] = ()
 LEDGER_CONTEXT_COLUMNS = (
     "__archetype_label_family__",
     "__archetype_label_source__",
@@ -140,6 +183,17 @@ NEVER_FEATURE_COLUMNS = {
     "selected_top10",
     "selected_top20",
     "selected_top30",
+    *HANDOFF_PROVENANCE_COLUMNS,
+    "base_target_contract",
+    "base_target_contract_json",
+    "base_sample_weight_spec",
+    "base_sample_weight_spec_json",
+    "base_model_weight_arm",
+    "score",
+    "__decision_ts__",
+    "__first_path_ts__",
+    "__label_path_end_ts__",
+    "__first_touch_bar__",
 }
 BASE_PRIOR_NUMERIC_FEATURES = (
     "base_margin_to_cutoff",
@@ -151,6 +205,94 @@ BASE_PRIOR_CATEGORICAL_FEATURES = (
     "base_rank_band",
     "base_margin_band",
 )
+# Meta must always condition context on the exact base opportunity signal.  These
+# are observable at decision time and are not outcome-derived priors.
+META_PROTECTED_BASE_FEATURES = (
+    # ``score_base`` is the canonical materialized handoff name.  Keep the
+    # legacy alias for old ledgers, but never rely on an unaliased ``score``
+    # column being present.
+    "score_base",
+    "base_score_raw",
+    "base_rank_pct_by_timestamp_side",
+    "base_score_rank_pct_train_prior",
+    "base_margin_to_cutoff",
+    "base_margin_to_cutoff_z",
+    "base_signal_zscore_within_archetype",
+)
+
+# The global meta head must know which side it is scoring.  This is a model
+# structure input, not a feature-selection hypothesis, so retain its encoded
+# dummies. Archetype descriptors instead remain MDA candidates below.
+META_STRUCTURAL_FEATURE_PREFIXES = ("side_name_",)
+
+# Conditional/non-monotonic features may be useless on a univariate screen but
+# useful through local state interactions. They bypass only univariate, Relief
+# and redundancy pre-screens; iterative MDA still decides final admission.
+META_PRE_MDA_BYPASS_PREFIXES = (
+    "archetype_label_family_",
+    "archetype_policy_key_",
+    "archetype_policy_role_",
+    "source_semantic_family_",
+    "source_semantic_family_base_",
+    "aegmm_cluster_",
+    "side_aegmm_cluster_",
+    "reconstruction_bin_",
+    "gmm_",
+    "dae_",
+    "ae_",
+    "cluster_",
+    "mahalanobis_",
+    "expected_mahalanobis",
+    "meta_sel_ood_",
+    "support_",
+    "base_arch_hit_",
+    "rel_",
+    "leaf_",
+    "drift_",
+    "state_spectral_",
+)
+
+
+def _with_meta_protected_base_features(
+    features: Sequence[str] | None,
+    *,
+    available: Sequence[str] | None = None,
+) -> list[str]:
+    """Return a stable meta contract with observable base-score anchors first."""
+    available_set = None if available is None else {str(value) for value in available}
+    anchors = [
+        feature
+        for feature in META_PROTECTED_BASE_FEATURES
+        if available_set is None or feature in available_set
+    ]
+    return list(
+        dict.fromkeys(
+            [*anchors, *(str(feature) for feature in (features or []) if str(feature).strip())]
+        )
+    )
+
+
+def _meta_structural_features(columns: Sequence[str]) -> list[str]:
+    """Return encoded side columns required by a shared long/short meta head."""
+    return [
+        str(column)
+        for column in columns
+        if str(column).startswith(META_STRUCTURAL_FEATURE_PREFIXES)
+    ]
+
+
+def _meta_pre_mda_bypass_features(columns: Sequence[str]) -> list[str]:
+    """Keep conditional state/archetype features available for MDA.
+
+    These are deliberately not protected final features. Their admission still
+    requires incremental, side-aware MDA support after the base-score anchors
+    and side dummies are present.
+    """
+    return [
+        str(column)
+        for column in columns
+        if str(column).startswith(META_PRE_MDA_BYPASS_PREFIXES)
+    ]
 RELIABILITY_NUMERIC_FEATURES = (
     "rel_rankband_rows_log1p",
     "rel_rankband_clean_rate",
@@ -211,27 +353,17 @@ SUPPORT_DRIFT_COLUMNS = (
     "regime_clean_exec_score_bin",
 )
 DEFAULT_LGBM_CLASSIFIER_PARAMS = {
-    "n_estimators": 180,
-    "learning_rate": 0.035,
-    "num_leaves": 17,
-    "max_depth": -1,
-    "min_child_samples": 35,
-    "subsample": 0.85,
-    "colsample_bytree": 0.85,
-    "reg_alpha": 0.10,
-    "reg_lambda": 8.0,
+    "n_estimators": 128,
+    "learning_rate": 0.02328311652285508,
+    "num_leaves": 23,
+    "max_depth": 8,
+    "min_child_samples": 87,
+    "subsample": 0.8694916518767465,
+    "colsample_bytree": 0.5528386863204131,
+    "reg_alpha": 1.4263322282358653,
+    "reg_lambda": 3.484420244989796,
 }
-DEFAULT_LGBM_REGRESSOR_PARAMS = {
-    "n_estimators": 220,
-    "learning_rate": 0.035,
-    "num_leaves": 17,
-    "max_depth": -1,
-    "min_child_samples": 35,
-    "subsample": 0.85,
-    "colsample_bytree": 0.85,
-    "reg_alpha": 0.10,
-    "reg_lambda": 10.0,
-}
+DEFAULT_LGBM_REGRESSOR_PARAMS = dict(DEFAULT_LGBM_CLASSIFIER_PARAMS)
 META_HPO_PRESETS = (
     {
         "name": "base_winner_target_soft_w7",
@@ -314,10 +446,21 @@ META_HPO_PRESETS = (
         },
     },
 )
-_FEATURE_SELECTION_CACHE: dict[tuple[Any, ...], tuple[list[str], pd.DataFrame]] = {}
+_FEATURE_SELECTION_CACHE: dict[
+    tuple[Any, ...],
+    tuple[list[str], pd.DataFrame, dict[str, list[str]]],
+] = {}
+_JOINED_FRAME_CACHE: dict[tuple[Any, ...], pd.DataFrame] = {}
 _HPO_FOLD_MATRIX_CACHE: dict[
     tuple[Any, ...],
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]],
+    tuple[
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        list[str],
+        dict[str, Any],
+    ],
 ] = {}
 
 
@@ -352,6 +495,257 @@ def _feature_contract_hash(feature_names: list[str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _contract_hash(payload: Any) -> str:
+    encoded = json.dumps(
+        _json_safe(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _handoff_contract_path(handoff_path: Path) -> Path:
+    return Path(handoff_path).parent / "train_meta_regime_handoff_contract.json"
+
+
+def _unique_nonempty_strings(values: Any) -> list[str]:
+    series = pd.Series(values, copy=False).dropna().astype(str).str.strip()
+    return sorted(value for value in series.unique() if value)
+
+
+def _target_strength_spec_from_contract(
+    contract: dict[str, Any] | None,
+) -> TargetStrengthWeightSpec | dict[str, TargetStrengthWeightSpec] | None:
+    raw = dict((contract or {}).get("base_sample_weight_spec", {}) or {})
+    if str(raw.get("schema", "")) == "base_weight_arm_v1":
+        return None
+    by_side = raw.get("spec_by_side")
+    if isinstance(by_side, dict):
+        return {
+            side: TargetStrengthWeightSpec(**{
+                key: value
+                for key, value in dict(by_side.get(side, {})).items()
+                if key in TargetStrengthWeightSpec.__dataclass_fields__
+            })
+            for side in ("long", "short")
+        }
+    spec_payload = raw.get("spec", raw)
+    if not isinstance(spec_payload, dict):
+        return TargetStrengthWeightSpec()
+    allowed = set(TargetStrengthWeightSpec.__dataclass_fields__)
+    kwargs = {key: value for key, value in spec_payload.items() if key in allowed}
+    try:
+        return TargetStrengthWeightSpec(**kwargs)
+    except (TypeError, ValueError):
+        return TargetStrengthWeightSpec()
+
+
+def _base_weight_arm_from_contract(contract: dict[str, Any] | None) -> str | None:
+    raw = dict((contract or {}).get("base_sample_weight_spec", {}) or {})
+    if str(raw.get("schema", "")) != "base_weight_arm_v1":
+        return None
+    arm = str(raw.get("weight_arm", "")).strip()
+    return arm or None
+
+
+def _serialize_inherited_weighting(
+    inherited_weight_spec: (
+        TargetStrengthWeightSpec | dict[str, TargetStrengthWeightSpec] | None
+    ),
+    inherited_base_weight_arm: str | None,
+) -> dict[str, Any]:
+    """Serialize the exact inherited base weighting contract without inventing one."""
+
+    if isinstance(inherited_weight_spec, dict):
+        spec_payload: dict[str, Any] | None = {
+            side: spec.__dict__ for side, spec in inherited_weight_spec.items()
+        }
+    elif inherited_weight_spec is not None:
+        spec_payload = inherited_weight_spec.__dict__
+    else:
+        spec_payload = None
+    return {
+        "schema": (
+            "base_weight_arm_v1"
+            if inherited_weight_spec is None and inherited_base_weight_arm
+            else "target_strength_weight_v1"
+        ),
+        "weight_arm": str(inherited_base_weight_arm) if inherited_base_weight_arm else None,
+        "spec": _json_safe(spec_payload),
+    }
+
+
+def _load_and_validate_handoff_contract(
+    *,
+    handoff_path: Path,
+    handoff_rows: pd.DataFrame,
+    strict: bool,
+) -> dict[str, Any]:
+    """Validate rank/target/weight provenance before meta training.
+
+    The full contracts are sidecar metadata.  The row-level hashes prove that
+    the exact selected candidate stream has one uniform base provenance.
+    """
+
+    path = _handoff_contract_path(handoff_path)
+    raw: dict[str, Any] = {}
+    label_resolution_contract: dict[str, Any] = {}
+    if path.is_file():
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Invalid handoff contract JSON: {path}")
+        label_resolution_contract = dict(
+            loaded.get("label_resolution_contract", {}) or {}
+        )
+        raw = dict(loaded.get("inherited_base_contract", loaded))
+    elif strict:
+        raise ValueError(f"Strict meta handoff requires contract sidecar: {path}")
+
+    scopes = _unique_nonempty_strings(handoff_rows.get(HANDOFF_RANK_SCOPE_COLUMN))
+    if scopes and scopes != [HANDOFF_RANK_SCOPE]:
+        raise ValueError(
+            "candidate_handoff_rank_scope must be timestamp_side; "
+            f"found row values {scopes}"
+        )
+    declared_scope = str(raw.get(HANDOFF_RANK_SCOPE_COLUMN, "")).strip()
+    if declared_scope and declared_scope != HANDOFF_RANK_SCOPE:
+        raise ValueError(
+            "handoff contract candidate_handoff_rank_scope must be "
+            f"timestamp_side, got {declared_scope!r}"
+        )
+
+    target_contract = raw.get("base_target_contract")
+    weight_contract = raw.get("base_sample_weight_spec")
+    expected_target_hash = str(raw.get(BASE_TARGET_CONTRACT_HASH_COLUMN, "")).strip()
+    expected_weight_hash = str(
+        raw.get(BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN, "")
+    ).strip()
+    target_hashes = _unique_nonempty_strings(
+        handoff_rows.get(BASE_TARGET_CONTRACT_HASH_COLUMN)
+    )
+    weight_hashes = _unique_nonempty_strings(
+        handoff_rows.get(BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN)
+    )
+    if strict:
+        if scopes != [HANDOFF_RANK_SCOPE] or declared_scope != HANDOFF_RANK_SCOPE:
+            raise ValueError(
+                "Strict meta handoff requires timestamp_side rank scope on both "
+                "the row stream and sidecar."
+            )
+        if not isinstance(target_contract, dict) or not isinstance(weight_contract, dict):
+            raise ValueError(
+                "Strict meta handoff requires explicit base target and sample-weight contracts."
+            )
+        if not expected_target_hash or not expected_weight_hash:
+            raise ValueError(
+                "Strict meta handoff requires base target and sample-weight contract hashes."
+            )
+        if target_hashes != [expected_target_hash] or weight_hashes != [expected_weight_hash]:
+            raise ValueError(
+                "Strict meta handoff found missing or mixed base contract hashes: "
+                f"target={target_hashes}, weight={weight_hashes}."
+            )
+        if _contract_hash(target_contract) != expected_target_hash:
+            raise ValueError("Base target contract sidecar hash does not match its payload.")
+        if _contract_hash(weight_contract) != expected_weight_hash:
+            raise ValueError("Base sample-weight contract sidecar hash does not match its payload.")
+        if str(weight_contract.get("schema", "")) not in {
+            "target_strength_weight_v1",
+            "base_weight_arm_v1",
+        }:
+            raise ValueError(
+                "Strict meta handoff requires target_strength_weight_v1 or "
+                "base_weight_arm_v1 sample weights."
+            )
+        if (
+            label_resolution_contract.get("schema")
+            != "forward_label_resolution_v1"
+            or label_resolution_contract.get("resolution_column")
+            != "__label_path_end_ts__"
+            or "__label_path_end_ts__" not in handoff_rows.columns
+        ):
+            raise ValueError(
+                "Strict meta handoff requires the forward_label_resolution_v1 "
+                "contract and __label_path_end_ts__ rows."
+            )
+    return {
+        "path": str(path),
+        "strict": bool(strict),
+        "sidecar_present": bool(path.is_file()),
+        "candidate_handoff_rank_scope": HANDOFF_RANK_SCOPE,
+        "row_rank_scopes": scopes,
+        "declared_rank_scope": declared_scope or None,
+        "base_target_contract": target_contract if isinstance(target_contract, dict) else {},
+        BASE_TARGET_CONTRACT_HASH_COLUMN: expected_target_hash or None,
+        "row_target_contract_hashes": target_hashes,
+        "base_sample_weight_spec": weight_contract if isinstance(weight_contract, dict) else {},
+        BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN: expected_weight_hash or None,
+        "row_sample_weight_spec_hashes": weight_hashes,
+        "validation_status": "strict_pass" if strict else "non_strict",
+        "label_resolution_contract": label_resolution_contract,
+    }
+
+
+def _meta_weight_archetypes(train: pd.DataFrame) -> pd.Series:
+    side = train.get("side_name", pd.Series("unknown", index=train.index)).astype(str)
+    for column in (
+        "archetype_label_family",
+        "policy_archetype",
+        "local_side_archetype",
+        "__archetype_label_family__",
+        "source_tag",
+    ):
+        if column in train.columns:
+            return side + "__" + train[column].astype(str).fillna("missing")
+    return side + "__missing"
+
+
+def _train_only_target_strength_weights(
+    train: pd.DataFrame,
+    target: pd.Series,
+    *,
+    sample_weight_spec: TargetStrengthWeightSpec | dict[str, TargetStrengthWeightSpec],
+    strict: bool,
+) -> tuple[pd.Series, dict[str, Any]]:
+    """Recompute inherited target-strength weights on this fold's top30 rows."""
+
+    candidate_col = _candidate_column("top30")
+    if candidate_col in train.columns:
+        selected = train[candidate_col].fillna(False).astype(bool)
+        if strict and not bool(selected.all()):
+            raise ValueError(
+                "Strict meta training must receive only top30 candidate rows; "
+                f"found {int((~selected).sum())} non-candidates in the train fold."
+            )
+    elif strict:
+        raise ValueError("Strict meta handoff requires selected_top30 on train rows.")
+    timestamps = pd.to_datetime(train.get("__ts__"), utc=True, errors="coerce")
+    if strict and timestamps.isna().any():
+        raise ValueError("Strict meta handoff has invalid candidate timestamps.")
+    if isinstance(sample_weight_spec, dict):
+        side_names = train.get("side_name", pd.Series("long", index=train.index)).astype(str)
+        weights = pd.Series(1.0, index=train.index, dtype=np.float32)
+        diagnostics: dict[str, Any] = {"schema": "side_target_strength_weight_v1", "by_side": {}}
+        for side in ("long", "short"):
+            mask = side_names.eq(side)
+            if not bool(mask.any()):
+                continue
+            local, local_diag = build_target_strength_weights(
+                target.loc[mask],
+                timestamps=timestamps.loc[mask],
+                archetypes=_meta_weight_archetypes(train.loc[mask]),
+                spec=sample_weight_spec[side],
+            )
+            weights.loc[mask] = np.asarray(local, dtype=np.float32)
+            diagnostics["by_side"][side] = local_diag
+        return weights, diagnostics
+    weights, diagnostics = build_target_strength_weights(
+        target,
+        timestamps=timestamps,
+        archetypes=_meta_weight_archetypes(train),
+        spec=sample_weight_spec,
+    )
+    return pd.Series(weights, index=train.index, dtype=np.float32), diagnostics
+
+
 def _save_meta_fold_models(
     *,
     out_dir: Path,
@@ -363,6 +757,8 @@ def _save_meta_fold_models(
     seed: int,
     models: dict[str, Any],
     feature_names: list[str],
+    model_feature_names: dict[str, list[str]] | None,
+    input_feature_contract: dict[str, Any] | None,
     classifier_params: dict[str, Any],
     regressor_params: dict[str, Any],
     meta_head_mode: str,
@@ -371,6 +767,10 @@ def _save_meta_fold_models(
     train_rows_fit: int,
     valid_rows: int,
     target_columns_used: set[str],
+    preprocessing_state: dict[str, Any] | None = None,
+    inherited_handoff_contract: dict[str, Any] | None = None,
+    target_strength_weight_diagnostics: dict[str, Any] | None = None,
+    label_purge_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Persist fold-fitted meta models and their exact feature contract."""
 
@@ -394,6 +794,16 @@ def _save_meta_fold_models(
         "feature_names": list(feature_names),
         "feature_count": int(len(feature_names)),
         "feature_contract_hash": _feature_contract_hash(list(feature_names)),
+        "feature_names_by_model": {
+            str(label): list(names)
+            for label, names in (model_feature_names or {}).items()
+        },
+        "feature_contract_hash_by_model": {
+            str(label): _feature_contract_hash(list(names))
+            for label, names in (model_feature_names or {}).items()
+        },
+        "input_feature_contract": _json_safe(input_feature_contract or {}),
+        "preprocessing_state": _json_safe(preprocessing_state or {}),
     }
     columns_path.write_text(
         json.dumps(_json_safe(columns_payload), indent=2, sort_keys=True),
@@ -416,11 +826,24 @@ def _save_meta_fold_models(
         "columns_path": str(columns_path),
         "feature_count": int(len(feature_names)),
         "feature_contract_hash": columns_payload["feature_contract_hash"],
+        "feature_names_by_model": columns_payload["feature_names_by_model"],
+        "feature_contract_hash_by_model": columns_payload[
+            "feature_contract_hash_by_model"
+        ],
+        "input_feature_contract": columns_payload["input_feature_contract"],
+        "preprocessing_state": columns_payload["preprocessing_state"],
         "classifier_params": _json_safe(classifier_params),
         "regressor_params": _json_safe(regressor_params),
         "target_columns_used": sorted(str(c) for c in target_columns_used),
+        "inherited_base_handoff_contract": _json_safe(
+            inherited_handoff_contract or {}
+        ),
+        "target_strength_weight_diagnostics": _json_safe(
+            target_strength_weight_diagnostics or {}
+        ),
+        "label_purge_contract": _json_safe(label_purge_contract or {}),
         "leakage_contract": {
-            "fit_scope": "prior_rows_only_for_this_oos_fold",
+            "fit_scope": "prior_rows_with_complete_forward_labels_before_this_oos_fold",
             "oos_rows": "valid_start <= timestamp < valid_end",
             "feature_contract": "columns.json is the required inference-time feature order",
             "outcome_columns": "used only for training labels and validation metrics, never as OOS features",
@@ -493,6 +916,32 @@ def _candidate_column(frontier: str) -> str:
     return f"selected_top{int(normalized)}"
 
 
+def _parquet_schema_columns(path: Path) -> set[str]:
+    """Read Parquet column names without materializing any data rows."""
+    try:
+        import pyarrow.parquet as pq
+
+        return set(map(str, pq.read_schema(path).names))
+    except Exception as pyarrow_error:
+        try:
+            import duckdb
+
+            escaped = str(Path(path).resolve()).replace("'", "''")
+            relation = (
+                f"read_parquet('{escaped}/*.parquet', union_by_name=true)"
+                if Path(path).is_dir()
+                else f"read_parquet('{escaped}')"
+            )
+            rows = duckdb.connect().execute(
+                f"DESCRIBE SELECT * FROM {relation}"
+            ).fetchall()
+            return {str(row[0]) for row in rows}
+        except Exception as duckdb_error:
+            raise RuntimeError(
+                f"Could not inspect Parquet schema without reading rows: {path}"
+            ) from duckdb_error
+
+
 def _load_joined_frame(
     handoff_path: Path,
     ledger_path: Path,
@@ -508,21 +957,19 @@ def _load_joined_frame(
     pre-entry columns required by their selected features and fold-derived
     context.
     """
-    try:
-        import pyarrow.parquet as pq
-
-        handoff_schema_cols = set(pq.read_schema(handoff_path).names)
-    except Exception:
-        handoff_schema_cols = set(pd.read_parquet(handoff_path).columns)
+    handoff_schema_cols = _parquet_schema_columns(handoff_path)
     if handoff_columns is None:
         handoff = pd.read_parquet(handoff_path)
     else:
+        # ``month`` is redundant with the decision timestamp and some frozen
+        # candidate ledgers intentionally omit it.  It is reconstructed below
+        # from ``__ts__`` when absent; score and frontier membership are the
+        # actual handoff requirements.
         required_handoff = set(KEY_COLUMNS) | {
-            "month",
             "score",
             _candidate_column(frontier),
         }
-        requested_handoff = required_handoff | {
+        requested_handoff = required_handoff | set(HANDOFF_PROVENANCE_COLUMNS) | {
             str(col) for col in handoff_columns if str(col).strip()
         }
         read_handoff = sorted(requested_handoff.intersection(handoff_schema_cols))
@@ -533,12 +980,7 @@ def _load_joined_frame(
     ledger_cols = list(KEY_COLUMNS) + ["month", "score", _candidate_column(frontier)]
     ledger_cols += [col for col in OUTCOME_COLUMNS if col not in ledger_cols]
     ledger_cols += [col for col in LEDGER_CONTEXT_COLUMNS if col not in ledger_cols]
-    try:
-        import pyarrow.parquet as pq
-
-        ledger_schema_cols = set(pq.read_schema(ledger_path).names)
-    except Exception:
-        ledger_schema_cols = set(pd.read_parquet(ledger_path).columns)
+    ledger_schema_cols = _parquet_schema_columns(ledger_path)
     ledger = pd.read_parquet(
         ledger_path, columns=[col for col in ledger_cols if col in ledger_schema_cols]
     )
@@ -677,6 +1119,10 @@ def _load_joined_frame(
     # candidate cross-section. Fold-specific train-prior versions are recomputed
     # inside run_smoke before model fitting to avoid validation-month priors.
     score = _num(merged.get("score"), index=merged.index)
+    # ``score`` is also a bookkeeping/output name and some generic selectors
+    # exclude it defensively.  Preserve an explicit, observable model-input
+    # alias so every meta contract can condition on the direct base prediction.
+    merged["base_score_raw"] = score.astype(np.float32)
     ts = (
         pd.to_datetime(merged["__ts__"], utc=True, errors="coerce")
         if "__ts__" in merged.columns
@@ -732,6 +1178,125 @@ def _load_joined_frame(
         if source_col in merged.columns and alias_col not in merged.columns:
             merged[alias_col] = merged[source_col]
     return merged
+
+
+def _resolved_meta_train_mask(
+    frame: pd.DataFrame,
+    *,
+    valid_start: Any,
+    strict: bool,
+) -> tuple[pd.Series, dict[str, Any]]:
+    """Return prior rows whose complete forward label predates validation."""
+
+    timestamps = pd.to_datetime(frame.get("__ts__"), utc=True, errors="coerce")
+    prior = timestamps.lt(valid_start)
+    resolution_column = "__label_path_end_ts__"
+    if resolution_column not in frame.columns:
+        if strict:
+            raise ValueError(
+                "Strict meta OOS requires __label_path_end_ts__ so forward-label "
+                "paths can be purged at every validation boundary."
+            )
+        return prior, {
+            "schema": "meta_forward_label_purge_v1",
+            "status": "legacy_timestamp_only",
+            "resolution_column": None,
+            "prior_rows": int(prior.sum()),
+            "purged_rows": 0,
+            "retained_rows": int(prior.sum()),
+        }
+    resolved_at = pd.to_datetime(
+        frame[resolution_column], utc=True, errors="coerce"
+    )
+    invalid_prior = prior & resolved_at.isna()
+    if strict and invalid_prior.any():
+        raise ValueError(
+            "Strict meta OOS found prior rows without finite label resolution: "
+            f"{int(invalid_prior.sum())}"
+        )
+    # A label ending exactly at the validation boundary is conservatively
+    # excluded: its final close belongs to that boundary instant.
+    resolved_before = resolved_at.lt(valid_start)
+    mask = prior & resolved_before
+    purged = prior & ~resolved_before
+    return mask, {
+        "schema": "meta_forward_label_purge_v1",
+        "status": "strict_purged" if strict else "purged_when_available",
+        "resolution_column": resolution_column,
+        "valid_start": pd.Timestamp(valid_start),
+        "prior_rows": int(prior.sum()),
+        "purged_rows": int(purged.sum()),
+        "invalid_prior_rows": int(invalid_prior.sum()),
+        "retained_rows": int(mask.sum()),
+        "max_retained_label_end": (
+            resolved_at.loc[mask].max() if bool(mask.any()) else None
+        ),
+        "min_purged_label_end": (
+            resolved_at.loc[purged].min() if bool(purged.any()) else None
+        ),
+    }
+
+
+def _attach_materialized_soft_labels(
+    frame: pd.DataFrame,
+    *,
+    handoff_path: Path,
+    label_paths: Sequence[Path],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Attach the canonical base soft target by decision-time row identity.
+
+    Candidate ledgers intentionally omit training-only labels.  A controlled
+    meta replay may recover the *same* materialized base target from its label
+    artifact, but only for the training loss.  The target remains in the
+    outcome contract and is removed before every OOS feature transform.
+    """
+
+    paths = [Path(path) for path in label_paths if Path(path).exists()]
+    if not paths:
+        raise FileNotFoundError("No materialized soft-label parquet files were found")
+    if "row_id" not in frame.columns:
+        raise ValueError("Soft-label attachment requires row_id in the handoff")
+    import duckdb
+
+    sql = """
+        WITH candidate AS (
+            SELECT row_id, __ts__, __symbol__, lower(side_name) AS side_name
+            FROM read_parquet(?)
+        ), labels AS (
+            SELECT __ts__, __symbol__, lower(side_name) AS side_name,
+                   __first_touch_target_soft__
+            FROM read_parquet(?)
+        )
+        SELECT candidate.row_id, labels.__first_touch_target_soft__
+        FROM candidate
+        LEFT JOIN labels USING (__ts__, __symbol__, side_name)
+    """
+    conn = duckdb.connect()
+    try:
+        mapping = conn.execute(
+            sql, [str(handoff_path), [str(path) for path in paths]]
+        ).fetchdf()
+    finally:
+        conn.close()
+    if mapping["row_id"].duplicated().any():
+        raise ValueError("Materialized soft-label join is not one-to-one by row_id")
+    target_by_row = pd.Series(
+        pd.to_numeric(mapping["__first_touch_target_soft__"], errors="coerce").to_numpy(
+            dtype=np.float32, copy=False
+        ),
+        index=mapping["row_id"].to_numpy(copy=False),
+    )
+    out = frame.copy(deep=False)
+    target = out["row_id"].map(target_by_row).astype(np.float32)
+    out["__first_touch_target_soft__"] = target
+    return out, {
+        "target_column": "__first_touch_target_soft__",
+        "label_paths": [str(path) for path in paths],
+        "rows": int(len(out)),
+        "matched_rows": int(target.notna().sum()),
+        "coverage": float(target.notna().mean()),
+        "contract": "training-loss target only; stripped before OOS transforms",
+    }
 
 
 def _archetype_key(frame: pd.DataFrame) -> pd.Series:
@@ -1245,11 +1810,12 @@ def _add_fold_hit_surprise_features(
     source = source[source["_day"].notna()].sort_values(
         ["_key", "_day"], kind="mergesort"
     )
-    source_groups: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    source_groups: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, float]] = {}
     for key, group in source.groupby("_key", sort=False):
         days = group["_day"].to_numpy(dtype=np.float64)
         hits = group["_hit"].to_numpy(dtype=np.float64)
-        source_groups[str(key)] = (days, hits, np.cumsum(hits))
+        offset = float(days[0]) if len(days) else 0.0
+        source_groups[str(key)] = (days, hits, np.cumsum(hits), offset)
 
     def assign(
         target: pd.DataFrame, target_days: pd.Series, target_key: pd.Series
@@ -1274,7 +1840,7 @@ def _add_fold_hit_surprise_features(
                 source_tuple = source_groups.get(str(key))
                 if source_tuple is None:
                     continue
-                src_days, src_hits, src_cumsum = source_tuple
+                src_days, src_hits, src_cumsum, src_offset = source_tuple
                 pos = group["_pos"].to_numpy(dtype=np.int64)
                 day = group["_day"].to_numpy(dtype=np.float64)
                 valid_day = np.isfinite(day)
@@ -1298,8 +1864,10 @@ def _add_fold_hit_surprise_features(
                     src_days, day - 4.0 * float(hl), side="left"
                 ).astype(np.int64)
                 alpha = math.log(2.0) / float(hl)
-                exp1 = np.exp(alpha * src_days)
-                exp2 = np.exp(2.0 * alpha * src_days)
+                shifted_src_days = src_days - src_offset
+                shifted_day = day - src_offset
+                exp1 = np.exp(alpha * shifted_src_days)
+                exp2 = np.exp(2.0 * alpha * shifted_src_days)
                 hit_exp1 = src_hits * exp1
                 c_exp1 = np.concatenate([[0.0], np.cumsum(exp1)])
                 c_hit_exp1 = np.concatenate([[0.0], np.cumsum(hit_exp1)])
@@ -1307,8 +1875,8 @@ def _add_fold_hit_surprise_features(
                 win_exp1 = c_exp1[right] - c_exp1[left]
                 win_hit_exp1 = c_hit_exp1[right] - c_hit_exp1[left]
                 win_exp2 = c_exp2[right] - c_exp2[left]
-                scale1 = np.exp(-alpha * day)
-                scale2 = np.exp(-2.0 * alpha * day)
+                scale1 = np.exp(-alpha * shifted_day)
+                scale2 = np.exp(-2.0 * alpha * shifted_day)
                 weight_sum = scale1 * win_exp1
                 weighted_hit = np.divide(
                     scale1 * win_hit_exp1,
@@ -1402,9 +1970,25 @@ def _make_xy(
     numeric_cols: list[str],
     categorical_cols: list[str],
     selected_features: list[str] | None = None,
+    generated_features: Sequence[str] = (),
+    legacy_constant_zero_features: Sequence[str] = (),
+    preprocessing_state_out: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    selected_contract: dict[str, Any] | None = None
+    if selected_features:
+        selected_contract = resolve_meta_input_contract(
+            selected_features,
+            materialized_columns=train.columns,
+            categorical_columns=categorical_cols,
+            generated_features=generated_features,
+            legacy_constant_zero_features=legacy_constant_zero_features,
+        )
+        require_resolved_meta_input_contract(
+            selected_contract, role="meta matrix construction"
+        )
     train_parts: list[pd.DataFrame] = []
     valid_parts: list[pd.DataFrame] = []
+    numeric_medians: dict[str, float] = {}
     if numeric_cols:
         train_num = (
             train.loc[:, numeric_cols]
@@ -1421,10 +2005,18 @@ def _make_xy(
             .replace([np.inf, -np.inf], np.nan)
             .fillna(0.0)
         )
+        numeric_medians = {
+            str(col): float(value) for col, value in med.items()
+        }
         train_parts.append(train_num.fillna(med).fillna(0.0).astype(np.float32))
         valid_parts.append(valid_num.fillna(med).fillna(0.0).astype(np.float32))
     if categorical_cols:
         selected = set(str(c) for c in (selected_features or []))
+        # A numeric feature may legitimately share a categorical source prefix
+        # (for example ``base_margin_to_cutoff_z``).  The frozen numeric
+        # contract is authoritative; do not materialize the same name again as
+        # a one-hot category inferred only from its prefix.
+        selected.difference_update(str(c) for c in numeric_cols)
         if selected:
             train_cat_parts: list[pd.Series] = []
             valid_cat_parts: list[pd.Series] = []
@@ -1472,6 +2064,25 @@ def _make_xy(
     x_valid = pd.concat(valid_parts, axis=1).reindex(
         columns=x_train.columns, fill_value=0.0
     )
+    if selected_contract is not None:
+        x_train = materialize_legacy_constant_zeros(x_train, selected_contract)
+        x_valid = materialize_legacy_constant_zeros(x_valid, selected_contract)
+    if preprocessing_state_out is not None:
+        preprocessing_state_out.clear()
+        preprocessing_state_out.update(
+            {
+                "schema": "s52_meta_matrix_preprocessing_v1",
+                "numeric_columns": list(map(str, numeric_cols)),
+                "numeric_medians": numeric_medians,
+                "categorical_source_columns": list(map(str, categorical_cols)),
+                "encoded_feature_names": list(map(str, x_train.columns)),
+                "encoded_feature_contract_hash": _feature_contract_hash(
+                    list(map(str, x_train.columns))
+                ),
+                "categorical_encoding": "fixed selected one-hot names",
+                "nonfinite_policy": "replace inf with nan then train-median fill",
+            }
+        )
     return x_train, x_valid, list(x_train.columns)
 
 
@@ -1492,6 +2103,14 @@ def _feature_source_columns_for_selected(
         return list(numeric_cols), list(categorical_cols)
     selected = {str(c) for c in selected_features}
     selected_numeric = [col for col in numeric_cols if str(col) in selected]
+    # Fold-local base priors are generated after the raw handoff is loaded.  A
+    # frozen side contract may legitimately request them even though they were
+    # absent from the original parquet schema.
+    selected_numeric.extend(
+        feature
+        for feature in BASE_PRIOR_NUMERIC_FEATURES
+        if feature in selected and feature not in selected_numeric
+    )
     selected_categorical: list[str] = []
     for col in categorical_cols:
         prefix = f"{col}_"
@@ -1502,6 +2121,46 @@ def _feature_source_columns_for_selected(
     if not selected_numeric and not selected_categorical:
         return list(numeric_cols), list(categorical_cols)
     return selected_numeric, selected_categorical
+
+
+def _projected_handoff_columns_for_selected(
+    handoff_path: Path,
+    selected_features: Sequence[str] | None,
+) -> list[str] | None:
+    """Map encoded selected columns back to their raw handoff sources."""
+    selected = [str(col) for col in (selected_features or []) if str(col).strip()]
+    if not selected:
+        return None
+    available = sorted(_parquet_schema_columns(handoff_path))
+    available_set = set(available)
+    projected: set[str] = {col for col in selected if col in available_set}
+    unresolved = [col for col in selected if col not in available_set]
+    categorical_candidates = [
+        col
+        for col in available
+        if not col.startswith("selected_top")
+        and col not in NEVER_FEATURE_COLUMNS
+        and col not in OUTCOME_COLUMNS
+    ]
+    for encoded in unresolved:
+        matches = [col for col in categorical_candidates if encoded.startswith(f"{col}_")]
+        if matches:
+            projected.add(max(matches, key=len))
+    projected.update(
+        {
+            "source_tag",
+            "source_semantic_family",
+            "policy_archetype",
+            "archetype_policy_key",
+            "__archetype_policy_key__",
+            "archetype_label_family",
+            "__archetype_label_family__",
+            "local_side_archetype",
+            "source_archetype",
+            "row_id",
+        }.intersection(available_set)
+    )
+    return sorted(projected)
 
 
 def _classification_weights(target: pd.Series, train: pd.DataFrame) -> np.ndarray:
@@ -1551,6 +2210,10 @@ def _lgbm_params(
     ):
         params[key] = float(params[key])
     return params
+
+
+def _meta_lgbm_n_jobs() -> int:
+    return max(1, min(int(os.environ.get("EPM_META_LGBM_N_JOBS", "4")), 16))
 
 
 def _time_spread_cap_rows(n_rows: int, max_rows: int) -> np.ndarray:
@@ -1640,8 +2303,16 @@ def _feature_selection_target(train: pd.DataFrame, target_name: str) -> pd.Serie
     raise ValueError(f"Unknown feature-selection target: {target_name}")
 
 
-def _base_soft_label_target(frame: pd.DataFrame) -> tuple[pd.Series, str]:
-    for col in BASE_SOFT_LABEL_COLUMNS:
+def _base_soft_label_target(
+    frame: pd.DataFrame,
+    *,
+    target_contract: dict[str, Any] | None = None,
+) -> tuple[pd.Series, str]:
+    declared = str((target_contract or {}).get("target_column", "")).strip()
+    candidates = list(dict.fromkeys([declared, *BASE_SOFT_LABEL_COLUMNS]))
+    for col in candidates:
+        if not col:
+            continue
         if col in frame.columns:
             target = (
                 _num(frame.get(col), index=frame.index)
@@ -1740,6 +2411,8 @@ def _append_post_selection_ood_features(
     x_train: pd.DataFrame,
     x_valid: pd.DataFrame,
     selected: list[str],
+    *,
+    output_features: Sequence[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     base_features = [str(c) for c in selected if str(c) in x_train.columns]
     if len(base_features) < 3:
@@ -1787,10 +2460,110 @@ def _append_post_selection_ood_features(
     x_valid = x_valid.copy()
     train_metrics = _metrics(train_arr)
     valid_metrics = _metrics(valid_arr)
-    for name in META_POST_SELECTION_OOD_FEATURE_NAMES:
+    requested = [
+        str(name)
+        for name in (output_features or META_POST_SELECTION_OOD_FEATURE_NAMES)
+        if str(name) in set(ALL_META_POST_SELECTION_OOD_FEATURE_NAMES)
+    ]
+    for name in requested:
         x_train[name] = train_metrics[name]
         x_valid[name] = valid_metrics[name]
-    return x_train, x_valid, list(META_POST_SELECTION_OOD_FEATURE_NAMES)
+    return x_train, x_valid, requested
+
+
+def _conditionally_select_post_selection_ood_features(
+    selector_x: pd.DataFrame,
+    selector_y: np.ndarray,
+    selector_train: pd.DataFrame,
+    *,
+    core_features: Sequence[str],
+    sample_weight: np.ndarray,
+    timestamps: pd.Series,
+    assets: np.ndarray,
+    returns: np.ndarray,
+    fold: str,
+    seed: int,
+) -> tuple[list[str], dict[str, list[str]], pd.DataFrame]:
+    """Keep derived OOD features only when they add value beyond the core.
+
+    OOD statistics cannot be part of the initial candidate universe because
+    their reference distribution must be built from the selected core.  This
+    second, train-only MDA pass protects every core feature and asks whether
+    any of the six OOD summaries adds incremental top-k value.  It therefore
+    cannot displace the base score/rank anchors or become a forced feature.
+    """
+    core = [str(c) for c in core_features if str(c) in selector_x.columns]
+    if len(core) < 3 or len(selector_x) < 500:
+        return [], {}, pd.DataFrame()
+    ood_x, _, all_ood = _append_post_selection_ood_features(
+        selector_x.loc[:, core],
+        selector_x.loc[:, core],
+        core,
+        output_features=ALL_META_POST_SELECTION_OOD_FEATURE_NAMES,
+    )
+    if not all_ood:
+        return [], {}, pd.DataFrame()
+    cfg = {
+        "protected_features": core,
+        "mda_config": {
+            "enabled": True,
+            "objective": "topk_opportunity_precision",
+            "topk_fracs": [0.20, 0.10, 0.15],
+            "topk_frac_weights": [0.20, 0.15, 0.20],
+            "positive_label": 1,
+            "use_sample_weight": True,
+            "protected_features": core,
+            # The OOD stage is an incremental evidence test. It must not gain
+            # admission merely to satisfy broad family coverage.
+            "feature_family_coverage": False,
+            "group_first_screen_enabled": True,
+            "group_first_screen_kind": "feature_family",
+            "group_first_drop_null": True,
+        },
+    }
+    candidate = train_lgbm_stability_candidate(
+        ood_x,
+        selector_y,
+        sample_weight=sample_weight,
+        random_state=int(seed) + 71_003,
+        mode="regressor",
+        timestamps=timestamps,
+        assets=assets,
+        returns=returns,
+        hpo_objective_mode="train_meta",
+        cfg=cfg,
+        label_context=_feature_selection_label_context(selector_train),
+        reference_artifact_dir=Path("/private/tmp")
+        / f"s52_meta_lgbm_ood_incremental_{abs(hash(str(fold))) % 10_000_000}",
+    )
+    if not candidate:
+        return [], {}, pd.DataFrame()
+    selected = [
+        str(name)
+        for name in candidate.get("selected_feature_names", [])
+        if str(name) in set(all_ood)
+    ]
+    selected_by_side: dict[str, list[str]] = {}
+    side_raw = dict(candidate.get("metrics", {}) or {}).get(
+        "per_side_feature_selection_selected_features", {}
+    )
+    if isinstance(side_raw, dict):
+        for side in ("long", "short"):
+            selected_by_side[side] = [
+                str(name)
+                for name in side_raw.get(side, []) or []
+                if str(name) in set(all_ood)
+            ]
+    stats = candidate.get("feature_stats")
+    if not isinstance(stats, pd.DataFrame) or stats.empty or "feature" not in stats:
+        stats = pd.DataFrame({"feature": all_ood})
+    else:
+        stats = stats.loc[stats["feature"].astype(str).isin(set(all_ood))].copy()
+    if not stats.empty:
+        stats["conditional_on_core"] = "|".join(core)
+        stats["selection_stage"] = "post_selection_ood_incremental"
+        stats["selected"] = stats["feature"].astype(str).isin(set(selected))
+    return list(dict.fromkeys(selected)), selected_by_side, stats
 
 
 def _load_fixed_selected_features(path: Path | None) -> list[str] | None:
@@ -1834,6 +2607,24 @@ def _load_fixed_selected_features(path: Path | None) -> list[str] | None:
     )
 
 
+def _load_fixed_selected_features_by_side(
+    path: Path | None,
+) -> dict[str, list[str]] | None:
+    if path is None or path.suffix.lower() != ".json" or not path.exists():
+        return None
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("selected_features_by_side")
+    if not isinstance(raw, dict):
+        return None
+    result = {
+        side: list(dict.fromkeys(str(v) for v in raw.get(side, []) if str(v).strip()))
+        for side in ("long", "short")
+    }
+    return result if all(result.values()) else None
+
+
 def _load_fixed_model_params(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
@@ -1868,7 +2659,19 @@ def _select_features_by_lgbm_pipeline(
     top_n: int,
     fold: str,
     seed: int,
-) -> tuple[pd.DataFrame, pd.DataFrame, list[str], pd.DataFrame]:
+    target_contract: dict[str, Any] | None = None,
+    target_strength_weight_spec: (
+        TargetStrengthWeightSpec | dict[str, TargetStrengthWeightSpec] | None
+    ) = None,
+    base_weight_arm: str | None = None,
+    strict_handoff_contract: bool = False,
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    list[str],
+    dict[str, list[str]],
+    pd.DataFrame,
+]:
     y = _feature_selection_target(train, target_name).replace([np.inf, -np.inf], np.nan)
     valid_y = y.notna().to_numpy(dtype=bool)
     if int(valid_y.sum()) < 500 or int(y.loc[valid_y].nunique(dropna=True)) < 3:
@@ -1885,8 +2688,22 @@ def _select_features_by_lgbm_pipeline(
         .astype(np.float32)
         .to_numpy(dtype=np.float32)
     )
-    base_soft, _base_soft_col = _base_soft_label_target(selector_train)
-    sample_weight = _base_style_weights_for_soft_label(selector_train, base_soft)
+    base_soft, _base_soft_col = _base_soft_label_target(
+        selector_train, target_contract=target_contract
+    )
+    if target_strength_weight_spec is None:
+        sample_weight = _base_style_weights_for_soft_label(
+            selector_train,
+            base_soft,
+            weight_arm=str(base_weight_arm or "W7_timestamp_balanced"),
+        )
+    else:
+        sample_weight, _ = _train_only_target_strength_weights(
+            selector_train,
+            base_soft,
+            sample_weight_spec=target_strength_weight_spec,
+            strict=bool(strict_handoff_contract),
+        )
     timestamps = pd.to_datetime(selector_train.get("__ts__"), utc=True, errors="coerce")
     assets = (
         selector_train.get(
@@ -1900,7 +2717,23 @@ def _select_features_by_lgbm_pipeline(
         returns = _num(
             selector_train.get("exec_margin"), index=selector_train.index, default=0.0
         )
+    protected_features = [
+        feature
+        for feature in META_PROTECTED_BASE_FEATURES
+        if feature in selector_x.columns
+    ]
+    protected_features = list(
+        dict.fromkeys(
+            [*protected_features, *_meta_structural_features(selector_x.columns)]
+        )
+    )
+    pre_mda_bypass_features = _meta_pre_mda_bypass_features(selector_x.columns)
     cfg = {
+        # Group-level MDA is conditional on the protected base anchors.  It
+        # lets AE/GMM, leaf, OOD and drift families demonstrate incremental
+        # value rather than forcing any family into the final contract.
+        "protected_features": protected_features,
+        "pre_mda_bypass_features": pre_mda_bypass_features,
         "mda_config": {
             "enabled": True,
             "objective": "topk_opportunity_precision",
@@ -1908,6 +2741,23 @@ def _select_features_by_lgbm_pipeline(
             "topk_frac_weights": [0.20, 0.15, 0.20],
             "positive_label": 1,
             "use_sample_weight": True,
+            "protected_features": protected_features,
+            "pre_mda_bypass_features": pre_mda_bypass_features,
+            # The meta layer has a deliberately broad context universe. Keep
+            # the observable base-score anchors, but require AE/GMM, leaf,
+            # drift, reliability and other context families to prove
+            # incremental value inside the side x archetype objective. Broad
+            # family quotas otherwise turn a coverage audit into forced model
+            # inputs and made the recent meta contracts unnecessarily base-like.
+            "feature_family_coverage": False,
+            "group_first_screen_enabled": True,
+            "group_first_screen_kind": "feature_family",
+            "group_first_drop_null": True,
+            # Archetype awareness belongs in the pre-screen.  The final
+            # long/short MDA must give each surviving archetype equal voice
+            # rather than carrying row-count or target-strength weights across
+            # archetypes; this is the validated Pack-B selector contract.
+            "side_tail_across_archetypes_unweighted": True,
         }
     }
     candidate = train_lgbm_stability_candidate(
@@ -1934,23 +2784,75 @@ def _select_features_by_lgbm_pipeline(
         for c in candidate.get("selected_feature_names", [])
         if str(c) in x_train.columns
     ]
+    selected = list(dict.fromkeys(protected_features + selected))
     if int(top_n) > 0:
         selected = selected[: int(top_n)]
     if not selected:
         raise RuntimeError(
             "Canonical lgbm_pipeline feature selection returned no selected feature names."
         )
-    x_train_selected = x_train.loc[:, selected]
-    x_valid_selected = x_valid.reindex(columns=selected, fill_value=0.0)
-    x_train_selected, x_valid_selected, ood_features = (
-        _append_post_selection_ood_features(
-            x_train_selected,
-            x_valid_selected,
-            selected,
+    candidate_metrics = dict(candidate.get("metrics", {}) or {})
+    selected_by_side_raw = candidate_metrics.get(
+        "per_side_feature_selection_selected_features", {}
+    )
+    selected_by_side: dict[str, list[str]] = {}
+    if isinstance(selected_by_side_raw, dict):
+        for side in ("long", "short"):
+            side_features = [
+                str(c)
+                for c in selected_by_side_raw.get(side, []) or []
+                if str(c) in x_train.columns
+            ]
+            if int(top_n) > 0:
+                side_features = side_features[: int(top_n)]
+            if side_features:
+                selected_by_side[side] = list(
+                    dict.fromkeys(protected_features + side_features)
+                )
+    if set(selected_by_side) != {"long", "short"}:
+        # A global fallback remains available only when one side lacks enough
+        # rows for independent MDA. Normal meta training should persist both
+        # side contracts and never silently merge them here.
+        selected_by_side = {side: list(selected) for side in ("long", "short")}
+    # OOD is derived from the selected core, so it receives its own
+    # conditional MDA pass rather than being hard-appended to every contract.
+    # Each side can therefore keep a different OOD subset.
+    ood_features, ood_by_side, ood_selection_stats = (
+        _conditionally_select_post_selection_ood_features(
+            selector_x,
+            selector_y,
+            selector_train,
+            core_features=selected,
+            sample_weight=sample_weight,
+            timestamps=timestamps,
+            assets=assets,
+            returns=returns.fillna(0.0).to_numpy(dtype=np.float32),
+            fold=fold,
+            seed=int(seed),
         )
     )
     if ood_features:
-        selected = list(dict.fromkeys(list(selected) + list(ood_features)))
+        selected = list(dict.fromkeys([*selected, *ood_features]))
+        selected_by_side = {
+            side: list(
+                dict.fromkeys(
+                    [*features, *(ood_by_side.get(side, []) or [])]
+                )
+            )
+            for side, features in selected_by_side.items()
+        }
+    x_train_selected = x_train.loc[:, [c for c in selected if c in x_train.columns]]
+    x_valid_selected = x_valid.reindex(columns=x_train_selected.columns, fill_value=0.0)
+    if ood_features:
+        core = [
+            c for c in selected if c not in ALL_META_POST_SELECTION_OOD_FEATURE_NAMES
+        ]
+        x_train_selected, x_valid_selected, _ = _append_post_selection_ood_features(
+            x_train.loc[:, core],
+            x_valid.reindex(columns=core, fill_value=0.0),
+            core,
+            output_features=ood_features,
+        )
     stats = candidate.get("feature_stats")
     if isinstance(stats, pd.DataFrame) and "feature" in stats.columns:
         rows = stats.copy()
@@ -1961,6 +2863,12 @@ def _select_features_by_lgbm_pipeline(
     selected_set = set(selected)
     rows["feature"] = rows["feature"].astype(str)
     rows["selected"] = rows["feature"].isin(selected_set)
+    rows["meta_structural_feature"] = rows["feature"].isin(
+        set(protected_features)
+    )
+    rows["meta_pre_mda_bypass"] = rows["feature"].isin(
+        set(pre_mda_bypass_features)
+    )
     if "rank" not in rows.columns:
         rows["_rank_score"] = (
             pd.to_numeric(rows.get("feature_score"), errors="coerce")
@@ -2001,37 +2909,34 @@ def _select_features_by_lgbm_pipeline(
     rows["lgbm_pipeline_selected_count"] = int(len(selected))
     rows["lgbm_pipeline_input_feature_count"] = int(x_train.shape[1])
     rows["lgbm_pipeline_selector_rows"] = int(len(selector_x))
-    if ood_features:
-        ood_rows = pd.DataFrame(
-            {
-                "feature": list(ood_features),
-                "selected": True,
-                "rank": np.arange(
-                    int(rows["rank"].max()) + 1
-                    if "rank" in rows.columns and len(rows)
-                    else 1,
-                    int(rows["rank"].max()) + 1 + len(ood_features)
-                    if "rank" in rows.columns and len(rows)
-                    else 1 + len(ood_features),
-                ),
-                "score": np.nan,
-                "fold": str(fold),
-                "feature_selection_target": str(target_name),
-                "feature_selection_method": "lgbm_pipeline_staged",
-                "feature_selection_status": "ok",
-                "feature_selection_requested_top_n": int(top_n),
-                "feature_selection_auto_selected_count": int(len(selected)),
-                "feature_selection_auto_mode": "post_mda_ood_append",
-                "lgbm_pipeline_selected_count": int(len(selected)),
-                "lgbm_pipeline_input_feature_count": int(x_train.shape[1]),
-                "lgbm_pipeline_selector_rows": int(len(selector_x)),
-            }
-        )
+    if not ood_selection_stats.empty:
+        ood_rows = ood_selection_stats.copy()
+        ood_rows["fold"] = str(fold)
+        ood_rows["feature_selection_target"] = str(target_name)
+        ood_rows["feature_selection_method"] = "lgbm_pipeline_staged"
+        ood_rows["feature_selection_status"] = "ok"
+        ood_rows["feature_selection_requested_top_n"] = int(top_n)
+        ood_rows["feature_selection_auto_selected_count"] = int(len(selected))
+        ood_rows["feature_selection_auto_mode"] = "conditional_incremental_ood"
+        ood_rows["lgbm_pipeline_selected_count"] = int(len(selected))
+        ood_rows["lgbm_pipeline_input_feature_count"] = int(x_train.shape[1])
+        ood_rows["lgbm_pipeline_selector_rows"] = int(len(selector_x))
         rows = pd.concat([rows, ood_rows], ignore_index=True, sort=False)
+    side_membership = {
+        feature: ",".join(
+            side
+            for side in ("long", "short")
+            if feature in set(selected_by_side.get(side, []))
+        )
+        for feature in selected
+    }
+    rows["selected_by_sides"] = rows["feature"].astype(str).map(side_membership)
+    rows["side_specific_contract"] = True
     return (
         x_train_selected.loc[:, selected],
         x_valid_selected.reindex(columns=selected, fill_value=0.0),
         selected,
+        selected_by_side,
         rows,
     )
 
@@ -2063,7 +2968,7 @@ def _fit_classifier(
             reg_alpha=params["reg_alpha"],
             reg_lambda=params["reg_lambda"],
             random_state=int(seed),
-            n_jobs=2,
+            n_jobs=_meta_lgbm_n_jobs(),
             verbosity=-1,
         )
         model.fit(x, target, sample_weight=weights)
@@ -2075,7 +2980,7 @@ def _fit_classifier(
         max_features="sqrt",
         class_weight="balanced",
         random_state=int(seed),
-        n_jobs=2,
+        n_jobs=_meta_lgbm_n_jobs(),
     )
     model.fit(x, target, sample_weight=weights)
     return model
@@ -2177,13 +3082,56 @@ def _fit_base_soft_label_model(
     seed: int,
     *,
     lgbm_params: dict[str, Any] | None = None,
+    sample_weight_multiplier: pd.Series | np.ndarray | None = None,
+    target_strength_weight_spec: (
+        TargetStrengthWeightSpec | dict[str, TargetStrengthWeightSpec] | None
+    ) = None,
+    base_weight_arm: str | None = None,
+    strict_handoff_contract: bool = False,
+    weight_diagnostics_out: dict[str, Any] | None = None,
 ) -> Any:
     target = _num(y).replace([np.inf, -np.inf], np.nan).clip(0.0, 1.0)
     valid = target.notna()
     if int(valid.sum()) < 50 or float(target.loc[valid].std()) <= 1e-12:
         return None
-    weight_context = _base_weight_context(train, valid)
-    weights = _base_style_weights_for_soft_label(weight_context, target.loc[valid])
+    train_valid = train.loc[valid].copy(deep=False)
+    if target_strength_weight_spec is None:
+        # Named incumbent base weights are reproduced exactly on each train fold.
+        weight_context = _base_weight_context(train, valid)
+        resolved_arm = str(base_weight_arm or "W7_timestamp_balanced")
+        weights = _base_style_weights_for_soft_label(
+            weight_context, target.loc[valid], weight_arm=resolved_arm
+        )
+        weight_diagnostics = {
+            "schema": "base_weight_arm_v1",
+            "weight_arm": resolved_arm,
+        }
+    else:
+        weights, weight_diagnostics = _train_only_target_strength_weights(
+            train_valid,
+            target.loc[valid],
+            sample_weight_spec=target_strength_weight_spec,
+            strict=bool(strict_handoff_contract),
+        )
+    if weight_diagnostics_out is not None:
+        weight_diagnostics_out.clear()
+        weight_diagnostics_out.update(_json_safe(weight_diagnostics))
+    if sample_weight_multiplier is not None:
+        multiplier = _num(
+            sample_weight_multiplier,
+            index=x.index,
+            default=1.0,
+        ).loc[valid]
+        multiplier = (
+            multiplier.replace([np.inf, -np.inf], np.nan)
+            .fillna(1.0)
+            .clip(0.25, 4.0)
+            .astype(np.float32)
+        )
+        weights = weights.mul(multiplier, fill_value=1.0)
+        mean_weight = float(weights.mean())
+        if math.isfinite(mean_weight) and mean_weight > 1e-8:
+            weights = (weights / mean_weight).astype(np.float32)
     if _LIGHTGBM_AVAILABLE and LGBMRegressor is not None:
         params = _lgbm_params(DEFAULT_LGBM_CLASSIFIER_PARAMS, lgbm_params)
         model = LGBMRegressor(
@@ -2194,11 +3142,12 @@ def _fit_base_soft_label_model(
             max_depth=params["max_depth"],
             min_child_samples=params["min_child_samples"],
             subsample=params["subsample"],
+            subsample_freq=1,
             colsample_bytree=params["colsample_bytree"],
             reg_alpha=params["reg_alpha"],
             reg_lambda=params["reg_lambda"],
             random_state=int(seed),
-            n_jobs=2,
+            n_jobs=_meta_lgbm_n_jobs(),
             verbosity=-1,
         )
         model.fit(
@@ -2211,7 +3160,7 @@ def _fit_base_soft_label_model(
         min_samples_leaf=20,
         max_features="sqrt",
         random_state=int(seed),
-        n_jobs=2,
+        n_jobs=_meta_lgbm_n_jobs(),
     )
     model.fit(x.loc[valid], target.loc[valid].astype(np.float32), sample_weight=weights)
     return model
@@ -2240,11 +3189,12 @@ def _fit_regressor(
             max_depth=params["max_depth"],
             min_child_samples=params["min_child_samples"],
             subsample=params["subsample"],
+            subsample_freq=1,
             colsample_bytree=params["colsample_bytree"],
             reg_alpha=params["reg_alpha"],
             reg_lambda=params["reg_lambda"],
             random_state=int(seed),
-            n_jobs=2,
+            n_jobs=_meta_lgbm_n_jobs(),
             verbosity=-1,
         )
         model.fit(
@@ -2257,7 +3207,7 @@ def _fit_regressor(
         min_samples_leaf=20,
         max_features="sqrt",
         random_state=int(seed),
-        n_jobs=2,
+        n_jobs=_meta_lgbm_n_jobs(),
     )
     model.fit(x.loc[valid], target.loc[valid].astype(np.float32), sample_weight=weights)
     return model
@@ -3127,6 +4077,7 @@ def run_smoke(
     *,
     handoff_dir: Path,
     ledger_path: Path | None,
+    handoff_path: Path | None = None,
     out_dir: Path,
     frontier: str,
     seed: int,
@@ -3141,13 +4092,17 @@ def run_smoke(
     feature_selection_target: str = "ev_frontier",
     feature_selection_method: str = "auto",
     max_oos_model_age_days: int = 0,
+    single_fit_oos_window: bool = False,
     validation_scope: str = "all",
     model_train_max_rows: int = 0,
+    feature_selection_max_rows: int = 0,
     model_params: dict[str, Any] | None = None,
     model_profile_name: str = "baseline",
     meta_head_mode: str = "multi",
     minimal_artifacts: bool = False,
     fixed_selected_features: list[str] | None = None,
+    fixed_selected_features_by_side: dict[str, list[str]] | None = None,
+    side_specific_single_head: bool = True,
     eval_months: list[str] | None = None,
     fold_feature_builder: Any | None = None,
     fold_feature_profile_name: str = "none",
@@ -3156,20 +4111,78 @@ def run_smoke(
     combine_prediction_shards: bool = True,
     save_fold_models: bool = False,
     handoff_columns: Sequence[str] | None = None,
+    soft_label_paths: Sequence[Path] | None = None,
+    ood_reference_features: Sequence[str] | None = None,
+    single_head_score_override: Any | None = None,
+    legacy_constant_zero_features: Sequence[str] = (),
+    strict_handoff_contract: bool = False,
+    active_sides: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    handoff_path = handoff_dir / "train_meta_regime_handoff.parquet"
-    if ledger_path is None:
-        ledger_path = handoff_dir / "s52_trailing_regime_scored_ledger.parquet"
-    data = _load_joined_frame(
-        handoff_path,
-        ledger_path,
-        frontier,
-        handoff_columns=handoff_columns,
+    handoff_path = (
+        Path(handoff_path)
+        if handoff_path is not None
+        else handoff_dir / "train_meta_regime_handoff.parquet"
     )
+    if ledger_path is None:
+        ledger_path = handoff_path.parent / "s52_trailing_regime_scored_ledger.parquet"
+    joined_cache_key = (
+        str(handoff_path.resolve()),
+        str(Path(ledger_path).resolve()),
+        str(frontier),
+        tuple(sorted(str(col) for col in (handoff_columns or []))),
+    )
+    data = _JOINED_FRAME_CACHE.get(joined_cache_key)
+    if data is None:
+        data = _load_joined_frame(
+            handoff_path,
+            ledger_path,
+            frontier,
+            handoff_columns=handoff_columns,
+        )
+        _JOINED_FRAME_CACHE.clear()
+        _JOINED_FRAME_CACHE[joined_cache_key] = data
+    active_side_set = {
+        str(side).strip().lower()
+        for side in (active_sides or ())
+        if str(side).strip().lower() in {"long", "short"}
+    }
+    if active_side_set:
+        if "side_name" not in data.columns:
+            raise ValueError("--active-sides requires the handoff side_name column")
+        data = data.loc[
+            data["side_name"].astype(str).str.lower().isin(active_side_set)
+        ].copy()
+        if data.empty:
+            raise ValueError(f"No rows remain after active-side filter: {sorted(active_side_set)}")
+    if bool(strict_handoff_contract) and str(frontier).lower() != "top30":
+        raise ValueError("Strict meta handoff is defined only for the base top30 stream.")
+    inherited_handoff_contract = _load_and_validate_handoff_contract(
+        handoff_path=handoff_path,
+        handoff_rows=data,
+        strict=bool(strict_handoff_contract),
+    )
+    inherited_target_contract = dict(
+        inherited_handoff_contract.get("base_target_contract", {}) or {}
+    )
+    inherited_weight_spec = _target_strength_spec_from_contract(
+        inherited_handoff_contract
+    )
+    inherited_base_weight_arm = _base_weight_arm_from_contract(
+        inherited_handoff_contract
+    )
+    soft_label_manifest: dict[str, Any] | None = None
+    if soft_label_paths:
+        data, soft_label_manifest = _attach_materialized_soft_labels(
+            data,
+            handoff_path=handoff_path,
+            label_paths=soft_label_paths,
+        )
     selected_col = _candidate_column(frontier)
     if train_scope == "selected":
-        data = data[data[selected_col]].copy()
+        selected_mask = data[selected_col].fillna(False).astype(bool)
+        if not bool(selected_mask.all()):
+            data = data.loc[selected_mask].copy()
     elif train_scope != "all":
         raise ValueError("--train-scope must be selected or all")
     months = sorted(str(m) for m in data["month"].dropna().unique())
@@ -3178,7 +4191,30 @@ def run_smoke(
     ts_utc = pd.to_datetime(data["__ts__"], utc=True, errors="coerce")
     validation_windows: list[dict[str, Any]] = []
     eval_month_set = {str(m) for m in (eval_months or []) if str(m).strip()}
-    for month in months[1:]:
+    eligible_eval_months = [
+        str(month)
+        for month in months[1:]
+        if not eval_month_set or str(month) in eval_month_set
+    ]
+    if bool(single_fit_oos_window) and eligible_eval_months:
+        periods = sorted(pd.Period(month) for month in eligible_eval_months)
+        expected = [periods[0] + i for i in range(len(periods))]
+        if periods != expected:
+            raise ValueError(
+                "--single-fit-oos-window requires contiguous evaluation months; "
+                f"got={eligible_eval_months}"
+            )
+        window_start = pd.Timestamp(periods[0].start_time, tz="UTC")
+        window_end = pd.Timestamp((periods[-1] + 1).start_time, tz="UTC")
+        validation_windows.append(
+            {
+                "fold": f"{window_start:%Y-%m-%d}_{window_end:%Y-%m-%d}",
+                "month": f"{periods[0]}_to_{periods[-1]}",
+                "valid_start": window_start,
+                "valid_end": window_end,
+            }
+        )
+    for month in ([] if bool(single_fit_oos_window) else months[1:]):
         if eval_month_set and str(month) not in eval_month_set:
             continue
         month_start = pd.Timestamp(pd.Period(month).start_time, tz="UTC")
@@ -3264,8 +4300,11 @@ def run_smoke(
     importances: list[pd.DataFrame] = []
     feature_selection_frames: list[pd.DataFrame] = []
     selected_features_by_fold: dict[str, list[str]] = {}
+    selected_features_by_side_by_fold: dict[str, dict[str, list[str]]] = {}
     fold_feature_metadata: list[dict[str, Any]] = []
     saved_model_manifests: list[dict[str, Any]] = []
+    label_purge_by_fold: dict[str, dict[str, Any]] = {}
+    input_feature_contracts_by_fold: dict[str, dict[str, Any]] = {}
     prediction_frames: list[pd.DataFrame] = []
     prediction_shard_paths: list[Path] = []
     prediction_shard_dir = out_dir / "prediction_shards"
@@ -3278,6 +4317,21 @@ def run_smoke(
     meta_head_mode = str(meta_head_mode).strip().lower()
     if meta_head_mode not in {"multi", "single_base_soft_label"}:
         raise ValueError("--meta-head-mode must be multi or single_base_soft_label")
+    legacy_shared_feature_contract = bool(
+        meta_head_mode == "single_base_soft_label"
+        and side_specific_single_head
+        and fixed_selected_features is not None
+        and not fixed_selected_features_by_side
+    )
+    if legacy_shared_feature_contract:
+        # Direct callers must follow the same rule as the CLI: a shared list
+        # is historical provenance, not a valid side-local MDA contract.
+        print(
+            "[feature_selection] shared fixed list is incompatible with the "
+            "side-aware meta contract; selecting long/short features anew.",
+            flush=True,
+        )
+        fixed_selected_features = None
     fs_cache_key = (
         str(handoff_path.resolve()),
         str(Path(ledger_path).resolve()) if ledger_path is not None else None,
@@ -3291,20 +4345,55 @@ def run_smoke(
         str(feature_selection_target),
         str(feature_selection_method),
         int(max_oos_model_age_days),
+        int(feature_selection_max_rows),
         str(meta_head_mode),
         str(fold_feature_profile_name),
         tuple(sorted(str(col) for col in (handoff_columns or []))),
     )
     cached_feature_selection = _FEATURE_SELECTION_CACHE.get(fs_cache_key)
     global_feature_names: list[str] | None = (
-        list(dict.fromkeys(str(c) for c in fixed_selected_features if str(c).strip()))
+        # A frozen contract is immutable. Protected anchors are applied while
+        # selecting a new contract, never appended to an already fitted model.
+        list(map(str, fixed_selected_features))
         if fixed_selected_features is not None
         else (list(cached_feature_selection[0]) if cached_feature_selection else None)
     )
     global_feature_selection_df: pd.DataFrame | None = (
         cached_feature_selection[1].copy() if cached_feature_selection else None
     )
-    if fixed_selected_features is not None:
+    global_feature_names_by_side: dict[str, list[str]] | None = None
+    has_frozen_side_feature_contract = bool(fixed_selected_features_by_side)
+    if fixed_selected_features_by_side:
+        global_feature_names_by_side = {
+            side: list(map(str, features))
+            for side, features in fixed_selected_features_by_side.items()
+            if str(side) in {"long", "short"}
+        }
+        # A side-local fixed contract is still a fixed contract.  Keep the
+        # union solely as the matrix schema; each model below receives only
+        # its own side list.  Without this, the legacy ``None`` sentinel
+        # accidentally re-entered feature selection for side-aware replays.
+        global_feature_names = list(
+            dict.fromkeys(
+                feature
+                for side in ("long", "short")
+                for feature in global_feature_names_by_side.get(side, [])
+            )
+        )
+        if not global_feature_names:
+            raise RuntimeError(
+                "Frozen side-local meta feature contract produced an empty matrix union."
+            )
+    elif cached_feature_selection and len(cached_feature_selection) >= 3:
+        global_feature_names_by_side = {
+            str(side): list(features)
+            for side, features in (cached_feature_selection[2] or {}).items()
+        }
+    elif global_feature_names is not None:
+        global_feature_names_by_side = {
+            side: list(global_feature_names) for side in ("long", "short")
+        }
+    if fixed_selected_features is not None or fixed_selected_features_by_side:
         global_feature_selection_df = pd.DataFrame(
             {
                 "fold": ["fixed_hpo_selected_features"]
@@ -3324,6 +4413,7 @@ def run_smoke(
         )
     feature_selection_recorded = False
     meta_target_columns_used: set[str] = set()
+    target_strength_weight_diagnostics_by_fold: dict[str, Any] = {}
     for fold_idx, window in enumerate(validation_windows, start=1):
         test_fold = str(window["fold"])
         test_month = str(window["month"])
@@ -3438,7 +4528,13 @@ def run_smoke(
             continue
         generated_feature_names: list[str] = []
         fold_feature_meta: dict[str, Any] = {}
-        train = data.loc[ts_utc.lt(window["valid_start"])]
+        train_mask, label_purge = _resolved_meta_train_mask(
+            data,
+            valid_start=window["valid_start"],
+            strict=bool(strict_handoff_contract),
+        )
+        label_purge_by_fold[test_fold] = label_purge
+        train = data.loc[train_mask]
         valid = data.loc[
             ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])
         ]
@@ -3446,7 +4542,7 @@ def run_smoke(
             continue
         print(
             json.dumps(
-                {
+                _json_safe({
                     "event": "s52_train_meta_fold_start",
                     "frontier": frontier,
                     "test_fold": test_fold,
@@ -3456,13 +4552,18 @@ def run_smoke(
                     "max_oos_model_age_days": int(max_oos_model_age_days),
                     "train_rows": int(len(train)),
                     "valid_rows": int(len(valid)),
-                },
+                    "label_path_purged_rows": int(label_purge["purged_rows"]),
+                    "max_retained_label_end": label_purge.get(
+                        "max_retained_label_end"
+                    ),
+                }),
                 sort_keys=True,
             ),
             flush=True,
         )
         fold_matrix_cache_key: tuple[Any, ...] | None = None
         cached_fold_matrix = None
+        fold_preprocessing_state: dict[str, Any] = {}
         if (
             int(model_train_max_rows) > 0
             and str(validation_scope).strip().lower() == "largest"
@@ -3479,7 +4580,16 @@ def run_smoke(
             )
             cached_fold_matrix = _HPO_FOLD_MATRIX_CACHE.get(fold_matrix_cache_key)
         if cached_fold_matrix is not None:
-            train_matrix, valid, x_train, x_valid, feature_names = cached_fold_matrix
+            (
+                train_matrix,
+                valid,
+                x_train,
+                x_valid,
+                feature_names,
+                fold_preprocessing_state,
+                matrix_numeric_cols,
+                matrix_categorical_cols,
+            ) = cached_fold_matrix
             print(
                 json.dumps(
                     {
@@ -3539,13 +4649,25 @@ def run_smoke(
             # above; final full-OOS replay passes model_train_max_rows=0 and uses
             # all prior rows.
             train_matrix = train
-            matrix_numeric_cols, matrix_categorical_cols = (
-                _feature_source_columns_for_selected(
-                    selected_features=global_feature_names,
-                    numeric_cols=numeric_cols,
-                    categorical_cols=categorical_cols,
+            if global_feature_names is None:
+                # Fold-local base-score priors are generated above. Recompute
+                # the source universe after that step so MDA can evaluate them
+                # rather than silently omitting them from the selection matrix.
+                matrix_numeric_cols, matrix_categorical_cols = _feature_columns(
+                    train_matrix,
+                    enable_base_prior_features=enable_base_prior_features,
+                    enable_reliability_features=enable_reliability_features,
+                    enable_support_drift_features=enable_support_drift_features,
+                    enable_hit_surprise_features=enable_hit_surprise_features,
                 )
-            )
+            else:
+                matrix_numeric_cols, matrix_categorical_cols = (
+                    _feature_source_columns_for_selected(
+                        selected_features=global_feature_names,
+                        numeric_cols=numeric_cols,
+                        categorical_cols=categorical_cols,
+                    )
+                )
             if generated_feature_names:
                 generated_numeric = [
                     col
@@ -3570,6 +4692,12 @@ def run_smoke(
                 numeric_cols=matrix_numeric_cols,
                 categorical_cols=matrix_categorical_cols,
                 selected_features=global_feature_names,
+                generated_features=(
+                    *ALL_META_POST_SELECTION_OOD_FEATURE_NAMES,
+                    *generated_feature_names,
+                ),
+                legacy_constant_zero_features=legacy_constant_zero_features,
+                preprocessing_state_out=fold_preprocessing_state,
             )
             if fold_matrix_cache_key is not None:
                 _HPO_FOLD_MATRIX_CACHE.clear()
@@ -3579,6 +4707,9 @@ def run_smoke(
                     x_train.copy(deep=False),
                     x_valid.copy(deep=False),
                     list(feature_names),
+                    dict(fold_preprocessing_state),
+                    list(matrix_numeric_cols),
+                    list(matrix_categorical_cols),
                 )
         if fold_feature_meta:
             fold_feature_metadata.append(
@@ -3588,6 +4719,10 @@ def run_smoke(
                     **_json_safe(fold_feature_meta),
                 }
             )
+        if has_frozen_side_feature_contract and global_feature_names is None:
+            raise RuntimeError(
+                "Frozen side-local meta feature contract attempted to re-enter feature selection."
+            )
         if global_feature_names is None:
             fs_fold_name = f"largest_train_before_{window['valid_start']:%Y-%m-%d}"
             method = str(feature_selection_method).strip().lower()
@@ -3596,22 +4731,72 @@ def run_smoke(
                     "--feature-selection-method now routes through lgbm_pipeline.py only. "
                     "Use auto/lgbm_pipeline/lgbm_staged."
                 )
-            x_train, x_valid, feature_names, feature_selection_df = (
+            fs_idx = _time_spread_cap_rows(
+                len(x_train), int(feature_selection_max_rows)
+            )
+            (
+                _x_train_selected,
+                _x_valid_selected,
+                feature_names,
+                global_feature_names_by_side,
+                feature_selection_df,
+            ) = (
                 _select_features_by_lgbm_pipeline(
-                    x_train,
+                    x_train.iloc[fs_idx].reset_index(drop=True),
                     x_valid,
-                    train_matrix,
+                    train_matrix.iloc[fs_idx].reset_index(drop=True),
                     target_name=str(feature_selection_target),
                     top_n=int(feature_selection_top_n),
                     fold=fs_fold_name,
                     seed=int(seed) + fold_idx,
+                    target_contract=inherited_target_contract,
+                    target_strength_weight_spec=inherited_weight_spec,
+                    base_weight_arm=inherited_base_weight_arm,
+                    strict_handoff_contract=bool(strict_handoff_contract),
                 )
             )
+            # The selector may derive and retain a subset of OOD metrics from
+            # the sampled core. Rebuild those statistics on every prior row
+            # before fitting the actual growing-window side models.
+            requested_ood = [
+                c
+                for c in feature_names
+                if c in ALL_META_POST_SELECTION_OOD_FEATURE_NAMES
+            ]
+            core_feature_names = [
+                c for c in feature_names
+                if c not in ALL_META_POST_SELECTION_OOD_FEATURE_NAMES
+            ]
+            if requested_ood:
+                x_train, x_valid, _ = _append_post_selection_ood_features(
+                    x_train.reindex(columns=core_feature_names, fill_value=0.0),
+                    x_valid.reindex(columns=core_feature_names, fill_value=0.0),
+                    core_feature_names,
+                    output_features=requested_ood,
+                )
+            else:
+                x_train = x_train.reindex(columns=core_feature_names, fill_value=0.0)
+                x_valid = x_valid.reindex(columns=core_feature_names, fill_value=0.0)
             global_feature_names = list(feature_names)
+            global_feature_names = _with_meta_protected_base_features(
+                global_feature_names,
+                available=x_train.columns,
+            )
+            global_feature_names_by_side = {
+                side: _with_meta_protected_base_features(
+                    features,
+                    available=x_train.columns,
+                )
+                for side, features in (global_feature_names_by_side or {}).items()
+            }
             global_feature_selection_df = feature_selection_df.copy()
             _FEATURE_SELECTION_CACHE[fs_cache_key] = (
                 list(global_feature_names),
                 global_feature_selection_df.copy(),
+                {
+                    side: list(features)
+                    for side, features in (global_feature_names_by_side or {}).items()
+                },
             )
             feature_selection_frames.append(feature_selection_df)
             feature_selection_recorded = True
@@ -3619,13 +4804,21 @@ def run_smoke(
             requested_ood = [
                 c
                 for c in global_feature_names
-                if c in META_POST_SELECTION_OOD_FEATURE_NAMES
+                if c in ALL_META_POST_SELECTION_OOD_FEATURE_NAMES
             ]
             if requested_ood:
+                # An ablation may append new regime/state columns. Keep OOD
+                # tied to the frozen baseline feature set so the comparison is
+                # not confounded by a newly redefined drift detector.
+                ood_source = (
+                    list(ood_reference_features)
+                    if ood_reference_features is not None
+                    else list(global_feature_names)
+                )
                 ood_base_features = [
                     c
-                    for c in global_feature_names
-                    if c not in META_POST_SELECTION_OOD_FEATURE_NAMES
+                    for c in ood_source
+                    if c not in ALL_META_POST_SELECTION_OOD_FEATURE_NAMES
                 ]
                 x_train_ood = x_train.reindex(columns=ood_base_features, fill_value=0.0)
                 x_valid_ood = x_valid.reindex(columns=ood_base_features, fill_value=0.0)
@@ -3633,9 +4826,21 @@ def run_smoke(
                     x_train_ood,
                     x_valid_ood,
                     ood_base_features,
+                    output_features=requested_ood,
                 )
                 x_train = x_train_ood
                 x_valid = x_valid_ood
+            global_feature_names = _with_meta_protected_base_features(
+                global_feature_names,
+                available=x_train.columns,
+            )
+            global_feature_names_by_side = {
+                side: _with_meta_protected_base_features(
+                    features,
+                    available=x_train.columns,
+                )
+                for side, features in (global_feature_names_by_side or {}).items()
+            }
             x_train = x_train.reindex(columns=global_feature_names, fill_value=0.0)
             x_valid = x_valid.reindex(columns=global_feature_names, fill_value=0.0)
             feature_names = list(global_feature_names)
@@ -3645,33 +4850,157 @@ def run_smoke(
             ):
                 feature_selection_frames.append(global_feature_selection_df.copy())
                 feature_selection_recorded = True
+        if global_feature_names_by_side is None:
+            global_feature_names_by_side = {
+                side: list(feature_names) for side in ("long", "short")
+            }
+        input_feature_contract = resolve_meta_input_contract(
+            feature_names,
+            materialized_columns=train_matrix.columns,
+            categorical_columns=matrix_categorical_cols,
+            generated_features=(
+                *ALL_META_POST_SELECTION_OOD_FEATURE_NAMES,
+                *generated_feature_names,
+            ),
+            legacy_constant_zero_features=legacy_constant_zero_features,
+        )
+        require_resolved_meta_input_contract(
+            input_feature_contract, role=f"meta fold {test_fold}"
+        )
+        fold_preprocessing_state["encoded_feature_names"] = list(feature_names)
+        fold_preprocessing_state["encoded_feature_contract_hash"] = (
+            _feature_contract_hash(list(feature_names))
+        )
+        x_train = materialize_legacy_constant_zeros(x_train, input_feature_contract)
+        x_valid = materialize_legacy_constant_zeros(x_valid, input_feature_contract)
+        x_train = require_encoded_meta_matrix(
+            x_train, feature_names=feature_names, role=f"meta train fold {test_fold}"
+        )
+        x_valid = require_encoded_meta_matrix(
+            x_valid, feature_names=feature_names, role=f"meta OOS fold {test_fold}"
+        )
+        input_feature_contracts_by_fold[str(test_fold)] = input_feature_contract
+        feature_names_by_side = {
+            side: [c for c in global_feature_names_by_side.get(side, []) if c in x_train.columns]
+            for side in ("long", "short")
+        }
+        for side, names in feature_names_by_side.items():
+            if not names:
+                raise RuntimeError(
+                    f"Meta {side} feature contract is empty after matrix construction."
+                )
         selected_features_by_fold[str(test_fold)] = list(feature_names)
+        selected_features_by_side_by_fold[str(test_fold)] = {
+            side: list(names) for side, names in feature_names_by_side.items()
+        }
         fit_idx = _time_spread_cap_rows(len(x_train), int(model_train_max_rows))
         x_train_fit = x_train.iloc[fit_idx].reset_index(drop=True)
         train_fit = train_matrix.iloc[fit_idx].reset_index(drop=True)
         scored = valid.copy()
         scored["score_base"] = _num(scored.get("score"), index=scored.index)
         if meta_head_mode == "single_base_soft_label":
-            base_soft_target, base_soft_target_col = _base_soft_label_target(train_fit)
+            base_soft_target, base_soft_target_col = _base_soft_label_target(
+                train_fit, target_contract=inherited_target_contract
+            )
             meta_target_columns_used.add(str(base_soft_target_col))
-            models = {
-                "base_soft_label": _fit_base_soft_label_model(
+            models: dict[str, Any] = {}
+            model_feature_names: dict[str, list[str]] = {}
+            if side_specific_single_head:
+                scored["score_meta_base_soft_label"] = np.nan
+                train_side = train_fit.get(
+                    "side_name", pd.Series("long", index=train_fit.index)
+                ).astype(str).str.lower()
+                valid_side = scored.get(
+                    "side_name", pd.Series("long", index=scored.index)
+                ).astype(str).str.lower()
+                for side_idx, side in enumerate(("long", "short"), start=1):
+                    side_features = list(feature_names_by_side[side])
+                    train_mask = train_side.eq(side)
+                    valid_mask = valid_side.eq(side)
+                    if int(train_mask.sum()) < 50:
+                        raise RuntimeError(
+                            f"Meta {side} model has only {int(train_mask.sum())} training rows."
+                        )
+                    model_label = f"base_soft_label_{side}"
+                    weight_diagnostics: dict[str, Any] = {}
+                    model = _fit_base_soft_label_model(
+                        x_train_fit.loc[train_mask, side_features],
+                        base_soft_target.loc[train_mask],
+                        train_fit.loc[train_mask],
+                        seed + fold_idx + side_idx * 10_000,
+                        lgbm_params=classifier_params,
+                        target_strength_weight_spec=inherited_weight_spec,
+                        base_weight_arm=inherited_base_weight_arm,
+                        strict_handoff_contract=bool(strict_handoff_contract),
+                        weight_diagnostics_out=weight_diagnostics,
+                    )
+                    target_strength_weight_diagnostics_by_fold[
+                        f"{test_fold}:{side}"
+                    ] = weight_diagnostics
+                    models[model_label] = model
+                    model_feature_names[model_label] = side_features
+                    if bool(valid_mask.any()):
+                        scored.loc[valid_mask, "score_meta_base_soft_label"] = _predict(
+                            model,
+                            x_valid.loc[valid_mask, side_features],
+                            classifier=False,
+                        ).to_numpy(dtype=np.float32)
+            else:
+                weight_diagnostics = {}
+                model = _fit_base_soft_label_model(
                     x_train_fit,
                     base_soft_target,
                     train_fit,
                     seed + fold_idx,
                     lgbm_params=classifier_params,
+                    target_strength_weight_spec=inherited_weight_spec,
+                    base_weight_arm=inherited_base_weight_arm,
+                    strict_handoff_contract=bool(strict_handoff_contract),
+                    weight_diagnostics_out=weight_diagnostics,
                 )
-            }
-            scored["score_meta_base_soft_label"] = _predict(
-                models["base_soft_label"], x_valid, classifier=False
-            )
+                target_strength_weight_diagnostics_by_fold[str(test_fold)] = (
+                    weight_diagnostics
+                )
+                models["base_soft_label"] = model
+                model_feature_names["base_soft_label"] = list(feature_names)
+                scored["score_meta_base_soft_label"] = _predict(
+                    model, x_valid, classifier=False
+                )
+            if single_head_score_override is not None:
+                override = single_head_score_override(
+                    x_train=x_train_fit,
+                    train=train_fit,
+                    x_valid=x_valid,
+                    scored=scored,
+                    base_target=base_soft_target,
+                    feature_names_by_side=feature_names_by_side,
+                    classifier_params=classifier_params,
+                    fold=str(test_fold),
+                    seed=int(seed + fold_idx),
+                )
+                if not isinstance(override, tuple) or len(override) != 4:
+                    raise TypeError(
+                        "single_head_score_override must return "
+                        "(scored, models, model_feature_names, metadata)."
+                    )
+                scored, override_models, override_feature_names, override_meta = override
+                models.update(dict(override_models or {}))
+                model_feature_names.update(dict(override_feature_names or {}))
+                if override_meta:
+                    fold_feature_metadata.append(
+                        {
+                            "fold": str(test_fold),
+                            "calendar_month": str(test_month),
+                            "single_head_score_override": _json_safe(override_meta),
+                        }
+                    )
             scored["meta_base_soft_label_target_col"] = base_soft_target_col
             selector_cols = {
                 "base_score": "score_base",
                 "meta_base_soft_label": "score_meta_base_soft_label",
             }
         else:
+            model_feature_names = {}
             models = {
                 "clean_exec": _fit_classifier(
                     x_train_fit,
@@ -3902,55 +5231,62 @@ def run_smoke(
                 }
             )
             fold_rows.append(selector_row)
-            for keep_frac in (0.30, 0.20, 0.10):
-                for row in _breakdown_rows(
-                    scored, score_col, selector, test_fold, keep_frac
-                ):
-                    row.update(
+            if not minimal_artifacts:
+                for keep_frac in (0.30, 0.20, 0.10):
+                    for row in _breakdown_rows(
+                        scored, score_col, selector, test_fold, keep_frac
+                    ):
+                        row.update(
+                            {
+                                "calendar_month": str(test_month),
+                                "valid_start": window["valid_start"],
+                                "valid_end": window["valid_end"],
+                                "max_oos_model_age_days": int(max_oos_model_age_days),
+                            }
+                        )
+                        breakdown.append(row)
+                if selector in {
+                    "base_score",
+                    "meta_long_aware_clean_minus_risk",
+                    "meta_path_order_clean_minus_risk",
+                    "meta_exec_margin_risk_blend",
+                }:
+                    base_conditioned_diagnostics.extend(
                         {
+                            **row,
                             "calendar_month": str(test_month),
                             "valid_start": window["valid_start"],
                             "valid_end": window["valid_end"],
                             "max_oos_model_age_days": int(max_oos_model_age_days),
                         }
+                        for row in _base_conditioned_diagnostic_rows(
+                            scored,
+                            test_month=test_fold,
+                            selector=selector,
+                            score_col=score_col,
+                            keep_frac=0.30,
+                        )
                     )
-                    breakdown.append(row)
-            if selector in {
-                "base_score",
-                "meta_long_aware_clean_minus_risk",
-                "meta_path_order_clean_minus_risk",
-                "meta_exec_margin_risk_blend",
-            }:
-                base_conditioned_diagnostics.extend(
+        if not minimal_artifacts:
+            for row in _threshold_policy_rows(scored, selector_cols, test_fold):
+                row.update(
                     {
-                        **row,
                         "calendar_month": str(test_month),
                         "valid_start": window["valid_start"],
                         "valid_end": window["valid_end"],
                         "max_oos_model_age_days": int(max_oos_model_age_days),
                     }
-                    for row in _base_conditioned_diagnostic_rows(
-                        scored,
-                        test_month=test_fold,
-                        selector=selector,
-                        score_col=score_col,
-                        keep_frac=0.30,
-                    )
                 )
-        for row in _threshold_policy_rows(scored, selector_cols, test_fold):
-            row.update(
-                {
-                    "calendar_month": str(test_month),
-                    "valid_start": window["valid_start"],
-                    "valid_end": window["valid_end"],
-                    "max_oos_model_age_days": int(max_oos_model_age_days),
-                }
-            )
-            threshold_policy_rows.append(row)
+                threshold_policy_rows.append(row)
         if not minimal_artifacts:
             for label, model in models.items():
                 importances.append(
-                    _feature_importance(model, feature_names, label, test_fold)
+                    _feature_importance(
+                        model,
+                        model_feature_names.get(label, feature_names),
+                        label,
+                        test_fold,
+                    )
                 )
             keep_cols = (
                 [
@@ -4046,6 +5382,8 @@ def run_smoke(
                         seed=int(seed),
                         models=models,
                         feature_names=list(feature_names),
+                        model_feature_names=model_feature_names,
+                        input_feature_contract=input_feature_contract,
                         classifier_params=classifier_params,
                         regressor_params=regressor_params,
                         meta_head_mode=str(meta_head_mode),
@@ -4054,6 +5392,15 @@ def run_smoke(
                         train_rows_fit=int(len(x_train_fit)),
                         valid_rows=int(len(valid)),
                         target_columns_used=set(meta_target_columns_used),
+                        preprocessing_state=fold_preprocessing_state,
+                        inherited_handoff_contract=inherited_handoff_contract,
+                        target_strength_weight_diagnostics={
+                            key: value
+                            for key, value in target_strength_weight_diagnostics_by_fold.items()
+                            if str(key).startswith(f"{test_fold}:")
+                            or str(key) == str(test_fold)
+                        },
+                        label_purge_contract=label_purge,
                     )
                 )
         del (
@@ -4151,10 +5498,28 @@ def run_smoke(
     best_threshold = (
         threshold_summary.iloc[0].to_dict() if not threshold_summary.empty else {}
     )
-    selected_sets = [set(v) for v in selected_features_by_fold.values()]
-    selected_union = sorted(set().union(*selected_sets)) if selected_sets else []
+    # ``selected_features_by_fold`` stores the union required to build a
+    # common matrix for each fold.  It cannot describe long/short overlap: a
+    # frozen side-specific contract makes every fold union identical.  Publish
+    # the actual side-contract intersection and retain the old fold-stability
+    # diagnostic under an explicit name.
+    selected_features_by_side = (
+        next(iter(selected_features_by_side_by_fold.values()))
+        if selected_features_by_side_by_fold
+        else {}
+    )
+    selected_fold_sets = [set(v) for v in selected_features_by_fold.values()]
+    selected_side_sets = [
+        set(features) for features in selected_features_by_side.values()
+    ]
+    selected_union = (
+        sorted(set().union(*selected_fold_sets)) if selected_fold_sets else []
+    )
     selected_intersection = (
-        sorted(set.intersection(*selected_sets)) if selected_sets else []
+        sorted(set.intersection(*selected_side_sets)) if selected_side_sets else []
+    )
+    selected_fold_intersection = (
+        sorted(set.intersection(*selected_fold_sets)) if selected_fold_sets else []
     )
     manifest = {
         "generated_by": "run_s52_train_meta_regime_handoff_smoke",
@@ -4167,13 +5532,48 @@ def run_smoke(
             else "all"
         ),
         "ledger_path": str(ledger_path),
+        "materialized_soft_label": soft_label_manifest,
+        "inherited_base_handoff_contract": _json_safe(inherited_handoff_contract),
+        "target_strength_weight_diagnostics_by_fold": _json_safe(
+            target_strength_weight_diagnostics_by_fold
+        ),
+        "target_strength_weighting": {
+            **_serialize_inherited_weighting(
+                inherited_weight_spec,
+                inherited_base_weight_arm,
+            ),
+            "train_rows": "recomputed per OOS fold from train-only top30 rows",
+            "target_column": str(
+                inherited_target_contract.get("target_column", "")
+            )
+            or "auto_detected_base_soft_label",
+        },
+        "ood_reference_features": (
+            list(ood_reference_features)
+            if ood_reference_features is not None
+            else "selected_features"
+        ),
         "frontier": str(frontier),
         "train_scope": str(train_scope),
+        "active_sides": sorted(active_side_set) if active_side_set else "all",
+        "strict_handoff_contract": bool(strict_handoff_contract),
+        "forward_label_purge_by_fold": _json_safe(label_purge_by_fold),
+        "forward_label_purge_contract": {
+            "schema": "meta_forward_label_purge_v1",
+            "resolution_column": "__label_path_end_ts__",
+            "train_rule": "__ts__ < valid_start and __label_path_end_ts__ < valid_start",
+            "strict_missing_resolution": "fail_closed",
+        },
         "months": months,
         "rows": int(len(data)),
         "numeric_feature_count": int(len(numeric_cols)),
         "categorical_feature_count": int(len(categorical_cols)),
-        "feature_selection_scope": "single_global_largest_train_window",
+        "feature_selection_scope": (
+            "single_calibration_window_side_local_long_short"
+            if meta_head_mode == "single_base_soft_label"
+            and side_specific_single_head
+            else "single_global_largest_train_window"
+        ),
         "feature_selection_calibration_fold": calibration_fold,
         "calibration_min_valid_rows": 1000,
         "validation_scope": str(validation_scope),
@@ -4184,21 +5584,53 @@ def run_smoke(
             else None
         ),
         "feature_selection_method": str(feature_selection_method),
+        "feature_selection_execution": (
+            "frozen_side_contract_no_selector"
+            if has_frozen_side_feature_contract
+            else (
+                "frozen_shared_contract_no_selector"
+                if fixed_selected_features is not None
+                else "selector_executed_once"
+            )
+        ),
         "feature_selection_top_n": int(feature_selection_top_n),
         "feature_selection_target": str(feature_selection_target),
+        "protected_base_anchors": list(META_PROTECTED_BASE_FEATURES),
+        "post_selection_ood_contract": "conditional_incremental_mda_only",
+        "legacy_shared_feature_contract_rejected": bool(
+            legacy_shared_feature_contract
+        ),
         "meta_head_mode": str(meta_head_mode),
         "meta_target_columns_used": sorted(meta_target_columns_used),
         "single_head_model_contract": (
-            "LGBMRegressor objective=regression on base target_soft with W7_timestamp_balanced weights"
+            (
+                "independent long/short LGBMRegressor models on base target_soft with side-local MDA features and W7_timestamp_balanced weights"
+                if side_specific_single_head
+                else "shared-feature global LGBMRegressor on base target_soft with W7_timestamp_balanced weights"
+            )
             if meta_head_mode == "single_base_soft_label"
             else "legacy_multi_head"
         ),
+        "side_specific_feature_contract_enabled": bool(
+            meta_head_mode == "single_base_soft_label" and side_specific_single_head
+        ),
         "max_oos_model_age_days": int(max_oos_model_age_days),
+        "single_fit_oos_window": bool(single_fit_oos_window),
         "model_train_max_rows": int(model_train_max_rows),
         "model_train_sampling": (
             "beginning_middle_end_time_spread"
             if int(model_train_max_rows) > 0
             else "full_train_rows"
+        ),
+        "feature_selection_max_rows": int(feature_selection_max_rows),
+        "feature_selection_sampling": (
+            "beginning_middle_end_time_spread"
+            if int(feature_selection_max_rows) > 0
+            else "full_train_rows"
+        ),
+        "feature_selection_forced_periods": [],
+        "feature_selection_period_contract": (
+            "beginning_middle_end_time_spread_only; no outcome-selected difficult dates"
         ),
         "minimal_artifacts": bool(minimal_artifacts),
         "force_prediction_shards": bool(force_prediction_shards),
@@ -4217,10 +5649,20 @@ def run_smoke(
             if row.get("selector") == "base_score"
         ],
         "selected_features_by_fold": selected_features_by_fold,
+        "input_feature_contracts_by_fold": input_feature_contracts_by_fold,
+        "legacy_constant_zero_features": list(
+            map(str, legacy_constant_zero_features)
+        ),
+        "selected_features_by_side_by_fold": selected_features_by_side_by_fold,
+        "selected_features_by_side": selected_features_by_side,
         "selected_feature_union": selected_union,
         "selected_feature_intersection": selected_intersection,
         "selected_feature_union_count": int(len(selected_union)),
         "selected_feature_intersection_count": int(len(selected_intersection)),
+        "selected_feature_fold_intersection": selected_fold_intersection,
+        "selected_feature_fold_intersection_count": int(
+            len(selected_fold_intersection)
+        ),
         "feature_selection_output": str(
             out_dir / "s52_train_meta_feature_selection_by_fold.csv"
         ),
@@ -4263,6 +5705,8 @@ def run_smoke(
         "leakage_contract": {
             "feature_source": "train_meta_regime_handoff.parquet",
             "outcomes_joined_for": "training_labels_and_validation_metrics_only",
+            "base_candidate_handoff": "timestamp_side top30 only in strict mode; base target/sample-weight hashes are uniform and excluded from model features",
+            "sample_weights": "target-strength weights are recomputed from each fold's train-only candidate rows and never materialized as model features",
             "split": (
                 "expanding_window_with_oos_age_cap"
                 if int(max_oos_model_age_days) > 0
@@ -4392,9 +5836,48 @@ def _write_markdown(
     )
 
 
-def _meta_trial_objective(manifest: dict[str, Any]) -> float:
-    best = dict(manifest.get("best_selector", {}) or {})
+def _preferred_meta_hpo_selectors(manifest: dict[str, Any]) -> list[str]:
+    """Return selectors that match the requested meta target architecture.
 
+    ``single_base_soft_label`` is a base-target replay mode.  The production
+    meta path is the multi-head base-correctness stack, where the meta model
+    estimates whether the base candidate is executable/clean and then combines
+    the component heads.  HPO must therefore score the combined multi-head
+    selectors, not the base-soft-label replay head.
+    """
+
+    mode = str(manifest.get("meta_head_mode", "")).strip().lower()
+    if mode == "single_base_soft_label":
+        return ["meta_base_soft_label"]
+    return [
+        "meta_long_aware_clean_minus_risk",
+        "meta_path_order_clean_minus_risk",
+        "meta_exec_margin_risk_blend",
+        "meta_context_hint_blend",
+        "meta_clean_minus_risk",
+        "meta_exec_margin",
+    ]
+
+
+def _meta_hpo_selector_row(manifest: dict[str, Any]) -> dict[str, Any]:
+    output_dir = Path(str(manifest.get("output_dir") or ""))
+    summary_path = output_dir / "s52_train_meta_regime_handoff_smoke_summary.csv"
+    preferred_selectors = _preferred_meta_hpo_selectors(manifest)
+    if summary_path.exists():
+        summary = pd.read_csv(summary_path)
+        for selector in preferred_selectors:
+            selected = summary.loc[summary["selector"].eq(selector)]
+            if not selected.empty:
+                return selected.iloc[0].to_dict()
+        if not summary.empty:
+            return summary.iloc[0].to_dict()
+    best = dict(manifest.get("best_selector", {}) or {})
+    if str(best.get("selector")) not in set(preferred_selectors):
+        return {}
+    return best
+
+
+def _meta_trial_objective(manifest: dict[str, Any]) -> float:
     def f(value: Any, default: float = 0.0) -> float:
         try:
             val = float(value)
@@ -4402,9 +5885,151 @@ def _meta_trial_objective(manifest: dict[str, Any]) -> float:
             return float(default)
         return val if math.isfinite(val) else float(default)
 
-    # Threshold templates are diagnostic abstention policies. HPO should tune
-    # the meta model for top-k ranking quality, not sparse post-hoc gating.
-    return f(best.get("meta_ev_frontier_objective"), float("-inf"))
+    metrics = _meta_trial_metrics(manifest)
+    top10_ev = f(metrics.get("top10_ev"))
+    top20_ev = f(metrics.get("top20_ev"))
+    worst_month = f(metrics.get("worst_month_top10_ev"))
+    worst_week = f(metrics.get("worst_week_top10_ev"))
+    top15_clean = f(metrics.get("top15_clean"))
+    top15_dirty = f(metrics.get("top15_dirty"))
+    top15_bad = f(metrics.get("top15_bad"))
+    # HPO is EV-first. Path quality remains a weak tie-breaker because it is
+    # handled downstream by meta/execution and previously dominated tiny EV
+    # differences. Threshold templates are not part of model HPO.
+    return float(
+        100.0
+        * (
+            0.50 * top10_ev
+            + 0.20 * top20_ev
+            + 0.15 * worst_month
+            + 0.15 * worst_week
+        )
+        + 0.05
+        * ((top15_clean - top15_dirty) + (top15_clean - top15_bad))
+    )
+
+
+def _meta_trial_metrics(manifest: dict[str, Any]) -> dict[str, float]:
+    """Return row-weighted top-k metrics with real month/week downside bars."""
+    output_dir = Path(str(manifest.get("output_dir") or ""))
+    folds_path = output_dir / "s52_train_meta_regime_handoff_smoke_folds.csv"
+    if folds_path.exists():
+        folds = pd.read_csv(folds_path)
+        preferred_selectors = _preferred_meta_hpo_selectors(manifest)
+        selected = pd.DataFrame()
+        for selector in preferred_selectors:
+            selected = folds.loc[folds["selector"].eq(selector)].copy()
+            if not selected.empty:
+                break
+        folds = selected
+        if not folds.empty:
+            def weighted(column: str, weight_column: str) -> float:
+                value = pd.to_numeric(folds[column], errors="coerce")
+                weight = pd.to_numeric(folds[weight_column], errors="coerce")
+                valid = value.notna() & weight.notna() & weight.gt(0)
+                if not valid.any():
+                    return float("nan")
+                return float(np.average(value.loc[valid], weights=weight.loc[valid]))
+
+            month_rows: list[float] = []
+            for _, group in folds.groupby("calendar_month", sort=False):
+                value = pd.to_numeric(group["keep010_ev_after_1pct"], errors="coerce")
+                weight = pd.to_numeric(group["keep010_rows"], errors="coerce")
+                valid = value.notna() & weight.notna() & weight.gt(0)
+                if valid.any():
+                    month_rows.append(
+                        float(np.average(value.loc[valid], weights=weight.loc[valid]))
+                    )
+            first_bad = weighted(
+                "keep015_first_touch_bad_mae", "keep015_rows"
+            )
+            full_bad = weighted("keep015_full_path_bad_mae", "keep015_rows")
+            worst_week_values = pd.to_numeric(
+                folds["keep010_worst_week_ev_after_1pct"], errors="coerce"
+            )
+            return {
+                "top10_ev": weighted("keep010_ev_after_1pct", "keep010_rows"),
+                "top20_ev": weighted("keep020_ev_after_1pct", "keep020_rows"),
+                "worst_month_top10_ev": min(month_rows) if month_rows else float("nan"),
+                "worst_week_top10_ev": float(worst_week_values.min()),
+                "top15_clean": weighted(
+                    "keep015_clean_exec_precision", "keep015_rows"
+                ),
+                "top15_dirty": weighted(
+                    "keep015_dirty_positive_rate", "keep015_rows"
+                ),
+                "top15_bad": max(first_bad, full_bad),
+            }
+
+    best = _meta_hpo_selector_row(manifest)
+    return {
+        "top10_ev": best.get("mean_keep010_ev_after_1pct"),
+        "top20_ev": best.get("mean_keep020_ev_after_1pct"),
+        "worst_month_top10_ev": best.get("worst_keep010_ev_after_1pct"),
+        "worst_week_top10_ev": best.get("worst_week_keep010_ev_after_1pct"),
+        "top15_clean": best.get("mean_keep015_clean_exec_precision"),
+        "top15_dirty": best.get("mean_keep015_dirty_positive_rate"),
+        "top15_bad": max(
+            float(best.get("mean_keep015_first_touch_bad_mae", 0.0) or 0.0),
+            float(best.get("mean_keep015_full_path_bad_mae", 0.0) or 0.0),
+        ),
+    }
+
+
+def _hpo_candidate_beats_incumbent(
+    candidate_manifest: dict[str, Any],
+    incumbent_manifest: dict[str, Any],
+) -> tuple[bool, dict[str, float | bool]]:
+    candidate = _meta_trial_metrics(candidate_manifest)
+    incumbent = _meta_trial_metrics(incumbent_manifest)
+
+    def f(row: dict[str, Any], key: str) -> float:
+        try:
+            value = float(row.get(key))
+        except Exception:
+            return float("nan")
+        return value if math.isfinite(value) else float("nan")
+
+    candidate_ev = f(candidate, "top10_ev")
+    incumbent_ev = f(incumbent, "top10_ev")
+    ev_gain = candidate_ev - incumbent_ev
+    # A worst-period concession is acceptable only when it is at least five
+    # times smaller than the average top-10 EV improvement.
+    allowed_degradation = max(ev_gain / 5.0, 0.0)
+    candidate_month = f(candidate, "worst_month_top10_ev")
+    incumbent_month = f(incumbent, "worst_month_top10_ev")
+    candidate_week = f(candidate, "worst_week_top10_ev")
+    incumbent_week = f(incumbent, "worst_week_top10_ev")
+    candidate_objective = _meta_trial_objective(candidate_manifest)
+    incumbent_objective = _meta_trial_objective(incumbent_manifest)
+    finite = all(
+        math.isfinite(value)
+        for value in (
+            candidate_ev,
+            incumbent_ev,
+            candidate_month,
+            incumbent_month,
+            candidate_week,
+            incumbent_week,
+            candidate_objective,
+            incumbent_objective,
+        )
+    )
+    passed = bool(
+        finite
+        and ev_gain > 0.0
+        and candidate_objective > incumbent_objective
+        and candidate_month >= incumbent_month - allowed_degradation
+        and candidate_week >= incumbent_week - allowed_degradation
+    )
+    return passed, {
+        "passed": passed,
+        "top10_ev_gain": float(ev_gain),
+        "allowed_worst_period_degradation": float(allowed_degradation),
+        "worst_month_delta": float(candidate_month - incumbent_month),
+        "worst_week_delta": float(candidate_week - incumbent_week),
+        "objective_delta": float(candidate_objective - incumbent_objective),
+    }
 
 
 def _hpo_param_grid(seed: int, requested_trials: int) -> list[dict[str, Any]]:
@@ -4412,7 +6037,7 @@ def _hpo_param_grid(seed: int, requested_trials: int) -> list[dict[str, Any]]:
     rng = np.random.default_rng(int(seed))
     while len(trials) < int(requested_trials):
         classifier = {
-            "n_estimators": int(rng.integers(120, 361)),
+            "n_estimators": int(rng.integers(100, 221)),
             "learning_rate": float(np.exp(rng.uniform(np.log(0.015), np.log(0.080)))),
             "num_leaves": int(rng.choice([15, 23, 31, 47, 63])),
             "max_depth": int(rng.choice([-1, 4, 5, 6, 8])),
@@ -4454,43 +6079,117 @@ def run_hpo_smoke(
     hpo_trials: int,
     hpo_max_train_rows: int,
     max_oos_model_age_days: int = 0,
+    single_fit_oos_window: bool = False,
     meta_head_mode: str = "multi",
+    hpo_calibration_month: str = "",
+    eval_months: list[str] | None = None,
+    save_fold_models: bool = False,
+    fixed_selected_features: list[str] | None = None,
+    fixed_selected_features_by_side: dict[str, list[str]] | None = None,
+    side_specific_single_head: bool = True,
+    hpo_refit_shortlist_size: int = 8,
+    strict_handoff_contract: bool = False,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     trial_rows: list[dict[str, Any]] = []
     manifests: list[dict[str, Any]] = []
+    resume_selected_features = (
+        list(fixed_selected_features) if fixed_selected_features is not None else None
+    )
+    resume_selected_features_by_side = (
+        {side: list(features) for side, features in fixed_selected_features_by_side.items()}
+        if fixed_selected_features_by_side
+        else None
+    )
+    completed_manifests = sorted(out_dir.glob("trial_*/manifest.json"))
+    if completed_manifests and resume_selected_features is None:
+        first_completed = json.loads(
+            completed_manifests[0].read_text(encoding="utf-8")
+        )
+        resume_selected_features = list(
+            first_completed.get("selected_feature_union", []) or []
+        )
+        raw_by_side = first_completed.get("selected_features_by_side", {}) or {}
+        if isinstance(raw_by_side, dict):
+            resume_selected_features_by_side = {
+                str(side): list(features)
+                for side, features in raw_by_side.items()
+                if str(side) in {"long", "short"}
+            }
+        if not resume_selected_features:
+            raise ValueError(
+                "Cannot resume meta HPO without the persisted selected feature contract"
+            )
+        print(
+            json.dumps(
+                {
+                    "event": "s52_train_meta_hpo_resume",
+                    "completed_trials": len(completed_manifests),
+                    "selected_features": len(resume_selected_features),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
     for trial_idx, profile in enumerate(_hpo_param_grid(seed, hpo_trials)):
         trial_name = str(profile["name"])
         trial_dir = out_dir / f"trial_{trial_idx:03d}_{trial_name}"
-        manifest = run_smoke(
-            handoff_dir=handoff_dir,
-            ledger_path=ledger_path,
-            out_dir=trial_dir,
-            frontier=frontier,
-            seed=int(seed) + 10_000 * trial_idx,
-            train_scope=train_scope,
-            enable_base_prior_features=enable_base_prior_features,
-            enable_reliability_features=enable_reliability_features,
-            enable_support_drift_features=enable_support_drift_features,
-            enable_hit_surprise_features=enable_hit_surprise_features,
-            enable_path_order_heads=enable_path_order_heads,
-            enable_path_order_blends=enable_path_order_blends,
-            feature_selection_top_n=feature_selection_top_n,
-            feature_selection_target=feature_selection_target,
-            feature_selection_method=feature_selection_method,
-            max_oos_model_age_days=int(max_oos_model_age_days),
-            validation_scope="largest",
-            model_train_max_rows=int(hpo_max_train_rows),
-            model_params={
-                "classifier": profile["classifier"],
-                "regressor": profile["regressor"],
-            },
-            model_profile_name=trial_name,
-            meta_head_mode=str(meta_head_mode),
-            minimal_artifacts=True,
-        )
+        existing_manifest_path = trial_dir / "manifest.json"
+        if existing_manifest_path.exists():
+            manifest = json.loads(existing_manifest_path.read_text(encoding="utf-8"))
+        else:
+            projected_handoff_columns = _projected_handoff_columns_for_selected(
+                handoff_dir / "train_meta_regime_handoff.parquet",
+                resume_selected_features,
+            )
+            manifest = run_smoke(
+                handoff_dir=handoff_dir,
+                ledger_path=ledger_path,
+                out_dir=trial_dir,
+                frontier=frontier,
+                seed=int(seed) + 10_000 * trial_idx,
+                train_scope=train_scope,
+                enable_base_prior_features=enable_base_prior_features,
+                enable_reliability_features=enable_reliability_features,
+                enable_support_drift_features=enable_support_drift_features,
+                enable_hit_surprise_features=enable_hit_surprise_features,
+                enable_path_order_heads=enable_path_order_heads,
+                enable_path_order_blends=enable_path_order_blends,
+                feature_selection_top_n=feature_selection_top_n,
+                feature_selection_target=feature_selection_target,
+                feature_selection_method=feature_selection_method,
+                max_oos_model_age_days=int(max_oos_model_age_days),
+                single_fit_oos_window=bool(single_fit_oos_window),
+                validation_scope="largest",
+                model_train_max_rows=int(hpo_max_train_rows),
+                model_params={
+                    "classifier": profile["classifier"],
+                    "regressor": profile["regressor"],
+                },
+                model_profile_name=trial_name,
+                meta_head_mode=str(meta_head_mode),
+                minimal_artifacts=True,
+                fixed_selected_features=resume_selected_features,
+                fixed_selected_features_by_side=resume_selected_features_by_side,
+                side_specific_single_head=bool(side_specific_single_head),
+                strict_handoff_contract=bool(strict_handoff_contract),
+                handoff_columns=projected_handoff_columns,
+                eval_months=[str(hpo_calibration_month)]
+                if str(hpo_calibration_month).strip()
+                else None,
+            )
+            if resume_selected_features is None:
+                resume_selected_features = list(
+                    manifest.get("selected_feature_union", []) or []
+                )
+                raw_by_side = manifest.get("selected_features_by_side", {}) or {}
+                resume_selected_features_by_side = {
+                    str(side): list(features)
+                    for side, features in raw_by_side.items()
+                    if str(side) in {"long", "short"}
+                }
         objective = _meta_trial_objective(manifest)
-        best = dict(manifest.get("best_selector", {}) or {})
+        best = _meta_hpo_selector_row(manifest)
         best_threshold = dict(manifest.get("best_threshold_policy", {}) or {})
         trial_rows.append(
             {
@@ -4570,13 +6269,119 @@ def run_hpo_smoke(
     trials.insert(0, "rank", np.arange(1, len(trials) + 1, dtype=np.int32))
     trials_path = out_dir / "s52_train_meta_hpo_trials.csv"
     trials.to_csv(trials_path, index=False)
-    best_trial = trials.iloc[0].to_dict() if not trials.empty else {}
-    best_idx = int(best_trial.get("trial_idx", 0)) if best_trial else 0
-    best_manifest = manifests[best_idx] if manifests else {}
-    best_profile = _hpo_param_grid(seed, hpo_trials)[best_idx] if manifests else None
+    profiles = _hpo_param_grid(seed, hpo_trials)
+    shortlist_n = max(1, min(int(hpo_refit_shortlist_size), len(trials)))
+    shortlist_indices = [int(v) for v in trials.head(shortlist_n)["trial_idx"].tolist()]
+    baseline_idx = next(
+        (idx for idx, profile in enumerate(profiles) if profile.get("name") == "baseline"),
+        0,
+    )
+    if baseline_idx not in shortlist_indices:
+        shortlist_indices.append(int(baseline_idx))
+    fullfit_rows: list[dict[str, Any]] = []
+    fullfit_manifests: dict[int, dict[str, Any]] = {}
+    fullfit_root = out_dir / "fullfit_validation"
+    for trial_idx in shortlist_indices:
+        profile = profiles[trial_idx]
+        trial_manifest = manifests[trial_idx]
+        selected = list(trial_manifest.get("selected_feature_union", []) or [])
+        selected_by_side = dict(trial_manifest.get("selected_features_by_side", {}) or {})
+        fullfit_dir = fullfit_root / f"trial_{trial_idx:03d}_{profile['name']}"
+        fullfit_manifest = run_smoke(
+            handoff_dir=handoff_dir,
+            ledger_path=ledger_path,
+            out_dir=fullfit_dir,
+            frontier=frontier,
+            seed=int(seed) + 500_000 + trial_idx,
+            train_scope=train_scope,
+            enable_base_prior_features=enable_base_prior_features,
+            enable_reliability_features=enable_reliability_features,
+            enable_support_drift_features=enable_support_drift_features,
+            enable_hit_surprise_features=enable_hit_surprise_features,
+            enable_path_order_heads=enable_path_order_heads,
+            enable_path_order_blends=enable_path_order_blends,
+            feature_selection_top_n=feature_selection_top_n,
+            feature_selection_target=feature_selection_target,
+            feature_selection_method=feature_selection_method,
+            max_oos_model_age_days=int(max_oos_model_age_days),
+            single_fit_oos_window=bool(single_fit_oos_window),
+            validation_scope="largest",
+            model_train_max_rows=0,
+            model_params={
+                "classifier": profile["classifier"],
+                "regressor": profile["regressor"],
+            },
+            model_profile_name=f"fullfit_validation_{profile['name']}",
+            meta_head_mode=str(meta_head_mode),
+            minimal_artifacts=True,
+            fixed_selected_features=selected,
+            fixed_selected_features_by_side=selected_by_side,
+            side_specific_single_head=bool(side_specific_single_head),
+            strict_handoff_contract=bool(strict_handoff_contract),
+            handoff_columns=_projected_handoff_columns_for_selected(
+                handoff_dir / "train_meta_regime_handoff.parquet", selected
+            ),
+            eval_months=[str(hpo_calibration_month)]
+            if str(hpo_calibration_month).strip()
+            else None,
+        )
+        fullfit_manifests[trial_idx] = fullfit_manifest
+        fullfit_rows.append(
+            {
+                "trial_idx": trial_idx,
+                "trial_name": profile["name"],
+                "fullfit_objective": _meta_trial_objective(fullfit_manifest),
+                "fullfit_top10_ev": _meta_hpo_selector_row(fullfit_manifest).get(
+                    "mean_keep010_ev_after_1pct"
+                ),
+                "fullfit_worst_month_top10_ev": _meta_hpo_selector_row(
+                    fullfit_manifest
+                ).get("worst_keep010_ev_after_1pct"),
+                "fullfit_worst_week_top10_ev": _meta_hpo_selector_row(
+                    fullfit_manifest
+                ).get("worst_week_keep010_ev_after_1pct"),
+                "output_dir": fullfit_manifest.get("output_dir"),
+            }
+        )
+    fullfit = pd.DataFrame(fullfit_rows).sort_values(
+        "fullfit_objective", ascending=False
+    )
+    incumbent_manifest = fullfit_manifests[baseline_idx]
+    promotion_audits: dict[int, dict[str, float | bool]] = {}
+    promotable: list[int] = []
+    for trial_idx in shortlist_indices:
+        if trial_idx == baseline_idx:
+            continue
+        passed, audit = _hpo_candidate_beats_incumbent(
+            fullfit_manifests[trial_idx], incumbent_manifest
+        )
+        promotion_audits[trial_idx] = audit
+        if passed:
+            promotable.append(trial_idx)
+    best_idx = (
+        max(promotable, key=lambda idx: _meta_trial_objective(fullfit_manifests[idx]))
+        if promotable
+        else baseline_idx
+    )
+    best_manifest = fullfit_manifests[best_idx]
+    best_profile = profiles[best_idx]
+    best_trial = trials.loc[trials["trial_idx"].eq(best_idx)].iloc[0].to_dict()
+    best_trial["promotion_status"] = (
+        "challenger_promoted" if best_idx != baseline_idx else "incumbent_retained"
+    )
+    best_trial["fullfit_objective"] = _meta_trial_objective(best_manifest)
+    best_trial["promotion_audit"] = promotion_audits.get(best_idx, {})
+    fullfit.to_csv(out_dir / "s52_train_meta_hpo_fullfit_shortlist.csv", index=False)
     final_manifest = {}
+    incumbent_final_manifest: dict[str, Any] = {}
     if best_profile is not None:
         final_dir = out_dir / "best_full_oos"
+        final_selected_features = list(
+            best_manifest.get("selected_feature_union", []) or []
+        )
+        final_selected_features_by_side = dict(
+            best_manifest.get("selected_features_by_side", {}) or {}
+        )
         final_manifest = run_smoke(
             handoff_dir=handoff_dir,
             ledger_path=ledger_path,
@@ -4594,6 +6399,7 @@ def run_hpo_smoke(
             feature_selection_target=feature_selection_target,
             feature_selection_method=feature_selection_method,
             max_oos_model_age_days=int(max_oos_model_age_days),
+            single_fit_oos_window=bool(single_fit_oos_window),
             validation_scope="all",
             model_train_max_rows=0,
             model_params={
@@ -4602,19 +6408,100 @@ def run_hpo_smoke(
             },
             model_profile_name=f"best_full_oos_{best_profile['name']}",
             meta_head_mode=str(meta_head_mode),
-            fixed_selected_features=list(
-                best_manifest.get("selected_feature_union", []) or []
+            fixed_selected_features=final_selected_features,
+            fixed_selected_features_by_side=final_selected_features_by_side,
+            side_specific_single_head=bool(side_specific_single_head),
+            strict_handoff_contract=bool(strict_handoff_contract),
+            handoff_columns=_projected_handoff_columns_for_selected(
+                handoff_dir / "train_meta_regime_handoff.parquet",
+                final_selected_features,
             ),
+            eval_months=eval_months or None,
+            save_fold_models=bool(save_fold_models),
         )
+    deployment_idx = best_idx
+    deployment_manifest = final_manifest
+    final_holdout_audit: dict[str, float | bool] = {}
+    if best_idx != baseline_idx and final_manifest:
+        incumbent_profile = profiles[baseline_idx]
+        incumbent_features = list(
+            incumbent_manifest.get("selected_feature_union", []) or []
+        )
+        incumbent_features_by_side = dict(
+            incumbent_manifest.get("selected_features_by_side", {}) or {}
+        )
+        incumbent_final_manifest = run_smoke(
+            handoff_dir=handoff_dir,
+            ledger_path=ledger_path,
+            out_dir=out_dir / "incumbent_full_oos",
+            frontier=frontier,
+            seed=int(seed) + 950_000 + baseline_idx,
+            train_scope=train_scope,
+            enable_base_prior_features=enable_base_prior_features,
+            enable_reliability_features=enable_reliability_features,
+            enable_support_drift_features=enable_support_drift_features,
+            enable_hit_surprise_features=enable_hit_surprise_features,
+            enable_path_order_heads=enable_path_order_heads,
+            enable_path_order_blends=enable_path_order_blends,
+            feature_selection_top_n=feature_selection_top_n,
+            feature_selection_target=feature_selection_target,
+            feature_selection_method=feature_selection_method,
+            max_oos_model_age_days=int(max_oos_model_age_days),
+            single_fit_oos_window=bool(single_fit_oos_window),
+            validation_scope="all",
+            model_train_max_rows=0,
+            model_params={
+                "classifier": incumbent_profile["classifier"],
+                "regressor": incumbent_profile["regressor"],
+            },
+            model_profile_name=f"incumbent_full_oos_{incumbent_profile['name']}",
+            meta_head_mode=str(meta_head_mode),
+            fixed_selected_features=incumbent_features,
+            fixed_selected_features_by_side=incumbent_features_by_side,
+            side_specific_single_head=bool(side_specific_single_head),
+            strict_handoff_contract=bool(strict_handoff_contract),
+            handoff_columns=_projected_handoff_columns_for_selected(
+                handoff_dir / "train_meta_regime_handoff.parquet",
+                incumbent_features,
+            ),
+            eval_months=eval_months or None,
+            save_fold_models=bool(save_fold_models),
+        )
+        final_passed, final_holdout_audit = _hpo_candidate_beats_incumbent(
+            final_manifest, incumbent_final_manifest
+        )
+        if not final_passed:
+            deployment_idx = baseline_idx
+            deployment_manifest = incumbent_final_manifest
+    deployment_status = (
+        "challenger_promoted_after_holdout"
+        if deployment_idx != baseline_idx
+        else (
+            "incumbent_retained_after_holdout"
+            if best_idx != baseline_idx
+            else "incumbent_retained_at_calibration"
+        )
+    )
+    best_trial["deployment_status"] = deployment_status
+    best_trial["deployment_trial_idx"] = int(deployment_idx)
+    best_trial["deployment_trial_name"] = str(profiles[deployment_idx]["name"])
+    best_trial["final_holdout_audit"] = final_holdout_audit
     best_params = {
         "trial": _json_safe(best_trial),
-        "classifier_params": best_manifest.get("classifier_params", {}),
-        "regressor_params": best_manifest.get("regressor_params", {}),
-        "selected_feature_union": best_manifest.get("selected_feature_union", []),
-        "selected_feature_intersection": best_manifest.get(
+        "classifier_params": deployment_manifest.get("classifier_params", {}),
+        "regressor_params": deployment_manifest.get("regressor_params", {}),
+        "selected_feature_union": deployment_manifest.get(
+            "selected_feature_union", []
+        ),
+        "selected_feature_intersection": deployment_manifest.get(
             "selected_feature_intersection", []
         ),
-        "best_full_oos_manifest": final_manifest.get("output_dir"),
+        "selected_features_by_side": deployment_manifest.get(
+            "selected_features_by_side", {}
+        ),
+        "best_full_oos_manifest": deployment_manifest.get("output_dir"),
+        "challenger_full_oos_manifest": final_manifest.get("output_dir"),
+        "incumbent_full_oos_manifest": incumbent_final_manifest.get("output_dir"),
     }
     (out_dir / "s52_train_meta_hpo_best.json").write_text(
         json.dumps(_json_safe(best_params), indent=2), encoding="utf-8"
@@ -4626,6 +6513,9 @@ def run_hpo_smoke(
         "frontier": str(frontier),
         "train_scope": str(train_scope),
         "hpo_trials": int(hpo_trials),
+        "hpo_refit_shortlist_size": int(shortlist_n),
+        "hpo_selection_contract": "sampled_screen_then_deployment_scale_refit_then_holdout_incumbent_guard",
+        "promotion_status": deployment_status,
         "hpo_scope": "single_largest_train_fold",
         "hpo_sampling": "beginning_middle_end_time_spread_for_lgbm_pipeline_feature_selection_and_model_fit",
         "hpo_max_train_rows": int(hpo_max_train_rows),
@@ -4635,11 +6525,16 @@ def run_hpo_smoke(
         "feature_selection_method": str(feature_selection_method),
         "max_oos_model_age_days": int(max_oos_model_age_days),
         "meta_head_mode": str(meta_head_mode),
+        "hpo_calibration_month": str(hpo_calibration_month),
+        "eval_months": list(eval_months or []),
         "trial_summary": str(trials_path),
         "best_params": str(out_dir / "s52_train_meta_hpo_best.json"),
         "best_trial": _json_safe(best_trial),
         "best_trial_manifest": best_manifest.get("output_dir"),
-        "best_full_oos_manifest": final_manifest.get("output_dir"),
+        "best_full_oos_manifest": deployment_manifest.get("output_dir"),
+        "challenger_full_oos_manifest": final_manifest.get("output_dir"),
+        "incumbent_full_oos_manifest": incumbent_final_manifest.get("output_dir"),
+        "final_holdout_audit": _json_safe(final_holdout_audit),
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(_json_safe(manifest), indent=2, sort_keys=True), encoding="utf-8"
@@ -4653,21 +6548,45 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ledger", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument(
-        "--frontier", choices=["top10", "top20", "top30"], default="top10"
+        "--frontier", choices=["top10", "top20", "top30"], default="top30"
     )
     parser.add_argument(
         "--train-scope", choices=["selected", "all"], default="selected"
     )
-    parser.add_argument("--enable-base-prior-features", action="store_true")
-    parser.add_argument("--enable-reliability-features", action="store_true")
-    parser.add_argument("--enable-support-drift-features", action="store_true")
-    parser.add_argument("--enable-hit-surprise-features", action="store_true")
+    parser.add_argument(
+        "--strict-handoff-contract",
+        action="store_true",
+        help=(
+            "Fail closed unless the handoff is timestamp_side top30 with one "
+            "explicit base target/sample-weight contract hash."
+        ),
+    )
+    parser.add_argument(
+        "--enable-base-prior-features",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--enable-reliability-features",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--enable-support-drift-features",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--enable-hit-surprise-features",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--enable-path-order-heads", action="store_true")
     parser.add_argument("--enable-path-order-blends", action="store_true")
     parser.add_argument(
         "--meta-head-mode",
         choices=["multi", "single_base_soft_label"],
-        default="multi",
+        default="single_base_soft_label",
         help="Use the legacy multi-head meta stack or one classifier trained on the base economic soft label.",
     )
     parser.add_argument(
@@ -4698,21 +6617,68 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--hpo-trials", type=int, default=0)
     parser.add_argument(
+        "--hpo-refit-shortlist-size",
+        type=int,
+        default=8,
+        help="Refit the top sampled-HPO candidates plus the incumbent on the full calibration train set before promotion.",
+    )
+    parser.add_argument(
+        "--single-head-global-model",
+        dest="single_head_global_model",
+        action="store_true",
+        default=True,
+        help=(
+            "Fit one shared soft-label head across long and short rows. This is "
+            "the promoted V9-recovery architecture; side/archetype context remains "
+            "in the feature contract."
+        ),
+    )
+    parser.add_argument(
+        "--side-specific-single-head",
+        dest="single_head_global_model",
+        action="store_false",
+        help="Ablation: fit independent long/short soft-label heads.",
+    )
+    parser.add_argument(
+        "--hpo-calibration-month",
+        type=str,
+        default="",
+        help=(
+            "When HPO is enabled, use only this chronological validation month "
+            "for one-shot feature selection and parameter tuning. Later --eval-months "
+            "remain untouched OOS evaluation months."
+        ),
+    )
+    parser.add_argument(
         "--fixed-selected-features-csv",
         type=Path,
-        default=None,
-        help="Reuse a frozen selected-feature list from a prior HPO/feature-selection artifact.",
+        default=DEFAULT_META_CHAMPION_CONTRACT,
+        help="Frozen selected-feature contract; defaults to the promoted shared champion.",
+    )
+    parser.add_argument(
+        "--fresh-feature-selection",
+        action="store_true",
+        help="Ignore the promoted frozen feature contract and rerun chronological MDA.",
+    )
+    parser.add_argument(
+        "--single-phase-wide-feature-selection",
+        action="store_true",
+        help=(
+            "Diagnostic opt-out from the canonical two-phase path. By default, "
+            "fresh MDA reads a wide B/M/E sample first and reloads the full "
+            "candidate population only after projecting selected columns."
+        ),
     )
     parser.add_argument(
         "--fixed-model-params-json",
         type=Path,
-        default=None,
-        help="Reuse frozen LightGBM params from a prior meta manifest or params JSON.",
+        default=DEFAULT_META_CHAMPION_CONTRACT,
+        help="Frozen LightGBM parameters; defaults to the promoted shared champion.",
     )
     parser.add_argument(
         "--model-profile-name",
         type=str,
-        default="baseline",
+        default="meta_v9_anchor_oldparams_residual_backbone_v1",
         help="Profile name recorded in the replay manifest.",
     )
     parser.add_argument(
@@ -4722,16 +6688,38 @@ def _parse_args() -> argparse.Namespace:
         help="Comma-separated OOS months to score, e.g. 2026-07. Empty scores all eligible months.",
     )
     parser.add_argument(
+        "--feature-selection-sample-rows",
+        type=int,
+        default=LGBM_TWO_PHASE_SELECTION_SAMPLE_ROWS,
+        help=(
+            "Rows in the one-shot beginning/middle/end feature-selection sample. "
+            "This is independent from the smaller per-trial HPO sample."
+        ),
+    )
+    parser.add_argument(
         "--hpo-max-train-rows",
         type=int,
-        default=300000,
-        help="Rows used to fit each meta model during HPO, sampled from beginning/middle/end of the largest calibration fold. Final full-OOS replay uses all prior rows.",
+        default=LGBM_HPO_SAMPLE_ROWS,
+        help=(
+            "Rows used for one-shot feature selection and HPO trial fitting, "
+            "sampled from beginning/middle/end of the calibration fold. A fresh "
+            "non-HPO MDA run samples only selection rows; its final side models "
+            "still fit all prior rows."
+        ),
     )
     parser.add_argument(
         "--max-oos-model-age-days",
         type=int,
         default=0,
         help="Split each OOS month into expanding-window validation slices capped to this many days.",
+    )
+    parser.add_argument(
+        "--single-fit-oos-window",
+        action="store_true",
+        help=(
+            "Fit meta once before the first requested evaluation month and score "
+            "the complete contiguous evaluation range without growing refits."
+        ),
     )
     parser.add_argument(
         "--save-fold-models",
@@ -4744,10 +6732,44 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    fixed_feature_contract = (
+        None if bool(args.fresh_feature_selection) else args.fixed_selected_features_csv
+    )
     fixed_selected_features = _load_fixed_selected_features(
-        args.fixed_selected_features_csv
+        fixed_feature_contract
+    )
+    fixed_selected_features_by_side = _load_fixed_selected_features_by_side(
+        fixed_feature_contract
+    )
+    if (
+        not bool(args.single_head_global_model)
+        and fixed_selected_features is not None
+        and not fixed_selected_features_by_side
+    ):
+        # A legacy shared feature list cannot satisfy a side-aware model
+        # contract. Treat it only as historical provenance: rerun the
+        # train-only, calibration-fold MDA once and persist proper long/short
+        # contracts in the new manifest.
+        print(
+            "[feature_selection] legacy shared meta contract detected; "
+            "rerunning side-local MDA for the side-aware model contract.",
+            flush=True,
+        )
+        fixed_selected_features = None
+    had_frozen_feature_contract = bool(
+        fixed_selected_features is not None or fixed_selected_features_by_side
+    )
+    diagnostic_single_phase_opt_out = bool(
+        not had_frozen_feature_contract and args.single_phase_wide_feature_selection
     )
     fixed_model_params = _load_fixed_model_params(args.fixed_model_params_json)
+    fixed_feature_union = list(fixed_selected_features or [])
+    for features in (fixed_selected_features_by_side or {}).values():
+        fixed_feature_union.extend(features)
+    projected_handoff_columns = _projected_handoff_columns_for_selected(
+        args.handoff_dir / "train_meta_regime_handoff.parquet",
+        list(dict.fromkeys(fixed_feature_union)),
+    )
     eval_months = [
         m.strip() for m in str(args.eval_months or "").split(",") if m.strip()
     ]
@@ -4760,6 +6782,118 @@ def main() -> None:
             flush=True,
         )
         feature_selection_top_n = 0
+    two_phase_selection_manifest: dict[str, Any] | None = None
+    use_two_phase_selection = use_canonical_two_phase_feature_selection(
+        has_frozen_feature_contract=had_frozen_feature_contract,
+        diagnostic_single_phase=bool(args.single_phase_wide_feature_selection),
+    )
+    if use_two_phase_selection:
+        sample_dir = args.out_dir / "_feature_selection_bme_sample"
+        sample_manifest_path = sample_dir / "manifest.json"
+        sampled_handoff = sample_dir / "train_meta_regime_handoff.parquet"
+        sampled_ledger = sample_dir / "s52_trailing_regime_scored_ledger.parquet"
+        if (
+            sample_manifest_path.is_file()
+            and sampled_handoff.is_file()
+            and sampled_ledger.is_file()
+        ):
+            sample_manifest = json.loads(sample_manifest_path.read_text())
+        else:
+            source_ledger = args.ledger or (
+                args.handoff_dir / "s52_trailing_regime_scored_ledger.parquet"
+            )
+            sample_manifest = materialize_meta_bme_sample(
+                handoff=args.handoff_dir / "train_meta_regime_handoff.parquet",
+                ledger=source_ledger,
+                out_dir=sample_dir,
+                rows=int(args.feature_selection_sample_rows),
+                seed=int(args.seed),
+            )
+        # The B/M/E sample is a row subset of the same base candidate stream.
+        # Carry its immutable provenance sidecar so strict selection validates
+        # the sampled rows against the identical base target/weight contract.
+        source_contract_path = _handoff_contract_path(
+            args.handoff_dir / "train_meta_regime_handoff.parquet"
+        )
+        sampled_contract_path = _handoff_contract_path(sampled_handoff)
+        if source_contract_path.is_file() and not sampled_contract_path.is_file():
+            sampled_contract_path.write_text(
+                source_contract_path.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        if bool(args.strict_handoff_contract) and not sampled_contract_path.is_file():
+            raise ValueError(
+                "Strict two-phase meta selection requires the source handoff "
+                f"contract sidecar: {source_contract_path}"
+            )
+        selection_dir = args.out_dir / "_feature_selection_phase"
+        selection_manifest_path = selection_dir / "manifest.json"
+        if selection_manifest_path.is_file():
+            selection_manifest = json.loads(selection_manifest_path.read_text())
+        else:
+            selection_manifest = run_smoke(
+                handoff_dir=sample_dir,
+                ledger_path=sampled_ledger,
+                out_dir=selection_dir,
+                frontier=args.frontier,
+                seed=int(args.seed),
+                train_scope=str(args.train_scope),
+                enable_base_prior_features=bool(args.enable_base_prior_features),
+                enable_reliability_features=bool(args.enable_reliability_features),
+                enable_support_drift_features=bool(args.enable_support_drift_features),
+                enable_hit_surprise_features=bool(args.enable_hit_surprise_features),
+                enable_path_order_heads=bool(args.enable_path_order_heads),
+                enable_path_order_blends=bool(args.enable_path_order_blends),
+                feature_selection_top_n=int(feature_selection_top_n),
+                feature_selection_target=str(args.feature_selection_target),
+                feature_selection_method=str(args.feature_selection_method),
+                max_oos_model_age_days=int(args.max_oos_model_age_days),
+                single_fit_oos_window=bool(args.single_fit_oos_window),
+                validation_scope="largest",
+                model_train_max_rows=LGBM_TWO_PHASE_FULL_FIT_ROW_CAP,
+                feature_selection_max_rows=int(args.feature_selection_sample_rows),
+                model_params=fixed_model_params,
+                model_profile_name=f"{args.model_profile_name}_selection_phase",
+                meta_head_mode=str(args.meta_head_mode),
+                minimal_artifacts=True,
+                side_specific_single_head=not bool(args.single_head_global_model),
+                strict_handoff_contract=bool(args.strict_handoff_contract),
+            )
+        fixed_selected_features = list(
+            selection_manifest.get("selected_feature_union", []) or []
+        )
+        raw_by_side = selection_manifest.get("selected_features_by_side", {}) or {}
+        fixed_selected_features_by_side = {
+            str(side): list(features)
+            for side, features in raw_by_side.items()
+            if str(side) in {"long", "short"} and features
+        }
+        if not fixed_selected_features:
+            raise RuntimeError("Two-phase meta selection produced no feature contract")
+        fixed_feature_union = list(fixed_selected_features)
+        for features in fixed_selected_features_by_side.values():
+            fixed_feature_union.extend(features)
+        projected_handoff_columns = _projected_handoff_columns_for_selected(
+            args.handoff_dir / "train_meta_regime_handoff.parquet",
+            list(dict.fromkeys(fixed_feature_union)),
+        )
+        two_phase_selection_manifest = {
+            "schema": "meta_two_phase_wide_selection_v1",
+            "training_contract": LGBM_TWO_PHASE_SELECTION_CONTRACT,
+            "sample": sample_manifest,
+            "selection_manifest": str(selection_manifest_path),
+            "selected_feature_union_count": len(fixed_selected_features),
+            "selected_feature_counts_by_side": {
+                side: len(features)
+                for side, features in fixed_selected_features_by_side.items()
+            },
+            "full_population_reload": "selected_raw_columns_only",
+            "full_population_train_row_cap": LGBM_TWO_PHASE_FULL_FIT_ROW_CAP,
+        }
+        (args.out_dir / "two_phase_feature_selection.json").write_text(
+            json.dumps(_json_safe(two_phase_selection_manifest), indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
     if int(args.hpo_trials) > 0:
         manifest = run_hpo_smoke(
             handoff_dir=args.handoff_dir,
@@ -4780,7 +6914,16 @@ def main() -> None:
             hpo_trials=int(args.hpo_trials),
             hpo_max_train_rows=int(args.hpo_max_train_rows),
             max_oos_model_age_days=int(args.max_oos_model_age_days),
+            single_fit_oos_window=bool(args.single_fit_oos_window),
             meta_head_mode=str(args.meta_head_mode),
+            hpo_calibration_month=str(args.hpo_calibration_month),
+            eval_months=eval_months or None,
+            save_fold_models=bool(args.save_fold_models),
+            fixed_selected_features=fixed_selected_features,
+            fixed_selected_features_by_side=fixed_selected_features_by_side,
+            side_specific_single_head=not bool(args.single_head_global_model),
+            hpo_refit_shortlist_size=int(args.hpo_refit_shortlist_size),
+            strict_handoff_contract=bool(args.strict_handoff_contract),
         )
     else:
         manifest = run_smoke(
@@ -4800,13 +6943,50 @@ def main() -> None:
             feature_selection_target=str(args.feature_selection_target),
             feature_selection_method=str(args.feature_selection_method),
             max_oos_model_age_days=int(args.max_oos_model_age_days),
-            model_train_max_rows=0,
+            single_fit_oos_window=bool(args.single_fit_oos_window),
+            # Feature selection may use a bounded, time-spread sample. The
+            # resulting long/short models must always use the complete
+            # expanding training window in a normal OOS replay.
+            model_train_max_rows=LGBM_TWO_PHASE_FULL_FIT_ROW_CAP,
+            feature_selection_max_rows=(
+                int(args.feature_selection_sample_rows)
+                if fixed_selected_features is None
+                else 0
+            ),
             model_params=fixed_model_params,
             model_profile_name=str(args.model_profile_name),
             meta_head_mode=str(args.meta_head_mode),
             fixed_selected_features=fixed_selected_features,
+            fixed_selected_features_by_side=fixed_selected_features_by_side,
+            side_specific_single_head=not bool(args.single_head_global_model),
             eval_months=eval_months or None,
             save_fold_models=bool(args.save_fold_models),
+            handoff_columns=projected_handoff_columns,
+            strict_handoff_contract=bool(args.strict_handoff_contract),
+        )
+    if two_phase_selection_manifest is not None:
+        manifest["two_phase_feature_selection"] = two_phase_selection_manifest
+        manifest_path = args.out_dir / "manifest.json"
+        if manifest_path.is_file():
+            manifest_path.write_text(
+                json.dumps(_json_safe(manifest), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+    manifest["feature_materialization_contract"] = {
+        "schema": LGBM_TWO_PHASE_SELECTION_CONTRACT,
+        "canonical_default": True,
+        "fresh_selection_used_two_phase": bool(use_two_phase_selection),
+        "diagnostic_single_phase_opt_out": diagnostic_single_phase_opt_out,
+        "selection_sample_rows": int(args.feature_selection_sample_rows),
+        "full_fit_projection": "selected_raw_columns_only",
+        "full_fit_train_row_cap": LGBM_TWO_PHASE_FULL_FIT_ROW_CAP,
+        "full_fit_population": "all_prior_rows",
+    }
+    manifest_path = args.out_dir / "manifest.json"
+    if manifest_path.is_file():
+        manifest_path.write_text(
+            json.dumps(_json_safe(manifest), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
     print(
         json.dumps(

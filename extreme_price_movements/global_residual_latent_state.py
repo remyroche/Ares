@@ -76,6 +76,51 @@ PORTABLE_ASSET_HINTS = (
     "asset_mkt_",
     "rv_rel_universe",
     "log_quote_volume",
+    "downside_semivariance",
+    "downside_semivol",
+    "liquidity",
+    "spread",
+    "volume_z",
+    "ret_resid_btc",
+    "ret_resid_eth",
+    "resid_ret_vs_btc",
+    "resid_ret_vs_eth",
+    "symbol_minus_mkt_ret",
+    "asset_ret_vs_btc",
+)
+
+# Observable coordinates required to distinguish systemic liquidation, relief
+# squeezes, BTC-led moves, alt/ETH rotations, and post-shock liquidity damage.
+# Names are hints rather than hard requirements so older feature stores remain
+# readable; coverage and archetype-local relevance still decide what is fitted.
+RESIDUAL_STATE_OBSERVABLE_HINTS = (
+    "btc_ret_",
+    "eth_ret_",
+    "eth_btc_ret_",
+    "btc_dominance",
+    "dominance_chg",
+    "altcoin",
+    "market_dispersion",
+    "return_dispersion",
+    "cross_asset_return_dispersion",
+    "cross_asset_vol_dispersion",
+    "downside_semivariance",
+    "downside_semivol",
+    "mkt_rv_",
+    "realized_vol",
+    "mkt_volume_z",
+    "pct_assets_volume",
+    "liquidation",
+    "oi_flush",
+    "oi_drawdown",
+    "oi_recovery",
+    "funding",
+    "liquidity",
+    "spread",
+    "quote_volume",
+    "market_pc1",
+    "cross_asset_corr",
+    "market_downside",
 )
 
 PHASE_STATE_PREFIX = "state_phase__"
@@ -154,6 +199,13 @@ class ResidualEncoderConfig:
     patience: int = 18
     max_input_features: int = 384
     correlation_prune_threshold: float = 0.995
+    latent_covariance_weight: float = 0.025
+    latent_variance_weight: float = 0.025
+    extreme_target_quantile: float = 0.90
+    extreme_sample_weight: float = 2.0
+    max_sample_weight: float = 4.0
+    kl_weight: float = 0.0025
+    kl_warmup_epochs: int = 30
     torch_num_threads: int = 1
     random_state: int = 20260711
 
@@ -163,6 +215,7 @@ ENCODER_PRESETS: dict[str, dict[str, float]] = {
     "residual_aware_ae": {"reconstruction_weight": 1.0, "signature_weight": 0.10},
     "supervised_mlp": {"reconstruction_weight": 0.0, "signature_weight": 1.0},
     "hybrid_mlp": {"reconstruction_weight": 0.10, "signature_weight": 1.0},
+    "variational_ae": {"reconstruction_weight": 1.0, "signature_weight": 0.10},
 }
 
 
@@ -495,6 +548,7 @@ def select_state_features(
         for name, _ in candidates
         if name.startswith(MARKET_PREFIXES)
         or any(prefix in name for prefix in MARKET_PREFIXES)
+        or any(hint in name.lower() for hint in RESIDUAL_STATE_OBSERVABLE_HINTS)
     ]
     asset = [
         name
@@ -691,6 +745,8 @@ def select_partition_state_features(
     max_rows: int = 24_000,
     mi_bins: int = 8,
     max_views_per_source: int = 6,
+    min_features: int = 16,
+    correlation_prune_threshold: float = 0.95,
 ) -> tuple[list[str], pd.DataFrame]:
     """Rank state coordinates for one archetype using train rows only.
 
@@ -722,6 +778,19 @@ def select_partition_state_features(
         ("target_mean_ev", 0.15),
         ("target_payoff_asymmetry", 0.05),
     ]
+    # Residual persistence is discovered from continuous train signatures, not
+    # assigned failure names. Large favorable and adverse tails remain separate
+    # so their effects cannot cancel inside an archetype.
+    for name in frame.columns:
+        lowered = str(name).lower()
+        if not str(name).startswith("target_signature_arch__"):
+            continue
+        if "negative_persistence" in lowered or "negative_surprise" in lowered:
+            targets.append((str(name), 0.22))
+        elif "positive_persistence" in lowered or "positive_surprise" in lowered:
+            targets.append((str(name), 0.18))
+        elif "signed_alignment" in lowered:
+            targets.append((str(name), 0.12))
     prepared_targets: list[tuple[str, float, np.ndarray, float, float]] = []
     for name, weight in targets:
         if name not in sample.columns:
@@ -756,6 +825,7 @@ def select_partition_state_features(
         relevance = 0.0
         nonlinear = 0.0
         mi_relevance = 0.0
+        extreme_relevance = 0.0
         details: dict[str, float] = {}
         for target_name, weight, target, target_mean, target_scale in prepared_targets:
             valid = finite & np.isfinite(target)
@@ -778,7 +848,18 @@ def select_partition_state_features(
             binned_mi = _normalized_binned_mutual_information(
                 values[valid], target[valid], bins=int(mi_bins)
             )
+            target_valid = target[valid]
+            extreme_cutoff = float(np.nanquantile(target_valid, 0.90))
+            extreme_label = (target_valid >= extreme_cutoff).astype(np.float32)
+            extreme_mi = (
+                _normalized_binned_mutual_information(
+                    values[valid], extreme_label, bins=int(mi_bins)
+                )
+                if np.unique(extreme_label).size > 1
+                else 0.0
+            )
             temporal_mi: list[float] = []
+            temporal_extreme_mi: list[float] = []
             valid_positions = np.flatnonzero(valid)
             for positions in np.array_split(valid_positions, 3):
                 if len(positions) < 64:
@@ -788,6 +869,15 @@ def select_partition_state_features(
                         values[positions], target[positions], bins=int(mi_bins)
                     )
                 )
+                local_target = target[positions]
+                local_cutoff = float(np.nanquantile(local_target, 0.90))
+                local_extreme = (local_target >= local_cutoff).astype(np.float32)
+                if np.unique(local_extreme).size > 1:
+                    temporal_extreme_mi.append(
+                        _normalized_binned_mutual_information(
+                            values[positions], local_extreme, bins=int(mi_bins)
+                        )
+                    )
             stable_mi = binned_mi
             if temporal_mi:
                 stable_mi = float(
@@ -795,14 +885,33 @@ def select_partition_state_features(
                     + 0.30 * np.mean(temporal_mi)
                     + 0.20 * np.min(temporal_mi)
                 )
-            score = 0.25 * abs(corr) + 0.25 * abs(tail_lift) + 0.50 * stable_mi
+            stable_extreme_mi = extreme_mi
+            if temporal_extreme_mi:
+                stable_extreme_mi = float(
+                    0.50 * extreme_mi
+                    + 0.30 * np.mean(temporal_extreme_mi)
+                    + 0.20 * np.min(temporal_extreme_mi)
+                )
+            score = (
+                0.20 * abs(corr)
+                + 0.20 * abs(tail_lift)
+                + 0.35 * stable_mi
+                + 0.25 * stable_extreme_mi
+            )
             relevance += float(weight) * score
-            nonlinear += float(weight) * (0.40 * abs(tail_lift) + 0.60 * stable_mi)
+            nonlinear += float(weight) * (
+                0.30 * abs(tail_lift)
+                + 0.40 * stable_mi
+                + 0.30 * stable_extreme_mi
+            )
             mi_relevance += float(weight) * stable_mi
+            extreme_relevance += float(weight) * stable_extreme_mi
             details[f"corr__{target_name}"] = corr
             details[f"tail_lift__{target_name}"] = tail_lift
             details[f"binned_mi__{target_name}"] = binned_mi
             details[f"stable_binned_mi__{target_name}"] = stable_mi
+            details[f"extreme_binned_mi__{target_name}"] = extreme_mi
+            details[f"stable_extreme_binned_mi__{target_name}"] = stable_extreme_mi
         if not details:
             continue
         rows.append(
@@ -812,6 +921,7 @@ def select_partition_state_features(
                 "relevance": float(relevance),
                 "nonlinear_relevance": float(nonlinear),
                 "mi_relevance": float(mi_relevance),
+                "extreme_relevance": float(extreme_relevance),
                 "phase_feature": bool(name.startswith(PHASE_STATE_PREFIX)),
                 **details,
             }
@@ -820,23 +930,83 @@ def select_partition_state_features(
     if diagnostic.empty:
         return [], diagnostic
     diagnostic = diagnostic.sort_values(
-        ["relevance", "mi_relevance", "nonlinear_relevance", "coverage", "feature"],
-        ascending=[False, False, False, False, True],
+        [
+            "relevance",
+            "extreme_relevance",
+            "mi_relevance",
+            "nonlinear_relevance",
+            "coverage",
+            "feature",
+        ],
+        ascending=[False, False, False, False, False, True],
         kind="stable",
     ).reset_index(drop=True)
-    selected: list[str] = []
+    relevance_values = diagnostic["relevance"].to_numpy(dtype=np.float64)
+    relevance_floor = max(
+        float(np.nanquantile(relevance_values, 0.85)),
+        0.15 * float(np.nanmax(relevance_values)),
+    )
+    eligible_features = set(
+        diagnostic.loc[
+            diagnostic["relevance"].ge(relevance_floor), "feature"
+        ].astype(str)
+    )
+    minimum = min(int(max_features), max(1, int(min_features)))
+    effective_target_rows = max(
+        (
+            int(np.isfinite(values).sum())
+            for _, _, values, _, _ in prepared_targets
+        ),
+        default=len(sample),
+    )
+    adaptive_limit = min(
+        int(max_features),
+        max(minimum, int(round(0.75 * math.sqrt(max(effective_target_rows, 1))))),
+    )
+    preliminary: list[str] = []
     source_counts: dict[str, int] = {}
     for feature in diagnostic["feature"]:
+        if str(feature) not in eligible_features and len(preliminary) >= minimum:
+            continue
         source = _state_feature_source(str(feature))
         if source_counts.get(source, 0) >= int(max_views_per_source):
             continue
-        selected.append(str(feature))
+        preliminary.append(str(feature))
         source_counts[source] = source_counts.get(source, 0) + 1
-        if len(selected) >= int(max_features):
+        if len(preliminary) >= int(max_features):
             break
+
+    # Compress redundant views after nonlinear/stability ranking. The first
+    # member of each correlation cluster is the locally strongest feature.
+    selected: list[str] = []
+    if preliminary:
+        correlation_sample = (
+            sample[preliminary]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+        )
+        correlation_sample = correlation_sample.fillna(
+            correlation_sample.median()
+        ).fillna(0.0)
+        correlation = correlation_sample.corr().abs().fillna(0.0)
+        for feature in preliminary:
+            redundant = bool(
+                selected
+                and float(correlation.loc[feature, selected].max())
+                >= float(correlation_prune_threshold)
+            )
+            if redundant and len(selected) >= minimum:
+                continue
+            selected.append(feature)
+            if len(selected) >= adaptive_limit:
+                break
     selected_rank = {name: rank + 1 for rank, name in enumerate(selected)}
     diagnostic["selected"] = diagnostic["feature"].isin(selected_rank)
     diagnostic["selected_rank"] = diagnostic["feature"].map(selected_rank)
+    diagnostic["relevance_floor"] = float(relevance_floor)
+    diagnostic["preliminary_selected"] = diagnostic["feature"].isin(preliminary)
+    diagnostic["adaptive_feature_limit"] = int(adaptive_limit)
+    diagnostic["correlation_prune_threshold"] = float(correlation_prune_threshold)
     return selected, diagnostic
 
 
@@ -1914,6 +2084,7 @@ if nn is not None:  # pragma: no branch
             target_dim: int,
             dropout: float,
             with_decoder: bool,
+            variational: bool = False,
         ) -> None:
             super().__init__()
             widths = [
@@ -1935,6 +2106,14 @@ if nn is not None:  # pragma: no branch
                         ]
                     )
             self.encoder = nn.Sequential(*encoder_layers)
+            self.variational = bool(variational)
+            self.latent_mu = (
+                nn.Linear(int(latent_dim), int(latent_dim)) if self.variational else None
+            )
+            self.latent_logvar = (
+                nn.Linear(int(latent_dim), int(latent_dim)) if self.variational else None
+            )
+            self.last_kl_loss: torch.Tensor | None = None
             self.signature_head = (
                 nn.Linear(int(latent_dim), int(target_dim)) if target_dim else None
             )
@@ -1958,7 +2137,22 @@ if nn is not None:  # pragma: no branch
         def forward(
             self, values: torch.Tensor
         ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
-            latent = self.encoder(values)
+            encoded = self.encoder(values)
+            if self.variational:
+                assert self.latent_mu is not None and self.latent_logvar is not None
+                mu = self.latent_mu(encoded)
+                logvar = torch.clamp(self.latent_logvar(encoded), -8.0, 6.0)
+                latent = (
+                    mu + torch.exp(0.5 * logvar) * torch.randn_like(mu)
+                    if self.training
+                    else mu
+                )
+                self.last_kl_loss = -0.5 * torch.mean(
+                    1.0 + logvar - mu.pow(2) - logvar.exp()
+                )
+            else:
+                latent = encoded
+                self.last_kl_loss = None
             reconstruction = self.decoder(latent) if self.decoder is not None else None
             signature = (
                 self.signature_head(latent) if self.signature_head is not None else None
@@ -2131,6 +2325,7 @@ class GlobalResidualSignatureEncoder:
             len(self.target_columns),
             self.config.dropout,
             self.reconstruction_weight > 0.0,
+            self.config.encoder_kind == "variational_ae",
         )
         network.load_state_dict(self.model_state)
         network.eval()
@@ -2172,6 +2367,7 @@ class GlobalResidualSignatureEncoder:
             len(self.target_columns),
             self.config.dropout,
             self.reconstruction_weight > 0.0,
+            self.config.encoder_kind == "variational_ae",
         )
         optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -2198,19 +2394,78 @@ class GlobalResidualSignatureEncoder:
             else np.ones(len(self.target_columns), dtype=np.float32)
         )
 
+        # Weight rare, large residual signatures continuously.  This is fitted
+        # independently inside each side x archetype partition and therefore
+        # does not let a common short failure swamp a rarer long failure.
+        sample_weights = np.ones(len(x), dtype=np.float32)
+        if y.shape[1]:
+            masked_magnitude = np.where(y_mask > 0.0, np.abs(y), -np.inf)
+            target_magnitude = np.max(masked_magnitude, axis=1)
+            target_magnitude[~np.isfinite(target_magnitude)] = np.nan
+            finite_magnitude = target_magnitude[np.isfinite(target_magnitude)]
+            if finite_magnitude.size:
+                threshold = float(
+                    np.quantile(
+                        finite_magnitude,
+                        np.clip(float(self.config.extreme_target_quantile), 0.5, 0.999),
+                    )
+                )
+                excess = np.maximum(target_magnitude - threshold, 0.0)
+                excess[~np.isfinite(excess)] = 0.0
+                scale = max(
+                    float(np.nanquantile(finite_magnitude, 0.95) - threshold), 1e-6
+                )
+                sample_weights += float(self.config.extreme_sample_weight) * np.clip(
+                    excess / scale, 0.0, 1.0
+                ).astype(np.float32)
+                sample_weights = np.clip(
+                    sample_weights, 1.0, float(self.config.max_sample_weight)
+                )
+
+        def _latent_geometry_penalty(latent: torch.Tensor) -> torch.Tensor:
+            if latent.shape[0] < 3 or latent.shape[1] < 2:
+                return torch.zeros((), dtype=latent.dtype)
+            centered = latent - latent.mean(dim=0, keepdim=True)
+            covariance = centered.T @ centered / max(int(latent.shape[0]) - 1, 1)
+            diagonal = torch.diagonal(covariance)
+            off_diagonal = covariance - torch.diag(diagonal)
+            covariance_penalty = torch.mean(off_diagonal**2)
+            variance_penalty = torch.mean(torch.relu(0.25 - diagonal) ** 2)
+            return (
+                float(self.config.latent_covariance_weight) * covariance_penalty
+                + float(self.config.latent_variance_weight) * variance_penalty
+            )
+
+        current_epoch = 0
+
         def _loss(indices: np.ndarray) -> torch.Tensor:
             xb = torch.from_numpy(x[indices])
-            reconstruction, prediction, _ = model(xb)
+            reconstruction, prediction, latent = model(xb)
             total = torch.zeros((), dtype=torch.float32)
+            row_weight = torch.from_numpy(sample_weights[indices])
             if reconstruction is not None and self.reconstruction_weight > 0.0:
-                total = total + float(self.reconstruction_weight) * torch.mean(
-                    (reconstruction - xb) ** 2
+                reconstruction_loss = torch.mean((reconstruction - xb) ** 2, dim=1)
+                total = total + float(self.reconstruction_weight) * torch.sum(
+                    row_weight * reconstruction_loss
+                ) / torch.clamp(row_weight.sum(), min=1.0)
+            total = total + _latent_geometry_penalty(latent)
+            if model.last_kl_loss is not None:
+                warmup = min(
+                    1.0,
+                    float(current_epoch + 1)
+                    / max(float(self.config.kl_warmup_epochs), 1.0),
+                )
+                total = total + (
+                    float(self.config.kl_weight) * warmup * model.last_kl_loss
                 )
             if prediction is not None and self.signature_weight > 0.0:
                 yb = torch.from_numpy(y[indices])
                 mb = torch.from_numpy(y_mask[indices])
-                denominator = torch.clamp(mb.sum(dim=0), min=1.0)
-                head_loss = (((prediction - yb) ** 2) * mb).sum(dim=0) / denominator
+                weighted_mask = mb * row_weight[:, None]
+                denominator = torch.clamp(weighted_mask.sum(dim=0), min=1.0)
+                head_loss = (
+                    ((prediction - yb) ** 2) * weighted_mask
+                ).sum(dim=0) / denominator
                 total = total + float(self.signature_weight) * torch.mean(
                     target_weights * head_loss
                 )
@@ -2221,6 +2476,7 @@ class GlobalResidualSignatureEncoder:
         stale = 0
         history: list[dict[str, float]] = []
         for epoch in range(int(self.config.epochs)):
+            current_epoch = int(epoch)
             model.train()
             order = rng.permutation(train_idx)
             batch_losses: list[float] = []
@@ -2257,6 +2513,14 @@ class GlobalResidualSignatureEncoder:
             name: value.detach().cpu().clone()
             for name, value in model.state_dict().items()
         }
+        model.load_state_dict(self.model_state)
+        model.eval()
+        latent_parts: list[np.ndarray] = []
+        with torch.no_grad():
+            for start in range(0, len(x), 4096):
+                _, _, latent = model(torch.from_numpy(x[start : start + 4096]))
+                latent_parts.append(latent.numpy().astype(np.float32, copy=False))
+        geometry = latent_geometry_diagnostics(np.concatenate(latent_parts, axis=0))
         self.training_report = {
             "encoder_kind": self.config.encoder_kind,
             "train_rows": int(len(train_idx)),
@@ -2267,6 +2531,16 @@ class GlobalResidualSignatureEncoder:
             "signature_targets": int(len(self.target_columns)),
             "reconstruction_weight": float(self.reconstruction_weight),
             "signature_weight": float(self.signature_weight),
+            "extreme_weighted_rows": int(np.sum(sample_weights > 1.0)),
+            "mean_sample_weight": float(np.mean(sample_weights)),
+            "latent_covariance_weight": float(self.config.latent_covariance_weight),
+            "latent_variance_weight": float(self.config.latent_variance_weight),
+            "effective_kl_weight": (
+                float(self.config.kl_weight)
+                if self.config.encoder_kind == "variational_ae"
+                else 0.0
+            ),
+            "latent_geometry": geometry,
             "history_tail": history[-10:],
         }
         return self
@@ -2278,6 +2552,11 @@ class GlobalResidualSignatureEncoder:
         with torch.no_grad():
             reconstruction, prediction, latent = model(torch.from_numpy(x))
         latent_values = latent.numpy().astype(np.float32)
+        if not np.isfinite(latent_values).all():
+            bad_rows = int((~np.isfinite(latent_values).all(axis=1)).sum())
+            raise RuntimeError(
+                f"Residual signature encoder emitted non-finite latent rows: {bad_rows}"
+            )
         output = pd.DataFrame(
             latent_values,
             columns=[
@@ -2330,6 +2609,60 @@ def _posterior_weighted_mean(posterior: np.ndarray, values: np.ndarray) -> np.nd
     return numerator / denominator
 
 
+def latent_geometry_diagnostics(values: np.ndarray) -> dict[str, float | int]:
+    """Summarize whether a frozen encoder output is suitable for GMM fitting."""
+    latent = np.asarray(values, dtype=np.float64)
+    if latent.ndim != 2 or not latent.shape[0] or not latent.shape[1]:
+        return {"rows": int(len(latent)), "dimensions": 0, "finite_row_share": 0.0}
+    finite_rows = np.isfinite(latent).all(axis=1)
+    clean = latent[finite_rows]
+    report: dict[str, float | int] = {
+        "rows": int(len(latent)),
+        "dimensions": int(latent.shape[1]),
+        "finite_row_share": float(finite_rows.mean()),
+    }
+    if len(clean) < 3:
+        return report
+    centered = clean - np.mean(clean, axis=0, keepdims=True)
+    scale = np.std(centered, axis=0, ddof=0)
+    active = scale > 1e-6
+    report["collapsed_dimensions"] = int((~active).sum())
+    report["minimum_dimension_std"] = float(np.min(scale))
+    report["median_dimension_std"] = float(np.median(scale))
+    if int(active.sum()) < 2:
+        report.update(
+            {
+                "mean_absolute_correlation": 1.0,
+                "max_absolute_correlation": 1.0,
+                "covariance_condition_number": float("inf"),
+            }
+        )
+        return report
+    active_values = centered[:, active]
+    covariance = np.cov(active_values, rowvar=False)
+    correlation = np.corrcoef(active_values, rowvar=False)
+    upper = np.abs(correlation[np.triu_indices_from(correlation, k=1)])
+    eigenvalues = np.linalg.eigvalsh(np.atleast_2d(covariance))
+    positive = eigenvalues[eigenvalues > 1e-10]
+    standardized = active_values / np.maximum(scale[active], 1e-8)
+    skew = np.mean(standardized**3, axis=0)
+    excess_kurtosis = np.mean(standardized**4, axis=0) - 3.0
+    report.update(
+        {
+            "mean_absolute_correlation": float(np.mean(upper)),
+            "max_absolute_correlation": float(np.max(upper)),
+            "covariance_condition_number": float(
+                np.max(positive) / np.min(positive) if positive.size else np.inf
+            ),
+            "mean_absolute_skew": float(np.mean(np.abs(skew))),
+            "mean_absolute_excess_kurtosis": float(
+                np.mean(np.abs(excess_kurtosis))
+            ),
+        }
+    )
+    return report
+
+
 class GlobalGMMStateModel:
     """Select and enrich one partition-local GMM using train-only economics."""
 
@@ -2350,6 +2683,7 @@ class GlobalGMMStateModel:
         self.global_targets: dict[str, float] = {}
         self.months: tuple[str, ...] = ()
         self.fitted_enrichment_targets: tuple[str, ...] = ()
+        self.readiness: dict[str, Any] = {}
 
     def fit(
         self, latent: pd.DataFrame, targets: pd.DataFrame, timestamps: pd.Series
@@ -2495,6 +2829,26 @@ class GlobalGMMStateModel:
         ).reset_index(drop=True)
         chosen_position = int(chosen_index)
         _, self.model, posterior = candidates[chosen_position]
+        hard_counts = np.bincount(
+            posterior.argmax(axis=1), minlength=posterior.shape[1]
+        ).astype(np.int64)
+        self.readiness = {
+            "latent_geometry": latent_geometry_diagnostics(x),
+            "mean_max_posterior": float(np.mean(np.max(posterior, axis=1))),
+            "mean_posterior_entropy": float(
+                np.mean(
+                    -np.sum(
+                        posterior * np.log(np.clip(posterior, 1e-8, 1.0)), axis=1
+                    )
+                )
+            ),
+            "minimum_hard_component_rows": int(hard_counts.min()),
+            "maximum_hard_component_share": float(hard_counts.max() / len(posterior)),
+            "all_components_meet_minimum_occupancy": bool(
+                np.min(posterior.mean(axis=0))
+                >= float(self.config.min_component_occupancy)
+            ),
+        }
         occupancy_rows = posterior.sum(axis=0)
         for target in self.fitted_enrichment_targets:
             values = pd.to_numeric(targets[target], errors="coerce").to_numpy(
@@ -2527,6 +2881,18 @@ class GlobalGMMStateModel:
         output["global_state_entropy"] = (
             -np.sum(posterior * np.log(np.clip(posterior, 1e-8, 1.0)), axis=1)
         ).astype(np.float32)
+        ordered = np.sort(posterior, axis=1)
+        output["global_state_posterior_max"] = ordered[:, -1].astype(np.float32)
+        output["global_state_posterior_second"] = (
+            ordered[:, -2] if posterior.shape[1] > 1 else 0.0
+        ).astype(np.float32)
+        output["global_state_posterior_margin"] = (
+            output["global_state_posterior_max"]
+            - output["global_state_posterior_second"]
+        ).astype(np.float32)
+        output["global_state_effective_components"] = np.exp(
+            output["global_state_entropy"].to_numpy(dtype=np.float32)
+        ).astype(np.float32)
         output["global_state_novelty"] = (-self.model.score_samples(x)).astype(
             np.float32
         )
@@ -2550,6 +2916,8 @@ class GlobalGMMStateModel:
             },
             "global_targets": self.global_targets,
             "fitted_enrichment_targets": list(self.fitted_enrichment_targets),
+            "readiness": self.readiness,
+            "grid": self.grid.to_dict(orient="records"),
         }
 
 

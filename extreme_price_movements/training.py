@@ -9902,6 +9902,128 @@ def _trend_direction_keep_mask(trend_vals, trend_filter: str) -> np.ndarray:
     return finite & (arr < 0.0)
 
 
+def _build_hourly_path_auxiliary_targets(
+    panel,
+    feats,
+    entry_ts,
+    event_sym,
+    *,
+    side: str,
+    horizon_hours: int = 12,
+) -> dict[str, np.ndarray]:
+    """Build complete causal future-path targets independently of exit policy."""
+
+    from .path_auxiliary_targets import build_path_auxiliary_targets
+
+    n = int(len(entry_ts))
+    output = {
+        "peak_mfe_return": np.full(n, np.nan, dtype=np.float32),
+        "peak_mfe_atr": np.full(n, np.nan, dtype=np.float32),
+        "time_to_first_meaningful_mfe_hours": np.full(n, np.nan, dtype=np.float32),
+        "mae_before_meaningful_mfe_atr": np.full(n, np.nan, dtype=np.float32),
+        "bars_before_price_stops_decreasing": np.full(n, np.nan, dtype=np.float32),
+        "future_slope_atr_per_hour": np.full(n, np.nan, dtype=np.float32),
+        "atr_fraction": np.full(n, np.nan, dtype=np.float32),
+        "valid": np.zeros(n, dtype=bool),
+        "timing_valid": np.zeros(n, dtype=bool),
+        "meaningful_mfe_reached": np.zeros(n, dtype=bool),
+    }
+    required = ("open", "high", "low")
+    if not all(name in panel for name in required):
+        return output
+    atr_panel = feats.get("atr_pct")
+    if atr_panel is None:
+        return output
+    entry_ns = pd.to_datetime(entry_ts, utc=True, errors="coerce").view("i8")
+    symbols = np.asarray(event_sym).astype(str)
+    hour_ns = int(pd.Timedelta(hours=1).value)
+    side_sign = 1.0 if str(side).lower() == "long" else -1.0
+    for symbol in np.unique(symbols):
+        rows = np.flatnonzero(symbols == symbol)
+        if not len(rows) or symbol not in panel["open"].columns:
+            continue
+        if symbol not in panel["high"].columns or symbol not in panel["low"].columns:
+            continue
+        if not hasattr(atr_panel, "columns") or symbol not in atr_panel.columns:
+            continue
+        index = pd.DatetimeIndex(panel["open"].index)
+        if len(index) < int(horizon_hours):
+            continue
+        index_ns = pd.to_datetime(index, utc=True, errors="coerce").view("i8")
+        positions = np.searchsorted(index_ns, entry_ns[rows])
+        exact = (positions < len(index_ns)) & (
+            index_ns[np.minimum(positions, max(len(index_ns) - 1, 0))]
+            == entry_ns[rows]
+        )
+        # ``entry_ts`` is already the causal decision timestamp
+        # (signal timestamp + one hourly timeframe).  The executable entry is
+        # the open at that timestamp, so its high/low bar is path bar one.  Do
+        # not add a second one-hour offset here.
+        mature = exact & ((positions + int(horizon_hours)) <= len(index_ns))
+        if not np.any(mature):
+            continue
+        local_rows = rows[mature]
+        pos = positions[mature]
+        open_values = pd.to_numeric(
+            panel["open"][symbol], errors="coerce"
+        ).to_numpy(np.float64)
+        high_values = pd.to_numeric(
+            panel["high"][symbol], errors="coerce"
+        ).to_numpy(np.float64)
+        low_values = pd.to_numeric(
+            panel["low"][symbol], errors="coerce"
+        ).to_numpy(np.float64)
+        atr_values = pd.to_numeric(atr_panel[symbol], errors="coerce").reindex(
+            index
+        ).to_numpy(np.float64)
+        high_windows = np.lib.stride_tricks.sliding_window_view(
+            high_values, int(horizon_hours)
+        )[pos]
+        low_windows = np.lib.stride_tricks.sliding_window_view(
+            low_values, int(horizon_hours)
+        )[pos]
+        if int(horizon_hours) > 1:
+            step_windows = np.lib.stride_tricks.sliding_window_view(
+                np.diff(index_ns) == hour_ns, int(horizon_hours) - 1
+            )[pos]
+            contiguous = np.all(step_windows, axis=1)
+        else:
+            contiguous = np.ones(len(pos), dtype=bool)
+        if not np.any(contiguous):
+            continue
+        kept_rows = local_rows[contiguous]
+        targets = build_path_auxiliary_targets(
+            entry_price=open_values[pos[contiguous]],
+            future_high=high_windows[contiguous],
+            future_low=low_windows[contiguous],
+            atr_fraction=atr_values[pos[contiguous]],
+            side_sign=np.full(np.sum(contiguous), side_sign, dtype=np.float32),
+            bar_minutes=60,
+            horizon_hours=int(horizon_hours),
+        )
+        output["peak_mfe_return"][kept_rows] = targets.peak_mfe_return_12h
+        output["peak_mfe_atr"][kept_rows] = targets.peak_mfe_atr_12h
+        output["time_to_first_meaningful_mfe_hours"][kept_rows] = (
+            targets.time_to_first_meaningful_mfe_hours_12h
+        )
+        output["mae_before_meaningful_mfe_atr"][kept_rows] = (
+            targets.mae_before_meaningful_mfe_atr_12h
+        )
+        output["bars_before_price_stops_decreasing"][kept_rows] = (
+            targets.bars_before_price_stops_decreasing_12h
+        )
+        output["future_slope_atr_per_hour"][kept_rows] = (
+            targets.future_slope_atr_per_hour_12h
+        )
+        output["atr_fraction"][kept_rows] = atr_values[pos[contiguous]].astype(
+            np.float32
+        )
+        output["valid"][kept_rows] = targets.valid
+        output["timing_valid"][kept_rows] = targets.timing_valid
+        output["meaningful_mfe_reached"][kept_rows] = targets.meaningful_mfe_reached
+    return output
+
+
 def _meta_feature_keys_for_kind(
     cfg: dict,
     strategy: dict | None = None,
@@ -10747,6 +10869,36 @@ def build_hourly_training_set_and_weights(
     _policy_bars_to_mfe_vals = None
     _policy_bars_to_mae_vals = None
     _policy_first_passage_vals = None
+    _peak_mfe_return_12h_vals = None
+    _peak_mfe_atr_12h_vals = None
+    _time_to_first_meaningful_mfe_hours_12h_vals = None
+    _mae_before_meaningful_mfe_atr_12h_vals = None
+    _bars_before_price_stops_decreasing_12h_vals = None
+    _future_slope_atr_per_hour_12h_vals = None
+    _aux_path_targets = _build_hourly_path_auxiliary_targets(
+        panel,
+        feats,
+        entry_ts,
+        event_sym,
+        side=side,
+        horizon_hours=12,
+    )
+    _peak_mfe_return_12h_vals = _aux_path_targets["peak_mfe_return"]
+    _peak_mfe_atr_12h_vals = _aux_path_targets["peak_mfe_atr"]
+    _time_to_first_meaningful_mfe_hours_12h_vals = _aux_path_targets[
+        "time_to_first_meaningful_mfe_hours"
+    ]
+    _mae_before_meaningful_mfe_atr_12h_vals = _aux_path_targets[
+        "mae_before_meaningful_mfe_atr"
+    ]
+    _bars_before_price_stops_decreasing_12h_vals = _aux_path_targets[
+        "bars_before_price_stops_decreasing"
+    ]
+    _future_slope_atr_per_hour_12h_vals = _aux_path_targets[
+        "future_slope_atr_per_hour"
+    ]
+    _meaningful_mfe_reached_12h_vals = _aux_path_targets["meaningful_mfe_reached"]
+    _path_auxiliary_atr_fraction_vals = _aux_path_targets["atr_fraction"]
     if _policy_rollout_enabled and all(
         k in panel for k in ["open", "high", "low", "close"]
     ):
@@ -11390,6 +11542,81 @@ def build_hourly_training_set_and_weights(
     if _policy_first_passage_vals is not None:
         for _fp_name, _fp_vals in _policy_first_passage_vals.items():
             parts[f"__{_fp_name}__"] = np.asarray(_fp_vals)
+    if (
+        _peak_mfe_return_12h_vals is not None
+        and _peak_mfe_atr_12h_vals is not None
+        and _time_to_first_meaningful_mfe_hours_12h_vals is not None
+        and _mae_before_meaningful_mfe_atr_12h_vals is not None
+        and _bars_before_price_stops_decreasing_12h_vals is not None
+        and _future_slope_atr_per_hour_12h_vals is not None
+    ):
+        _aux_valid = (
+            np.isfinite(_peak_mfe_return_12h_vals)
+            & np.isfinite(_peak_mfe_atr_12h_vals)
+        )
+        _aux_timing_valid = _aux_valid & np.isfinite(
+            _time_to_first_meaningful_mfe_hours_12h_vals
+        )
+        parts["__peak_mfe_return_12h__"] = np.asarray(
+            _peak_mfe_return_12h_vals, dtype=np.float32
+        )
+        parts["__peak_mfe_atr_12h__"] = np.asarray(
+            _peak_mfe_atr_12h_vals, dtype=np.float32
+        )
+        parts["__path_auxiliary_atr_fraction__"] = np.asarray(
+            _path_auxiliary_atr_fraction_vals, dtype=np.float32
+        )
+        parts["__time_to_first_meaningful_mfe_hours_12h__"] = np.asarray(
+            _time_to_first_meaningful_mfe_hours_12h_vals, dtype=np.float32
+        )
+        parts["__mae_before_meaningful_mfe_atr_12h__"] = np.asarray(
+            _mae_before_meaningful_mfe_atr_12h_vals, dtype=np.float32
+        )
+        parts["__bars_before_price_stops_decreasing_12h__"] = np.asarray(
+            _bars_before_price_stops_decreasing_12h_vals, dtype=np.float32
+        )
+        parts["__future_slope_atr_per_hour_12h__"] = np.asarray(
+            _future_slope_atr_per_hour_12h_vals, dtype=np.float32
+        )
+        parts["__log1p_peak_mfe_atr_12h__"] = np.log1p(
+            np.maximum(np.asarray(_peak_mfe_atr_12h_vals, dtype=np.float32), 0.0)
+        ).astype(np.float32)
+        parts["__log1p_time_to_first_meaningful_mfe_hours_12h__"] = np.log1p(
+            np.maximum(
+                np.asarray(
+                    _time_to_first_meaningful_mfe_hours_12h_vals,
+                    dtype=np.float32,
+                ),
+                0.0,
+            )
+        ).astype(np.float32)
+        parts["__log1p_mae_before_meaningful_mfe_atr_12h__"] = np.log1p(
+            np.maximum(
+                np.asarray(_mae_before_meaningful_mfe_atr_12h_vals, dtype=np.float32),
+                0.0,
+            )
+        ).astype(np.float32)
+        parts["__log1p_bars_before_price_stops_decreasing_12h__"] = np.log1p(
+            np.maximum(
+                np.asarray(
+                    _bars_before_price_stops_decreasing_12h_vals, dtype=np.float32
+                ),
+                0.0,
+            )
+        ).astype(np.float32)
+        parts["__log1p_future_slope_atr_per_hour_12h__"] = np.log1p(
+            np.maximum(
+                np.asarray(_future_slope_atr_per_hour_12h_vals, dtype=np.float32),
+                0.0,
+            )
+        ).astype(np.float32)
+        parts["__path_auxiliary_target_valid__"] = _aux_valid.astype(np.int8)
+        parts["__time_to_first_meaningful_mfe_target_valid__"] = _aux_timing_valid.astype(
+            np.int8
+        )
+        parts["__meaningful_mfe_reached_12h__"] = np.asarray(
+            _meaningful_mfe_reached_12h_vals, dtype=np.int8
+        )
 
     if _policy_bars_vals is not None:
         parts["__bars_policy__"] = np.asarray(_policy_bars_vals, dtype=np.int16)
@@ -11499,6 +11726,21 @@ def build_hourly_training_set_and_weights(
         "__n_sl__",
         "__w_consensus__",
         "__bars_to_mfe__",
+        "__peak_mfe_return_12h__",
+        "__peak_mfe_atr_12h__",
+        "__path_auxiliary_atr_fraction__",
+        "__time_to_first_meaningful_mfe_hours_12h__",
+        "__mae_before_meaningful_mfe_atr_12h__",
+        "__bars_before_price_stops_decreasing_12h__",
+        "__future_slope_atr_per_hour_12h__",
+        "__log1p_peak_mfe_atr_12h__",
+        "__log1p_time_to_first_meaningful_mfe_hours_12h__",
+        "__log1p_mae_before_meaningful_mfe_atr_12h__",
+        "__log1p_bars_before_price_stops_decreasing_12h__",
+        "__log1p_future_slope_atr_per_hour_12h__",
+        "__path_auxiliary_target_valid__",
+        "__time_to_first_meaningful_mfe_target_valid__",
+        "__meaningful_mfe_reached_12h__",
         "__u_policy_net__",
         "__r_policy_net__",
         "__regime_vol_12h__",

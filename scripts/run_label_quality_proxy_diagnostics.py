@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -215,6 +216,12 @@ def _read_feature_list(path: Path | None, *, max_features: int | None = None) ->
 
 def _schema_names(path: Path) -> set[str]:
     try:
+        from extreme_price_movements.data_store import _feature_schema_names
+
+        return set(str(v) for v in _feature_schema_names(str(path)))
+    except Exception:
+        pass
+    try:
         import pyarrow.parquet as pq
 
         return set(str(v) for v in pq.read_schema(path).names)
@@ -230,6 +237,7 @@ def _load_feature_store_columns(
     *,
     feature_dir: Path,
     selected_features: list[str],
+    min_feature_finite_frac: float = 0.50,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     if not selected_features:
         return pd.DataFrame(index=frame.index), {
@@ -239,50 +247,193 @@ def _load_feature_store_columns(
     matrix = pd.DataFrame(index=frame.index, columns=selected_features, dtype=np.float32)
     loaded_symbols = 0
     missing_symbols = 0
+    read_errors: list[str] = []
     available_feature_counts: list[int] = []
     ts_utc = pd.to_datetime(frame["__ts__"], utc=True)
-    for symbol, idx in frame.groupby("__symbol__", sort=False).indices.items():
-        rows = np.asarray(idx, dtype=np.int64)
-        path = _symbol_to_feature_path(feature_dir, str(symbol))
-        if not path.exists():
-            missing_symbols += 1
-            continue
-        names = _schema_names(path)
-        available = [feature for feature in selected_features if feature in names]
-        available_feature_counts.append(len(available))
-        if not available:
-            continue
-        try:
-            features = pd.read_parquet(path, columns=available)
-        except Exception:
-            continue
-        features.index = pd.to_datetime(features.index, utc=True)
-        aligned = features.reindex(ts_utc.iloc[rows])
-        matrix.loc[rows, available] = aligned.to_numpy(dtype=np.float32, copy=False)
-        loaded_symbols += 1
+    from extreme_price_movements.static_feature_store import (
+        STATIC_FEATURE_ENDPOINT_VERSION,
+        read_static_features,
+    )
+
+    try:
+        feature_store_ts = pd.to_datetime(
+            feature_dir.name, format="%Y%m%d_%H%M%S", utc=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Feature directory must be a timestamped shared static store, e.g. "
+            "data_perp/features/20260711_070000"
+        ) from exc
+    if feature_dir.parent.name != "features":
+        raise ValueError(
+            f"Feature directory is outside the shared static-store layout: {feature_dir}"
+        )
+    data_root = feature_dir.parent.parent
+
+    # A canonical B/M/E sample can consist of three broad, disjoint windows.
+    # Read each window separately so the static store can push down its time
+    # bounds. Ordinary contiguous training populations remain one block.
+    unique_ts = pd.DatetimeIndex(ts_utc.dropna().unique()).sort_values()
+    split_points = np.flatnonzero(
+        np.diff(unique_ts.asi8) > pd.Timedelta(days=3).value
+    )
+    block_bounds: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    if 0 < len(split_points) < 8:
+        starts = np.concatenate(([0], split_points + 1))
+        ends = np.concatenate((split_points, [len(unique_ts) - 1]))
+        block_bounds = [
+            (pd.Timestamp(unique_ts[start]), pd.Timestamp(unique_ts[end]))
+            for start, end in zip(starts, ends)
+        ]
+    if not block_bounds:
+        block_bounds = [(pd.Timestamp(ts_utc.min()), pd.Timestamp(ts_utc.max()))]
+    # Compact B/M/E selection samples can safely assemble the full symbol
+    # cross-section per time block.  Multi-million-row model-fit populations
+    # stay bounded to avoid a wide all-symbol materialization spike.
+    # A feature-major store keeps one raw array per feature and symbol in the
+    # lazy reader.  Loading 64 symbols across a 500+ column AE/GMM contract can
+    # exceed 16 GB before the first symbol frame is projected.  Keep compact
+    # selection samples wide, but bound full-population reads aggressively.
+    if len(frame) <= 500_000:
+        adaptive_batch = 256
+    elif len(frame) <= 2_000_000:
+        adaptive_batch = 16
+    else:
+        adaptive_batch = 8
+    batch_size = max(
+        1,
+        int(os.environ.get("EPM_STATIC_FEATURE_SYMBOL_BATCH", str(adaptive_batch))),
+    )
+    for block_start, block_end in block_bounds:
+        block_mask = ts_utc.ge(block_start) & ts_utc.le(block_end)
+        block_positions = np.flatnonzero(block_mask.to_numpy())
+        symbol_rows = [
+            (str(symbol), block_positions[np.asarray(idx, dtype=np.int64)])
+            for symbol, idx in frame.iloc[block_positions].groupby("__symbol__", sort=False).indices.items()
+        ]
+        for batch_start in range(0, len(symbol_rows), batch_size):
+            batch = symbol_rows[batch_start : batch_start + batch_size]
+            existing = [
+                (symbol, rows)
+                for symbol, rows in batch
+                if _symbol_to_feature_path(feature_dir, symbol).exists()
+            ]
+            missing_symbols += len(batch) - len(existing)
+            if not existing:
+                continue
+            batch_symbols = [symbol for symbol, _rows in existing]
+            batch_positions = np.concatenate([rows for _symbol, rows in existing])
+            batch_ts = ts_utc.iloc[batch_positions]
+            try:
+                static_features = read_static_features(
+                    feature_store_ts=feature_store_ts,
+                    data_root=data_root,
+                    feature_keys=selected_features,
+                    symbols=batch_symbols,
+                    start_ts=batch_ts.min(),
+                    end_ts=batch_ts.max(),
+                )
+            except Exception as exc:
+                read_errors.append(
+                    f"{block_start.isoformat()}..{block_end.isoformat()}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                continue
+            if not hasattr(static_features, "items"):
+                continue
+            available = [
+                feature for feature in selected_features if feature in static_features
+            ]
+            available_by_symbol = {symbol: 0 for symbol, _rows in existing}
+            symbol_ts = {
+                symbol: pd.DatetimeIndex(ts_utc.iloc[rows])
+                for symbol, rows in existing
+            }
+            if hasattr(static_features, "symbol_frame"):
+                # The canonical store is feature-major on disk, but training
+                # joins need timestamp x feature rows for one symbol. Building
+                # that inverse view directly avoids materializing hundreds of
+                # timestamp x universe DataFrames for every monthly partition.
+                for symbol, rows in existing:
+                    symbol_frame = static_features.symbol_frame(
+                        symbol, keys=available
+                    )
+                    if not isinstance(symbol_frame, pd.DataFrame) or symbol_frame.empty:
+                        continue
+                    symbol_frame = symbol_frame.copy(deep=False)
+                    symbol_frame.index = pd.DatetimeIndex(
+                        pd.to_datetime(symbol_frame.index, utc=True)
+                    )
+                    symbol_available = [
+                        feature for feature in available if feature in symbol_frame.columns
+                    ]
+                    if not symbol_available:
+                        continue
+                    aligned = symbol_frame.reindex(symbol_ts[symbol]).loc[
+                        :, symbol_available
+                    ]
+                    matrix.loc[rows, symbol_available] = aligned.to_numpy(
+                        dtype=np.float32, copy=False
+                    )
+                    available_by_symbol[symbol] = len(symbol_available)
+            else:
+                for feature in available:
+                    panel = static_features[feature]
+                    if not isinstance(panel, pd.DataFrame):
+                        continue
+                    panel_index = pd.DatetimeIndex(pd.to_datetime(panel.index, utc=True))
+                    for symbol, rows in existing:
+                        if symbol not in panel.columns:
+                            continue
+                        values = pd.to_numeric(panel[symbol], errors="coerce")
+                        values.index = panel_index
+                        matrix.loc[rows, feature] = values.reindex(
+                            symbol_ts[symbol]
+                        ).to_numpy(dtype=np.float32, copy=False)
+                        available_by_symbol[symbol] += 1
+            for symbol, _rows in existing:
+                symbol_available = int(available_by_symbol[symbol])
+                available_feature_counts.append(symbol_available)
+                if symbol_available > 0:
+                    loaded_symbols += 1
+    if read_errors and loaded_symbols == 0:
+        raise RuntimeError(
+            "All canonical static-feature reads failed; first errors: "
+            + " | ".join(read_errors[:3])
+        )
+    finite_floor = float(min_feature_finite_frac)
+    if not 0.0 <= finite_floor <= 1.0:
+        raise ValueError("min_feature_finite_frac must be between zero and one")
     finite_by_feature = matrix.notna().mean().to_dict()
     retained = [
         feature
         for feature in selected_features
-        if float(finite_by_feature.get(feature, 0.0) or 0.0) >= 0.50
+        if float(finite_by_feature.get(feature, 0.0) or 0.0) >= finite_floor
     ]
     matrix = matrix.loc[:, retained].copy()
     return matrix, {
         "enabled": True,
         "feature_dir": str(feature_dir),
+        "reader": "static_feature_store.read_static_features.symbol_frame_preferred",
+        "static_feature_endpoint_version": STATIC_FEATURE_ENDPOINT_VERSION,
+        "store_access": "read_only",
         "requested_features": int(len(selected_features)),
         "retained_features": int(len(retained)),
         "loaded_symbols": int(loaded_symbols),
         "missing_symbols": int(missing_symbols),
+        "read_error_count": int(len(read_errors)),
+        "read_errors": read_errors[:10],
         "mean_available_features_per_symbol": (
             float(np.mean(available_feature_counts)) if available_feature_counts else 0.0
         ),
         "mean_feature_finite_frac": (
             float(np.mean([finite_by_feature[f] for f in retained])) if retained else 0.0
         ),
+        "time_blocks_loaded": int(len(block_bounds)),
         "min_feature_finite_frac": (
             float(np.min([finite_by_feature[f] for f in retained])) if retained else 0.0
         ),
+        "retention_finite_frac_floor": finite_floor,
     }
 
 

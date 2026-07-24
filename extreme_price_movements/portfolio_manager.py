@@ -1,8 +1,8 @@
 """Portfolio Manager for position-level risk and constraint enforcement.
 
 Enforces portfolio-level constraints:
-- Max 10 positions open simultaneously
-- Max 75% total wallet allocation by default
+- Max 70% of wallet equity in pre-leverage allocated capital by default
+- No normal concurrent-position count cap (count is an emergency guard only)
 - Max 15% of portfolio per position
 - Dynamic entry threshold based on current position count
 - 24h cooldown after losing trades per asset
@@ -99,6 +99,9 @@ class Position:
     entry_time: pd.Timestamp
     position_size: float  # As fraction of portfolio or absolute quote notional
     entry_price: float
+    quantity: float = 0.0
+    mark_price: float = 0.0
+    effective_leverage: float = 1.0
     is_open: bool = True
     policy_archetype: str = ""
     local_side_archetype: str = ""
@@ -118,8 +121,8 @@ class PortfolioManager:
     """Manages portfolio state and enforces position constraints.
 
     Constraints:
-    - MAX_POSITIONS: Maximum simultaneous open positions (default: 10)
-    - MAX_PORTFOLIO_PCT: Maximum % of portfolio invested (default: 75%)
+    - MAX_POSITIONS: Optional emergency simultaneous-position guard
+    - MAX_PORTFOLIO_PCT: Pre-leverage wallet capital cap (default: 70%)
     - MAX_POSITION_PCT: Maximum % of portfolio per position (default: 15%)
     - MAX_POSITION_USDT: Optional absolute quote-notional cap (default: 5000)
     - COOLDOWN_HOURS: Hours to wait after losing trade (default: 24)
@@ -129,8 +132,8 @@ class PortfolioManager:
 
     def __init__(
         self,
-        max_positions: int = 10,
-        max_portfolio_pct: Optional[float] = 0.75,
+        max_positions: int = 64,
+        max_portfolio_pct: Optional[float] = 0.70,
         max_position_usdt: Optional[float] = 5000.0,
         max_position_pct: float = 0.15,
         cooldown_hours: float = 24.0,
@@ -154,8 +157,12 @@ class PortfolioManager:
         archetype_loss_cooldown_hours: float = 24.0,
         max_failed_api_calls_5m: int = 10,
         max_consecutive_order_rejections: int = 5,
+        enforce_position_count_cap: bool = False,
+        default_effective_leverage: float = 1.0,
     ):
         self.max_positions = max(1, int(max_positions))
+        self.enforce_position_count_cap = bool(enforce_position_count_cap)
+        self.default_effective_leverage = max(float(default_effective_leverage), 1.0)
         self.max_portfolio_pct = max_portfolio_pct
         self.max_position_usdt = max_position_usdt
         self.max_position_pct = max_position_pct
@@ -188,6 +195,9 @@ class PortfolioManager:
             )
         else:
             self.max_same_strategy = max(1, int(0.75 * self.max_positions))
+        if not self.enforce_position_count_cap:
+            self.max_same_side = self.max_positions
+            self.max_same_strategy = self.max_positions
         self.portfolio_value = portfolio_value
         self.max_daily_loss_pct = max_daily_loss_pct
         self.max_weekly_loss_pct = max_weekly_loss_pct
@@ -209,6 +219,8 @@ class PortfolioManager:
 
         # State tracking
         self.positions: Dict[str, Position] = {}  # symbol -> Position
+        self.pending_notional_reservations: Dict[str, float] = {}
+        self.pending_reservation_leverage: Dict[str, float] = {}
         self.cooldowns: Dict[str, CooldownRecord] = {}  # symbol -> CooldownRecord
         self.closed_positions: List[Position] = []
         self.pnl_events: List[Dict[str, Any]] = []
@@ -221,11 +233,76 @@ class PortfolioManager:
         self.manual_reset_required = False
         self.hard_limit_reason = ""
 
-    def _portfolio_notional_multiplier(self) -> float:
-        """Convert wallet allocation caps into quote-notional caps."""
-        return max(
-            float(self.book_notional_multiplier), 0.0
-        ) * max(float(self.leverage_wallet_multiplier), 1.0)
+    @staticmethod
+    def _position_marked_notional(position: Position) -> float:
+        quantity = abs(float(getattr(position, "quantity", 0.0) or 0.0))
+        entry_price = float(getattr(position, "entry_price", 0.0) or 0.0)
+        if quantity <= 0.0 and entry_price > 0.0:
+            quantity = abs(float(position.position_size)) / entry_price
+        mark = float(getattr(position, "mark_price", 0.0) or 0.0)
+        if not np.isfinite(mark) or mark <= 0.0:
+            mark = entry_price
+        if quantity <= 0.0 or mark <= 0.0:
+            return max(abs(float(position.position_size)), 0.0)
+        return max(quantity * mark, 0.0)
+
+    def _open_marked_notional(self) -> float:
+        return float(
+            sum(
+                self._position_marked_notional(position)
+                for position in self.positions.values()
+                if position.is_open
+            )
+        )
+
+    @classmethod
+    def _position_allocated_capital(cls, position: Position) -> float:
+        leverage = max(float(getattr(position, "effective_leverage", 1.0) or 1.0), 1.0)
+        return cls._position_marked_notional(position) / leverage
+
+    def _open_allocated_capital(self) -> float:
+        return float(sum(
+            self._position_allocated_capital(position)
+            for position in self.positions.values() if position.is_open
+        ))
+
+    def _pending_allocated_capital(self) -> float:
+        return float(sum(
+            float(notional) / max(float(self.pending_reservation_leverage.get(token, 1.0)), 1.0)
+            for token, notional in self.pending_notional_reservations.items()
+        ))
+
+    def update_position_mark(
+        self,
+        symbol: str,
+        *,
+        mark_price: float,
+        quantity: Optional[float] = None,
+    ) -> bool:
+        """Refresh one position's causal mark used by the wallet capacity gate."""
+        position = self.positions.get(str(symbol))
+        if position is None or not position.is_open:
+            return False
+        mark = float(mark_price)
+        if not np.isfinite(mark) or mark <= 0.0:
+            return False
+        position.mark_price = mark
+        if quantity is not None and np.isfinite(float(quantity)):
+            position.quantity = abs(float(quantity))
+        return True
+
+    def reserve_pending_notional(
+        self, token: str, notional: float, *, effective_leverage: float = 1.0
+    ) -> None:
+        value = float(notional)
+        if not token or not np.isfinite(value) or value <= 0.0:
+            raise ValueError("Pending notional reservation must be positive")
+        self.pending_notional_reservations[str(token)] = value
+        self.pending_reservation_leverage[str(token)] = max(float(effective_leverage), 1.0)
+
+    def release_pending_notional(self, token: str) -> float:
+        self.pending_reservation_leverage.pop(str(token), None)
+        return float(self.pending_notional_reservations.pop(str(token), 0.0))
 
     @classmethod
     def from_policy_config(
@@ -247,11 +324,15 @@ class PortfolioManager:
         )
         return cls(
             max_positions=policy.max_concurrent_positions,
+            enforce_position_count_cap=getattr(
+                policy, "enforce_position_count_cap", False
+            ),
             max_portfolio_pct=policy.max_total_wallet_allocation_pct,
             max_position_usdt=policy.max_position_quote_notional,
             max_position_pct=policy.max_position_wallet_pct,
             book_notional_multiplier=policy.book_notional_multiplier,
             leverage_wallet_multiplier=leverage_wallet_multiplier,
+            default_effective_leverage=policy.perp_default_leverage,
             min_margin_level_after_entry=policy.min_margin_level_after_entry,
             occupancy_threshold_alpha=policy.occupancy_threshold_alpha,
             occupancy_threshold_power=policy.occupancy_threshold_power,
@@ -316,7 +397,7 @@ class PortfolioManager:
 
         # Calculate invested percentage against the current margin-safe book,
         # not against a static leverage multiplier.
-        total_invested = sum(p.position_size for p in open_positions)
+        total_invested = float(capacity.get("invested_marked_notional") or 0.0)
         max_total_notional = float(capacity.get("max_total_notional") or 0.0)
         invested_pct = (
             total_invested / max(max_total_notional, 1e-12)
@@ -454,23 +535,27 @@ class PortfolioManager:
           + occupancy_pressure * (1.0 - initial_threshold)
           + allocation_pressure * (1.0 - initial_threshold)
 
-        As more positions or wallet notional are open, thresholds tighten toward 1.0.
+        As more pre-leverage wallet capital is engaged, thresholds tighten toward 1.0.
         """
         if np.isfinite(initial_threshold) and float(initial_threshold) >= 1.0:
             return float(initial_threshold)
 
-        n_positions = len([p for p in self.positions.values() if p.is_open])
-
-        occupancy = n_positions / max(self.max_positions, 1)
+        allocated_capital = self._open_allocated_capital() + self._pending_allocated_capital()
+        configured_limit = (
+            float(self.max_portfolio_pct) * max(float(self.portfolio_value), 0.0)
+            if self.max_portfolio_pct is not None
+            and np.isfinite(float(self.max_portfolio_pct))
+            else float(self.portfolio_value)
+        )
+        occupancy = float(
+            np.clip(allocated_capital / max(configured_limit, 1e-9), 0.0, 1.0)
+        )
         occupancy_adjustment = (
             self.occupancy_threshold_alpha
             * occupancy**self.occupancy_threshold_power
             * (1.0 - initial_threshold)
         )
-        open_notional = float(
-            sum(p.position_size for p in self.positions.values() if p.is_open)
-        )
-        allocation_share = open_notional / max(float(self.portfolio_value), 1e-9)
+        allocation_share = allocated_capital / max(configured_limit, 1e-9)
         allocation_share = float(np.clip(allocation_share, 0.0, 1.0))
         allocation_adjustment = (
             self.allocation_threshold_alpha
@@ -488,29 +573,28 @@ class PortfolioManager:
 
         return min(float(max_threshold), final_threshold)
 
-    def calculate_position_size_cap(self, requested_size: float) -> float:
+    def calculate_position_size_cap(
+        self, requested_size: float, *, effective_leverage: float = 1.0
+    ) -> float:
         """Calculate allowed position size considering portfolio constraints.
 
         Returns the minimum of the requested size, the per-position equity cap,
         and any optional absolute or total portfolio allocation caps.
         """
-        open_positions = [p for p in self.positions.values() if p.is_open]
-        total_invested = sum(p.position_size for p in open_positions)
-        max_total_notional = float(
-            self.get_portfolio_capacity(side="", strategy_id="")["max_total_notional"]
+        leverage = max(float(effective_leverage), 1.0)
+        capacity = self.get_portfolio_capacity(
+            side="", strategy_id="", effective_leverage=leverage
         )
-
-        notional_multiplier = self._portfolio_notional_multiplier()
         caps = [
             float(requested_size),
             float(self.portfolio_value)
             * float(self.max_position_pct)
-            * notional_multiplier,
+            * leverage,
         ]
         if self.max_position_usdt is not None and np.isfinite(self.max_position_usdt):
-            caps.append(float(self.max_position_usdt) * self.book_notional_multiplier)
+            caps.append(float(self.max_position_usdt))
         if self.max_portfolio_pct is not None and np.isfinite(self.max_portfolio_pct):
-            caps.append(max_total_notional - total_invested)
+            caps.append(float(capacity["remaining_total_notional"]))
 
         return max(0.0, min(caps))
 
@@ -520,6 +604,7 @@ class PortfolioManager:
         side: str,
         strategy_id: str,
         wallet_value: Optional[float] = None,
+        effective_leverage: float = 1.0,
     ) -> Dict[str, Any]:
         """Return deterministic portfolio capacity without mutating state."""
         wallet = (
@@ -531,39 +616,43 @@ class PortfolioManager:
         n_open = len(open_positions)
         side_open = sum(1 for p in open_positions if p.side == side)
         strategy_open = sum(1 for p in open_positions if p.strategy_id == strategy_id)
-        open_notional = float(sum(p.position_size for p in open_positions))
-
-        notional_multiplier = self._portfolio_notional_multiplier()
-        configured_book_notional = (
+        open_notional = self._open_marked_notional()
+        pending_notional = float(sum(self.pending_notional_reservations.values()))
+        open_allocated = self._open_allocated_capital()
+        pending_allocated = self._pending_allocated_capital()
+        invested_allocated = open_allocated + pending_allocated
+        leverage = max(float(effective_leverage), 1.0)
+        configured_wallet_capital = (
             float(self.max_portfolio_pct)
             * wallet
-            * notional_multiplier
             if self.max_portfolio_pct is not None
             and np.isfinite(float(self.max_portfolio_pct))
             else float("inf")
         )
-        margin_surplus_notional = float("inf")
+        margin_surplus_capital = float("inf")
         if (
             self.margin_total_assets_quote is not None
             and self.margin_total_liabilities_quote is not None
             and np.isfinite(float(self.margin_total_assets_quote))
             and np.isfinite(float(self.margin_total_liabilities_quote))
         ):
-            margin_surplus_notional = max(
+            margin_surplus_capital = max(
                 (
                     float(self.margin_total_assets_quote)
                     - float(self.min_margin_level_after_entry)
                     * float(self.margin_total_liabilities_quote)
-                )
-                * notional_multiplier,
+                ),
                 0.0,
             )
-        max_total_notional = min(configured_book_notional, margin_surplus_notional)
-        if not np.isfinite(max_total_notional):
-            max_total_notional = configured_book_notional
-        remaining_total = max(max_total_notional - open_notional, 0.0)
+        max_total_allocated = min(configured_wallet_capital, margin_surplus_capital)
+        if not np.isfinite(max_total_allocated):
+            max_total_allocated = configured_wallet_capital
+        invested_notional = open_notional + pending_notional
+        remaining_allocated = max(max_total_allocated - invested_allocated, 0.0)
+        remaining_total = remaining_allocated * leverage
+        max_total_notional = invested_notional + remaining_total
         per_position_caps = [
-            float(self.max_position_pct) * wallet * notional_multiplier
+            float(self.max_position_pct) * wallet * leverage
         ]
         if self.max_position_usdt is not None and np.isfinite(
             float(self.max_position_usdt)
@@ -581,18 +670,32 @@ class PortfolioManager:
             "side_open_positions": side_open,
             "strategy_open_positions": strategy_open,
             "open_notional": open_notional,
+            "open_marked_notional": open_notional,
+            "pending_reserved_notional": pending_notional,
+            "invested_marked_notional": invested_notional,
+            "open_allocated_capital": open_allocated,
+            "pending_allocated_capital": pending_allocated,
+            "invested_allocated_capital": invested_allocated,
             "max_concurrent_positions": self.max_positions,
             "max_concurrent_per_side": self.max_same_side,
             "max_concurrent_per_strategy": self.max_same_strategy,
             "max_total_notional": max_total_notional,
-            "configured_book_notional": configured_book_notional,
+            "configured_book_notional": configured_wallet_capital * leverage,
+            "configured_wallet_capital": configured_wallet_capital,
             "margin_surplus_notional": (
-                margin_surplus_notional
-                if np.isfinite(margin_surplus_notional)
+                margin_surplus_capital
+                if np.isfinite(margin_surplus_capital)
                 else None
             ),
             "remaining_total_notional": remaining_total,
+            "remaining_allocated_capital": remaining_allocated,
+            "wallet_investment_utilization": (
+                invested_allocated / max(max_total_allocated, 1e-9)
+                if max_total_allocated > 0.0
+                else float("inf")
+            ),
             "max_position_notional": max_position_notional,
+            "candidate_effective_leverage": leverage,
             "book_notional_multiplier": float(self.book_notional_multiplier),
             "leverage_wallet_multiplier": float(self.leverage_wallet_multiplier),
             "min_margin_level_after_entry": float(self.min_margin_level_after_entry),
@@ -603,10 +706,14 @@ class PortfolioManager:
             "remaining_position_slots": remaining_position_slots,
             "remaining_side_slots": remaining_side_slots,
             "remaining_strategy_slots": remaining_strategy_slots,
+            "position_count_cap_enforced": bool(self.enforce_position_count_cap),
             "allowed_by_count_caps": bool(
-                remaining_position_slots > 0
-                and remaining_side_slots > 0
-                and remaining_strategy_slots > 0
+                not self.enforce_position_count_cap
+                or (
+                    remaining_position_slots > 0
+                    and remaining_side_slots > 0
+                    and remaining_strategy_slots > 0
+                )
             ),
             "allowed_by_allocation_caps": bool(
                 remaining_total > 0.0 and max_position_notional > 0.0
@@ -935,6 +1042,7 @@ class PortfolioManager:
         side_penalty: float = 0.0,
         strategy_penalty: float = 0.0,
         policy_archetype: Optional[str] = None,
+        effective_leverage: float = 1.0,
     ) -> Tuple[bool, Dict[str, Any]]:
         """Check if a new position can be entered.
 
@@ -991,6 +1099,7 @@ class PortfolioManager:
             side=side,
             strategy_id=strategy_id,
             wallet_value=wallet_value,
+            effective_leverage=effective_leverage,
         )
         info["capacity"] = capacity
 
@@ -1011,19 +1120,19 @@ class PortfolioManager:
                 info["cooldown_hours_remaining"] = float(hours_remaining)
                 return False, info
 
-        if n_positions >= self.max_positions:
+        if self.enforce_position_count_cap and n_positions >= self.max_positions:
             info["reason"] = "max_concurrent_positions_reached"
             info["constraints_checked"].append("max_positions")
             return False, info
 
         side_count = int(capacity["side_open_positions"])
-        if side_count >= self.max_same_side:
+        if self.enforce_position_count_cap and side_count >= self.max_same_side:
             info["reason"] = "max_concurrent_per_side_reached"
             info["constraints_checked"].append("max_same_side")
             return False, info
 
         strategy_count = int(capacity["strategy_open_positions"])
-        if strategy_count >= self.max_same_strategy:
+        if self.enforce_position_count_cap and strategy_count >= self.max_same_strategy:
             info["reason"] = "max_concurrent_per_strategy_reached"
             info["constraints_checked"].append("max_same_strategy")
             return False, info
@@ -1058,13 +1167,15 @@ class PortfolioManager:
             info["reason"] = "invalid_requested_position_size"
             info["requested_position_size"] = requested_size
             return False, info
-        position_size_cap = self.calculate_position_size_cap(requested_size)
+        position_size_cap = self.calculate_position_size_cap(
+            requested_size, effective_leverage=effective_leverage
+        )
         info["position_size_cap"] = position_size_cap
         info["requested_position_size"] = requested_size
         info["constraints_checked"].append("position_size_cap")
 
         if position_size_cap <= 0:
-            info["reason"] = "no_remaining_portfolio_capacity"
+            info["reason"] = "max_pre_leverage_wallet_investment_reached"
             return False, info
         if requested_size > float(capacity["remaining_total_notional"]):
             info["requested_size_clipped_to_remaining_total_notional"] = True
@@ -1083,6 +1194,7 @@ class PortfolioManager:
         policy_archetype: Optional[str] = None,
         local_side_archetype: Optional[str] = None,
         source_archetype: Optional[str] = None,
+        effective_leverage: Optional[float] = None,
     ) -> Position:
         """Record a new position opening."""
         if entry_time is None:
@@ -1095,6 +1207,15 @@ class PortfolioManager:
             entry_time=entry_time,
             position_size=position_size,
             entry_price=entry_price,
+            quantity=(
+                abs(float(position_size)) / float(entry_price)
+                if np.isfinite(float(entry_price)) and float(entry_price) > 0.0
+                else 0.0
+            ),
+            mark_price=float(entry_price),
+            effective_leverage=max(
+                float(effective_leverage or self.default_effective_leverage), 1.0
+            ),
             is_open=True,
             policy_archetype=str(policy_archetype or ""),
             local_side_archetype=str(local_side_archetype or ""),
@@ -1313,6 +1434,8 @@ class PortfolioManager:
                     "entry_time": p.entry_time,
                     "position_size": p.position_size,
                     "entry_price": p.entry_price,
+                    "quantity": p.quantity,
+                    "mark_price": p.mark_price,
                 }
                 for p in open_positions
             ]
@@ -1329,6 +1452,8 @@ class PortfolioManager:
                     "entry_time": p.entry_time.isoformat(),
                     "position_size": p.position_size,
                     "entry_price": p.entry_price,
+                    "quantity": p.quantity,
+                    "mark_price": p.mark_price,
                     "is_open": p.is_open,
                 }
                 for p in self.positions.values()
@@ -1374,6 +1499,10 @@ class PortfolioManager:
                 entry_time=pd.Timestamp(p_data["entry_time"]),
                 position_size=p_data["position_size"],
                 entry_price=p_data["entry_price"],
+                quantity=float(p_data.get("quantity", 0.0) or 0.0),
+                mark_price=float(
+                    p_data.get("mark_price", p_data.get("entry_price", 0.0)) or 0.0
+                ),
                 is_open=p_data["is_open"],
             )
             self.positions[pos.symbol] = pos

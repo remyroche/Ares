@@ -1,0 +1,170 @@
+{
+  "schema": "alternative_representation_search_v1",
+  "compute_profile": "comparison_v1",
+  "seed": 20260718,
+  "sampling": {
+    "reference_rows": 300000,
+    "encoder_comparison_rows": 50000,
+    "ssl_proxy_rows": 50000,
+    "policy": "canonical_utc_symbol_side_beginning_middle_end",
+    "require_exact_encoder_row_identity": true
+  },
+  "baseline_learning_curve": [
+    {"id": "incumbent_dae50k_gmm50k", "dae_rows": 50000, "gmm_rows": 50000}
+  ],
+  "frozen_incumbent_controls": [
+    {
+      "id": "legacy_dae15k_gmm100k_frozen",
+      "dae_rows": 15000,
+      "gmm_rows": 100000,
+      "latent_dim": 16,
+      "encoder_state_path": "data_perp/reports/alternative_representation_comparison_20260718_v2/encoders/legacy_dae15k_gmm100k/encoder.joblib",
+      "source_reference_contract_path": "data_perp/reports/alternative_representation_comparison_20260718_v2/encoders/legacy_dae15k_gmm100k/reference_contract.json"
+    }
+  ],
+  "baseline_saturation": {
+    "min_relative_reconstruction_gain": 0.02,
+    "min_latent_cka_gain": 0.01,
+    "min_gmm_stability_gain": 0.01,
+    "scaled_control_proxy_only_by_default": false
+  },
+  "common_gmm_panel": {
+    "components": [4, 8],
+    "covariance_types": ["diag"],
+    "reg_covar": [0.003],
+    "n_init": 1,
+    "rows": 50000,
+    "retry_reg_covar": [0.01, 0.03, 0.1]
+  },
+  "vade": {
+    "latent_dim": [8, 16],
+    "components": [4, 6, 8, 12],
+    "kl_weight": [0.1, 0.3, 1.0],
+    "kl_warmup_fraction": [0.2, 0.5],
+    "initialization": ["pretrained_dae_gmm", "pretrained_vae_gmm"],
+    "min_effective_occupancy": [0.01, 0.02, 0.05],
+    "reconstruction_objective": ["current", "feature_group_weighted"]
+  },
+  "idec": {
+    "proxy": {
+      "latent_dim": [16],
+      "n_clusters": [4, 6, 8, 12],
+      "pretraining_fraction": [0.66],
+      "target_update_frequency": [5],
+      "initialization": ["kmeans++"],
+      "student_t_df": [1.0]
+    },
+    "final": {
+      "latent_dim": [16],
+      "target_update_frequency": [1, 5],
+      "initialization": ["kmeans++", "incumbent_gmm_means"],
+      "student_t_df": [1.0, 5.0],
+      "output_mode": ["direct", "embedding_gmm"]
+    }
+  },
+  "ssl": {
+    "objectives": ["denoising_reconstruction", "masked_reconstruction", "scarf", "vicreg"],
+    "policies": {
+      "P0": {"element_mask": 0.05, "noise": 0.01, "group_masks": 0, "donor": "none"},
+      "P1": {"element_mask": 0.10, "noise": 0.03, "group_masks": 0, "donor": "none"},
+      "P2": {"element_mask": 0.05, "noise": 0.01, "group_masks": 1, "donor": "none"},
+      "P3": {"element_replace": 0.10, "noise": 0.01, "group_masks": 0, "donor": "joint_group_empirical"},
+      "P4": {"element_mask": 0.0, "noise": 0.0, "group_masks": 1, "donor": "causal_compatible_group"},
+      "P5": {"element_mask": 0.20, "noise": 0.05, "group_masks": 1, "donor": "none"}
+    },
+    "view_pairs": ["weak_weak", "weak_strong"],
+    "side_corruption": false,
+    "donor_condition_on_side": true,
+    "within_regime_donor_contract": "pre_entry_external_frozen_only"
+  },
+  "gmm_search": {
+    "stage1": {
+      "components": [3, 4, 6, 8, 12],
+      "covariance_types": ["diag"],
+      "reg_covar": [0.001, 0.003, 0.01],
+      "latent_preprocessing": ["raw"],
+      "rows": 100000,
+      "n_init": 1
+    },
+    "stage2": {
+      "components": [4, 6, 8],
+      "covariance_types": ["diag", "tied"],
+      "reg_covar": [0.001, 0.003],
+      "latent_preprocessing": ["raw", "whitened"],
+      "rows": 250000,
+      "n_init": 3,
+      "promoted_candidates_min": 4,
+      "promoted_candidates_max": 6
+    },
+    "overlap_refinement": {
+      "metrics": ["bhattacharyya", "wasserstein2"],
+      "lambdas": [0.0, 1e-7, 1e-6, 1e-5],
+      "variance_floor": 1e-5,
+      "fit_rows": 12000,
+      "steps": 30,
+      "candidates_per_family": 1,
+      "seed_rechecks": 2,
+      "max_heldout_nll_degradation": 0.01,
+      "require_no_seed_stability_degradation": true,
+      "require_no_ood_ranking_degradation": true
+    }
+  },
+  "iic": {
+    "clusters": [4, 8, 12],
+    "overclusters": [12, 24],
+    "view_pairs": ["weak_strong"],
+    "mi_weight": [0.3, 1.0],
+    "marginal_balance_weight": [0.3, 1.0],
+    "bottleneck_dim": [0, 8],
+    "reconstruction_aux_weight": [0.0, 0.1],
+    "epochs": 50,
+    "batch_size": 512,
+    "encoder_policy": "frozen_embedding_assignment_head_only"
+  },
+  "proxy": {
+    "outcome_free": true,
+    "promote_per_family": 2,
+    "seed_repeats": 1,
+    "nearby_reference_resamples": 1,
+    "perturbation_repeats": 1,
+    "ood_tiers": ["mild_synthetic", "structural_synthetic", "natural_temporal"],
+    "entropy_low_threshold": 0.05,
+    "entropy_high_threshold": 0.95,
+    "posterior_boundary_margin": 0.10
+  },
+  "downstream": {
+    "base": {
+      "train_days": 365,
+      "oos_months": 5,
+      "feature_selection": "canonical_global_mda_once",
+      "mda_fit_rows": 30000,
+      "mda_eval_rows": 10000,
+      "parameter_selection": "frozen_production_params_no_hpo",
+      "target": "target_soft",
+      "weight_arm": "W0_base",
+      "top_fractions": [0.10, 0.20, 0.30]
+    },
+    "meta": {
+      "train_oos_months": 3,
+      "eval_oos_months": 2,
+      "runner": "scripts/run_meta_v9_ev_mapped_side_residual_ablation.py",
+      "pack": "B",
+      "feature_selection": "archetype_univariate_relief_then_independent_side_mda",
+      "parameter_selection": "frozen_long_short_params_no_hpo",
+      "feature_selection_rows": 30000,
+      "params_manifest": "data_perp/reports/meta_v9_recovery_20260717/residual_state_mda95_hier_newaegmm_hpo150_v1/staged_selection_hpo_manifest.json"
+    },
+    "base_density_per_family": 1,
+    "report_top_per_family": 1,
+    "deferred_until_after_economic_screening": ["iic", "overlap_refinement"]
+  },
+  "cache": {
+    "dtype": "float32",
+    "mixture_numeric_dtype": "float64",
+    "format": "npy_memmap",
+    "cache_augmented_indices": true,
+    "cache_donor_maps": true,
+    "cache_latents": true,
+    "cache_posteriors": true
+  }
+}

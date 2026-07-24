@@ -299,22 +299,26 @@ def compute_price_gap_rank_penalty(
         }
     direction = 1.0 if str(side).lower() == "long" else -1.0
     signal_gap_bps = direction * (mid / signal - 1.0) * 10000.0
-    strategy = str(strategy_id).lower()
     max_gap = float(policy.max_signal_gap_bps_default)
-    adverse = max(-signal_gap_bps, 0.0)
-    continuation = max(signal_gap_bps, 0.0)
-    if "_tf" in strategy or "trend" in strategy:
-        penalized_gap = adverse
-    elif "_mr" in strategy or "mean_reversion" in strategy:
-        penalized_gap = continuation
-    else:
-        penalized_gap = abs(signal_gap_bps)
+    deadband = max(float(policy.price_gap_deadband_bps), 0.0)
+    favorable_multiplier = float(
+        np.clip(policy.price_gap_favorable_penalty_multiplier, 0.0, 1.0)
+    )
+    # Positive signed gap is a worse entry for either side. A favorable move can
+    # still indicate a stale signal, but receives only a small freshness penalty.
+    adverse_gap = max(signal_gap_bps - deadband, 0.0)
+    favorable_gap = max(-signal_gap_bps - deadband, 0.0)
+    penalized_gap = adverse_gap + favorable_multiplier * favorable_gap
     penalty = policy.price_gap_penalty_max * min(
         penalized_gap / max(max_gap, 1e-9), 1.0
     )
     return float(penalty), {
         "hard_reject": False,
         "signal_gap_bps": float(signal_gap_bps),
+        "price_gap_deadband_bps": float(deadband),
+        "price_gap_adverse_excess_bps": float(adverse_gap),
+        "price_gap_favorable_excess_bps": float(favorable_gap),
+        "price_gap_favorable_penalty_multiplier": float(favorable_multiplier),
         "penalized_gap_bps": float(penalized_gap),
     }
 

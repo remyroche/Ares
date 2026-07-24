@@ -16,13 +16,32 @@ from extreme_price_movements.features_oi import (
     get_oi_normalized_feature_names,
     get_oi_trading_feature_names,
 )
+from extreme_price_movements.features_negative_residuals import (
+    NEGATIVE_RESIDUAL_CAUSAL_WINDOW_HOURS,
+    NEGATIVE_RESIDUAL_COMPOSITE_FEATURE_KEYS,
+    NEGATIVE_RESIDUAL_FEATURE_SCHEMA_VERSION,
+    NEGATIVE_RESIDUAL_META_FEATURE_KEYS,
+    NEGATIVE_RESIDUAL_PROMOTED_META_FEATURE_KEYS,
+    NEGATIVE_RESIDUAL_PRIMITIVE_FEATURE_KEYS,
+    NEGATIVE_RESIDUAL_TEMPORAL_MECHANISM_FEATURE_KEYS,
+    negative_residual_feature_contract,
+)
 from extreme_price_movements.features_residual import residual_feature_names
 from extreme_price_movements.lgbm_archetype_features import (
     RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
     RAW_STATE_SVD_SUMMARY_FEATURE_NAMES,
 )
+from extreme_price_movements.market_regime_change_contract import (
+    MARKET_REGIME_CHANGE_FEATURE_KEYS,
+    MARKET_REGIME_CHANGE_SCHEMA_VERSION,
+    MARKET_REGIME_CHANGE_SOURCES,
+)
 from extreme_price_movements.model_drift_features import MODEL_DRIFT_FEATURE_KEYS
 from extreme_price_movements.perp_features import get_perp_feature_names
+from extreme_price_movements.residual_event_archetypes import (
+    residual_event_feature_names,
+    residual_event_market_feature_names,
+)
 from extreme_price_movements.unsupervised_regime_learning.feature_registry import (
     UNSUPERVISED_REGIME_LEARNING_DEFAULTS,
 )
@@ -1657,13 +1676,16 @@ CFG = {
     "feature_portability_allow_volume_source_dependent": False,
     "feature_portability_allow_dataset_selected": False,
     "feature_portability_allow_state_tuned": False,
+    # The model-facing ``ob_*`` family is a causal hourly OHLCV/kline
+    # microstructure proxy. Actual live L2 is used only for executable-price,
+    # slippage and capacity controls.
     "enable_orderbook_features": True,
     "orderbook_stale_hours": 2,
     "orderbook_levels": 20,
     "orderbook_depth_bps": [5, 10, 25, 50, 100],
     "orderbook_wall_qty_mult": 3.0,
     "orderbook_missing_age_sentinel_min": float("nan"),
-    # Historical microdata is built from Binance 1h kline summaries, not true L2
+    # Historical microdata is built from hourly kline summaries, not true L2
     # depth snapshots. Wall/blocker primitives require real book levels and are
     # neutralized by the runtime summary injector.
     "enable_orderbook_wall_features": False,
@@ -4449,6 +4471,7 @@ MODEL_REGIME_CONTEXT_META_FEATURE_KEYS = [
     *MARKET_SYNCHRONIZATION_FEATURE_KEYS,
     *CRASH_LIFECYCLE_MARKET_FEATURE_KEYS,
     *LIQUIDATION_STATE_SCORE_FEATURE_KEYS,
+    *NEGATIVE_RESIDUAL_META_FEATURE_KEYS,
 ]
 
 MODEL_REGIME_XS_META_FEATURE_KEYS = [
@@ -4797,6 +4820,36 @@ CFG["MODEL_DIRECT_BASE_FEATURE_KEYS"] = MODEL_DIRECT_BASE_FEATURE_KEYS
 CFG["CRASH_LIFECYCLE_ASSET_FEATURE_KEYS"] = CRASH_LIFECYCLE_ASSET_FEATURE_KEYS
 CFG["CRASH_LIFECYCLE_MARKET_FEATURE_KEYS"] = CRASH_LIFECYCLE_MARKET_FEATURE_KEYS
 CFG["CRASH_LIFECYCLE_NEW_FEATURE_KEYS"] = CRASH_LIFECYCLE_NEW_FEATURE_KEYS
+CFG["NEGATIVE_RESIDUAL_PRIMITIVE_FEATURE_KEYS"] = (
+    NEGATIVE_RESIDUAL_PRIMITIVE_FEATURE_KEYS
+)
+CFG["NEGATIVE_RESIDUAL_COMPOSITE_FEATURE_KEYS"] = (
+    NEGATIVE_RESIDUAL_COMPOSITE_FEATURE_KEYS
+)
+CFG["NEGATIVE_RESIDUAL_TEMPORAL_MECHANISM_FEATURE_KEYS"] = (
+    NEGATIVE_RESIDUAL_TEMPORAL_MECHANISM_FEATURE_KEYS
+)
+CFG["NEGATIVE_RESIDUAL_ALL_FEATURE_KEYS"] = NEGATIVE_RESIDUAL_META_FEATURE_KEYS
+CFG["NEGATIVE_RESIDUAL_META_FEATURE_KEYS"] = NEGATIVE_RESIDUAL_META_FEATURE_KEYS
+CFG["NEGATIVE_RESIDUAL_PROMOTED_META_FEATURE_KEYS"] = (
+    NEGATIVE_RESIDUAL_PROMOTED_META_FEATURE_KEYS
+)
+CFG["NEGATIVE_RESIDUAL_FEATURE_SCHEMA_VERSION"] = (
+    NEGATIVE_RESIDUAL_FEATURE_SCHEMA_VERSION
+)
+CFG["NEGATIVE_RESIDUAL_FEATURE_CONTRACT"] = negative_residual_feature_contract()
+CFG["MARKET_REGIME_CHANGE"] = {
+    "schema_version": MARKET_REGIME_CHANGE_SCHEMA_VERSION,
+    "source_features": dict(MARKET_REGIME_CHANGE_SOURCES),
+    "feature_keys": list(MARKET_REGIME_CHANGE_FEATURE_KEYS),
+    "scope": "meta_and_unsupervised_regime_learning",
+}
+CFG.setdefault("feature_required_lookback_hours_by_feature", {}).update(
+    {
+        key: NEGATIVE_RESIDUAL_CAUSAL_WINDOW_HOURS
+        for key in NEGATIVE_RESIDUAL_META_FEATURE_KEYS
+    }
+)
 CFG["OHLCV_LIFECYCLE_FEATURE_KEYS"] = OHLCV_LIFECYCLE_FEATURE_KEYS
 CFG["MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS"] = MARKET_BREADTH_LIFECYCLE_FEATURE_KEYS
 CFG["MARKET_SYNCHRONIZATION_ADDITION_KEYS"] = MARKET_SYNCHRONIZATION_ADDITION_KEYS
@@ -4983,6 +5036,7 @@ CFG["META_CROSS_SECTIONAL_REGIME_KEYS"] = [
     "median_spread_bps",
     "pct_assets_wide_spread",
     "median_volume_z",
+    *NEGATIVE_RESIDUAL_META_FEATURE_KEYS,
 ]
 CFG["meta_shared_feature_keys"] += ["META_CROSS_SECTIONAL_REGIME_KEYS"]
 
@@ -5270,6 +5324,12 @@ CFG["META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"] = [
 CFG["candidate_drift_denoising_ae_enabled"] = True
 CFG["candidate_drift_denoising_ae_max_iter"] = 80
 CFG["LGBM_AE_GMM_FEATURE_KEYS"] = list(AE_GMM_FEATURE_COLUMNS)
+CFG["RESIDUAL_EVENT_AEGMM_META_FEATURE_KEYS"] = list(
+    dict.fromkeys(
+        [*residual_event_feature_names(), *residual_event_market_feature_names()]
+    )
+)
+CFG["meta_shared_feature_keys"] += ["RESIDUAL_EVENT_AEGMM_META_FEATURE_KEYS"]
 CFG["BASE_LGBM_AE_GMM_FEATURE_KEYS"] = [
     f"base_lgbm_{key}" for key in CFG["LGBM_AE_GMM_FEATURE_KEYS"]
 ]
@@ -5534,6 +5594,7 @@ REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     *MARKET_SYNCHRONIZATION_FEATURE_KEYS,
     *CRASH_LIFECYCLE_MARKET_FEATURE_KEYS,
     *LIQUIDATION_STATE_SCORE_FEATURE_KEYS,
+    *NEGATIVE_RESIDUAL_META_FEATURE_KEYS,
 ]
 
 REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
@@ -6100,6 +6161,7 @@ PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_BREADTH_LIFECYCLE_FEATURE_
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(MARKET_SYNCHRONIZATION_ADDITION_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(LIQUIDATION_STATE_SCORE_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(CRASH_LIFECYCLE_NEW_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(NEGATIVE_RESIDUAL_META_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(LONG_HORIZON_PERP_META_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(VOLUME_FREE_PERP_BASE_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(VOLUME_FREE_PERP_META_FEATURE_KEYS)
@@ -6387,9 +6449,18 @@ for _name in (
     "MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS",
     "MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS",
     "MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS",
+    "NEGATIVE_RESIDUAL_PRIMITIVE_FEATURE_KEYS",
+    "NEGATIVE_RESIDUAL_COMPOSITE_FEATURE_KEYS",
+    "NEGATIVE_RESIDUAL_TEMPORAL_MECHANISM_FEATURE_KEYS",
+    "NEGATIVE_RESIDUAL_META_FEATURE_KEYS",
 ):
     globals()[_name] = _portable_feature_list(globals().get(_name, []))
     CFG[_name] = globals()[_name]
+
+CFG["NEGATIVE_RESIDUAL_ALL_FEATURE_KEYS"] = list(
+    NEGATIVE_RESIDUAL_META_FEATURE_KEYS
+)
+CFG["NEGATIVE_RESIDUAL_META_FEATURE_KEYS"] = list(NEGATIVE_RESIDUAL_META_FEATURE_KEYS)
 
 for _name in (
     "FUNDING_META_FEATURE_KEYS",

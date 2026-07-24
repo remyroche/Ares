@@ -32,7 +32,13 @@ from extreme_price_movements.entry_policy import (
     compute_entry_policy_decision,
     flatten_bucket_policy,
 )
+from extreme_price_movements.feature_transform_contract import (
+    FeatureSourceContract,
+    apply_model_input_numeric_contract,
+    ordered_names_hash,
+)
 from extreme_price_movements.inference.feature_generator import (
+    POST_BASE_DERIVED_FEATURE_KEYS,
     get_features_for_candidates,
     is_model_derived_feature_key,
 )
@@ -791,6 +797,31 @@ def _alpha_prediction_frame_for_model(
     return X
 
 
+def _apply_model_input_numeric_contract(
+    frame: pd.DataFrame,
+    *,
+    model: Any,
+    model_info: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
+    """Apply the persisted numeric representation used during model fitting."""
+    contract = (
+        (model_info or {}).get("input_numeric_contract_payload")
+        or (model_info or {}).get("input_numeric_contract")
+        or getattr(model, "epm_input_numeric_contract_payload_", None)
+        or getattr(model, "epm_input_numeric_contract_", "")
+        or ""
+    )
+    if not contract:
+        return frame
+    try:
+        return apply_model_input_numeric_contract(frame, contract)
+    except ValueError as exc:
+        raise FeatureParityError(
+            f"Alpha input numeric contract failed: {exc}",
+            report={"global_errors": ["unsupported_input_numeric_contract"]},
+        ) from exc
+
+
 def _effective_alpha_feature_contract(model_info: Dict[str, Any]) -> List[str]:
     """Return the real raw feature contract consumed by an alpha model.
 
@@ -883,6 +914,11 @@ def _cfg_flag_enabled(
 def _allow_lgbm_native_missing_model_inputs(
     cfg: Optional[Mapping[str, Any]],
 ) -> bool:
+    # Production parity is complete-case: LightGBM's native missing-value
+    # handling must not make an otherwise ineligible row scoreable. Keep the
+    # legacy switch available only for explicitly permissive research runs.
+    if not isinstance(cfg, Mapping) or bool(cfg.get("strict_feature_parity", True)):
+        return False
     return _cfg_flag_enabled(
         cfg,
         "simple_policy_allow_lgbm_native_missing",
@@ -1067,6 +1103,33 @@ class ModelOrchestrator:
         # Extract models from bundle
         self.alpha_models = self.bundle.get("alpha_models", {})
         self.alpha_by_strategy = self._build_alpha_strategy_index()
+        source_contract_payload = (
+            self.bundle.get("feature_source_contract")
+            or self.full_state.get("feature_source_contract")
+        )
+        if isinstance(source_contract_payload, dict):
+            try:
+                source_contract = FeatureSourceContract.from_dict(
+                    source_contract_payload
+                )
+                source_contract.validate_seal()
+                feature_orders = {
+                    tuple(_effective_alpha_feature_contract(model_info))
+                    for model_info in self.alpha_by_strategy.values()
+                    if isinstance(model_info, dict)
+                }
+                if feature_orders and source_contract.model_feature_names_hash not in {
+                    ordered_names_hash(order) for order in feature_orders
+                }:
+                    raise ValueError("no alpha feature order matches source contract")
+                self.feature_source_contract = source_contract
+            except Exception as exc:
+                raise FeatureParityError(
+                    f"Packaged feature source contract failed: {exc}",
+                    report={"global_errors": ["feature_source_contract_invalid"]},
+                ) from exc
+        else:
+            self.feature_source_contract = None
         self.meta_models = self.bundle.get("meta_models", {})
         self.spike_models = self.bundle.get("spike_models", {})  # GMM models
         self.ridge_weights = self.bundle.get("ridge_weights", {})
@@ -1300,7 +1363,7 @@ class ModelOrchestrator:
                 if "model_matrix_nonfinite" not in errors:
                     tprint(f"Error aligning alpha feature contract: {exc}")
                     return pd.DataFrame(index=features.index)
-                if bool(
+                if not strict and bool(
                     self.cfg.get(
                         "strict_feature_parity_neutral_fill_nonfinite", False
                     )
@@ -1521,6 +1584,11 @@ class ModelOrchestrator:
             aligned_features,
             feat_cols,
             allow_native_missing=_allow_lgbm_native_missing_model_inputs(self.cfg),
+        )
+        X = _apply_model_input_numeric_contract(
+            X,
+            model=model,
+            model_info=model_info,
         )
         if timing_enabled:
             tprint(
@@ -2689,6 +2757,16 @@ class ModelOrchestrator:
                         col_s,
                     ):
                         continue
+                    # These anchors were just rebuilt from the current base
+                    # score and frozen training priors by the live reliability
+                    # overlay. Dropping them here makes the repaired meta
+                    # contract impossible to score.
+                    if (
+                        col_s in POST_BASE_DERIVED_FEATURE_KEYS
+                        or col_s.startswith("rel_rankband_")
+                        or col_s.startswith("rel_marginband_")
+                    ):
+                        continue
                     stale_model_derived_cols.append(col_s)
                 if stale_model_derived_cols:
                     features = features.drop(columns=stale_model_derived_cols).copy()
@@ -2724,6 +2802,25 @@ class ModelOrchestrator:
                     side=side,
                     kind=requested_kind,
                 )
+                # The shared S52 champion has two post-selection OOD aggregates.
+                # They must be recomputed from the frozen training reference, not
+                # filled with neutral values when scoring live rows.
+                s52_ood_reference = getattr(meta_model, "s52_meta_ood_reference_", None)
+                if isinstance(s52_ood_reference, dict) and s52_ood_reference.get("enabled"):
+                    try:
+                        from extreme_price_movements.inference.s52_meta_ood import (
+                            append_s52_meta_ood_features,
+                        )
+
+                        features = append_s52_meta_ood_features(
+                            features,
+                            s52_ood_reference,
+                            output_features=feat_cols,
+                        )
+                    except Exception as exc:
+                        tprint(
+                            f"Meta inference: frozen S52 OOD materialization failed for {key}: {exc}"
+                        )
             features, neutral_meta_fills = _fill_live_unavailable_meta_contract_features(
                 features,
                 feat_cols,
@@ -2829,12 +2926,15 @@ class ModelOrchestrator:
                 return pd.Series(dtype=float)
 
             strict = bool(self.cfg.get("strict_feature_parity", True))
-            features, optional_added, optional_repaired = (
-                _fill_optional_generated_model_features(
-                    features,
-                    model_feature_cols=feat_cols,
+            optional_added: list[str] = []
+            optional_repaired: list[str] = []
+            if not strict:
+                features, optional_added, optional_repaired = (
+                    _fill_optional_generated_model_features(
+                        features,
+                        model_feature_cols=feat_cols,
+                    )
                 )
-            )
             if optional_added or optional_repaired:
                 self._last_results["meta_optional_generated_features"] = {
                     "key": key,
@@ -2862,7 +2962,6 @@ class ModelOrchestrator:
                     c
                     for c in feat_cols
                     if c not in features.columns
-                    and not is_optional_generated_model_feature_key(c)
                 ]
                 if missing:
                     reason = "missing_meta_feature_contract"
@@ -2922,12 +3021,6 @@ class ModelOrchestrator:
                 )
                 try:
                     model_matrix = features.reindex(columns=feat_cols)
-                    model_matrix, _optional_added, _optional_repaired = (
-                        _fill_optional_generated_model_features(
-                            model_matrix,
-                            model_feature_cols=feat_cols,
-                        )
-                    )
                     try:
                         if allow_native_missing:
                             X = _strict_lgbm_native_missing_model_matrix(
@@ -2960,7 +3053,7 @@ class ModelOrchestrator:
                         errors = set(report.get("global_errors") or [])
                         if "model_matrix_nonfinite" not in errors:
                             raise
-                        if bool(
+                        if not strict and bool(
                             self.cfg.get(
                                 "strict_feature_parity_neutral_fill_nonfinite",
                                 False,
@@ -3094,6 +3187,30 @@ class ModelOrchestrator:
                     f"{_process_rss_log_fields()}"
                 )
 
+            # The all-row S52 final refit uses bounded chronological native
+            # boosting.  Restore its raw score scale to the champion OOF
+            # domain before the residual/MLP postprocessor and policy rank
+            # reference consume it.  The bridge is side-specific and strictly
+            # monotonic, so it cannot change within-side opportunity ordering.
+            score_alignment = getattr(meta_model, "s52_meta_score_alignment_", None)
+            if isinstance(score_alignment, dict) and score_alignment.get("enabled"):
+                try:
+                    from extreme_price_movements.inference.s52_meta_score_alignment import (
+                        apply_s52_meta_score_alignment,
+                    )
+
+                    preds = apply_s52_meta_score_alignment(
+                        preds,
+                        score_alignment,
+                        side=side,
+                    )
+                    self._last_results["meta_score_alignment"] = {
+                        "key": key,
+                        "mode": str(score_alignment.get("mode", "")),
+                        "side": str(side or "").lower(),
+                    }
+                except Exception as exc:
+                    tprint(f"Meta inference: S52 score alignment skipped for {key}: {exc}")
             out = pd.Series(preds, index=X.index)
             try:
                 from extreme_price_movements.mr_tf_masks import (

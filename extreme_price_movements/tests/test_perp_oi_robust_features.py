@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.config import CFG
+from extreme_price_movements.data_store import _kraken_oi_to_quote_notional
 from extreme_price_movements.features import (
     add_regime_gates,
     compute_features_hourly,
@@ -9,6 +10,59 @@ from extreme_price_movements.features import (
 )
 from extreme_price_movements.features_oi import compute_oi_features
 from extreme_price_movements.perp_features import compute_features
+
+
+def test_kraken_analytics_and_live_quote_oi_have_feature_parity():
+    """Storage normalization must not create a train/live feature fork."""
+    index = pd.date_range("2026-01-01", periods=240, freq="h", tz="UTC")
+    price = pd.DataFrame(
+        {"BTC/USD:USD": np.linspace(60_000.0, 66_000.0, len(index))},
+        index=index,
+    )
+    analytics_native = pd.Series(
+        np.linspace(2_000.0, 2_300.0, len(index)), index=index
+    )
+    price_frame = pd.DataFrame(
+        {
+            "mark_close": price.iloc[:, 0].where(np.arange(len(index)) % 7 != 0),
+            "close": price.iloc[:, 0],
+        },
+        index=index,
+    )
+    stored_from_analytics = _kraken_oi_to_quote_notional(
+        analytics_native, price_frame
+    ).to_frame("BTC/USD:USD")
+    stored_from_live = pd.DataFrame(
+        {"BTC/USD:USD": analytics_native.to_numpy() * price.iloc[:, 0].to_numpy()},
+        index=index,
+    )
+    quote_volume = pd.DataFrame(
+        {"BTC/USD:USD": np.linspace(10_000_000.0, 12_000_000.0, len(index))},
+        index=index,
+    )
+
+    analytics_features = compute_oi_features(
+        oi_native=stored_from_analytics,
+        price=price,
+        quote_volume=quote_volume,
+        bars_per_day=24,
+    )
+    live_features = compute_oi_features(
+        oi_native=stored_from_live,
+        price=price,
+        quote_volume=quote_volume,
+        bars_per_day=24,
+    )
+
+    assert analytics_features.keys() == live_features.keys()
+    for name in analytics_features:
+        pd.testing.assert_frame_equal(
+            analytics_features[name],
+            live_features[name],
+            check_exact=True,
+            check_dtype=True,
+            obj=name,
+        )
 
 
 def test_robust_oi_change_features_do_not_require_volume():

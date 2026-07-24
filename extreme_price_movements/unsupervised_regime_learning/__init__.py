@@ -48,6 +48,11 @@ _LAZY_EXPORTS = {
     "RegimePipelineValidationConfig": ".validation",
     "regime_pipeline_validation_summary": ".validation",
     "validate_regime_learning_artifact": ".validation",
+    "FailureEpisodeConfig": ".failure_episodes",
+    "FailureEpisodeResult": ".failure_episodes",
+    "build_failure_episodes": ".failure_episodes",
+    "negative_day_coverage": ".failure_episodes",
+    "validate_inference_feature_columns": ".failure_episodes",
 }
 
 __all__ = [
@@ -62,6 +67,8 @@ __all__ = [
     "EconomicRegimeRelevanceConfig",
     "EconomicRegimeRelevanceResult",
     "RegimePipelineValidationConfig",
+    "FailureEpisodeConfig",
+    "FailureEpisodeResult",
     "UNSUPERVISED_REGIME_LEARNING_DEFAULTS",
     "UNSUPERVISED_REGIME_PRIMITIVE_FEATURES",
     "add_global_topk_surprise_targets",
@@ -69,6 +76,7 @@ __all__ = [
     "build_regime_context_feature_frame",
     "build_regime_context_features_from_artifact",
     "build_bad_regime_archetype_feature_frame",
+    "build_failure_episodes",
     "cross_sectional_regime_residuals",
     "extract_lgbm_reuse_contract",
     "fit_advanced_regime_learning",
@@ -77,6 +85,7 @@ __all__ = [
     "load_bad_regime_archetype_definitions",
     "materialize_composite_features",
     "market_regime_aggregate_features",
+    "negative_day_coverage",
     "regime_pipeline_validation_summary",
     "run_advanced_regime_learning_hpo",
     "run_economic_regime_relevance",
@@ -85,6 +94,7 @@ __all__ = [
     "select_regime_lgbm_addon_features",
     "train_local_lgbm_relevance_models",
     "validate_regime_learning_artifact",
+    "validate_inference_feature_columns",
 ]
 
 

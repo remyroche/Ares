@@ -1,8 +1,16 @@
+import json
+import sqlite3
+
 import numpy as np
 import pandas as pd
 import pytest
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.inference.live_zscore_state import RawRollingFeatureState
+from extreme_price_movements.inference.live_zscore_state import (
+    RawRollingFeatureState,
+    RawRollingStateContainer,
+    RawRollingStateContainerBusy,
+    raw_rolling_state_container_path,
+)
 
 def test_numba_rolling_mean_correctness():
     np.random.seed(42)
@@ -113,6 +121,174 @@ def test_raw_rolling_feature_state_append_matches_vectorized():
             actual_tail.astype(np.float32),
             atol=1e-4,
         )
+
+
+def test_raw_rolling_state_container_preserves_namespaced_state(tmp_path):
+    index = pd.date_range("2026-07-01", periods=6, freq="h", tz="UTC")
+    values = np.arange(12, dtype=np.float32).reshape(6, 2)
+    symbols = ["AAA/USD:USD", "BBB/USD:USD"]
+    state = RawRollingFeatureState(
+        op="mean",
+        name="ret1h",
+        symbols=symbols,
+        window=4,
+    )
+    state.seed_from_frame(values, index)
+    legacy_root = tmp_path / "raw_rolling_state.npz"
+    container_path = raw_rolling_state_container_path(legacy_root)
+
+    container = RawRollingStateContainer.open(container_path)
+    container.put("workset_a", state)
+    assert container.flush() == 1
+    container.close()
+
+    reopened = RawRollingStateContainer.open(container_path)
+    loaded = reopened.get(
+        "workset_a",
+        op="mean",
+        name="ret1h",
+        symbols=symbols,
+        window=4,
+    )
+    incompatible = reopened.get(
+        "workset_a",
+        op="mean",
+        name="ret1h",
+        symbols=symbols,
+        window=8,
+    )
+    reopened.close()
+
+    assert loaded is not None
+    assert incompatible is None
+    assert loaded.last_timestamp == state.last_timestamp
+    np.testing.assert_array_equal(loaded.buffer, state.buffer)
+    np.testing.assert_array_equal(loaded.valid, state.valid)
+    np.testing.assert_array_equal(loaded.ptr, state.ptr)
+    np.testing.assert_array_equal(loaded.count, state.count)
+    np.testing.assert_array_equal(loaded.sum, state.sum)
+    np.testing.assert_array_equal(loaded.sum_sq, state.sum_sq)
+
+
+def test_raw_rolling_state_container_aborts_unflushed_updates(tmp_path):
+    state = RawRollingFeatureState(
+        op="sum",
+        name="ret1h",
+        symbols=["AAA/USD:USD"],
+        window=4,
+    )
+    state.seed_from_frame(
+        np.asarray([[1.0], [2.0]], dtype=np.float32),
+        pd.date_range("2026-07-01", periods=2, freq="h", tz="UTC"),
+    )
+    path = raw_rolling_state_container_path(tmp_path / "raw_rolling_state.npz")
+    container = RawRollingStateContainer.open(path)
+    container.put("unflushed", state)
+    container.abort()
+
+    reopened = RawRollingStateContainer.open(path)
+    assert (
+        reopened.get(
+            "unflushed",
+            op="sum",
+            name="ret1h",
+            symbols=["AAA/USD:USD"],
+            window=4,
+        )
+        is None
+    )
+    reopened.close()
+
+
+def test_raw_rolling_state_container_holds_exclusive_snapshot_lock(tmp_path):
+    path = raw_rolling_state_container_path(tmp_path / "raw_rolling_state.npz")
+    owner = RawRollingStateContainer.open(path, lock_timeout_seconds=0.0)
+    with pytest.raises(RawRollingStateContainerBusy):
+        RawRollingStateContainer.open(path, lock_timeout_seconds=0.0)
+    owner.abort()
+
+    reopened = RawRollingStateContainer.open(path, lock_timeout_seconds=0.0)
+    reopened.close()
+
+
+def test_raw_rolling_state_container_quarantines_corrupt_database(tmp_path):
+    path = raw_rolling_state_container_path(tmp_path / "raw_rolling_state.npz")
+    path.write_text("not a sqlite database", encoding="utf-8")
+
+    container = RawRollingStateContainer.open(path, lock_timeout_seconds=0.0)
+    assert list(tmp_path.glob("raw_rolling_state.container.sqlite.corrupt.*"))
+    state = RawRollingFeatureState(
+        op="sum",
+        name="ret1h",
+        symbols=["AAA/USD:USD"],
+        window=4,
+    )
+    state.seed_from_frame(
+        np.asarray([[1.0]], dtype=np.float32),
+        pd.date_range("2026-07-01", periods=1, freq="h", tz="UTC"),
+    )
+    container.put("recovered", state)
+    assert container.flush() == 1
+    container.close()
+
+    reopened = RawRollingStateContainer.open(path, lock_timeout_seconds=0.0)
+    assert (
+        reopened.get(
+            "recovered",
+            op="sum",
+            name="ret1h",
+            symbols=["AAA/USD:USD"],
+            window=4,
+        )
+        is not None
+    )
+    reopened.close()
+
+
+def test_raw_rolling_state_container_rejects_tampered_entry_contract(tmp_path):
+    path = raw_rolling_state_container_path(tmp_path / "raw_rolling_state.npz")
+    state = RawRollingFeatureState(
+        op="mean",
+        name="ret1h",
+        symbols=["AAA/USD:USD"],
+        window=4,
+    )
+    state.seed_from_frame(
+        np.asarray([[1.0]], dtype=np.float32),
+        pd.date_range("2026-07-01", periods=1, freq="h", tz="UTC"),
+    )
+    container = RawRollingStateContainer.open(path)
+    container.put("expected_key", state)
+    container.flush()
+    container.close()
+
+    connection = sqlite3.connect(path)
+    metadata_raw = connection.execute(
+        "SELECT metadata_json FROM raw_rolling_states WHERE state_key = ?",
+        ("expected_key",),
+    ).fetchone()[0]
+    metadata = json.loads(metadata_raw)
+    metadata["container_state_key"] = "wrong_key"
+    connection.execute(
+        "UPDATE raw_rolling_states SET metadata_json = ? WHERE state_key = ?",
+        (json.dumps(metadata), "expected_key"),
+    )
+    connection.commit()
+    connection.close()
+
+    reopened = RawRollingStateContainer.open(path)
+    assert (
+        reopened.get(
+            "expected_key",
+            op="mean",
+            name="ret1h",
+            symbols=["AAA/USD:USD"],
+            window=4,
+        )
+        is None
+    )
+    reopened.close()
+
 
 def test_numba_rolling_max_correctness():
     np.random.seed(42)

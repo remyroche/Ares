@@ -204,7 +204,7 @@ def promote(
     policy_run: str,
     model_run: str,
     market_mode: str,
-    feature_source_run: str,
+    feature_source_run: str | None,
     overwrite: bool,
 ) -> dict[str, Any]:
     model_root = data_root / "artifacts" / model_run
@@ -248,9 +248,10 @@ def promote(
     if previous_contract_path.exists():
         previous_contract = _load_json(previous_contract_path)
         previous_feature_source = previous_contract.get("feature_source")
-        if isinstance(previous_feature_source, Mapping):
-            feature_source_run = str(previous_feature_source.get("run_id") or feature_source_run)
+        if feature_source_run is None and isinstance(previous_feature_source, Mapping):
+            feature_source_run = str(previous_feature_source.get("run_id") or "") or None
 
+    feature_source_run = str(feature_source_run or DEFAULT_FEATURE_SOURCE_RUN)
     os.environ["EPM_LIVE_FEATURE_SOURCE_RUN_ID"] = str(feature_source_run)
     full_state = load_full_state(model_run, str(data_root))
     model_bundle = full_state.get("bundle", full_state) if isinstance(full_state, dict) else {}
@@ -357,7 +358,14 @@ def main() -> int:
     parser.add_argument("--policy-run", default=DEFAULT_POLICY_RUN)
     parser.add_argument("--model-run", default=DEFAULT_MODEL_RUN)
     parser.add_argument("--market-mode", default="perps")
-    parser.add_argument("--feature-source-run", default=DEFAULT_FEATURE_SOURCE_RUN)
+    parser.add_argument(
+        "--feature-source-run",
+        default=None,
+        help=(
+            "Explicit feature-source run. When omitted, inherit the policy "
+            "contract source and then fall back to the repository default."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     manifest = promote(
@@ -365,7 +373,9 @@ def main() -> int:
         policy_run=str(args.policy_run),
         model_run=str(args.model_run),
         market_mode=str(args.market_mode),
-        feature_source_run=str(args.feature_source_run),
+        feature_source_run=(
+            str(args.feature_source_run) if args.feature_source_run else None
+        ),
         overwrite=bool(args.overwrite),
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))

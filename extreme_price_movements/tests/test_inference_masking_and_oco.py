@@ -34,6 +34,8 @@ from extreme_price_movements.inference.simple_policy_stop import (
     load_simple_policy_stop_params_by_strategy,
 )
 from extreme_price_movements.inference.trade_executor import (
+    CANONICAL_STOP_POSITION_FIELDS,
+    MODEL_AND_POLICY_CONTEXT_KEYS,
     OCOExecutor,
     TradeExecutor,
     _classify_exchange_error,
@@ -42,11 +44,154 @@ from extreme_price_movements.inference.trade_executor import (
     _default_cross_margin_dust_quote_threshold,
     _enrich_order_from_exchange,
     _kraken_futures_last_stop_from_executable_stop,
+    _protective_stop_coverage,
     _protective_stop_trigger_matches_policy,
+    _stop_coverage_is_sufficient,
     _stop_is_at_least_as_protective,
     _stop_trigger_reference_price,
+    _safety_take_profit_target,
+    _update_live_path_extrema_from_price,
 )
 from extreme_price_movements.optimise import _select_candidate_trade_mask
+
+
+def test_protective_stop_coverage_requires_full_exchange_position():
+    orders = [
+        {"amount": 100.0, "filled": 4.0, "remaining": 96.0},
+        {"amount": 5.0, "filled": 0.0, "remaining": 5.0},
+    ]
+    coverage = _protective_stop_coverage(orders)
+    assert coverage == pytest.approx(101.0)
+    assert _stop_coverage_is_sufficient(coverage, 101.0)
+    assert not _stop_coverage_is_sufficient(coverage, 102.0)
+
+
+def test_live_stop_geometry_uses_realized_fill_without_overwriting_theoretical_entry():
+    state = {
+        "side": "long",
+        "entry_price": 0.0600,
+        "policy_entry_price": 0.0600,
+        "theoretical_entry_price": 0.0600,
+        "realized_entry_price": 0.05895,
+        "peak_price": 0.05895,
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+
+    result = _update_live_path_extrema_from_price(
+        state,
+        side="long",
+        price=0.05861,
+        timestamp=pd.Timestamp("2026-07-17T19:08:53Z"),
+    )
+
+    assert result["entry_price"] == pytest.approx(0.05895)
+    assert result["mae"] == pytest.approx((0.05895 - 0.05861) / 0.05895)
+    assert state["stop_geometry_entry_price"] == pytest.approx(0.05895)
+    assert state["policy_entry_price"] == pytest.approx(0.0600)
+    assert state["theoretical_entry_price"] == pytest.approx(0.0600)
+
+
+def test_trade_context_cannot_overwrite_realized_execution_entry_fields():
+    assert {
+        "entry_price",
+        "realized_entry_price",
+        "actual_entry_price",
+        "stop_geometry_entry_price",
+    }.issubset(CANONICAL_STOP_POSITION_FIELDS)
+
+
+@pytest.mark.parametrize(
+    ("side", "mfe", "expected_price", "expected_return"),
+    [
+        ("long", 0.0, 102.0, 0.02),
+        ("long", 0.03, 103.5, 0.035),
+        ("short", 0.0, 98.0, 0.02),
+        ("short", 0.03, 96.5, 0.035),
+    ],
+)
+def test_safety_take_profit_target_is_beyond_mfe_with_two_pct_floor(
+    side, mfe, expected_price, expected_return
+):
+    target = _safety_take_profit_target(
+        entry_price=100.0,
+        side=side,
+        mfe=mfe,
+    )
+    assert target["target_price"] == pytest.approx(expected_price)
+    assert target["target_return"] == pytest.approx(expected_return)
+
+
+class _SafetyTakeProfitExchange:
+    def __init__(self):
+        self.created = []
+        self.cancelled = []
+
+    def create_order(self, **kwargs):
+        self.created.append(kwargs)
+        return {"id": f"tp-{len(self.created)}", "status": "open", **kwargs}
+
+    def cancel_order(self, order_id, symbol, params=None):
+        self.cancelled.append((order_id, symbol, params or {}))
+        return {"id": order_id, "status": "canceled"}
+
+
+def test_safety_take_profit_only_ratchets_on_new_mfe():
+    exchange = _SafetyTakeProfitExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={"execution_account": "perps", "safety_take_profit_enabled": True},
+    )
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "realized_entry_price": 100.0,
+        "size": 2.0,
+    }
+
+    initial = executor._ensure_safety_take_profit_order(
+        "TEST/USD:USD", state, observed_mfe=0.0, mfe_improved=False
+    )
+    unchanged = executor._ensure_safety_take_profit_order(
+        "TEST/USD:USD", state, observed_mfe=0.0, mfe_improved=False
+    )
+    improved = executor._ensure_safety_take_profit_order(
+        "TEST/USD:USD", state, observed_mfe=0.03, mfe_improved=True
+    )
+
+    assert initial["updated"] is True
+    assert unchanged == {"updated": False, "reason": "mfe_not_improved"}
+    assert improved["updated"] is True
+    assert [order["price"] for order in exchange.created] == pytest.approx(
+        [102.0, 103.5]
+    )
+    assert exchange.cancelled[0][0] == "tp-1"
+    assert state["take_profit_order_id"] == "tp-2"
+
+
+def test_canonical_position_update_wires_safety_take_profit():
+    exchange = _SafetyTakeProfitExchange()
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        config={"execution_account": "perps", "safety_take_profit_enabled": True},
+    )
+    assert executor.oco_executor is not None
+    executor.oco_executor.active_positions["TEST/USD:USD"] = {
+        "side": "short",
+        "entry_price": 100.0,
+        "realized_entry_price": 100.0,
+        "size": 2.0,
+        "mfe": 0.0,
+    }
+
+    executor.update_position_policy_state("TEST/USD:USD", mfe=0.03)
+    executor.update_position_policy_state("TEST/USD:USD", mfe=0.03)
+
+    assert len(exchange.created) == 1
+    assert exchange.created[0]["side"] == "buy"
+    assert exchange.created[0]["price"] == pytest.approx(96.5)
 
 
 def test_raw_signal_close_reliability_rejects_zero_volume_without_substitution():
@@ -174,7 +319,7 @@ def test_executable_stop_sentinel_updates_mfe_and_intrabar_trailing(tmp_path):
             "trailing_squash_divisor": 2.0,
             "giveback_beta": 0.5,
             "round_trip_cost_pct": 0.002,
-            "capital_protect_mfe_mult": 0.0,
+            "capital_protect_mfe_mult": 1.0,
             "capital_protect_regression_frac": 0.45,
             "capital_protect_min_lock_bps": 0.0,
             "adverse_exit_enabled": False,
@@ -233,14 +378,17 @@ def test_executable_stop_sentinel_updates_mfe_and_intrabar_trailing(tmp_path):
     status = executor.monitor_executable_stops_once()["TEST/USD:USD"]
     state = executor.active_positions["TEST/USD:USD"]
 
-    assert state["mfe"] == pytest.approx(0.03)
-    assert state["peak_price"] == pytest.approx(103.0)
+    assert state.get("mfe", 0.0) == pytest.approx(0.0)
+    assert state["intrabar_trailing_mfe"] == pytest.approx(0.03)
+    assert state["intrabar_trailing_peak_price"] == pytest.approx(103.0)
     assert updates
     assert updates[0][1] is True
     assert updates[0][3] == "trailing_profit"
     assert state["stop_price"] > 98.0
     assert status["mfe_updated"] is True
     assert status["intrabar_policy_update"]["evaluated"] is True
+    assert status["intrabar_policy_update"]["capital_protection_allowed"] is True
+    assert state.get("capital_protect_armed", False) is False
 
 
 def test_lightweight_sentinel_updates_short_intrabar_mfe_and_trailing(
@@ -331,14 +479,16 @@ def test_lightweight_sentinel_updates_short_intrabar_mfe_and_trailing(
     status = executor.monitor_executable_stops_once()["TEST/USD:USD"]
     state = executor.active_positions["TEST/USD:USD"]
 
-    assert state["mfe"] == pytest.approx(0.03)
-    assert state["peak_price"] == pytest.approx(97.0)
+    assert state.get("mfe", 0.0) == pytest.approx(0.0)
+    assert state["intrabar_trailing_mfe"] == pytest.approx(0.03)
+    assert state["intrabar_trailing_peak_price"] == pytest.approx(97.0)
     assert updates
     assert updates[0][1] is True
     assert updates[0][3] == "trailing_profit"
     assert state["stop_price"] < 102.0
     assert status["mfe_updated"] is True
     assert status["intrabar_policy_update"]["evaluated"] is True
+    assert status["intrabar_policy_update"]["capital_protection_allowed"] is True
 
 
 def test_pre_score_market_mask_rejects_wide_spread_before_scoring():
@@ -372,6 +522,20 @@ def test_pre_score_market_mask_rejects_wide_spread_before_scoring():
     assert snap["prescore_market_mask_allowed"] is False
     assert snap["prescore_market_mask_reason"] == "ticker_spread_above_prescore_max"
     assert snap["prescore_ticker_spread_bps"] > 25.0
+
+
+def test_live_prescore_market_mask_is_opt_in_to_preserve_replay_denominator(
+    monkeypatch,
+):
+    monkeypatch.delenv("EPM_LIVE_PRESCORE_MARKET_MASK_ENABLED", raising=False)
+
+    assert run_inference._live_prescore_market_mask_enabled({}, "live") is False
+    assert (
+        run_inference._live_prescore_market_mask_enabled(
+            {"live_prescore_market_mask_enabled": True}, "live"
+        )
+        is True
+    )
 
 
 def test_pre_score_market_mask_accepts_fresh_liquid_candidate():
@@ -579,6 +743,40 @@ def test_live_warmup_state_health_accepts_hashed_feature_state_inventory(tmp_pat
     assert health["causal_transform_state"]["ok"] is True
     assert health["causal_transform_state"]["exact_exists"] is False
     assert health["causal_transform_state"]["hashed_count"] == 1
+
+
+def test_live_warmup_state_health_accepts_raw_state_container(tmp_path):
+    idx = pd.date_range("2026-06-01 00:00", periods=24 * 35, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {"close": pd.DataFrame({symbol: [100.0] * len(idx)}, index=idx)}
+    raw_state_root = tmp_path / "raw_rolling_state.npz"
+    raw_state_container = tmp_path / "raw_rolling_state.container.sqlite"
+    causal_state = tmp_path / "causal_transform_state.npz"
+    raw_state_container.write_bytes(b"state")
+    causal_state.write_bytes(b"state")
+    cfg = {
+        "live_raw_rolling_state_enabled": True,
+        "live_raw_rolling_state_path": str(raw_state_root),
+        "live_raw_rolling_state_container_enabled": True,
+        "live_raw_rolling_state_container_path": str(raw_state_container),
+        "live_causal_transform_state_enabled": True,
+        "live_causal_transform_state_path": str(causal_state),
+        "live_feature_snapshot_cache_dir": str(tmp_path / "feature_cache"),
+    }
+
+    health = run_inference._live_warmup_state_health_snapshot(
+        panel=panel,
+        symbols=[symbol],
+        lookback_hours=24 * 35,
+        required_model_warmup_hours=24 * 45,
+        latest_closed_hour=idx[-1],
+        feature_runtime_cfg=cfg,
+        config={"mode": "live-test", "live_min_panel_warmup_hours": 24 * 32},
+    )
+
+    assert health["raw_rolling_state"]["ok"] is True
+    assert health["raw_rolling_state"]["container_exists"] is True
+    assert health["raw_rolling_state"]["reason"] == "ok_state_container"
 
 
 def _simple_policy_params(**overrides):
@@ -932,7 +1130,7 @@ def test_synthesize_live_safe_repairs_nan_path_efficiency_residual():
     assert np.isfinite(repaired.to_numpy(dtype=np.float32)).all()
 
 
-def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
+def test_live_adverse_policy_exit_shadow_uses_completed_policy_bar(monkeypatch):
     params = _simple_policy_params(strategy_id="short_test")
 
     class _Executor:
@@ -972,13 +1170,9 @@ def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
     monkeypatch.setattr(
         run_inference,
         "_fetch_live_closeable_price",
-        lambda symbol, side, executor: {
-            "price": 103.0,
-            "source": "ticker_ask",
-            "bid": 102.8,
-            "ask": 103.0,
-            "last": 102.9,
-        },
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("completed-bar policy must not fetch a ticker")
+        ),
     )
     monkeypatch.setattr(
         run_inference,
@@ -996,6 +1190,10 @@ def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
         "peak_price": 100.0,
         "mfe": 0.0,
         "mae": 0.0,
+        "barrier_frac": 0.047,
+        "barrier_pct": 0.047,
+        "barrier_frac_is_effective": True,
+        "sl_mult": 1.4,
     }
     bars = pd.DataFrame(
         {
@@ -1010,17 +1208,20 @@ def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
 
     result = _evaluate_oco_policy("PNUT/USD:USD", position_state, bars, executor)
 
-    assert result == {"closed_trade": {"symbol": "PNUT/USD:USD", "exit_price": 103.0}}
+    assert result == {"closed_trade": {"symbol": "PNUT/USD:USD", "exit_price": 99.0}}
     assert executor.closed == {
         "symbol": "PNUT/USD:USD",
-        "price": 103.0,
+        "price": 99.0,
         "reason": "adverse_excursion_exit",
     }
     shadow = position_state["simple_policy_shadow"]
-    assert shadow["shadow_exit_price"] == 103.0
+    assert shadow["shadow_exit_price"] == 99.0
     assert shadow["shadow_policy_bar_exit_price"] == 99.0
-    assert shadow["shadow_exit_price_source"] == "ticker_ask"
+    assert shadow["shadow_exit_price_source"] == "trade_1m_close"
     assert shadow["shadow_exit_reason"] == "adverse_excursion_exit"
+    assert shadow["barrier_frac"] == pytest.approx(0.047)
+    assert shadow["barrier_frac_is_effective"] is True
+    assert shadow["sl_mult"] == pytest.approx(1.4)
 
 
 def test_cross_margin_dust_threshold_defaults_by_mode():
@@ -1347,6 +1548,159 @@ def test_policy_optimiser_stop_decision_does_not_label_disabled_pressure():
     assert decision.tightening_multiplier == pytest.approx(1.0)
 
 
+def test_capital_protection_arms_before_it_can_tighten_stop():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.0,
+        trailing_activation_mult=10.0,
+        capital_protect_mfe_mult=1.0,
+        capital_protect_lock_frac=0.5,
+        capital_protect_min_lock_bps=0.0,
+        capital_protect_spread_lock_mult=0.0,
+    )
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "peak_price": 103.0,
+        "mfe": 0.03,
+        "mae": 0.01,
+        "stop_price": 98.0,
+        "strategy_id": "long_mr",
+        "barrier_frac": 0.02,
+    }
+
+    armed = compute_simple_policy_stop_decision(
+        side="long",
+        state=state,
+        latest_market_state={},
+        policy_params=params,
+    )
+
+    assert armed.reason == "capital_preservation_armed"
+    assert armed.capital_protect_armed
+    assert armed.capital_protect_armed_now
+    assert not armed.should_replace
+
+    active = compute_simple_policy_stop_decision(
+        side="long",
+        state={**state, "capital_protect_armed": True},
+        latest_market_state={},
+        policy_params=params,
+    )
+
+    assert active.reason == "capital_preservation"
+    assert active.capital_protect_armed
+    assert not active.capital_protect_armed_now
+    assert active.stop_price == pytest.approx(101.0)
+
+
+def test_capital_protection_requires_ten_minutes_and_current_confirmation():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.0,
+        trailing_activation_mult=10.0,
+        capital_protect_mfe_mult=1.0,
+        capital_protect_lock_frac=0.5,
+        capital_protect_min_lock_bps=0.0,
+        capital_protect_spread_lock_mult=0.0,
+    )
+    base_state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "peak_price": 103.0,
+        "mfe": 0.03,
+        "mae": 0.0,
+        "stop_price": 98.0,
+        "strategy_id": "long_mr",
+        "barrier_frac": 0.02,
+    }
+
+    crossed = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            **base_state,
+            "capital_protect_current_price": 104.0,
+            "capital_protect_observation_ts": "2026-07-17T10:00:00Z",
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+    assert crossed.capital_protect_pending
+    assert not crossed.capital_protect_armed
+    assert not crossed.should_replace
+    assert crossed.capital_protect_crossed_ts == "2026-07-17T10:00:00+00:00"
+
+    below_before_confirmation = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            **base_state,
+            "capital_protect_crossed_ts": crossed.capital_protect_crossed_ts,
+            "capital_protect_current_price": 100.0,
+            "capital_protect_observation_ts": "2026-07-17T10:09:00Z",
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+    assert below_before_confirmation.capital_protect_pending
+    assert (
+        below_before_confirmation.capital_protect_crossed_ts
+        == crossed.capital_protect_crossed_ts
+    )
+    assert not below_before_confirmation.capital_protect_armed
+
+    confirmed = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            **base_state,
+            "capital_protect_crossed_ts": crossed.capital_protect_crossed_ts,
+            "capital_protect_current_price": 104.2,
+            "capital_protect_observation_ts": "2026-07-17T10:10:00Z",
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+    assert confirmed.capital_protect_armed
+    assert confirmed.capital_protect_armed_now
+    assert not confirmed.capital_protect_pending
+    assert confirmed.reason == "capital_preservation"
+    assert confirmed.stop_price == pytest.approx(101.0)
+
+
+def test_completed_bar_observation_does_not_change_capital_timer():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.0,
+        trailing_activation_mult=10.0,
+        capital_protect_mfe_mult=1.0,
+        capital_protect_lock_frac=0.5,
+        capital_protect_min_lock_bps=0.0,
+        capital_protect_spread_lock_mult=0.0,
+    )
+    decision = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            "side": "long",
+            "entry_price": 100.0,
+            "peak_price": 103.0,
+            "mfe": 0.03,
+            "mae": 0.0,
+            "stop_price": 98.0,
+            "strategy_id": "long_mr",
+            "barrier_frac": 0.02,
+            "capital_protect_crossed_ts": "2026-07-17T10:00:00+00:00",
+            "capital_protection_disabled_for_observation": True,
+        },
+        latest_market_state=pd.DataFrame(
+            {"close": [103.0]},
+            index=[pd.Timestamp("2026-07-17T10:15:00Z")],
+        ),
+        policy_params=params,
+    )
+    assert not decision.capital_protection_observation_enabled
+    assert decision.capital_protect_crossed_ts == "2026-07-17T10:00:00+00:00"
+    assert not decision.capital_protect_armed
+
+
 def test_select_candidates_rejects_legacy_threshold_overrides():
     idx = pd.date_range("2026-03-01", periods=2, freq="1h", tz="UTC")
     close = pd.DataFrame({"A": [100, 101], "B": [100, 99]}, index=idx)
@@ -1622,6 +1976,68 @@ def test_5m_exit_takes_priority_over_threshold_update():
     assert "BTC/USDT" not in executor.get_active_positions()
 
 
+def test_restart_reconstructs_elapsed_policy_bars_before_fast_exit(monkeypatch):
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params(barrier_pct=0.01)
+            }
+        },
+    )
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "realized_entry_price": 100.0,
+        "entry_time": pd.Timestamp("2026-03-01 00:00", tz="UTC"),
+        "stop_price": 90.0,
+        "peak_price": 100.0,
+        "mfe": 0.0,
+        "mae": 0.0,
+        "bars_in_trade": 0,
+        "policy_bar_minutes": 1,
+        "bucket_key": "long_mr",
+        "strategy_id": "long_mr",
+    }
+    observed = {}
+
+    def _capture_decision(*, state, **kwargs):
+        observed["bars_in_trade"] = state["bars_in_trade"]
+        return SimpleNamespace(
+            should_exit=False,
+            should_replace=False,
+            stop_price=None,
+            reason="original_stop_loss",
+            reason_detail="unchanged_original_stop_loss",
+            peak_price=100.0,
+            mfe=0.0,
+            mae=0.0,
+            capital_protect_armed=False,
+            capital_protect_armed_now=False,
+            capital_protect_crossed_ts=None,
+            capital_protect_pending=False,
+            capital_protect_activation_return=None,
+        )
+
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.run_inference.compute_simple_policy_stop_decision",
+        _capture_decision,
+    )
+    bars = pd.DataFrame(
+        {"open": [99.0], "high": [99.0], "low": [99.0], "close": [99.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-03-01 02:00", tz="UTC")]),
+    )
+
+    try:
+        _evaluate_oco_policy("BTC/USDT", state, bars, executor)
+    finally:
+        executor.shutdown()
+
+    assert observed["bars_in_trade"] == 120
+    assert state["bars_in_trade_reconstructed_from_entry"] is True
+
+
 def test_position_policy_entry_price_prefers_realized_fill():
     entry_price, source = _position_policy_entry_price(
         {
@@ -1734,7 +2150,7 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
     assert statuses["BTC/USDT"]["price_action"]["stop_price_after"] > initial_stop
 
 
-def test_shadow_monitor_uses_closed_5m_price_action():
+def test_shadow_monitor_waits_for_closed_15m_price_action():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
@@ -1749,7 +2165,7 @@ def test_shadow_monitor_uses_closed_5m_price_action():
     )
     assert rec["status"] == "recorded"
     initial_stop = executor.get_active_positions()["BTC/USDT"]["stop_price"]
-    bars = pd.DataFrame(
+    incomplete_bars = pd.DataFrame(
         {
             "open": [100.0, 102.0],
             "high": [102.0, 106.0],
@@ -1761,18 +2177,35 @@ def test_shadow_monitor_uses_closed_5m_price_action():
     executor.positions["BTC/USDT"]["entry_time"] = pd.Timestamp(
         "2026-03-01 00:00", tz="UTC"
     )
-    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = bars
+    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = incomplete_bars
 
-    statuses = _monitor_active_position_price_action(
+    _monitor_active_position_price_action(
         executor,
         exchange=None,
         now=pd.Timestamp("2026-03-01 00:10:06", tz="UTC"),
     )
+    assert executor.get_active_positions()["BTC/USDT"]["stop_price"] == initial_stop
+
+    complete_bars = pd.DataFrame(
+        {
+            "open": [100.0, 102.0, 105.0],
+            "high": [102.0, 106.0, 107.0],
+            "low": [100.0, 102.0, 104.0],
+            "close": [102.0, 105.0, 106.0],
+        },
+        index=pd.date_range("2026-03-01 00:00", periods=3, freq="5min", tz="UTC"),
+    )
+    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = complete_bars
+    statuses = _monitor_active_position_price_action(
+        executor,
+        exchange=None,
+        now=pd.Timestamp("2026-03-01 00:15:06", tz="UTC"),
+    )
     updated = executor.get_active_positions()["BTC/USDT"]
 
     assert updated["stop_price"] > initial_stop
-    assert updated["last_5m_eval_ts"] == pd.Timestamp("2026-03-01 00:05", tz="UTC")
-    assert statuses["BTC/USDT"]["price_action"]["bars_evaluated"] == 2
+    assert updated["last_15m_eval_ts"] == pd.Timestamp("2026-03-01 00:00", tz="UTC")
+    assert statuses["BTC/USDT"]["price_action"]["bars_evaluated"] == 1
 
 
 def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
@@ -2105,7 +2538,9 @@ def test_kraken_futures_stop_trigger_reference_uses_executable_side_not_last():
     assert source == "ask"
 
 
-def test_live_policy_closes_when_executable_side_breaches_stop(monkeypatch):
+def test_live_policy_does_not_close_from_ticker_when_policy_bar_does_not_breach(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -2178,9 +2613,8 @@ def test_live_policy_closes_when_executable_side_breaches_stop(monkeypatch):
         "PNUT/USD:USD", executor.positions["PNUT/USD:USD"], bars, executor
     )
 
-    assert result["success"] is True
-    assert result["reason"].startswith("software_executable_stop_breach")
-    assert "PNUT/USD:USD" not in executor.get_active_positions()
+    assert result is None
+    assert "PNUT/USD:USD" in executor.positions
 
 
 def test_kraken_software_stop_breach_cancels_hosted_stop_before_market_close():
@@ -2539,7 +2973,7 @@ def test_lightweight_stop_sentinel_does_not_close_on_last_only_breach():
     assert "TURBO/USD:USD" in executor.active_positions
 
 
-def test_monitor_active_position_runs_lightweight_sentinel_before_5m_policy(
+def test_monitor_active_position_does_not_use_ticker_stop_sentinel(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -2619,11 +3053,9 @@ def test_monitor_active_position_runs_lightweight_sentinel_before_5m_policy(
         config=executor.config,
     )
 
-    sentinel = statuses["TURBO/USD:USD"]["executable_stop_sentinel"]
-    assert sentinel["status"] == "closed"
-    assert sentinel["executable_price"] == pytest.approx(0.0008562)
+    assert "executable_stop_sentinel" not in statuses["TURBO/USD:USD"]
     assert "price_action" not in statuses["TURBO/USD:USD"]
-    assert executor.get_position("TURBO/USD:USD") is None
+    assert executor.get_position("TURBO/USD:USD") is not None
 
 
 def test_kraken_futures_existing_mark_stop_does_not_match_policy():
@@ -3335,6 +3767,65 @@ def test_monitor_orders_once_falls_back_to_open_orders_when_fetch_order_unsuppor
     assert "BTC/USDT" in active_after_monitor
 
 
+def test_restart_absent_entry_recovers_exact_stop_fill(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _PrivateFillExchange(_FilterAwareExchange):
+        def fetch_my_trades(self, symbol, since=None, limit=None):
+            return [
+                {
+                    "id": "fill-1",
+                    "order": "stop-1",
+                    "side": "buy",
+                    "amount": 100.0,
+                    "price": 0.1343,
+                    "timestamp": int(
+                        pd.Timestamp("2026-07-18T22:40:00Z").timestamp() * 1000
+                    ),
+                    "fee": {"cost": 0.01, "currency": "USD"},
+                }
+            ]
+
+    executor = TradeExecutor(
+        mode="live",
+        exchange=_PrivateFillExchange(),
+        bucket_params={},
+        config={"execution_account": "perps"},
+    )
+    try:
+        closed = executor.reconcile_absent_logged_entry(
+            {
+                "symbol": "FARTCOIN/USD:USD",
+                "side": "short",
+                "timestamp": "2026-07-18T09:07:49Z",
+                "entry_time": "2026-07-18T09:07:49Z",
+                "actual_entry_price": 0.1286,
+                "realized_entry_price": 0.1286,
+                "entry_price": 0.1286,
+                "entry_notional_quote": 12.86,
+                "stop_price": 0.1345,
+                "stop_order_id": "stop-1",
+                "position_id": "position-1",
+                "strategy_id": "short_breakout",
+            }
+        )
+    finally:
+        executor.shutdown()
+
+    assert closed["symbol"] == "FARTCOIN/USD:USD"
+    assert closed["reason"].startswith("stop_loss_filled")
+    assert closed["exit_price"] == pytest.approx(0.1343)
+    assert closed["filled"] == pytest.approx(100.0)
+    assert closed["reconciliation_mode"] == "startup_absent_position"
+    assert (
+        closed["reconciliation_fill_resolution"]
+        == "private_fill_exact_stop_order"
+    )
+
+
 def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -3434,12 +3925,23 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
         "barrier_pct": 0.03301886792452832,
         "sl_mult": 1.0,
         "stop_policy_params_source": params["params_source"],
-        "stop_policy_params_hash": params["params_hash"],
+        "stop_policy_params_hash": "retired-policy-hash",
         "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
         "timestamp": "2026-05-17T21:28:04Z",
     }
     try:
         report = executor.reconcile_cross_margin_account()
+        with executor.oco_executor._positions_lock:
+            live_state = executor.oco_executor.active_positions["NIGHT/USD:USD"]
+            live_state["bars_in_trade"] = 137
+            live_state["last_policy_eval_ts"] = pd.Timestamp(
+                "2026-05-17T23:45:00Z"
+            )
+            live_state["last_15m_eval_ts"] = pd.Timestamp(
+                "2026-05-17T23:45:00Z"
+            )
+            live_state["policy_bar_minutes"] = 1
+        executor.reconcile_cross_margin_account()
         statuses = executor.monitor_orders_once()
         active = executor.get_active_positions()
     finally:
@@ -3457,6 +3959,21 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
     assert active["NIGHT/USD:USD"]["exchange_stop_price"] == pytest.approx(0.03280)
     assert active["NIGHT/USD:USD"]["final_placed_stop"] == pytest.approx(0.03280)
     assert active["NIGHT/USD:USD"]["external_position"] is True
+    assert active["NIGHT/USD:USD"]["bars_in_trade"] == 137
+    assert active["NIGHT/USD:USD"]["last_policy_eval_ts"] == pd.Timestamp(
+        "2026-05-17T23:45:00Z"
+    )
+    assert active["NIGHT/USD:USD"]["last_15m_eval_ts"] == pd.Timestamp(
+        "2026-05-17T23:45:00Z"
+    )
+    assert active["NIGHT/USD:USD"]["policy_bar_minutes"] == 1
+    assert active["NIGHT/USD:USD"]["stop_policy_params_hash"] == params["params_hash"]
+    assert active["NIGHT/USD:USD"]["reconciliation_policy_version_migrated"] is True
+    assert (
+        active["NIGHT/USD:USD"]["reconciliation_previous_policy_hash"]
+        == "retired-policy-hash"
+    )
+    assert active["NIGHT/USD:USD"]["stop_price"] == pytest.approx(0.03285)
     assert statuses["NIGHT/USD:USD"]["status"] == "open"
     assert statuses["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
 
@@ -3567,6 +4084,108 @@ def test_perps_reconciliation_preserves_tighter_recovered_stop(monkeypatch):
     assert state["final_placed_stop"] == pytest.approx(0.12524)
 
 
+def test_pending_entry_context_recovers_archetype_geometry_from_shadow(tmp_path):
+    trade_log = tmp_path / "inference_trades.csv"
+    archetype_bucket = "short__policy_archetype_short__short_breakout_precision"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-07-17T14:09:01Z",
+                "lifecycle_event": "entry_placed",
+                "status": "reconciled_absent",
+                "action": "enter",
+                "symbol": "LPT/USD:USD",
+                "side": "short",
+                "strategy_id": "s52_meta_threshold_handoff",
+                "entry_price": 1.496,
+                "stop_price": 1.526,
+                "simple_policy_shadow": json.dumps(
+                    {
+                        "schema": "simple_policy_execution_shadow_v1",
+                        "bucket_key": archetype_bucket,
+                        "strategy_id": archetype_bucket,
+                        "policy_entry_price": 1.496,
+                        "realized_entry_price": 1.496,
+                        "shadow_stop_price": 1.526,
+                        "barrier_frac": 0.05180812498272756,
+                        "barrier_pct": 0.05180812498272756,
+                        "barrier_frac_is_effective": True,
+                        "sl_mult": 1.2,
+                        "params_source": "artifact/best_policy_params_perps.json",
+                        "params_hash": "geometry-hash",
+                        "params_schema": SIMPLE_POLICY_SCHEMA,
+                    }
+                ),
+            }
+        ]
+    ).to_csv(trade_log, index=False)
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={},
+        config={"trade_log_path": str(trade_log)},
+    )
+    try:
+        context = executor._load_pending_entry_context("LPT/USD:USD")
+    finally:
+        executor.shutdown()
+
+    assert context["model_strategy_id"] == "s52_meta_threshold_handoff"
+    assert context["strategy_id"] == archetype_bucket
+    assert context["bucket_key"] == archetype_bucket
+    assert context["stop_price"] == pytest.approx(1.526)
+    assert context["policy_stop_price"] == pytest.approx(1.526)
+    assert context["requested_policy_stop"] == pytest.approx(1.526)
+    assert context["barrier_frac"] == pytest.approx(0.05180812498272756)
+    assert context["barrier_pct"] == pytest.approx(0.05180812498272756)
+    assert context["barrier_frac_is_effective"] is True
+    assert context["sl_mult"] == pytest.approx(1.2)
+    assert context["stop_policy_params_hash"] == "geometry-hash"
+    assert context["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
+    assert context["reconciliation_shadow_contract_recovered"] is True
+
+
+def test_pending_entry_context_restores_entry_provenance_after_restart(tmp_path):
+    trade_log = tmp_path / "trades.csv"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-07-18T09:00:00Z",
+                "lifecycle_event": "entry_placed",
+                "status": "pending",
+                "action": "enter",
+                "symbol": "SOL/USD:USD",
+                "entry_provenance_json": json.dumps(
+                    {
+                        "schema_version": "entry_provenance_v1",
+                        "fields": {
+                            "policy_archetype": "long__compression_release",
+                            "archetype_hit_surprise_actual_hit_rate": 0.7,
+                            "meta_sel_ood_abs_z_p95": 2.2,
+                            "meta_lgbm_leaf_count_p10": 8,
+                        },
+                    }
+                ),
+            }
+        ]
+    ).to_csv(trade_log, index=False)
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={},
+        config={"trade_log_path": str(trade_log)},
+    )
+    try:
+        context = executor._load_pending_entry_context("SOL/USD:USD")
+    finally:
+        executor.shutdown()
+
+    assert context["policy_archetype"] == "long__compression_release"
+    assert context["archetype_hit_surprise_actual_hit_rate"] == pytest.approx(0.7)
+    assert context["meta_sel_ood_abs_z_p95"] == pytest.approx(2.2)
+    assert context["meta_lgbm_leaf_count_p10"] == 8
+
+
 def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -3644,6 +4263,114 @@ def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeyp
         state["reconciliation_context_source"] == "artifact_fallback_external_position"
     )
     assert state.get("recovered_from_pending_trade_log") is not True
+
+
+def test_perps_reconciliation_preserves_authoritative_shadow_geometry(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _ShadowPerpsExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets = {
+                "ETHFI/USD:USD": {
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 0.1, "max": 1_000_000.0},
+                        "cost": {"min": 1.0, "max": 1_000_000.0},
+                    },
+                    "contract": True,
+                    "swap": True,
+                    "quote": "USD",
+                    "settle": "USD",
+                    "info": {"status": "TRADING"},
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            return [
+                {
+                    "symbol": "ETHFI/USD:USD",
+                    "contracts": 21.3,
+                    "side": "long",
+                    "entryPrice": 0.4416,
+                    "contractSize": 1.0,
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return []
+
+    shadow_strategy = "long__policy_archetype_long__long_breakout_diagnostic_candidate"
+    shadow_barrier = 0.007825422769182454
+    shadow_sl_mult = 2.7
+    exchange = _ShadowPerpsExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                shadow_strategy: _simple_policy_params(
+                    strategy_id=shadow_strategy,
+                    barrier_pct=0.03,
+                    barrier_frac=0.03,
+                    sl_mult=2.7,
+                )
+            }
+        },
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor._load_pending_entry_context = lambda symbol: {
+        "symbol": symbol,
+        "status": "pending",
+        "action": "enter",
+        "strategy_id": shadow_strategy,
+        "actual_entry_price": 0.4416,
+        "realized_entry_price": 0.4416,
+        "policy_entry_price": 0.4416,
+        "stop_price": 0.4323,
+        "barrier_frac": shadow_barrier,
+        "barrier_pct": shadow_barrier,
+        "sl_mult": shadow_sl_mult,
+        "stop_policy_params_source": "entry-shadow",
+        "stop_policy_params_hash": "entry-shadow-hash",
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+        "timestamp": "2026-07-17T19:08:00Z",
+        "reconciliation_shadow_contract_recovered": True,
+    }
+    executor.resolve_simple_policy_strategy_id = (
+        lambda strategy_id, side: "long_s52_meta_threshold_handoff"
+    )
+    executor._fetch_reconciled_entry_fill = lambda *args, **kwargs: {
+        "checked": True,
+        "matched": False,
+    }
+    try:
+        report = executor.reconcile_cross_margin_account()
+        state = executor.get_active_positions()["ETHFI/USD:USD"]
+    finally:
+        executor.shutdown()
+
+    assert report["summary"]["active_positions_after_reconcile"] == 1
+    assert state["strategy_id"] == shadow_strategy
+    assert state["barrier_frac"] == pytest.approx(shadow_barrier)
+    assert state["sl_mult"] == pytest.approx(shadow_sl_mult)
+    expected_stop = 0.4416 * (1.0 - shadow_sl_mult * shadow_barrier)
+    assert state["stop_price"] == pytest.approx(float(exchange.price_to_precision(
+        "ETHFI/USD:USD", expected_stop
+    )))
+    assert state["reconciliation_strategy_fallback_used"] is False
+    assert state["stop_policy_params_source"].endswith("best_policy_params.json")
+    assert state["stop_policy_params_hash"] != "entry-shadow-hash"
 
 
 def test_perps_reconciliation_existing_stop_does_not_override_artifact_barrier(
@@ -4390,6 +5117,78 @@ def test_stop_fill_close_metrics_reconciles_pretriggered_shadow_exit():
     assert metrics["shadow_exit_reason"] == "shadow_stop_loss_filled:original_stop_loss"
 
 
+def test_close_metrics_copy_entry_provenance_after_restart():
+    provenance = json.dumps(
+        {
+            "schema_version": "entry_provenance_v1",
+            "fields": {
+                "policy_archetype": "short__late_run",
+                "side": "short",
+                "model_artifact_run_id": "model_20260718_v1",
+                "policy_artifact_run_id": "policy_20260718_v1",
+                "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+                "sizing_policy_id": "raw_bayesian_sizing_v1",
+                "v9_tail95_predecessor_rank": 0.97,
+                "market_state_mlp_expected_net_ev_after_1pct": 0.012,
+                "archetype_hit_surprise_actual_hit_rate": 0.51,
+                "archetype_hit_surprise_expected_hit_rate": 0.63,
+                "archetype_hit_surprise_hit_rate_delta": -0.12,
+                "threshold_basis_dynamic_ev_target": 0.007,
+                "threshold_basis_archetype_baseline_window_days": 28,
+                "threshold_basis_archetype_baseline_ev_mean": 0.011,
+                "threshold_basis_archetype_baseline_take_profit_rate": 0.71,
+                "threshold_basis_archetype_baseline_stop_rate": 0.12,
+                "threshold_basis_archetype_baseline_timeout_rate": 0.05,
+                "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean": 0.19,
+                "meta_sel_ood_abs_z_p95": 2.7,
+                "meta_lgbm_uncertainty_score": 0.24,
+                "inference_drift_score": 0.08,
+                "gmm_cluster_id": 4,
+                "ae_reconstruction_error": 0.021,
+                "meta_lgbm_leaf_count_p10": 11,
+            },
+        }
+    )
+    metrics = _closed_trade_metrics(
+        "TURBO/USD:USD",
+        {
+            "side": "short",
+            "entry_price": 1.0,
+            "size": 2.0,
+            "bucket_key": "short_asset",
+            "stop_price": 1.1,
+            "entry_provenance_json": provenance,
+        },
+        {"average": 1.05, "filled": 2.0, "type": "market"},
+        reason="manual_close",
+    )
+
+    assert metrics["entry_provenance_json"] == provenance
+    assert metrics["side"] == "short"
+    assert metrics["model_artifact_run_id"] == "model_20260718_v1"
+    assert metrics["policy_artifact_run_id"] == "policy_20260718_v1"
+    assert metrics["policy_pathway_id"] == "joint_trailing_total_mfe_raw_bayesian_v1"
+    assert metrics["sizing_policy_id"] == "raw_bayesian_sizing_v1"
+    assert metrics["v9_tail95_predecessor_rank"] == pytest.approx(0.97)
+    assert metrics["policy_archetype"] == "short__late_run"
+    assert metrics["archetype_hit_surprise_hit_rate_delta"] == pytest.approx(-0.12)
+    assert metrics["threshold_basis_dynamic_ev_target"] == pytest.approx(0.007)
+    assert metrics["threshold_basis_archetype_baseline_window_days"] == 28
+    assert metrics["threshold_basis_archetype_baseline_ev_mean"] == pytest.approx(0.011)
+    assert metrics["threshold_basis_archetype_baseline_take_profit_rate"] == pytest.approx(0.71)
+    assert metrics["threshold_basis_archetype_baseline_stop_rate"] == pytest.approx(0.12)
+    assert metrics["threshold_basis_archetype_baseline_timeout_rate"] == pytest.approx(0.05)
+    assert metrics[
+        "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean"
+    ] == pytest.approx(0.19)
+    assert metrics["meta_sel_ood_abs_z_p95"] == pytest.approx(2.7)
+    assert metrics["meta_lgbm_uncertainty_score"] == pytest.approx(0.24)
+    assert metrics["inference_drift_score"] == pytest.approx(0.08)
+    assert metrics["gmm_cluster_id"] == 4
+    assert metrics["ae_reconstruction_error"] == pytest.approx(0.021)
+    assert metrics["meta_lgbm_leaf_count_p10"] == 11
+
+
 def test_closed_trade_metrics_uses_exchange_fees_for_verified_net_pnl():
     state = {
         "side": "long",
@@ -4845,11 +5644,8 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "sentinel_stop_breach_overshoot_bps: 108.5000" in close_body
     assert "shadow_exit_price_source: observed_exchange_stop_fill" in close_body
     assert "shadow_trigger_vs_live_exit_gap_bps: -108.5000" in close_body
-    assert (
-        "perp_liquidation_guard_reason: capped_to_keep_liquidation_beyond_stop"
-        in close_body
-    )
-    assert "perp_liquidation_guarded_leverage: 4.0000x" in close_body
+    assert "perp_liquidation_guard_reason" not in close_body
+    assert "perp_liquidation_guarded_leverage" not in close_body
     assert "perp_liquidation_stop_distance_pct: 18.4500%" in close_body
     assert "policy_archetype: long__compression_release" in close_body
     assert "policy_archetype_source: policy_archetype" in close_body
@@ -4906,8 +5702,43 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "base_pred": 0.81,
             "base_rank_pct": 0.93,
             "meta_pred": 0.67,
+            "base_train_rank_pct": 0.91,
+            "meta_train_rank_pct": 0.89,
             "inference_drift_score": 0.12,
             "uncertainty_score": 0.34,
+            "feature_drift_psi_core": 0.08,
+            "feature_drift_ks_bin_mean": 0.11,
+            "leaf_count_p10": 42.0,
+            "leaf_count_min": 11.0,
+            "rare_leaf_fraction": 0.05,
+            "leaf_model_space_distance_mean": 0.17,
+            "gmm_cluster_id": 3,
+            "gmm_posterior_max": 0.82,
+            "gmm_posterior_margin": 0.61,
+            "gmm_entropy": 0.22,
+            "gmm_ood_score": 0.09,
+            "mahalanobis_distance": 1.18,
+            "ae_reconstruction_error": 0.031,
+            "email_env_volatility": 1.25,
+            "email_env_vol_of_vol": 0.42,
+            "email_env_entropy": 0.61,
+            "email_env_signed_trend": -0.37,
+            "email_env_volume_z": 2.14,
+            "email_env_atr_percentile": 0.18,
+            "email_env_amihud_z": -0.44,
+            "email_env_vwap_distance_atr": 0.73,
+            "email_precomputed_feature_sources_json": json.dumps(
+                {
+                    "email_env_volatility": "candidate_features:rvol_z",
+                    "email_env_vol_of_vol": "candidate_features:vol_of_vol",
+                    "email_env_entropy": "candidate_features:direction_entropy_20",
+                    "email_env_signed_trend": "candidate_features:regime_trend_score",
+                    "email_env_volume_z": "candidate_features:volume_z_24",
+                    "email_env_atr_percentile": "candidate_features:atr_percentile",
+                    "email_env_amihud_z": "candidate_features:amihud_z",
+                    "email_env_vwap_distance_atr": "candidate_features:dist_vwap_atr",
+                }
+            ),
             "dynamic_hr_surprise_z_eff": -0.45,
             "dynamic_hr_surprise_threshold": 0.805,
             "dynamic_hr_surprise_applied": True,
@@ -4937,6 +5768,46 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "ev_inference_total_cost_bps": 93.2,
             "ev_inference_spread_multiplier": 1.5,
             "ev_inference_cost_model_contract": "fixed20bps_plus_1.5x_live_spread",
+            "threshold_basis_mapped_expected_ev_side_archetype": 0.011,
+            "threshold_basis_side_archetype_recent_ev_correction": 0.001,
+            "threshold_basis_corrected_expected_ev": 0.012,
+            "threshold_basis_dynamic_ev_target": 0.007,
+            "threshold_basis_rank_score": 0.91,
+            "threshold_basis_apply_cutoff": 0.90,
+            "threshold_basis_ev_target_local_support": 146,
+            "threshold_basis_archetype_baseline_window_days": 28,
+            "threshold_basis_archetype_baseline_scope": "side_x_archetype",
+            "threshold_basis_archetype_baseline_trim_fraction": 0.10,
+            "threshold_basis_archetype_baseline_support": 126,
+            "threshold_basis_archetype_baseline_retained_days": 23,
+            "threshold_basis_archetype_baseline_trimmed_days": 3,
+            "threshold_basis_archetype_baseline_ev_mean": 0.0118,
+            "threshold_basis_archetype_baseline_ev_median": 0.0107,
+            "threshold_basis_archetype_baseline_ev_iqr": 0.0082,
+            "threshold_basis_archetype_baseline_positive_ev_rate": 0.74,
+            "threshold_basis_archetype_baseline_take_profit_rate": 0.61,
+            "threshold_basis_archetype_baseline_historical_scope": "side_x_archetype",
+            "threshold_basis_archetype_baseline_historical_support": 418,
+            "threshold_basis_archetype_baseline_historical_positive_ev_rate": 0.68,
+            "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate": 0.06,
+            "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean": 0.23,
+            "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_support": 91,
+            "threshold_basis_archetype_baseline_clean_rate": 0.69,
+            "threshold_basis_archetype_baseline_dirty_positive_rate": 0.18,
+            "threshold_basis_archetype_baseline_bad_mae_rate": 0.21,
+            "threshold_basis_archetype_baseline_stop_rate": 0.17,
+            "threshold_basis_archetype_baseline_timeout_rate": 0.04,
+            "threshold_basis_archetype_baseline_mapped_ev_decile": 9,
+            "threshold_basis_archetype_baseline_mapped_ev_decile_support": 18,
+            "threshold_basis_archetype_baseline_mapped_ev_decile_calibration_residual": 0.0021,
+            "threshold_basis_archetype_baseline_gmm_state_ev_mean": 0.0142,
+            "threshold_basis_archetype_baseline_gmm_state_support": 29,
+            "meta_sel_ood_abs_z_max": 3.10,
+            "meta_sel_ood_abs_z_mean": 0.77,
+            "meta_sel_ood_abs_z_p95": 2.22,
+            "meta_sel_ood_iqr_exceed_frac": 0.08,
+            "meta_sel_ood_missing_frac": 0.0,
+            "meta_sel_ood_centroid_l2": 1.43,
             "perp_liquidation_guard_reason": "capped_to_keep_liquidation_beyond_stop",
             "perp_liquidation_leverage_capped": True,
             "perp_liquidation_requested_leverage": 10.0,
@@ -4950,13 +5821,22 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "EPM Trade Closed" in close_html
     assert "Outcome" in close_html
     assert "Prediction Versus Outcome" in close_html
-    assert "Estimated Margin ROI % @ Entry Leverage" in close_html
+    assert "Admission Rank / Threshold" in close_html
+    assert "0.9100 / 0.9000" in close_html
     assert "Exchange Entry Leverage Used" in close_html
     assert "Base Rank pct" in close_html
+    assert "Avg First-Touch MAE, Positive-EV Trades" in close_html
+    assert "First-Touch TP Rate" in close_html
+    assert "First-Touch Stop Rate" in close_html
+    assert "First-Touch Timeout Rate" in close_html
+    assert "Meta OOD Absolute z p95" in close_html
+    assert "28d vs Historical Positive-EV Delta" in close_html
     assert "Base Pred" not in close_html
     assert "-7.8000%" in close_html
     assert "Configured Lev" not in close_html
     assert "Estimated Configured-Leverage Net PnL %" not in close_html
+    assert "Estimated Wallet Net PnL %" not in close_html
+    assert "Estimated Margin ROI % @ Entry Leverage" not in close_html
     assert "Stop Gap bps" not in close_html
     assert "Exit Spread Delta bps" not in close_html
     assert "Pred vs Outcome Gap" in close_html
@@ -4964,7 +5844,7 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Exit vs Expected Spread Quality" in close_html
     assert "Gap as % of Outcome" in close_html
     assert "trailing profit" in close_html
-    assert "Drift, Uncertainty and OOD" in close_html
+    assert "Model Health: Drift, Support, Uncertainty and OOD" in close_html
     assert "Dynamic HR z_eff" not in close_html
     assert "Dynamic HR Threshold" not in close_html
     assert "Dynamic HR Reason" not in close_html
@@ -4985,10 +5865,32 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "fixed20bps_plus_1.5x_live_spread" in close_html
     assert "Drift Score" in close_html
     assert "Uncertainty Score" in close_html
+    assert "Feature Population Drift PSI" in close_html
+    assert "Leaf Support P10" in close_html
+    assert "Strategy and Latent State" in close_html
+    assert "GMM Centroid Distance (Mahalanobis)" in close_html
+    assert "GMM Posterior Max" in close_html
+    assert "Market Environment at Entry" in close_html
+    assert "Volatility (rvol_z)" in close_html
+    assert "Signed Distance from VWAP (ATR-normalized) (dist_vwap_atr)" in close_html
+    assert "Policy Context at Entry" in close_html
+    assert "Side x Archetype Mapped EV" in close_html
+    assert "Policy: 28-Day Archetype Evidence at Entry" in close_html
+    assert "28d Net EV Mean" in close_html
+    assert "Mapped-EV Decile Calibration Residual" in close_html
+    assert "Current GMM-State 28d EV" in close_html
+    assert "Fee Status" not in close_html
+    assert "Model Drift / OOD" not in close_html
     assert "Liquidation Guard" in close_html
-    assert "Guarded Leverage" in close_html
-    assert "capped_to_keep_liquidation_beyond_stop" in close_html
-    assert "4.0000x" in close_html
+    assert "Guarded Leverage" not in close_html
+    assert "Guard Enabled" not in close_html
+    assert "Guard Reason" not in close_html
+    assert "Required Liquidation Distance" not in close_html
+    assert "Distance at Guarded Leverage" not in close_html
+    assert "Maintenance Margin Assumption" not in close_html
+    assert "Liquidation Fee Buffer" not in close_html
+    assert "Safety Buffer" not in close_html
+    assert "capped_to_keep_liquidation_beyond_stop" not in close_html
     assert "Full Audit Detail" in close_html
     assert "estimated_missing_exchange_fees" in close_html
 
@@ -5063,8 +5965,8 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "archetype_recent_hit_rate: 55.0000%" in open_body
     assert "archetype_baseline_hit_rate: 68.0000%" in open_body
     assert "strategy_ev_hit_rate: 61.0000%" in open_body
-    assert "perp_liquidation_guard_reason: requested_leverage_safe" in open_body
-    assert "perp_liquidation_guarded_leverage: 4.0000x" in open_body
+    assert "perp_liquidation_guard_reason" not in open_body
+    assert "perp_liquidation_guarded_leverage" not in open_body
     assert "base_amount" not in open_body
     assert "nan" not in open_body.lower()
 
@@ -5109,6 +6011,60 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Full Audit Detail" in open_html
 
 
+def test_close_email_uses_entry_provenance_and_legacy_archetype_fallback():
+    provenance = json.dumps(
+        {
+            "schema_version": "entry_provenance_v1",
+            "fields": {
+                "policy_archetype": "long__compression_release",
+                "archetype_hit_surprise_actual_hit_rate": 0.72,
+                "archetype_hit_surprise_expected_hit_rate": 0.64,
+                "archetype_hit_surprise_hit_rate_delta": 0.08,
+                "meta_sel_ood_abs_z_p95": 2.3,
+                "meta_lgbm_uncertainty_score": 0.17,
+                "inference_drift_score": 0.06,
+                "gmm_cluster_id": 2,
+                "ae_reconstruction_error": 0.014,
+                "meta_lgbm_leaf_count_p10": 9,
+            },
+        }
+    )
+    closed_trade = {
+        "symbol": "SOL/USD:USD",
+        "side": "long",
+        "reason": "manual_close",
+        "entry_provenance_json": provenance,
+    }
+    plain = run_inference._build_trade_close_email_body(
+        closed_trade=closed_trade, config={}
+    )
+    html = run_inference._build_trade_close_email_html_body(
+        closed_trade=closed_trade, config={}
+    )
+    legacy_plain = run_inference._build_trade_close_email_body(
+        closed_trade={
+            "symbol": "SOL/USD:USD",
+            "side": "long",
+            "model_prediction_audit": json.dumps(
+                {"thresholds": {"policy_archetype": "long__legacy_arch"}}
+            ),
+        },
+        config={},
+    )
+
+    assert "policy_archetype: long__compression_release" in plain
+    assert "archetype_recent_hit_rate: 72.0000%" in plain
+    assert "archetype_baseline_hit_rate: 64.0000%" in plain
+    assert "archetype_recent_vs_baseline_hit_rate_delta: 8.0000%" in plain
+    assert "meta_sel_ood_abs_z_p95: 2.300000" in plain
+    assert "meta_lgbm_uncertainty_score: 0.170000" in plain
+    assert "inference_drift_score: 0.060000" in plain
+    assert "Model Health: Drift, Support, Uncertainty and OOD" in html
+    assert "Policy Archetype" in html
+    assert "Recent HR vs Baseline" in html
+    assert "long__legacy_arch" in legacy_plain
+
+
 def test_trade_close_email_cause_prefers_policy_reason_over_execution_mechanism():
     trailing = run_inference._email_close_cause_plain(
         {
@@ -5135,6 +6091,176 @@ def test_trade_close_email_cause_prefers_policy_reason_over_execution_mechanism(
     assert pressure == "policy tightened the stop because exit pressure increased."
     assert "buy-to-cover price crossed the stop" not in trailing
     assert "buy-to-cover price crossed the stop" not in pressure
+
+
+def test_close_email_reports_residual_state_and_28d_admission_contract():
+    source = {
+        "meta_postprocessor_policy_id": "meta_residual_v9_tail95_market_state_mlp_hier_ev_v1",
+        "meta_postprocessor_predecessor_id": (
+            "meta_residual_extreme_local_champion_overlay_ooftrain_"
+            "tieaware_downonly_20260712_v9::forced_local_tail_0.950"
+        ),
+        "meta_postprocessor_side_archetype": "long|compression_release",
+        "resid_event_aegmm_gmm_cluster_id": 2,
+        "resid_event_aegmm_gmm_entropy": 0.24,
+        "resid_event_aegmm_expected_negative_residual_event": 0.18,
+        "resid_event_aegmm_expected_positive_residual_event": 0.41,
+        "threshold_basis_policy_id": (
+            "ev_target_side_archetype_global_top10_before_mlp_28d_flat_v1"
+        ),
+        "threshold_basis_family": "ev_target_side_archetype_multiplier_before_mlp",
+        "threshold_basis_window_days": 28,
+        "threshold_basis_selected": True,
+        "threshold_basis_reason": "selected",
+        "threshold_basis_rank_score": 0.96,
+        "threshold_basis_apply_cutoff": 0.91,
+        "threshold_basis_dynamic_ev_target": 0.012,
+        "threshold_basis_dynamic_score_threshold": 0.83,
+        "threshold_basis_ev_target_multiplier": 1.08,
+        "threshold_basis_ev_target_local_support": 143,
+        "threshold_basis_ev_target_global_fallback": False,
+        "threshold_basis_recent_reference_rows": 12000,
+        "threshold_basis_reference_rows": 310000,
+    }
+    post_plain = "\n".join(
+        line
+        for line in run_inference._email_meta_postprocessor_plain_lines(source)
+        if line
+    )
+    admission_plain = "\n".join(
+        line
+        for line in run_inference._email_threshold_basis_plain_lines(source)
+        if line
+    )
+    post_html = str(run_inference._email_meta_postprocessor_html_rows(source))
+    admission_html = str(run_inference._email_threshold_basis_html_rows(source))
+
+    assert "tieaware_downonly_20260712_v9" in post_plain
+    assert "residual_state_cluster_id: 2" in post_plain
+    assert "expected_negative_residual_event: 18.0000%" in post_plain
+    assert "Residual-State Cluster" in post_html
+    assert "ev_target_side_archetype_global_top10_before_mlp_28d_flat_v1" in admission_plain
+    assert "admission_window_days: 28" in admission_plain
+    assert "side_archetype_ev_multiplier: 1.080000" in admission_plain
+    assert "Side x Archetype Local Support" in admission_html
+
+
+def test_close_email_context_uses_only_precomputed_feature_snapshots():
+    symbol = "SOL/USD:USD"
+    candidate_features = pd.DataFrame(
+        {
+            "rvol_z": [1.25],
+            "volatility_of_volatility_48": [0.42],
+            "direction_entropy_20": [0.61],
+            "regime_trend_score": [-0.37],
+            "volume_z_24": [2.14],
+            "atr_percentile": [0.18],
+            "amihud_z": [-0.44],
+            "dist_vwap_atr": [0.73],
+            "gmm_cluster_id": [3.0],
+            "gmm_posterior_max": [0.82],
+            "gmm_posterior_margin": [0.61],
+            "gmm_entropy": [0.22],
+            "gmm_ood_score": [0.09],
+            "mahalanobis_distance": [1.18],
+            "ae_reconstruction_error": [0.031],
+            "future_outcome_should_not_be_copied": [99.0],
+        },
+        index=[symbol],
+    )
+    meta_model_input_features = pd.DataFrame(
+        {
+            "meta_sel_ood_abs_z_max": [3.6],
+            "meta_sel_ood_abs_z_mean": [0.9],
+            "meta_sel_ood_abs_z_p95": [2.4],
+            "meta_sel_ood_iqr_exceed_frac": [0.14],
+            "meta_sel_ood_missing_frac": [0.0],
+            "meta_sel_ood_centroid_l2": [1.7],
+        },
+        index=[symbol],
+    )
+    snapshot = run_inference._snapshot_precomputed_email_context(
+        symbol=symbol,
+        candidate_features=candidate_features,
+        meta_model_input_features=meta_model_input_features,
+    )
+
+    assert snapshot["email_env_volatility"] == pytest.approx(1.25)
+    assert snapshot["email_env_vwap_distance_atr"] == pytest.approx(0.73)
+    assert snapshot["gmm_posterior_max"] == pytest.approx(0.82)
+    assert snapshot["mahalanobis_distance"] == pytest.approx(1.18)
+    assert snapshot["meta_sel_ood_abs_z_p95"] == pytest.approx(2.4)
+    assert snapshot["meta_sel_ood_iqr_exceed_frac"] == pytest.approx(0.14)
+    assert "future_outcome_should_not_be_copied" not in snapshot
+    assert json.loads(snapshot["email_precomputed_feature_sources_json"]) == {
+        "ae_reconstruction_error": "candidate_features:ae_reconstruction_error",
+        "email_env_amihud_z": "candidate_features:amihud_z",
+        "email_env_atr_percentile": "candidate_features:atr_percentile",
+        "email_env_entropy": "candidate_features:direction_entropy_20",
+        "email_env_signed_trend": "candidate_features:regime_trend_score",
+        "email_env_vol_of_vol": "candidate_features:volatility_of_volatility_48",
+        "email_env_volatility": "candidate_features:rvol_z",
+        "email_env_volume_z": "candidate_features:volume_z_24",
+        "email_env_vwap_distance_atr": "candidate_features:dist_vwap_atr",
+        "gmm_cluster_id": "candidate_features:gmm_cluster_id",
+        "gmm_entropy": "candidate_features:gmm_entropy",
+        "gmm_ood_score": "candidate_features:gmm_ood_score",
+        "gmm_posterior_margin": "candidate_features:gmm_posterior_margin",
+        "gmm_posterior_max": "candidate_features:gmm_posterior_max",
+        "mahalanobis_distance": "candidate_features:mahalanobis_distance",
+        "meta_sel_ood_abs_z_max": "meta_model_input:meta_sel_ood_abs_z_max",
+        "meta_sel_ood_abs_z_mean": "meta_model_input:meta_sel_ood_abs_z_mean",
+        "meta_sel_ood_abs_z_p95": "meta_model_input:meta_sel_ood_abs_z_p95",
+        "meta_sel_ood_centroid_l2": "meta_model_input:meta_sel_ood_centroid_l2",
+        "meta_sel_ood_iqr_exceed_frac": "meta_model_input:meta_sel_ood_iqr_exceed_frac",
+        "meta_sel_ood_missing_frac": "meta_model_input:meta_sel_ood_missing_frac",
+    }
+    context = run_inference._model_context_from_scored_decision(
+        {"chain_results": snapshot},
+        refresh_reason="test",
+        timestamp=pd.Timestamp("2026-07-17 10:00:00", tz="UTC"),
+        signal_bar_ts=pd.Timestamp("2026-07-17 09:00:00", tz="UTC"),
+    )
+    for key in (
+        "email_env_volatility",
+        "email_env_vwap_distance_atr",
+        "gmm_posterior_max",
+        "mahalanobis_distance",
+        "meta_sel_ood_abs_z_p95",
+        "meta_sel_ood_iqr_exceed_frac",
+        "email_precomputed_feature_sources_json",
+    ):
+        assert key in context
+        assert key in MODEL_AND_POLICY_CONTEXT_KEYS
+
+
+def test_model_health_email_contains_only_health_diagnostics():
+    labels = {
+        label
+        for label, _, _ in run_inference._email_model_health_html_rows(
+            {
+                "base_pred": 0.4,
+                "base_rank_pct": 0.9,
+                "meta_pred": 0.7,
+                "calibrated_score": 0.75,
+                "policy_rank_pct": 1.0,
+                "final_gate_rank_score": 0.91,
+                "feature_drift_psi_core": 0.12,
+                "meta_sel_ood_abs_z_p95": 2.1,
+                "uncertainty_score": 0.2,
+                "leaf_count_p10": 14.0,
+            }
+        )
+    }
+    assert {"Feature Population Drift PSI", "Meta OOD Absolute z p95", "Leaf Support P10"} <= labels
+    assert not {
+        "Base Score",
+        "Base Batch Rank",
+        "Meta Score",
+        "Legacy Calibrated Score (diagnostic only)",
+        "Legacy Policy Rank (diagnostic only)",
+        "Final Gate Rank",
+    } & labels
 
 
 def test_trade_result_entry_fields_merge_into_trade_logger_context():
@@ -5594,3 +6720,29 @@ def test_reattach_rejects_open_tracked_stop(monkeypatch):
         assert exchange.canceled == []
     finally:
         executor.shutdown()
+
+
+def test_simple_policy_geometry_resolves_archetype_before_side_parent():
+    executor = OCOExecutor.__new__(OCOExecutor)
+    executor.simple_policy_stop_params_by_strategy = {
+        "long__parent": {"side": "long", "sl_mult": 2.7},
+        "long__policy_archetype_long_mixed": {"side": "long", "sl_mult": 1.8},
+        "long__policy_archetype_long__compression_release": {
+            "side": "long",
+            "sl_mult": 1.4,
+        },
+        "short__parent": {"side": "short", "sl_mult": 3.1},
+    }
+
+    assert executor.resolve_simple_policy_strategy_id(
+        "canonical_meta_policy", "long", "policy_archetype_long_mixed"
+    ) == "long__policy_archetype_long_mixed"
+    assert executor.resolve_simple_policy_strategy_id(
+        "canonical_meta_policy", "long", "policy_archetype_unknown"
+    ) == "long__parent"
+    assert executor.resolve_simple_policy_strategy_id(
+        "canonical_meta_policy", "long", "long__compression_release"
+    ) == "long__policy_archetype_long__compression_release"
+    assert executor.resolve_simple_policy_strategy_id(
+        "canonical_meta_policy", "short", None
+    ) == "short__parent"

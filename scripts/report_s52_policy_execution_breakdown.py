@@ -265,7 +265,11 @@ def main() -> None:
         raise FileNotFoundError(parent_path)
     if not archetype_path.exists():
         raise FileNotFoundError(archetype_path)
-    rows = _prepare_rows(args.candidates, min_rank=float(args.min_rank))
+    rows = _prepare_rows(
+        args.candidates,
+        min_rank=float(args.min_rank),
+        apply_regime_ev_calibration_artifact=False,
+    )
     if args.start or args.end:
         ts = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
         mask = pd.Series(True, index=rows.index)
@@ -314,6 +318,7 @@ def main() -> None:
         "start": str(args.start) if args.start else None,
         "end": str(args.end) if args.end else None,
         "round_trip_cost_pct": float(args.round_trip_cost_pct),
+        "legacy_regime_ev_calibration_applied": False,
         "cost_pct_per_side": cost_pct,
         "outputs": outputs,
     }

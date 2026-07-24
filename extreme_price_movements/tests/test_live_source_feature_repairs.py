@@ -344,7 +344,10 @@ def test_finite_contract_gate_allows_train_tolerated_nonfinite_but_blocks_other(
         masks,
         contracts,
         latest_ts=idx[-1],
-        cfg={"live_model_contract_allow_train_tolerated_nonfinite": True},
+        cfg={
+            "strict_feature_parity": False,
+            "live_model_contract_allow_train_tolerated_nonfinite": True,
+        },
     )
 
     assert filtered["strategy"] == ["A/USD:USD", "B/USD:USD"]
@@ -361,6 +364,30 @@ def test_finite_contract_gate_allows_train_tolerated_nonfinite_but_blocks_other(
         "ret1h_G_VOL_0",
         "ret1h_G_VOL_1",
     }
+
+
+def test_finite_contract_gate_strict_parity_rejects_tolerated_nan():
+    idx = pd.date_range("2026-01-01", periods=1, freq="1h", tz="UTC")
+    feats = {
+        "volume_entropy_24": pd.DataFrame(
+            [[np.nan]], index=idx, columns=["A/USD:USD"], dtype=np.float32
+        )
+    }
+
+    filtered, diagnostics = _filter_strategy_masks_by_finite_model_contract(
+        feats,
+        {"strategy": ["A/USD:USD"]},
+        {"strategy": ["volume_entropy_24"]},
+        latest_ts=idx[-1],
+        cfg={
+            "strict_feature_parity": True,
+            "live_model_contract_allow_train_tolerated_nonfinite": True,
+        },
+    )
+
+    assert filtered["strategy"] == []
+    assert diagnostics["strategy"]["rejected"] == 1
+    assert diagnostics["strategy"]["top_allowed_nonfinite_features"] == []
 
 
 def test_materialize_live_residual_and_premium_aliases_match_training_helpers():

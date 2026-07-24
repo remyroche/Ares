@@ -1,0 +1,60 @@
+{
+  "schema": "side_local_ae_gmm_search_v1",
+  "purpose": "Research-only comparison of frozen side-local base/meta state blocks; no automatic production activation.",
+  "reference": {
+    "sampling": "immutable UTC beginning/middle/end reference per layer x side",
+    "proxy_rows": 50000,
+    "final_rows": 150000,
+    "seed": 20260720
+  },
+  "feature_selection": {
+    "universe": "all observable config.py features for the layer; meta additionally admits materialised OOF base score/rank/margin, rolling base reliability/errors, uncertainty, calibration, OOD and drift fields",
+    "availability_stability_filter": true,
+    "correlation_threshold": 0.9,
+    "univariate_top": 200,
+    "relief_rescue": 100,
+    "mda": "three chronological folds, economic top10/top20 objective, stable importance = mean - 0.5*std",
+    "nested_prefixes": [30, 75, 150]
+  },
+  "encoder_proxy": {
+    "rows": 50000,
+    "same_rows_for_all_candidates": true,
+    "families": ["legacy_dae_when_latent16", "masked_denoising_ae"],
+    "latent_dimensions": {"30": [12, 16], "75": [12, 16], "150": [16, 24]}
+  },
+  "gmm_proxy": {
+    "covariance_types": ["diag"],
+    "components": [3, 5],
+    "reg_covar": [0.003, 0.01]
+  },
+  "promotion": {"encoder_prefix_combinations_per_side_layer": 2},
+  "full_density_search": {
+    "rows": 150000,
+    "components": [3, 4, 5, 6],
+    "covariance_types": ["diag", "tied"],
+    "reg_covar": [0.001, 0.003, 0.01, 0.03]
+  },
+  "bhattacharyya_refinement": {
+    "eligible": "top three unpenalized diagonal models with distinct K",
+    "lambda": [0.0, 1e-07, 1e-06, 1e-05, 0.0001],
+    "selection_data": "inner chronological validation only",
+    "early_stop": "after two consecutive inferior lambda candidates",
+    "outer_oos_allowed_for_lambda_selection": false
+  },
+  "economic_selection_score": {
+    "incremental_oos_top10_top20_net_ev_vs_raw_probe": 0.4,
+    "oos_side_archetype_ranking_gain": 0.2,
+    "causal_path_behavior_separation": 0.15,
+    "temporal_seed_perturbation_stability": 0.15,
+    "density_quality_and_posterior_usability": 0.1
+  },
+  "probe": {
+    "raw_feature_basis": "one frozen side/layer local Spearman-pruned 40-feature basis reused for all candidates",
+    "params": {"max_depth": 4, "n_estimators": 300, "min_child_fraction": 0.0025, "l1": 0.5, "l2": 0.5, "learning_rate": 0.05, "feature_fraction": 0.8, "bagging_fraction": 0.8, "bagging_freq": 1}
+  },
+  "output_contract": {
+    "names": ["base_long_state_*", "base_short_state_*", "meta_long_state_*", "meta_short_state_*"],
+    "component_ids_globally_comparable": false,
+    "required": ["latent", "posterior", "entropy", "posterior_margin", "expected_mahalanobis", "min_mahalanobis", "reconstruction_error", "novelty_percentile", "active", "valid"]
+  }
+}

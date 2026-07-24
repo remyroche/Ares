@@ -77,6 +77,12 @@ REFERENCE_DERIVED_COLUMNS = {
     "reference_ev_equivalent_selected",
     "assessment_hr_8d_expected",
     "assessment_hr_8d_surprise",
+    "threshold_basis_selected",
+    "threshold_basis_rank_score",
+    "threshold_basis_dynamic_ev_target",
+    "threshold_basis_dynamic_score_threshold",
+    "threshold_basis_recent_reference_rows",
+    "threshold_basis_baseline_activity_count",
 }
 
 STATELESS_AE_GMM_TOKENS = (
@@ -113,6 +119,7 @@ class ResidualArchetypeConfig:
     ae_gmm_max_rows: int = 5_000
     ae_gmm_max_iter: int = 80
     ae_gmm_cluster_candidates: tuple[int, ...] = (4, 6, 8, 10, 12)
+    final_refit_all_rows: bool = False
     fit_local_models: bool = True
     rank_scope: str = "global"
     label_mode: str = "gmm"
@@ -490,6 +497,11 @@ def _descriptor_matrix(
     return pd.DataFrame(
         {
             "rank_pct": _num(prepared, "reference_rank_pct", 0.0).fillna(0.0),
+            "local_top10_selected": _num(
+                prepared, "reference_ev_equivalent_selected", 0.0
+            )
+            .fillna(0.0)
+            .clip(0.0, 1.0),
             "signed_surprise": _num(prepared, "hit_surprise", 0.0).fillna(0.0),
             "negative_surprise": _num(prepared, "negative_hit_surprise", 0.0).fillna(
                 0.0
@@ -602,7 +614,7 @@ def _economic_semantic_labels(
     timeout = desc["timeout"].to_numpy(dtype=np.float32) >= 0.5
     negative_autocorr = desc["negative_autocorr"].to_numpy(dtype=np.float32) >= 0.5
     positive_autocorr = desc["positive_autocorr"].to_numpy(dtype=np.float32) >= 0.5
-    top10 = rank >= 0.90
+    top10 = desc["local_top10_selected"].to_numpy(dtype=np.float32) >= 0.5
     top10_20 = (rank >= 0.80) & ~top10
     finite_surprise = surprise[np.isfinite(surprise)]
     finite_ev = np.abs(ev[np.isfinite(ev)])
@@ -651,11 +663,8 @@ def _economic_semantic_labels(
             np.sum(np.asarray(counts) >= int(config.semantic_min_segment_rows))
         )
         stable = bool(
-            name == fallback
-            or (
-                int(mask.sum()) >= int(config.min_cluster_rows)
-                and stable_segments >= int(config.semantic_min_temporal_segments)
-            )
+            int(mask.sum()) >= int(config.min_cluster_rows)
+            and stable_segments >= int(config.semantic_min_temporal_segments)
         )
         stability[name] = {
             "rows": int(mask.sum()),
@@ -663,8 +672,51 @@ def _economic_semantic_labels(
             "stable_segments": stable_segments,
             "retained": stable,
         }
-        if not stable:
+        if not stable and name != fallback:
             semantic[mask] = fallback
+    fallback_mask = semantic == fallback
+    fallback_counts = [
+        int(np.sum(fallback_mask & (segment == idx))) for idx in range(3)
+    ]
+    fallback_stable_segments = int(
+        np.sum(np.asarray(fallback_counts) >= int(config.semantic_min_segment_rows))
+    )
+    fallback_stable = bool(
+        int(fallback_mask.sum()) >= int(config.min_cluster_rows)
+        and fallback_stable_segments >= int(config.semantic_min_temporal_segments)
+    )
+    stability[fallback] = {
+        "rows": int(fallback_mask.sum()),
+        "segment_rows": fallback_counts,
+        "stable_segments": fallback_stable_segments,
+        "retained": fallback_stable,
+    }
+    if fallback_mask.any() and not fallback_stable:
+        stable_names = [
+            name
+            for name, values in stability.items()
+            if name != fallback and bool(values.get("retained", False))
+        ]
+        if stable_names:
+            replacement = max(
+                stable_names, key=lambda name: int(stability[name].get("rows", 0))
+            )
+            semantic[fallback_mask] = replacement
+            replacement_mask = semantic == replacement
+            replacement_counts = [
+                int(np.sum(replacement_mask & (segment == idx))) for idx in range(3)
+            ]
+            stability[replacement] = {
+                "rows": int(replacement_mask.sum()),
+                "segment_rows": replacement_counts,
+                "stable_segments": int(
+                    np.sum(
+                        np.asarray(replacement_counts)
+                        >= int(config.semantic_min_segment_rows)
+                    )
+                ),
+                "retained": True,
+            }
     labels = np.asarray(
         [SEMANTIC_ARCHETYPES.index(str(name)) for name in semantic], dtype=np.int32
     )
@@ -945,6 +997,7 @@ def _fit_local_model(
     *,
     key: str,
     seed: int,
+    frozen_ae_gmm: tuple[dict[str, Any], list[str], list[str]] | None = None,
 ) -> _LocalModel | None:
     prepared = (
         frame
@@ -974,7 +1027,12 @@ def _fit_local_model(
     local_ae_inputs: list[str] = []
     local_ae_outputs: list[str] = []
     if config.use_residual_ae_gmm and len(features) >= 2:
-        local_ae_inputs = features[: min(80, len(features))]
+        if frozen_ae_gmm is not None:
+            local_ae_state = frozen_ae_gmm[0]
+            local_ae_inputs = list(frozen_ae_gmm[1])
+            local_ae_outputs = list(frozen_ae_gmm[2])
+        else:
+            local_ae_inputs = features[: min(80, len(features))]
         timestamp = pd.to_datetime(work.get("__ts__"), utc=True, errors="coerce")
         timestamp_ns = timestamp.astype("int64", copy=False).to_numpy(dtype=np.int64)
         time_bucket = (
@@ -993,30 +1051,33 @@ def _fit_local_model(
             "timeout": desc["timeout"].to_numpy(dtype=np.float32),
             "time_bucket": time_bucket,
         }
-        local_ae_state = fit_ae_gmm_state(
-            work.reindex(columns=local_ae_inputs),
-            economic_targets=economic_targets,
-            random_state=int(seed + 701),
-            max_train_rows=int(config.ae_gmm_max_rows),
-            gmm_max_train_rows=int(config.ae_gmm_max_rows),
-            ae_max_iter=int(config.ae_gmm_max_iter),
-            cluster_candidates=config.ae_gmm_cluster_candidates,
-            reg_covar_candidates=(1e-4, 1e-3, 3e-3),
-            smooth_lambda_candidates=(0.0,),
-            path_aware_hpo=True,
-            temporal_concentration_hpo=True,
-        )
+        if frozen_ae_gmm is None:
+            local_ae_state = fit_ae_gmm_state(
+                work.reindex(columns=local_ae_inputs),
+                economic_targets=economic_targets,
+                random_state=int(seed + 701),
+                max_train_rows=int(config.ae_gmm_max_rows),
+                gmm_max_train_rows=int(config.ae_gmm_max_rows),
+                ae_max_iter=int(config.ae_gmm_max_iter),
+                cluster_candidates=config.ae_gmm_cluster_candidates,
+                reg_covar_candidates=(1e-4, 1e-3, 3e-3),
+                smooth_lambda_candidates=(0.0,),
+                path_aware_hpo=True,
+                temporal_concentration_hpo=True,
+                final_refit_all_rows=bool(config.final_refit_all_rows),
+            )
         transformed = transform_ae_gmm_features(
             work.reindex(columns=local_ae_inputs),
             local_ae_state,
             index=work.index,
             prefix=RESIDUAL_AE_PREFIX,
         )
-        local_ae_outputs = [
-            name
-            for name in residual_ae_gmm_feature_names()
-            if name in transformed.columns
-        ]
+        if frozen_ae_gmm is None:
+            local_ae_outputs = [
+                name
+                for name in residual_ae_gmm_feature_names()
+                if name in transformed.columns
+            ]
         if local_ae_outputs:
             work = work.copy(deep=False)
             for name in local_ae_outputs:
@@ -1029,7 +1090,11 @@ def _fit_local_model(
     if len(features) < 2 or lgb is None:
         return None
     x, medians, clip_low, clip_high = _prepare_numeric_matrix(work, features)
-    fit_idx = _time_spread_indices(len(work), config.max_recognizer_fit_rows)
+    fit_idx = (
+        np.arange(len(work), dtype=np.int64)
+        if config.final_refit_all_rows
+        else _time_spread_indices(len(work), config.max_recognizer_fit_rows)
+    )
     classes = np.asarray(sorted(np.unique(labels).tolist()), dtype=np.int32)
     class_to_local = {int(value): idx for idx, value in enumerate(classes.tolist())}
     labels_local = np.asarray(
@@ -1103,6 +1168,9 @@ class ResidualArchetypeRecognizer:
     local_models: dict[tuple[str, str], _LocalModel] = field(default_factory=dict)
     ae_gmm_state: dict[str, Any] = field(default_factory=dict)
     ae_gmm_input_features: list[str] = field(default_factory=list)
+    frozen_ae_gmm_by_local: dict[
+        tuple[str, str], tuple[dict[str, Any], list[str], list[str]]
+    ] = field(default_factory=dict)
     catalog_: pd.DataFrame = field(default_factory=pd.DataFrame)
     train_start_: str | None = None
     train_end_: str | None = None
@@ -1203,6 +1271,9 @@ class ResidualArchetypeRecognizer:
                     self.config,
                     key=f"local::{side_key}::{arch_key}",
                     seed=self.config.random_state + len(self.local_models) * 31 + 11,
+                    frozen_ae_gmm=self.frozen_ae_gmm_by_local.get(
+                        (str(side_key), str(arch_key))
+                    ),
                 )
                 if model is not None:
                     self.local_models[(str(side_key), str(arch_key))] = model
@@ -1214,15 +1285,24 @@ class ResidualArchetypeRecognizer:
         self, frame: pd.DataFrame, model: _LocalModel, *, local: bool
     ) -> pd.DataFrame:
         ae_values: pd.DataFrame | None = None
-        if model.ae_gmm_state and model.ae_gmm_input_features:
+        # Bundles fitted before residual AE/GMM support do not carry these
+        # attributes. Missing fields mean the optional transform was disabled.
+        ae_gmm_state = getattr(model, "ae_gmm_state", None)
+        ae_gmm_input_features = list(
+            getattr(model, "ae_gmm_input_features", None) or []
+        )
+        ae_gmm_output_features = list(
+            getattr(model, "ae_gmm_output_features", None) or []
+        )
+        if ae_gmm_state and ae_gmm_input_features:
             ae_values = transform_ae_gmm_features(
-                frame.reindex(columns=model.ae_gmm_input_features),
-                model.ae_gmm_state,
+                frame.reindex(columns=ae_gmm_input_features),
+                ae_gmm_state,
                 index=frame.index,
                 prefix=RESIDUAL_AE_PREFIX,
             )
             frame = frame.copy(deep=False)
-            for name in model.ae_gmm_output_features:
+            for name in ae_gmm_output_features:
                 frame[name] = (
                     pd.to_numeric(ae_values[name], errors="coerce")
                     .fillna(0.0)
@@ -1342,6 +1422,7 @@ class ResidualArchetypeRecognizer:
             "allow_side_fallback": bool(self.config.allow_side_fallback),
             "rank_scope": str(self.config.rank_scope),
             "label_mode": str(self.config.label_mode),
+            "final_refit_all_rows": bool(self.config.final_refit_all_rows),
             "score_column": str(self.config.score_col),
             "top10_quantile": float(self.config.top10_quantile),
             "top20_quantile": float(self.config.top20_quantile),
@@ -1368,13 +1449,20 @@ class ResidualArchetypeRecognizer:
             ),
             "residual_ae_gmm_enabled": bool(
                 any(
-                    model.ae_gmm_state.get("enabled", False)
+                    (getattr(model, "ae_gmm_state", None) or {}).get(
+                        "enabled", False
+                    )
                     for model in self.local_models.values()
                 )
             ),
+            "frozen_ae_gmm_local_keys": [
+                f"{side}::{arch}" for side, arch in self.frozen_ae_gmm_by_local
+            ],
             "residual_ae_gmm_scope": "side_x_archetype_local",
             "residual_ae_gmm_input_features_by_model": {
-                model.key: list(model.ae_gmm_input_features)
+                model.key: list(
+                    getattr(model, "ae_gmm_input_features", None) or []
+                )
                 for model in self.local_models.values()
             },
             "leakage_contract": {

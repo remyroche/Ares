@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from extreme_price_movements.market_regime_change_contract import (
+    MARKET_REGIME_CHANGE_FEATURE_KEYS,
+)
+
 
 def _dedupe(values: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(str(v) for v in values if str(v)))
@@ -714,6 +718,7 @@ UNSUPERVISED_REGIME_FEATURE_GROUPS = {
     "low_participation_rebound_features": LOW_PARTICIPATION_REBOUND_FEATURES,
     "cross_asset_decoupling_features": CROSS_ASSET_DECOUPLING_FEATURES,
     "session_microstructure_features": SESSION_MICROSTRUCTURE_FEATURES,
+    "market_regime_change_features": MARKET_REGIME_CHANGE_FEATURE_KEYS,
 }
 
 UNSUPERVISED_REGIME_PRIMITIVE_FEATURES = _dedupe(

@@ -39,6 +39,33 @@ class _FakeSMTP:
         self.sent_messages.append(message)
 
 
+class _RefusingSMTP(_FakeSMTP):
+    def send_message(self, message):
+        self.sent_messages.append(message)
+        return {str(message["To"]): (550, b"recipient rejected")}
+
+
+def test_send_email_reports_refused_recipient(tmp_path, monkeypatch):
+    monkeypatch.setenv("GMAIL_USER", "sender@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "app-password")
+    reporter = DailyDeploymentReporter(
+        state_path=str(tmp_path / "state.json"),
+        smtp_factory=_RefusingSMTP,
+        env_file=str(tmp_path / ".env"),
+    )
+
+    result = reporter._send_email(
+        subject="trade closed",
+        body="body",
+        recipient="ops@example.com",
+        config={},
+    )
+
+    assert result["success"] is False
+    assert result["error_category"] == "smtp_recipient_refused"
+    assert result["refused_recipients"] == ["ops@example.com"]
+
+
 def test_daily_reporter_sends_balance_report_and_transfers_profit(
     tmp_path, monkeypatch
 ):

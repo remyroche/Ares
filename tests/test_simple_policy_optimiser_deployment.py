@@ -19,11 +19,13 @@ from extreme_price_movements.simple_policy_optimiser import (
     _deployment_selected_strategy_ids,
     _filter_candidates_to_deployment_strategies,
     _filter_policy_quote_rows,
+    _fetch_policy_paths,
     _fit_simple_policy_calibrated_drift_risk,
     _finalise_simple_policy_candidates,
     _load_feature_rows_for_events,
     _load_policy_1m_klines_cached,
     _policy_market_data_root,
+    _policy_path_finite_mask,
     _policy_prediction_source_label,
     _policy_prediction_source_uses_policy_oos,
     _policy_prediction_source_uses_precomputed_meta_oof,
@@ -821,26 +823,27 @@ def test_delayed_entry_uses_nearby_1m_fallback(monkeypatch, tmp_path):
     def fake_load_klines(symbol, store, *, needed_ts, market_mode):
         idx = pd.to_datetime(
             [
-                "2026-01-01T00:00:00Z",
-                "2026-01-01T00:01:00Z",
-                "2026-01-01T00:02:00Z",
-                "2026-01-01T00:03:00Z",
-                "2026-01-01T00:04:00Z",
-                "2026-01-01T00:05:00Z",
-                "2026-01-01T00:06:00Z",
-                "2026-01-01T00:07:00Z",
-                "2026-01-01T00:08:00Z",
-                "2026-01-01T00:09:00Z",
-                "2026-01-01T00:12:00Z",
+                "2026-01-01T01:00:00Z",
+                "2026-01-01T01:01:00Z",
+                "2026-01-01T01:02:00Z",
+                "2026-01-01T01:03:00Z",
+                "2026-01-01T01:04:00Z",
+                "2026-01-01T01:05:00Z",
+                "2026-01-01T01:06:00Z",
+                "2026-01-01T01:07:00Z",
+                "2026-01-01T01:08:00Z",
+                "2026-01-01T01:09:00Z",
+                "2026-01-01T01:12:00Z",
+                "2026-01-01T01:13:00Z",
             ],
             utc=True,
         )
         return pd.DataFrame(
             {
-                "open": [100.0] * 10 + [101.0],
-                "high": [100.0] * 10 + [103.0],
-                "low": [100.0] * 10 + [100.0],
-                "close": [100.0] * 10 + [102.0],
+                "open": [100.0] * 10 + [101.0, 104.0],
+                "high": [100.0] * 10 + [103.0, 105.0],
+                "low": [100.0] * 10 + [100.0, 103.0],
+                "close": [100.0] * 10 + [102.0, 104.0],
             },
             index=idx,
         )
@@ -870,13 +873,87 @@ def test_delayed_entry_uses_nearby_1m_fallback(monkeypatch, tmp_path):
     assert out_rows.loc[0, "entry_delay_fallback_minutes"] == 2.0
     assert out_rows.loc[0, "entry_delay_actual_minutes"] == 12.0
     assert out_rows.loc[0, "delayed_entry_effective_ts"] == pd.Timestamp(
-        "2026-01-01T00:12:00Z"
+        "2026-01-01T01:12:00Z"
     )
-    assert out_paths[0][0, 0] == pytest.approx(102.0)
+    # The path is rebuilt from the delayed observable reference. The adverse
+    # intraminute proxy remains separate and is applied exactly once by the
+    # executable-entry helper.
+    assert out_paths[0][0, 0] == pytest.approx(101.0)
+    assert out_paths[0][0, 1] == pytest.approx(104.0)
     assert out_rows.loc[0, "entry_gap_bps"] == pytest.approx(200.0)
     assert out_rows.loc[0, "entry_slippage_proxy_bps"] == pytest.approx(
         (102.0 / 101.0 - 1.0) * 10000.0
     )
+    executable, half_spread, slippage, reanchor = spo._policy_executable_entry_prices(
+        out_rows,
+        out_paths[0][:, 0],
+        out_rows["side"].to_numpy(dtype=np.float32),
+        market_mode="perps",
+    )
+    assert executable[0] == pytest.approx(
+        101.0 * (1.0 + float(reanchor[0]) / 10000.0), rel=1e-6
+    )
+    assert reanchor[0] == pytest.approx(half_spread[0] + slippage[0])
+
+
+def test_delayed_entry_rebuilds_partial_15m_bar_without_pre_entry_extremes(
+    monkeypatch, tmp_path
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "POLICY_DELAYED_ENTRY_MINUTES", 10)
+    monkeypatch.setattr(spo, "POLICY_DELAYED_ENTRY_FALLBACK_MINUTES", 0)
+    monkeypatch.setattr(spo, "POLICY_DELAYED_ENTRY_ALPHA", 0.5)
+    monkeypatch.setattr(spo, "POLICY_DELAYED_ENTRY_MIN_RANK", 0.5)
+
+    def fake_load_klines(symbol, store, *, needed_ts, market_mode):
+        idx = pd.date_range("2026-01-01T01:00:00Z", periods=31, freq="1min")
+        frame = pd.DataFrame(
+            {
+                "open": np.full(len(idx), 100.0),
+                "high": np.full(len(idx), 102.0),
+                "low": np.full(len(idx), 99.0),
+                "close": np.full(len(idx), 101.0),
+            },
+            index=idx,
+        )
+        # These extremes occur before the delayed 01:10 entry and must not be
+        # present in the rebuilt first 15-minute path bar.
+        frame.loc[pd.Timestamp("2026-01-01T01:05:00Z"), "high"] = 120.0
+        frame.loc[pd.Timestamp("2026-01-01T01:05:00Z"), "low"] = 80.0
+        return frame
+
+    monkeypatch.setattr(spo, "_load_policy_1m_klines_cached", fake_load_klines)
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"]),
+            "symbol": ["BTC/USD:USD"],
+            "rank_pct": [0.9],
+            "side": [1.0],
+        }
+    )
+    paths = (
+        np.array([[100.0, 101.0]], dtype=np.float32),
+        np.array([[120.0, 105.0]], dtype=np.float32),
+        np.array([[80.0, 98.0]], dtype=np.float32),
+        np.array([[101.0, 102.0]], dtype=np.float32),
+    )
+
+    out_rows, out_paths = _apply_delayed_entry_execution_model(
+        rows,
+        paths,
+        data_root=str(tmp_path),
+        market_mode="perps",
+        path_timeframe="15m",
+    )
+
+    assert out_rows.loc[0, "first_path_timestamp"] == pd.Timestamp(
+        "2026-01-01T01:10:00Z"
+    )
+    assert out_paths[1][0, 0] == pytest.approx(102.0)
+    assert out_paths[2][0, 0] == pytest.approx(99.0)
+    assert out_paths[1][0, 1] == pytest.approx(105.0)
+    assert out_paths[2][0, 1] == pytest.approx(98.0)
 
 
 def test_1m_execution_loader_refetches_sparse_cached_range(monkeypatch, tmp_path):
@@ -969,6 +1046,37 @@ def test_1m_execution_loader_refetches_sparse_cached_range(monkeypatch, tmp_path
     ]
     assert pd.Timestamp("2026-01-01T00:10:00Z") in out.index
     assert out.loc[pd.Timestamp("2026-01-01T00:10:00Z"), "open"] == pytest.approx(110.0)
+
+
+def test_1m_execution_loader_is_read_only_by_default(monkeypatch, tmp_path):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    class DummyStore:
+        root_dir = str(tmp_path)
+
+        def load(self, symbol, columns=None, start_ts=None, end_ts=None):
+            return pd.DataFrame()
+
+    monkeypatch.delenv("EPM_SIMPLE_POLICY_1M_DOWNLOAD", raising=False)
+    monkeypatch.setattr(
+        spo,
+        "_policy_execution_exchange",
+        lambda market_mode: (_ for _ in ()).throw(
+            AssertionError("default replay must not create an exchange")
+        ),
+    )
+    spo._POLICY_1M_KLINES_CACHE.clear()
+
+    out = _load_policy_1m_klines_cached(
+        "BTC/USD:USD",
+        DummyStore(),
+        needed_ts=pd.date_range(
+            "2026-01-01T00:00:00Z", periods=2, freq="1min", tz="UTC"
+        ),
+        market_mode="perps",
+    )
+
+    assert out.empty
 
 
 def test_strict_delayed_entry_guard_rejects_theoretical_fallback(monkeypatch):
@@ -1528,3 +1636,153 @@ def test_simulate_and_score_selected_mask_stays_in_input_coordinates():
     assert metrics["valid_entry_count"] == 2
     assert len(metrics["raw_gains"]) == int(selected_mask.sum())
     assert np.isfinite(metrics["raw_gains"]).all()
+
+
+def test_simulate_and_score_timeout_marks_to_last_executable_close():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"]),
+            "symbol": ["BTC/USD:USD"],
+            "rank_pct": [0.9],
+            "side": [1.0],
+            "barrier_pct": [0.02],
+            "expected_spread_bps": [0.0],
+        }
+    )
+    opens = np.array([[100.0, 101.0, 104.0]], dtype=np.float32)
+    highs = np.array([[100.1, 101.1, 105.1]], dtype=np.float32)
+    lows = np.array([[99.9, 100.9, 103.9]], dtype=np.float32)
+    closes = np.array([[100.0, np.nan, 105.0]], dtype=np.float32)
+
+    metrics = simulate_and_score(
+        rows,
+        opens,
+        highs,
+        lows,
+        closes,
+        cost_pct=0.0,
+        sl_mult=10.0,
+        trailing_activation_mult=10.0,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+    )
+
+    assert list(metrics["exit_reason"]) == ["timeout"]
+    assert metrics["gross_gains"][0] > 0.0
+    assert metrics["raw_gains"][0] > 0.0
+    assert metrics["exit_bars"][0] == 2
+
+
+def test_capital_protection_floor_uses_asset_spread_multiple():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"]),
+            "symbol": ["BTC/USD:USD"],
+            "rank_pct": [0.9],
+            "side": [1.0],
+            "barrier_pct": [0.02],
+            "expected_spread_bps": [100.0],
+        }
+    )
+    opens = np.array([[100.0, 100.5, 102.0, 102.0]], dtype=np.float32)
+    highs = np.array([[100.1, 103.0, 102.5, 102.2]], dtype=np.float32)
+    lows = np.array([[99.9, 100.4, 100.0, 100.0]], dtype=np.float32)
+    closes = np.array([[100.0, 102.5, 102.0, 102.0]], dtype=np.float32)
+
+    common = dict(
+        cost_pct=0.0,
+        sl_mult=3.0,
+        trailing_activation_mult=10.0,
+        capital_protect_mfe_mult=0.5,
+        capital_protect_lock_frac=0.0,
+        capital_protect_min_lock_bps=0.0,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+    )
+    without_spread_floor = simulate_and_score(
+        rows,
+        opens,
+        highs,
+        lows,
+        closes,
+        capital_protect_spread_lock_mult=0.0,
+        **common,
+    )
+    metrics = simulate_and_score(
+        rows,
+        opens,
+        highs,
+        lows,
+        closes,
+        capital_protect_spread_lock_mult=1.5,
+        **common,
+    )
+
+    assert list(metrics["exit_reason"]) == ["capital_protect"]
+    assert list(without_spread_floor["exit_reason"]) == ["capital_protect"]
+    assert metrics["gross_gains"][0] > without_spread_floor["gross_gains"][0]
+
+
+def test_capital_protection_waits_until_spread_lock_is_earned():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"]),
+            "symbol": ["BTC/USD:USD"],
+            "rank_pct": [0.9],
+            "side": [1.0],
+            "barrier_pct": [0.02],
+            "expected_spread_bps": [100.0],
+        }
+    )
+    opens = np.array([[100.0, 100.5, 100.8, 100.8]], dtype=np.float32)
+    highs = np.array([[100.1, 101.0, 100.9, 100.9]], dtype=np.float32)
+    lows = np.array([[99.9, 100.4, 100.6, 100.6]], dtype=np.float32)
+    closes = np.array([[100.0, 100.8, 100.8, 100.8]], dtype=np.float32)
+
+    metrics = simulate_and_score(
+        rows,
+        opens,
+        highs,
+        lows,
+        closes,
+        cost_pct=0.0,
+        sl_mult=3.0,
+        trailing_activation_mult=10.0,
+        capital_protect_mfe_mult=0.1,
+        capital_protect_lock_frac=0.0,
+        capital_protect_min_lock_bps=0.0,
+        capital_protect_spread_lock_mult=1.5,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+    )
+
+    assert list(metrics["exit_reason"]) == ["timeout"]
+def test_fetch_policy_paths_does_not_pad_unobserved_future_bars():
+    class PartialStore:
+        timeframe = "15m"
+
+        def load(self, symbol, columns=None, start_ts=None, end_ts=None):
+            index = pd.date_range("2026-07-13 00:00", periods=2, freq="15min", tz="UTC")
+            frame = pd.DataFrame(
+                {
+                    "open": [100.0, 101.0],
+                    "high": [101.0, 102.0],
+                    "low": [99.0, 100.0],
+                    "close": [100.5, 101.5],
+                    "ts": index,
+                },
+                index=index,
+            )
+            return frame
+
+    rows = pd.DataFrame(
+        {
+            "timestamp": [pd.Timestamp("2026-07-12 23:00", tz="UTC")],
+            "symbol": ["BTC/USD:USD"],
+        }
+    )
+    paths = _fetch_policy_paths(rows, PartialStore(), path_len=4)
+
+    np.testing.assert_allclose(paths[0][0, :2], [100.0, 101.0])
+    assert np.isnan(paths[0][0, 2:]).all()
+    assert not _policy_path_finite_mask(paths)[0]

@@ -13,6 +13,13 @@ before the timestamp; targets and replay paths start after the decision point.
 Higher-frequency and auxiliary data must be joined with causal backward/as-of
 logic. Publication delay, stale limits, and timezone must be explicit.
 
+UTC is canonical for persisted datasets, joins, model features, labels, replay,
+inference, manifests, and artifact IDs. Every internal timestamp must be
+timezone-aware UTC; naive legacy values are interpreted as UTC on ingest, never
+as machine-local time. `Europe/Paris`/CEST may be used only after UTC
+normalization for display, email, or UI text, and must not feed a stored value,
+join key, split, rolling window, or calendar feature.
+
 ## 2. Side Semantics
 
 - Use canonical `long` and `short` names plus an explicit numeric side sign.
@@ -32,10 +39,13 @@ logic. Publication delay, stale limits, and timezone must be explicit.
 
 ## 4. AE/GMM And Archetype State
 
-Fit scalers, AE, GMM, cluster semantics, and train-derived priors on authorized
-training rows only. Assign validation/OOS rows with frozen state. Keep cluster
+Fit scaler/AE/GMM exactly once per model cycle on sampled beginning/middle/end
+rows from the designated feature-selection/HPO reference period. Reuse the
+exact serialized state for base/meta growing windows, final refits, replay, and
+inference. The fit may use later covariates but never outcomes; disclose that
+representation-selection exception in manifests and OOS claims. Keep cluster
 IDs, posteriors, entropy, distance, reconstruction error, speed, and acceleration
-aligned to the same frozen cluster ordering.
+aligned to the same frozen cluster ordering and input-feature order.
 
 Both base and meta datasets are archetype-aware. Base rows must preserve their
 observable label/state archetype and frozen AE/GMM context. Meta rows must carry

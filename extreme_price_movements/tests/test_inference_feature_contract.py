@@ -17,8 +17,28 @@ from extreme_price_movements.inference.model_orchestrator import (
 )
 from extreme_price_movements.inference.run_inference import (
     _sparse_selected_feature_source_attribution,
+    _truncate_panel_through,
 )
 from extreme_price_movements.lgbm_pipeline import LGBMStabilityModel, score_for_trading
+
+
+def test_historical_panel_truncation_removes_future_rows():
+    index = pd.date_range("2026-07-15 13:00", periods=5, freq="h", tz="UTC")
+    panel = {
+        "close": pd.DataFrame({"AAA/USD:USD": range(5)}, index=index),
+        "empty": pd.DataFrame(),
+    }
+
+    truncated = _truncate_panel_through(
+        panel,
+        pd.Timestamp("2026-07-15 15:00", tz="UTC"),
+    )
+
+    assert list(truncated) == ["close"]
+    assert truncated["close"].index.max() == pd.Timestamp(
+        "2026-07-15 15:00", tz="UTC"
+    )
+    assert len(truncated["close"]) == 3
 
 
 def test_lgbm_inference_contract_refuses_missing_features():
@@ -142,7 +162,7 @@ def test_alpha_contract_strict_mode_rejects_nonfinite_adapter_input():
     assert aligned.empty
 
 
-def test_alpha_contract_legacy_neutral_fill_adapter_is_explicit():
+def test_alpha_contract_strict_mode_ignores_legacy_neutral_fill_switch():
     X = pd.DataFrame(
         {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
         index=["AAA/USDC", "BBB/USDC"],
@@ -160,14 +180,10 @@ def test_alpha_contract_legacy_neutral_fill_adapter_is_explicit():
         ["ret24h", "range_24h_pct"],
     )
 
-    assert list(aligned.index) == ["AAA/USDC", "BBB/USDC"]
-    assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
-    assert np.isfinite(aligned.to_numpy(dtype=np.float32)).all()
-    assert aligned.loc["AAA/USDC", "range_24h_pct"] == 0.0
-    assert aligned.loc["BBB/USDC", "ret24h"] == 0.0
+    assert aligned.empty
 
 
-def test_alpha_contract_native_lgbm_missing_preserves_nan_inputs():
+def test_alpha_contract_strict_mode_ignores_native_lgbm_missing_switch():
     X = pd.DataFrame(
         {"ret24h": [0.1, np.nan], "range_24h_pct": [0.02, 0.03]},
         index=["AAA/USDC", "BBB/USDC"],
@@ -185,13 +201,12 @@ def test_alpha_contract_native_lgbm_missing_preserves_nan_inputs():
         ["ret24h", "range_24h_pct"],
     )
 
-    assert list(aligned.index) == ["AAA/USDC", "BBB/USDC"]
+    assert list(aligned.index) == ["AAA/USDC"]
     assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
-    assert np.isnan(aligned.loc["BBB/USDC", "ret24h"])
     assert aligned.loc["AAA/USDC", "range_24h_pct"] == pytest.approx(0.02)
 
 
-def test_alpha_contract_native_lgbm_missing_still_blocks_infinite_rows():
+def test_alpha_contract_strict_mode_blocks_all_nonfinite_rows():
     X = pd.DataFrame(
         {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
         index=["AAA/USDC", "BBB/USDC"],
@@ -209,9 +224,7 @@ def test_alpha_contract_native_lgbm_missing_still_blocks_infinite_rows():
         ["ret24h", "range_24h_pct"],
     )
 
-    assert list(aligned.index) == ["BBB/USDC"]
-    assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
-    assert np.isnan(aligned.loc["BBB/USDC", "ret24h"])
+    assert aligned.empty
 
 
 def test_meta_optional_generated_features_are_neutral_before_strict_validation():
@@ -329,6 +342,7 @@ def test_live_training_path_sync_skips_deterministic_live_synthesized_keys():
             "ret1h_G_VOL_0",
             "ret1h_G_VOL_1",
             "barrier_pct",
+            "gmm_ood_score",
             "ret12h",
             "lr_12h",
             "oi_3d_chg_z",
@@ -339,6 +353,7 @@ def test_live_training_path_sync_skips_deterministic_live_synthesized_keys():
     assert sync_keys == ["lr_12h", "oi_3d_chg_z", "ret12h"]
     assert skipped == [
         "barrier_pct",
+        "gmm_ood_score",
         "ret1h_G_VOL_0",
         "ret1h_G_VOL_1",
     ]

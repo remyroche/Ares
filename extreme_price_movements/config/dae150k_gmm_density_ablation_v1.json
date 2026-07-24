@@ -1,0 +1,140 @@
+{
+  "schema": "alternative_representation_search_v1",
+  "compute_profile": "dae150k_gmm_density_ablation_v1",
+  "seed": 20260720,
+  "sampling": {
+    "reference_rows": 300000,
+    "encoder_comparison_rows": 150000,
+    "ssl_proxy_rows": 50000,
+    "policy": "canonical_utc_symbol_side_beginning_middle_end",
+    "require_exact_encoder_row_identity": true
+  },
+  "baseline_learning_curve": [
+    {"id": "dae150k_reference", "dae_rows": 150000, "gmm_rows": 250000}
+  ],
+  "frozen_incumbent_controls": [],
+  "baseline_saturation": {
+    "min_relative_reconstruction_gain": 0.02,
+    "min_latent_cka_gain": 0.01,
+    "min_gmm_stability_gain": 0.01,
+    "scaled_control_proxy_only_by_default": true
+  },
+  "common_gmm_panel": {
+    "components": [4, 8],
+    "covariance_types": ["diag"],
+    "reg_covar": [0.003],
+    "n_init": 1,
+    "rows": 50000,
+    "retry_reg_covar": [0.01, 0.03, 0.1]
+  },
+  "vade": {
+    "latent_dim": [], "components": [], "kl_weight": [],
+    "kl_warmup_fraction": [], "initialization": [],
+    "min_effective_occupancy": [], "reconstruction_objective": []
+  },
+  "idec": {
+    "proxy": {
+      "latent_dim": [], "n_clusters": [], "pretraining_fraction": [],
+      "target_update_frequency": [], "initialization": [], "student_t_df": []
+    },
+    "final": {
+      "latent_dim": [], "target_update_frequency": [], "initialization": [],
+      "student_t_df": [], "output_mode": []
+    }
+  },
+  "ssl": {
+    "objectives": [], "policies": {}, "view_pairs": [],
+    "side_corruption": false, "donor_condition_on_side": true,
+    "within_regime_donor_contract": "pre_entry_external_frozen_only"
+  },
+  "gmm_search": {
+    "stage1": {
+      "components": [6, 8, 10, 12],
+      "covariance_types": ["diag"],
+      "reg_covar": [0.001, 0.003, 0.01],
+      "latent_preprocessing": ["whitened"],
+      "rows": 250000,
+      "n_init": 3
+    },
+    "stage2": {
+      "components": [6],
+      "covariance_types": ["diag", "tied"],
+      "reg_covar": [0.001],
+      "latent_preprocessing": ["whitened"],
+      "rows": 250000,
+      "n_init": 3,
+      "promoted_candidates_min": 1,
+      "promoted_candidates_max": 1
+    },
+    "overlap_refinement": {
+      "metrics": ["bhattacharyya"],
+      "lambdas": [0.0, 1e-7, 1e-6],
+      "variance_floor": 1e-5,
+      "fit_rows": 20000,
+      "steps": 50,
+      "candidates_per_family": 1,
+      "seed_rechecks": 2,
+      "max_heldout_nll_degradation": 0.01,
+      "require_no_seed_stability_degradation": true,
+      "require_no_ood_ranking_degradation": true
+    }
+  },
+  "iic": {
+    "clusters": [], "overclusters": [], "view_pairs": [], "mi_weight": [],
+    "marginal_balance_weight": [], "bottleneck_dim": [],
+    "reconstruction_aux_weight": [], "epochs": 1, "batch_size": 512,
+    "encoder_policy": "deferred"
+  },
+  "proxy": {
+    "outcome_free": true,
+    "promote_per_family": 1,
+    "seed_repeats": 1,
+    "nearby_reference_resamples": 1,
+    "perturbation_repeats": 1,
+    "ood_tiers": ["mild_synthetic", "structural_synthetic", "natural_temporal"],
+    "entropy_low_threshold": 0.05,
+    "entropy_high_threshold": 0.95,
+    "posterior_boundary_margin": 0.10
+  },
+  "downstream": {
+    "base": {
+      "train_days": 365,
+      "oos_months": 5,
+      "feature_selection": "canonical_global_mda_once",
+      "mda_fit_rows": 30000,
+      "mda_eval_rows": 10000,
+      "parameter_selection": "frozen_production_params_no_hpo",
+      "target": "target_soft",
+      "weight_arm": "W0_base",
+      "top_fractions": [0.10, 0.20, 0.30]
+    },
+    "meta": {
+      "train_oos_months": 3,
+      "eval_oos_months": 2,
+      "runner": "scripts/run_meta_v9_ev_mapped_side_residual_ablation.py",
+      "pack": "B",
+      "feature_selection": "archetype_univariate_relief_then_independent_side_mda",
+      "parameter_selection": "frozen_long_short_params_no_hpo",
+      "feature_selection_rows": 30000,
+      "params_manifest": "data_perp/reports/meta_v9_recovery_20260717/residual_state_mda95_hier_newaegmm_hpo150_v1/staged_selection_hpo_manifest.json"
+    },
+  "base_density_per_family": 12,
+  "report_top_per_family": 12,
+    "deferred_until_after_economic_screening": []
+  },
+  "cache": {
+    "dtype": "float32",
+    "mixture_numeric_dtype": "float64",
+    "format": "npy_memmap",
+    "cache_augmented_indices": true,
+    "cache_donor_maps": true,
+    "cache_latents": true,
+    "cache_posteriors": true
+  },
+  "side_local_gmm": {
+    "enabled": false,
+    "components": [3, 4, 5, 6],
+    "minimum_effective_occupancy": 0.02,
+    "note": "Reserved for a separate global-plus-side-local ablation; never mix these counts with the global GMM search."
+  }
+}

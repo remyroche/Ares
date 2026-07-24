@@ -64,8 +64,12 @@ DEFAULT_ARMS = (
     "meta_feature_only_regimes",
     "base_error_signature_regimes",
     "joint_feature_error_regimes",
+    "hit_surprise_failure_shock_regimes",
+    "mlp_failure_shock_regimes",
+    "residual_event_aegmm_precomputed",
+    "residual_event_aegmm_local",
+    "residual_event_aegmm_local_market",
     "side_archetype_local_regimes",
-    "temporal_reliability_regimes",
     "supervised_embedding_regimes",
 )
 
@@ -113,6 +117,40 @@ def _model_params(manifest: dict[str, Any]) -> dict[str, Any]:
     if not classifier:
         raise ValueError("Reference manifest does not contain classifier_params.")
     return {"classifier": classifier, "regressor": regressor}
+
+
+def _bundle_reference(path: Path) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
+    """Load a frozen lifecycle reference without a second model search."""
+
+    import joblib
+
+    bundle = joblib.load(path)
+    features = [str(name) for name in getattr(bundle, "selected_features", [])]
+    model = getattr(bundle, "lifecycle_model", None)
+    if not features or model is None or not hasattr(model, "get_params"):
+        raise ValueError(f"Incomplete lifecycle reference bundle: {path}")
+    params = dict(model.get_params())
+    return (
+        list(dict.fromkeys(features)),
+        {"classifier": dict(params), "regressor": dict(params)},
+        {
+            "source": "lifecycle_bundle",
+            "path": str(path),
+            "model_class": type(model).__name__,
+            "selected_feature_count": len(features),
+        },
+    )
+
+
+def _resolve_soft_label_paths(values: list[Path]) -> list[Path]:
+    paths: list[Path] = []
+    for value in values:
+        path = Path(value)
+        if path.is_dir():
+            paths.extend(sorted(path.glob("train_global_*_5_*.parquet")))
+        elif path.exists():
+            paths.append(path)
+    return list(dict.fromkeys(paths))
 
 
 def _arm_features(
@@ -163,6 +201,7 @@ def _minimal_fixed_handoff_columns(
         schema = list(pd.read_parquet(handoff_path).columns)
     schema_set = set(schema)
     required = {
+        "row_id",
         "__ts__",
         "__symbol__",
         "side_name",
@@ -302,9 +341,31 @@ def _make_fold_builder(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--handoff-dir", type=Path, default=DEFAULT_HANDOFF_DIR)
+    parser.add_argument(
+        "--handoff-path",
+        type=Path,
+        default=None,
+        help="Optional direct handoff parquet; avoids materializing a duplicate handoff directory.",
+    )
     parser.add_argument("--ledger-path", type=Path, default=None)
     parser.add_argument(
         "--reference-manifest", type=Path, default=DEFAULT_REFERENCE_MANIFEST
+    )
+    parser.add_argument(
+        "--reference-bundle",
+        type=Path,
+        default=None,
+        help="Frozen lifecycle bundle whose feature list and LightGBM params are reused.",
+    )
+    parser.add_argument(
+        "--soft-label-path",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "Materialized base-label parquet or directory. The canonical soft target "
+            "is joined only for the meta training loss."
+        ),
     )
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT)
     parser.add_argument(
@@ -319,11 +380,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--phase-asof-max-minutes", type=int, default=60)
     parser.add_argument("--frontier", default="top30")
     parser.add_argument("--seed", type=int, default=20260707)
+    parser.add_argument(
+        "--colsample-bytree-override",
+        type=float,
+        default=None,
+        help=(
+            "Optional common LightGBM feature-subsampling fraction for every arm. "
+            "Use 1.0 for a feature-addition ablation when added columns would "
+            "otherwise change the reference model's column-subsampling draw."
+        ),
+    )
+    parser.add_argument(
+        "--subsample-override",
+        type=float,
+        default=None,
+        help=(
+            "Optional common LightGBM row-subsampling fraction for every arm. "
+            "Use 1.0 with --colsample-bytree-override 1.0 for a deterministic "
+            "feature-addition control."
+        ),
+    )
     parser.add_argument("--eval-months", default=",".join(DEFAULT_EVAL_MONTHS))
     parser.add_argument("--arms", default=",".join(DEFAULT_ARMS))
     parser.add_argument("--list-arms", action="store_true")
     parser.add_argument("--minimal-artifacts", action="store_true")
     parser.add_argument("--rerun-complete", action="store_true")
+    parser.add_argument(
+        "--model-train-max-rows",
+        type=int,
+        default=0,
+        help=(
+            "Optional time-spread cap for training rows passed to the meta smoke "
+            "runner. Use 0 for full folds; nonzero is intended for bounded code "
+            "smokes only."
+        ),
+    )
+    parser.add_argument(
+        "--regime-builder-handoff-columns",
+        choices=("all", "selected"),
+        default="all",
+        help=(
+            "Input column policy for exploratory regime-builder arms. 'all' keeps "
+            "the broad pre-selection universe for serious ablations; 'selected' "
+            "loads only columns needed by the fixed selected feature contract and "
+            "is intended for fast code-path smokes."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -333,9 +435,32 @@ def main() -> None:
         print(json.dumps({"available_arms": list(DEFAULT_ARMS)}, indent=2))
         return
 
-    reference = _load_manifest(args.reference_manifest)
-    base_features = _selected_features(reference)
-    params = _model_params(reference)
+    if args.reference_bundle is not None:
+        base_features, params, reference = _bundle_reference(args.reference_bundle)
+    else:
+        reference = _load_manifest(args.reference_manifest)
+        base_features = _selected_features(reference)
+        params = _model_params(reference)
+    if args.colsample_bytree_override is not None:
+        colsample = float(args.colsample_bytree_override)
+        if not 0.0 < colsample <= 1.0:
+            raise ValueError("--colsample-bytree-override must be in (0, 1].")
+        # A common override prevents feature-count-dependent random subsampling
+        # from masquerading as value from a newly appended regime feature block.
+        for model_kind in ("classifier", "regressor"):
+            params.setdefault(model_kind, {})["colsample_bytree"] = colsample
+    if args.subsample_override is not None:
+        subsample = float(args.subsample_override)
+        if not 0.0 < subsample <= 1.0:
+            raise ValueError("--subsample-override must be in (0, 1].")
+        for model_kind in ("classifier", "regressor"):
+            params.setdefault(model_kind, {})["subsample"] = subsample
+    handoff_path = (
+        Path(args.handoff_path)
+        if args.handoff_path is not None
+        else Path(args.handoff_dir) / "train_meta_regime_handoff.parquet"
+    )
+    soft_label_paths = _resolve_soft_label_paths(list(args.soft_label_path))
     arms = [part.strip() for part in str(args.arms).split(",") if part.strip()]
     unknown = sorted(set(arms) - set(DEFAULT_ARMS))
     if unknown:
@@ -358,17 +483,35 @@ def main() -> None:
     identity_context = None
     if identity_arms.intersection(arms):
         identity_context = SideArchetypeIdentityContext.from_parquet(
-            Path(args.handoff_dir) / "train_meta_regime_handoff.parquet"
+            handoff_path
         )
 
     matrix_manifest: dict[str, Any] = {
         "generated_by": "run_train_meta_regime_ablation_matrix",
         "handoff_dir": str(args.handoff_dir),
+        "handoff_path": str(handoff_path),
         "ledger_path": str(args.ledger_path) if args.ledger_path else None,
-        "reference_manifest": str(args.reference_manifest),
+        "soft_label_paths": [str(path) for path in soft_label_paths],
+        "reference_manifest": (
+            str(args.reference_bundle)
+            if args.reference_bundle is not None
+            else str(args.reference_manifest)
+        ),
         "out_root": str(args.out_root),
         "frontier": str(args.frontier),
+        "colsample_bytree_override": (
+            float(args.colsample_bytree_override)
+            if args.colsample_bytree_override is not None
+            else None
+        ),
+        "subsample_override": (
+            float(args.subsample_override)
+            if args.subsample_override is not None
+            else None
+        ),
         "eval_months": eval_months,
+        "model_train_max_rows": int(args.model_train_max_rows),
+        "regime_builder_handoff_columns": str(args.regime_builder_handoff_columns),
         "base_feature_count": len(base_features),
         "arms": [],
         "leakage_contract": {
@@ -410,18 +553,18 @@ def main() -> None:
             )
         # The two fixed-contract controls do not need every config-full input.
         # More exploratory regime builders retain the full pre-selection space.
+        use_minimal_handoff_columns = arm in {
+            "baseline_current_full_context",
+            "baseline_no_cross_context",
+            "causal_phase_state_context",
+            "side_archetype_identity_context",
+            "causal_phase_side_archetype_context",
+        } or str(args.regime_builder_handoff_columns).lower() == "selected"
         handoff_columns = (
             _minimal_fixed_handoff_columns(
-                Path(args.handoff_dir) / "train_meta_regime_handoff.parquet", features
+                handoff_path, features
             )
-            if arm
-            in {
-                "baseline_current_full_context",
-                "baseline_no_cross_context",
-                "causal_phase_state_context",
-                "side_archetype_identity_context",
-                "causal_phase_side_archetype_context",
-            }
+            if use_minimal_handoff_columns
             else None
         )
         if not args.rerun_complete and _arm_complete(arm_out, eval_months):
@@ -474,6 +617,9 @@ def main() -> None:
         manifest = run_smoke(
             handoff_dir=args.handoff_dir,
             ledger_path=args.ledger_path,
+            handoff_path=handoff_path,
+            soft_label_paths=soft_label_paths,
+            ood_reference_features=base_features,
             out_dir=arm_out,
             frontier=str(args.frontier),
             seed=int(args.seed),
@@ -490,7 +636,7 @@ def main() -> None:
             feature_selection_method="lgbm_pipeline",
             max_oos_model_age_days=0,
             validation_scope="chronological",
-            model_train_max_rows=0,
+            model_train_max_rows=int(args.model_train_max_rows),
             model_params=params,
             model_profile_name=f"{arm}_fixed_reference_hpo",
             meta_head_mode="single_base_soft_label",

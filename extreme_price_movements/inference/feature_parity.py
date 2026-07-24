@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 
-from extreme_price_movements.feature_transform_contract import FeatureTransformContract
+from extreme_price_movements.feature_transform_contract import (
+    FeatureSourceContract,
+    FeatureTransformContract,
+    compare_model_matrices_exact,
+    file_sha256,
+    ordered_names_hash,
+)
+from extreme_price_movements.timestamp_contract import to_utc_timestamp
 from extreme_price_movements.utils import tprint
 
 
@@ -64,6 +72,158 @@ class FeatureParityReport:
             "accepted_symbols": list(self.accepted_symbols),
             "rejected_symbols": list(self.rejected_symbols),
         }
+
+
+def validate_feature_source_contract(
+    contract: FeatureSourceContract | Mapping[str, Any],
+    *,
+    run_id: str,
+    model_feature_names: Sequence[str],
+    symbols: Sequence[str],
+    end_ts: Any,
+    source_root: str | Path | None = None,
+    symbol_file_map: Mapping[str, str] | None = None,
+    verify_file_hashes: bool = True,
+    expected_open_interest_unit: str = "quote_notional",
+    expected_semantics: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate immutable feature provenance before constructing model inputs."""
+    source = (
+        contract
+        if isinstance(contract, FeatureSourceContract)
+        else FeatureSourceContract.from_dict(contract)
+    )
+    report: dict[str, Any] = {
+        "ok": True,
+        "run_id": str(run_id),
+        "contract_hash": source.contract_hash,
+        "global_errors": [],
+        "missing_symbols": [],
+        "unexpected_symbols": [],
+        "file_hash_mismatches": [],
+        "file_timestamp_incomplete": [],
+        "file_warmup_incomplete": [],
+    }
+    try:
+        source.validate_seal()
+    except Exception as exc:
+        report["global_errors"].append(f"feature_source_contract_unsealed:{exc}")
+    if str(source.run_id) != str(run_id):
+        report["global_errors"].append("feature_source_run_id_mismatch")
+    if ordered_names_hash(model_feature_names) != source.model_feature_names_hash:
+        report["global_errors"].append("model_feature_order_hash_mismatch")
+    raw_requested_symbols = [str(value) for value in symbols]
+    requested_symbols = sorted(set(raw_requested_symbols))
+    source_symbols = set(map(str, source.universe_symbols))
+    if len(raw_requested_symbols) != len(requested_symbols):
+        report["global_errors"].append("feature_source_duplicate_runtime_symbols")
+    report["missing_symbols"] = sorted(
+        set(requested_symbols).difference(source_symbols)
+    )
+    report["unexpected_symbols"] = sorted(source_symbols.difference(requested_symbols))
+    if report["missing_symbols"] or report["unexpected_symbols"]:
+        report["global_errors"].append("feature_source_universe_mismatch")
+    if symbol_file_map is not None:
+        runtime_map = {
+            str(key): str(value) for key, value in sorted(symbol_file_map.items())
+        }
+        if runtime_map != dict(sorted(source.symbol_file_map.items())):
+            report["global_errors"].append("feature_source_symbol_file_map_mismatch")
+    source_end = pd.to_datetime(source.source_end_ts, utc=True, errors="coerce")
+    requested_end = pd.to_datetime(end_ts, utc=True, errors="coerce")
+    if pd.isna(source_end) or pd.isna(requested_end) or source_end < requested_end:
+        report["global_errors"].append("feature_source_timestamp_incomplete")
+    source_start = pd.to_datetime(source.source_start_ts, utc=True, errors="coerce")
+    warmup_start = requested_end - pd.Timedelta(hours=int(source.required_warmup_hours))
+    if pd.isna(source_start) or source_start > warmup_start:
+        report["global_errors"].append("feature_source_warmup_incomplete")
+    oi_unit = str(source.semantics.get("open_interest_unit") or "")
+    if oi_unit != str(expected_open_interest_unit):
+        report["global_errors"].append("feature_source_open_interest_unit_mismatch")
+    for key, expected_value in dict(expected_semantics or {}).items():
+        if source.semantics.get(str(key)) != expected_value:
+            report["global_errors"].append(f"feature_source_semantics_mismatch:{key}")
+    if source_root is not None:
+        runtime_root = Path(source_root).resolve()
+        if runtime_root != Path(source.source_root).resolve():
+            report["global_errors"].append("feature_source_root_mismatch")
+        if verify_file_hashes:
+            for relative_path, record in source.file_records.items():
+                path = runtime_root / relative_path
+                expected_hash = str(record.get("sha256") or "")
+                if not path.is_file():
+                    report["file_hash_mismatches"].append(
+                        {"path": relative_path, "reason": "missing"}
+                    )
+                    continue
+                actual_hash = file_sha256(path)
+                if not expected_hash or actual_hash != expected_hash:
+                    report["file_hash_mismatches"].append(
+                        {
+                            "path": relative_path,
+                            "expected": expected_hash,
+                            "actual": actual_hash,
+                        }
+                    )
+            if report["file_hash_mismatches"]:
+                report["global_errors"].append("feature_source_file_hash_mismatch")
+    for symbol in requested_symbols:
+        relative_path = source.symbol_file_map.get(symbol)
+        record = source.file_records.get(str(relative_path)) if relative_path else None
+        if not isinstance(record, Mapping):
+            report["file_timestamp_incomplete"].append(
+                {"symbol": symbol, "reason": "missing_file_record"}
+            )
+            continue
+        first_ts = pd.to_datetime(record.get("first_ts"), utc=True, errors="coerce")
+        last_ts = pd.to_datetime(record.get("last_ts"), utc=True, errors="coerce")
+        if pd.isna(last_ts) or last_ts < requested_end:
+            report["file_timestamp_incomplete"].append(
+                {
+                    "symbol": symbol,
+                    "path": str(relative_path),
+                    "last_ts": None if pd.isna(last_ts) else last_ts.isoformat(),
+                    "required_end_ts": requested_end.isoformat(),
+                }
+            )
+        if pd.isna(first_ts) or first_ts > warmup_start:
+            report["file_warmup_incomplete"].append(
+                {
+                    "symbol": symbol,
+                    "path": str(relative_path),
+                    "first_ts": None if pd.isna(first_ts) else first_ts.isoformat(),
+                    "required_warmup_start_ts": warmup_start.isoformat(),
+                }
+            )
+    if report["file_timestamp_incomplete"]:
+        report["global_errors"].append("feature_source_file_timestamp_incomplete")
+    if report["file_warmup_incomplete"]:
+        report["global_errors"].append("feature_source_file_warmup_incomplete")
+    report["ok"] = not report["global_errors"]
+    if not report["ok"]:
+        raise FeatureParityError("Immutable feature source parity failed", report)
+    return report
+
+
+def validate_historical_model_matrix_exact(
+    expected: pd.DataFrame,
+    actual: pd.DataFrame,
+    *,
+    row_ids: pd.DataFrame | None = None,
+    model_key: str = "historical_model_matrix",
+    reference_matrix_hash: str | None = None,
+) -> dict[str, Any]:
+    """Fail at the first raw row/feature divergence from a frozen matrix."""
+    report = compare_model_matrices_exact(expected, actual, row_ids=row_ids)
+    report["model_key"] = str(model_key)
+    if reference_matrix_hash is not None:
+        report["reference_matrix_hash"] = str(reference_matrix_hash)
+        if report.get("actual_matrix_hash") != str(reference_matrix_hash):
+            report["ok"] = False
+            report["error"] = "reference_matrix_hash_mismatch"
+    if not report.get("ok"):
+        raise FeatureParityError("Historical model matrix parity failed", report)
+    return report
 
 
 def _strict(cfg: dict[str, Any] | None, strict: bool | None = None) -> bool:
@@ -377,19 +537,17 @@ def _feature_source_requirements(feature_key: str) -> set[str]:
         or "fund_" in lower
     ):
         req.add("funding")
-    if (
-        lower.startswith(("oi_", "open_interest"))
-        or lower in {
-            "leverage_build",
-            "leverage_build_score",
-            "unwind",
-            "unwind_score",
-            "squeeze_prob",
-        }
-    ):
+    if lower.startswith(("oi_", "open_interest")) or lower in {
+        "leverage_build",
+        "leverage_build_score",
+        "unwind",
+        "unwind_score",
+        "squeeze_prob",
+    }:
         req.add("open_interest")
     if (
-        lower in {
+        lower
+        in {
             "dist_vwap_norm",
             "dist_vwap_12_atr",
             "dist_vwap_24_atr",
@@ -413,7 +571,16 @@ def _feature_source_requirements(feature_key: str) -> set[str]:
         or lower.startswith("oi_rel_vol_")
     ):
         req.add("perp_volume")
-    if lower.startswith(("ob_", "obw_", "orderbook_", "book_")):
+    # Model-facing ``ob_*`` columns are causal OHLCV/kline proxy features.
+    # Wall primitives are the only feature family requiring actual live L2.
+    if lower.startswith(("obw_", "_obw_", "orderbook_", "book_")) or lower.startswith(
+        (
+            "ob_bid_wall_",
+            "ob_ask_wall_",
+            "ob_nearest_bid_wall_",
+            "ob_nearest_ask_wall_",
+        )
+    ):
         req.add("orderbook")
 
     return req
@@ -560,9 +727,9 @@ def _source_rejection_summary(report: dict[str, Any]) -> dict[str, Any]:
     def _top(counter: dict[str, int], limit: int = 20) -> list[dict[str, Any]]:
         return [
             {"key": key, "count": int(count)}
-            for key, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))[
-                :limit
-            ]
+            for key, count in sorted(
+                counter.items(), key=lambda item: (-item[1], item[0])
+            )[:limit]
         ]
 
     return {
@@ -593,7 +760,7 @@ def validate_required_source_panels(
     report = FeatureParityReport(
         mode="strict" if strict_b else "permissive",
         scope=_scope(cfg, scope),
-        end_ts=pd.Timestamp(end_ts).isoformat(),
+        end_ts=to_utc_timestamp(end_ts).isoformat(),
         accepted_symbols=list(symbols),
     )
     report_dict = report.asdict()
@@ -603,16 +770,13 @@ def validate_required_source_panels(
     if not source_groups:
         return apply_feature_parity_scope(report_dict, symbols, report.scope, strict_b)
 
-    end_ts = pd.Timestamp(end_ts)
-    if end_ts.tzinfo is None:
-        end_ts = end_ts.tz_localize("UTC")
-    else:
-        end_ts = end_ts.tz_convert("UTC")
+    end_ts = to_utc_timestamp(end_ts)
 
     if not isinstance(panel, dict):
         report.global_errors.append("missing_source_panel")
         return apply_feature_parity_scope(
-            report.asdict() | {"required_source_groups": report_dict["required_source_groups"]},
+            report.asdict()
+            | {"required_source_groups": report_dict["required_source_groups"]},
             symbols,
             report.scope,
             strict_b,
@@ -667,7 +831,7 @@ def validate_raw_history_sufficiency(
         scope=_scope(cfg, scope),
         run_id=str(getattr(contract, "run_id", "")),
         contract_hash=getattr(contract, "contract_hash", None),
-        end_ts=pd.Timestamp(end_ts).isoformat(),
+        end_ts=to_utc_timestamp(end_ts).isoformat(),
         accepted_symbols=list(symbols),
     )
     close = panel.get("close") if isinstance(panel, dict) else None
@@ -694,11 +858,7 @@ def validate_raw_history_sufficiency(
     required_hours = max(
         [warmup, *[int(lookbacks.get(k, 0) or 0) for k in required], 1]
     )
-    end_ts = pd.Timestamp(end_ts)
-    if end_ts.tzinfo is None:
-        end_ts = end_ts.tz_localize("UTC")
-    else:
-        end_ts = end_ts.tz_convert("UTC")
+    end_ts = to_utc_timestamp(end_ts)
     window_start = end_ts - pd.Timedelta(hours=required_hours)
     for symbol in symbols:
         if symbol not in close.columns:
@@ -752,10 +912,10 @@ def validate_raw_feature_availability(
         scope=_scope(cfg, scope),
         run_id=str(getattr(contract, "run_id", "")),
         contract_hash=getattr(contract, "contract_hash", None),
-        end_ts=pd.Timestamp(end_ts).isoformat(),
+        end_ts=to_utc_timestamp(end_ts).isoformat(),
         accepted_symbols=list(symbols),
     )
-    end_ts = pd.Timestamp(end_ts)
+    end_ts = to_utc_timestamp(end_ts)
     require_current = bool(
         (cfg or {}).get("feature_parity_require_current_timestamp", True)
     )
@@ -805,10 +965,10 @@ def validate_transformed_feature_panels(
         scope=_scope(cfg, scope),
         run_id=str(getattr(contract, "run_id", "")),
         contract_hash=getattr(contract, "contract_hash", None),
-        end_ts=pd.Timestamp(end_ts).isoformat(),
+        end_ts=to_utc_timestamp(end_ts).isoformat(),
         accepted_symbols=list(symbols),
     )
-    end_ts = pd.Timestamp(end_ts)
+    end_ts = to_utc_timestamp(end_ts)
     required = [str(k) for k in (required_feature_keys or []) if str(k)]
     for feature in required:
         frame = feats.get(feature)

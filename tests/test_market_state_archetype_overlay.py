@@ -15,6 +15,15 @@ class _ToyRiskModel:
         return np.where(values.gt(0.5), 0.02, -0.01).astype(np.float32)
 
 
+class _ToyInternallyDerivedRiskModel:
+    internally_derived_feature_columns = frozenset({"local_margin"})
+
+    def predict(self, frame: pd.DataFrame) -> np.ndarray:
+        work = frame.copy()
+        work["local_margin"] = work["rank_pct"] - 0.75
+        return np.asarray(work["local_margin"], dtype=np.float32)
+
+
 def _panel() -> pd.DataFrame:
     n = 240
     ts = pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC")
@@ -138,3 +147,74 @@ def test_regime_ev_calibration_accepts_shallow_lgbm_and_score_application(
 
     assert np.allclose(scored["regime_ev_risk_score"], [-0.01, 0.02])
     assert np.allclose(scored["score_regime_calibrated"], [0.515, 0.470])
+
+
+def test_strict_calibration_allows_model_internally_derived_features(tmp_path) -> None:
+    import joblib
+
+    model_path = tmp_path / "derived.joblib"
+    joblib.dump(_ToyInternallyDerivedRiskModel(), model_path)
+    frame = pd.DataFrame(
+        {
+            "side_name": ["long"],
+            "archetype_policy_key": ["arch"],
+            "rank_pct": [0.80],
+        }
+    )
+    artifact = {
+        "_artifact_base_dir": str(tmp_path),
+        "strict_required_features": True,
+        "source_score_col": "rank_pct",
+        "effects": [
+            {
+                "side_name": "long",
+                "archetype_policy_key": "arch",
+                "shape": "sklearn_pickle",
+                "model_path": model_path.name,
+                "feature_cols": ["rank_pct", "local_margin"],
+            }
+        ],
+    }
+
+    scored = apply_regime_ev_calibration(frame, artifact)
+
+    assert scored.loc[0, "regime_ev_risk_score"] == np.float32(0.05)
+
+
+def test_common_ev_mapping_and_dirty_avoid_blacklist_are_shared_contract() -> None:
+    frame = pd.DataFrame(
+        {
+            "side_name": ["long", "short"],
+            "archetype_policy_key": [
+                "long_dirtyavoid_sparse_questionable",
+                "short_breakout",
+            ],
+            "calibrated_score": [0.95, 0.95],
+        }
+    )
+    artifact = {
+        "source_score_col": "calibrated_score",
+        "adjusted_score_col": "score_regime_calibrated",
+        "effects": [],
+        "expected_ev_mapping": {
+            "global": {"x": [0.0, 1.0], "y": [-0.01, 0.02]},
+            "local": {
+                "short||short_breakout": {
+                    "x": [0.0, 1.0],
+                    "y": [0.0, 0.04],
+                    "weight": 0.5,
+                    "support": 1000,
+                }
+            },
+            "rank_reference": [-0.01, 0.0, 0.01, 0.02, 0.03],
+        },
+        "blacklisted_side_archetypes": [
+            "long||long_dirtyavoid_sparse_questionable"
+        ],
+    }
+    scored = apply_regime_ev_calibration(frame, artifact)
+    assert bool(scored.loc[0, "regime_ev_blacklisted"])
+    assert scored.loc[0, "expected_net_ev_after_1pct"] == -1.0
+    assert scored.loc[0, "expected_ev_rank_score"] == 0.0
+    assert scored.loc[1, "expected_net_ev_after_1pct"] > 0.02
+    assert scored.loc[1, "expected_ev_rank_score"] > 0.5

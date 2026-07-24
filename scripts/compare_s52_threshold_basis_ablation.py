@@ -1571,6 +1571,17 @@ def main() -> None:
     parser.add_argument("--min-reference-rows", type=int, default=40)
     parser.add_argument("--max-window-days", type=int, default=20)
     parser.add_argument(
+        "--score-overlay",
+        type=Path,
+        default=None,
+        help=(
+            "Optional frozen OOS score parquet keyed by timestamp/symbol/side. "
+            "The selected overlay column replaces calibrated_score_regime_ev "
+            "after candidate preparation so all execution/policy logic remains fixed."
+        ),
+    )
+    parser.add_argument("--score-overlay-column", default="rank_market_state")
+    parser.add_argument(
         "--arm-name",
         action="append",
         default=[],
@@ -1604,6 +1615,37 @@ def main() -> None:
         regime_ev_protected_admission_floor=TOP_THRESHOLDS[PROMOTED_TOP_SLICE],
         regime_ev_retained_surplus_frac=0.5,
     )
+    if args.score_overlay is not None:
+        overlay_columns = [
+            "__ts__",
+            "__symbol__",
+            "side_name",
+            str(args.score_overlay_column),
+        ]
+        overlay = pd.read_parquet(args.score_overlay, columns=overlay_columns).rename(
+            columns={"__ts__": "timestamp", "__symbol__": "symbol"}
+        )
+        overlay["timestamp"] = pd.to_datetime(
+            overlay["timestamp"], utc=True, errors="coerce"
+        )
+        overlay = overlay.drop_duplicates(
+            ["timestamp", "symbol", "side_name"], keep="last"
+        )
+        rows = rows.merge(
+            overlay,
+            on=["timestamp", "symbol", "side_name"],
+            how="left",
+            validate="many_to_one",
+        )
+        coverage = pd.to_numeric(
+            rows[str(args.score_overlay_column)], errors="coerce"
+        ).notna()
+        if not bool(coverage.any()):
+            raise ValueError("Score overlay has no overlap with prepared policy rows")
+        rows = rows.loc[coverage].copy()
+        rows["calibrated_score_regime_ev"] = pd.to_numeric(
+            rows[str(args.score_overlay_column)], errors="coerce"
+        )
     rows = _add_time_columns(rows)
     rows = rows.loc[rows["timestamp"].ge(load_start) & rows["timestamp"].lt(eval_end)].copy()
     if rows.empty:
@@ -1710,6 +1752,13 @@ def main() -> None:
         "round_trip_cost_pct": float(args.round_trip_cost_pct),
         "exchange": str(args.exchange),
         "score_col": score_col,
+        "score_overlay": str(args.score_overlay) if args.score_overlay else None,
+        "score_overlay_column": str(args.score_overlay_column),
+        "score_overlay_role": (
+            "frozen lifecycle market-state rank replacing admission score only"
+            if args.score_overlay
+            else None
+        ),
         "live_compatible_selection": bool(args.live_compatible_selection),
         "selection_group": "timestamp" if args.live_compatible_selection else "eval_day",
         "regime_calibration": {

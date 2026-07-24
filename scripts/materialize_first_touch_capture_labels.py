@@ -149,6 +149,18 @@ def _source_copy_columns(df: pd.DataFrame) -> list[str]:
         "__sl__",
         "__u_policy_net__",
         "__r_policy_net__",
+        # Preserve pre-rematerialization path-support fields for audits.  The
+        # causal materializer overwrites these aliases from its rebuilt path;
+        # consumers must not silently inherit support labels from an older
+        # entry-timing contract.
+        "__mfe__",
+        "__mae__",
+        "__mfe_ret__",
+        "__mae_ret__",
+        "__bars_to_mfe__",
+        "__bars_to_mae__",
+        "__quality__",
+        "__w__",
     ]
     return [col for col in cols if col in df.columns]
 
@@ -188,6 +200,7 @@ def _materialize_dataset(
         exchange=exchange,
         path_len=path_len,
         apply_delayed_entry=apply_delayed_entry,
+        timeframe=timeframe,
     )
     capture = _first_touch_capture_outcome(
         df,

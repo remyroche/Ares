@@ -1,5 +1,6 @@
 import os
 
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -25,6 +26,7 @@ from extreme_price_movements.pipeline_steps import (
     _feature_scan_has_broad_target_gap,
     _feature_time_coverage_backfill_keys,
     _filter_requested_feature_keys_for_runtime_sources,
+    _inject_orderbook_summary_features,
     _initial_feature_cache_write_symbols,
     _scan_feature_cache_light,
     _validate_feature_snapshot_completeness,
@@ -42,6 +44,60 @@ def test_feature_backfill_keys_from_env_reads_inline_and_file(
     assert _feature_backfill_keys_from_env() == ["alpha", "beta", "delta", "gamma"]
 
 
+def test_feature_backfill_keys_from_complete_case_report(tmp_path, monkeypatch):
+    report = tmp_path / "complete_case.csv"
+    pd.DataFrame(
+        {
+            "missing_features": [
+                "oi_drawdown_from_peak_24h, mkt_oi_chg_4h",
+                "mkt_oi_chg_4h",
+                np.nan,
+            ]
+        }
+    ).to_csv(report, index=False)
+    monkeypatch.setenv(
+        "EPM_FEATURE_BACKFILL_KEYS_FROM_COMPLETE_CASE_REPORT", str(report)
+    )
+
+    assert _feature_backfill_keys_from_env() == [
+        "mkt_oi_chg_4h",
+        "oi_drawdown_from_peak_24h",
+    ]
+
+
+def test_feature_backfill_keys_include_deployed_artifact_contract(tmp_path, monkeypatch):
+    artifact = tmp_path / "artifact"
+    (artifact / "models").mkdir(parents=True)
+    (artifact / "policy_params").mkdir()
+    joblib.dump(
+        {
+            "bundle": {
+                "feature_source_contract": {
+                    "feature_names": ["base_raw", "shared_raw"],
+                }
+            }
+        },
+        artifact / "models" / "trained_state.pkl",
+    )
+    joblib.dump(
+        {
+            "feature_contract": {
+                "long": ["long_raw", "shared_raw"],
+                "short": ["short_raw"],
+            }
+        },
+        artifact / "policy_params" / "side_residual_expert.joblib",
+    )
+    monkeypatch.setenv("EPM_FEATURE_BACKFILL_KEYS_FROM_ARTIFACT", str(artifact))
+
+    assert _feature_backfill_keys_from_env() == [
+        "base_raw",
+        "long_raw",
+        "shared_raw",
+        "short_raw",
+    ]
+
+
 def test_meta_policy_slice_availability_exempts_model_derived_lgbm_features(monkeypatch):
     df = pd.DataFrame(
         {
@@ -53,16 +109,10 @@ def test_meta_policy_slice_availability_exempts_model_derived_lgbm_features(monk
     )
 
     def fake_feature_store_availability_matrix(feature_cols, *, cfg):
-        assert list(feature_cols) == ["raw_good", "base_prob_x_vol_regime"]
-        finite = np.asarray(
-            [
-                [True, False],
-                [True, False],
-                [True, False],
-                [True, False],
-            ],
-            dtype=bool,
-        )
+        # Model-derived columns are materialized after the raw feature-store
+        # read and therefore must not participate in raw coverage filtering.
+        assert list(feature_cols) == ["raw_good"]
+        finite = np.ones((4, 1), dtype=bool)
         return finite, int(finite.shape[0]), "fake policy slice"
 
     monkeypatch.setattr(
@@ -81,8 +131,7 @@ def test_meta_policy_slice_availability_exempts_model_derived_lgbm_features(monk
         },
     )
 
-    assert kept == ["raw_good", "pred_H10", "feature_drift_psi_core"]
-    assert "base_prob_x_vol_regime" not in kept
+    assert kept == list(df.columns)
 
 
 def test_meta_performance_feature_groups_survive_portable_config():
@@ -797,7 +846,7 @@ def test_selected_feature_load_preserves_tz_aware_pushdown_bounds(tmp_path, monk
     assert captured["end_ts"].tzinfo is not None
 
 
-def test_runtime_source_filter_accepts_saved_orderbook_side_store():
+def test_runtime_source_filter_treats_hourly_ob_features_as_ohlcv_proxies():
     idx = pd.DatetimeIndex(["2026-06-04 11:00:00+00:00"], name="ts")
     panel = {
         "close": pd.DataFrame({"SHIB/USD:USD": [0.000005]}, index=idx),
@@ -815,8 +864,8 @@ def test_runtime_source_filter_accepts_saved_orderbook_side_store():
         ["SHIB/USD:USD"],
     )
 
-    assert "ret24h" in allowed
-    assert skipped["ob_depth_l20_to_qv_z_7d"] == "missing_source:orderbook"
+    assert allowed == ["ob_depth_l20_to_qv_z_7d", "ret24h"]
+    assert skipped == {}
 
     saved_orderbook = pd.DataFrame(
         {"best_bid": [0.0000049], "best_ask": [0.0000051]},
@@ -832,3 +881,63 @@ def test_runtime_source_filter_accepts_saved_orderbook_side_store():
 
     assert allowed == ["ob_depth_l20_to_qv_z_7d", "ret24h"]
     assert skipped == {}
+
+
+def test_runtime_source_filter_requires_l2_only_for_wall_features():
+    idx = pd.DatetimeIndex(["2026-06-04 11:00:00+00:00"], name="ts")
+    panel = {
+        "close": pd.DataFrame({"SHIB/USD:USD": [0.000005]}, index=idx),
+        "volume": pd.DataFrame({"SHIB/USD:USD": [238960992.0]}, index=idx),
+    }
+    cfg = {
+        "feature_portability_mode": "same_exchange_perp",
+        "feature_portability_strict": True,
+    }
+
+    allowed, skipped = _filter_requested_feature_keys_for_runtime_sources(
+        ["obw_wall_skew_book_r030", "ret24h"],
+        cfg,
+        panel,
+        ["SHIB/USD:USD"],
+    )
+
+    assert allowed == ["ret24h"]
+    assert skipped == {"obw_wall_skew_book_r030": "not_allowed:same_exchange_perp"}
+
+
+def test_model_orderbook_proxy_is_invariant_to_live_l2_snapshot():
+    idx = pd.date_range("2026-06-01", periods=200, freq="h", tz="UTC")
+    close = pd.DataFrame(
+        {"BTC/USD:USD": 100.0 + np.arange(len(idx), dtype=np.float32) * 0.01},
+        index=idx,
+    )
+    panel = {
+        "open": close * 0.999,
+        "high": close * 1.001,
+        "low": close * 0.998,
+        "close": close,
+        "volume": pd.DataFrame(
+            {"BTC/USD:USD": 1_000.0 + np.arange(len(idx), dtype=np.float32)},
+            index=idx,
+        ),
+    }
+    cfg = {
+        "ORDERBOOK_BASE_FEATURE_KEYS": ["ob_top_liquidity_to_qv_24h"],
+        "ORDERBOOK_META_FEATURE_KEYS": [],
+        "market_basket": [],
+        "microstructure_shift_bars": 1,
+        "orderbook_stale_hours": 2,
+    }
+    no_l2 = _inject_orderbook_summary_features({}, panel, {}, cfg)
+    live_l2 = pd.DataFrame(
+        {"best_bid": [1.0], "best_ask": [999.0], "mid": [500.0]},
+        index=[idx[-1]],
+    )
+    with_l2 = _inject_orderbook_summary_features(
+        {}, panel, {"BTC/USD:USD": live_l2}, cfg
+    )
+
+    pd.testing.assert_frame_equal(
+        no_l2["ob_top_liquidity_to_qv_24h"],
+        with_l2["ob_top_liquidity_to_qv_24h"],
+    )

@@ -4,8 +4,7 @@
 The current base model and current meta OOS predictions are frozen references.
 Feature selection is fitted on data through February 2026 with March as its
 held-out validation month. Alternative meta models reuse the current meta
-hyperparameters and are evaluated on expanding-window OOS folds for April,
-May, and June 2026.
+hyperparameters and are evaluated on configurable expanding-window OOS folds.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import argparse
 import gc
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -59,10 +59,21 @@ from extreme_price_movements.meta_residual_archetypes import (  # noqa: E402
     residual_ae_gmm_feature_names,
     strip_outcomes_for_oos,
 )
+from extreme_price_movements.regime_ev_calibration import (  # noqa: E402
+    apply_regime_ev_calibration,
+    default_regime_ev_calibration_artifact,
+    load_regime_ev_calibration,
+)
+from extreme_price_movements.regime_ev_calibration import (
+    required_feature_columns as regime_required_feature_columns,
+)
 from scripts.run_s52_train_meta_regime_handoff_smoke import (  # noqa: E402
+    HIT_SURPRISE_NUMERIC_FEATURES,
     META_POST_SELECTION_OOD_FEATURE_NAMES,
     _add_fold_base_prior_features,
+    _add_fold_hit_surprise_features,
     _add_fold_reliability_features,
+    _archetype_key,
     _base_soft_label_target,
     _fit_base_soft_label_model,
     _predict,
@@ -84,15 +95,24 @@ DEFAULT_REFERENCE_DIR = (
     / "train_meta_regime_handoff_singlehead_base_soft_lgbmpipeline_auto_hpo150_"
     "oos15_top30_hpo45k_20260706_v5" / "best_full_oos_fixedfs_streamed_v1"
 )
-DEFAULT_FEATURE_ROOT = Path("data_perp/features/20260710_180000")
+DEFAULT_FEATURE_ROOT = Path("data_perp/features/20260711_070000")
 DEFAULT_OUT_DIR = Path(
     "data_perp/reports/train_meta_residual_archetype_enhancement_20260711_v1"
+)
+DEFAULT_EXTERNAL_RESIDUAL_FEATURES = Path(
+    "data_perp/reports/meta_residual_archetype_discovery_early2025_july_20260712_v1/"
+    "oos_residual_state_predictions.parquet"
+)
+DEFAULT_THRESHOLD_BASIS_POLICY = Path(
+    "data_perp/artifacts/s59_s52_frozen_native_shadow_20260709/"
+    "policy_params/threshold_basis_policy.json"
 )
 
 KEY_COLUMNS = ("__ts__", "__symbol__", "side_name", "archetype_policy_key")
 EVAL_MONTHS = ("2026-04", "2026-05", "2026-06")
 MODEL_ARMS = (
     "baseline_retrained",
+    "negative_residual_full_context",
     "lifecycle_only",
     "residual_archetypes",
     "residual_archetypes_ae_gmm",
@@ -100,6 +120,89 @@ MODEL_ARMS = (
     "local_aegmm_geometry",
     "local_aegmm_joint",
     "local_aegmm_all_three",
+    "residual_states_v2_probabilities",
+    "residual_states_v2_priors",
+    "residual_states_v2_priors_market",
+    "residual_states_v2_probabilities_priors",
+    "residual_states_v2_probabilities_priors_market",
+    "residual_states_v2_archetype_market_failure_posteriors_only",
+    "residual_states_v2_archetype_market_failure_posteriors",
+    "residual_states_v2_full_aegmm",
+    "residual_states_v2_full_context",
+    "residual_states_v2_distilled",
+    "residual_states_v2_distilled_local_interactions",
+    "residual_states_v2_distilled_priors",
+    "residual_states_v2_priors_hitrate_context",
+    "residual_states_v2_priors_outcome_context",
+    "residual_states_v2_priors_outcome_context_weighted",
+    "residual_states_v2_priors_outcome_context_identity",
+    "residual_states_v2_priors_outcome_context_identity_weighted",
+    "residual_states_v2_priors_outcome_context_interactions",
+    "residual_states_v2_priors_failure_pressure_context",
+    "residual_states_v2_priors_failure_pressure_identity_context",
+    "residual_states_v2_distilled_priors_hitrate_context",
+    "residual_states_v2_distilled_weighted_mild",
+    "residual_states_v2_distilled_weighted_contrast",
+    "residual_states_v2_distilled_weighted_short_adverse",
+    "residual_states_v2_priors_local_models",
+    "residual_states_v2_priors_local_models_shrunk",
+)
+RESIDUAL_STATES_V2_ARMS = frozenset(
+    {
+        "negative_residual_full_context",
+        "residual_states_v2_probabilities",
+        "residual_states_v2_priors",
+        "residual_states_v2_priors_market",
+        "residual_states_v2_probabilities_priors",
+        "residual_states_v2_probabilities_priors_market",
+        "residual_states_v2_archetype_market_failure_posteriors_only",
+        "residual_states_v2_archetype_market_failure_posteriors",
+        "residual_states_v2_full_aegmm",
+        "residual_states_v2_full_context",
+        "residual_states_v2_distilled",
+        "residual_states_v2_distilled_local_interactions",
+        "residual_states_v2_distilled_priors",
+        "residual_states_v2_priors_hitrate_context",
+        "residual_states_v2_priors_outcome_context",
+        "residual_states_v2_priors_outcome_context_weighted",
+        "residual_states_v2_priors_outcome_context_identity",
+        "residual_states_v2_priors_outcome_context_identity_weighted",
+        "residual_states_v2_priors_outcome_context_interactions",
+        "residual_states_v2_priors_failure_pressure_context",
+        "residual_states_v2_priors_failure_pressure_identity_context",
+        "residual_states_v2_distilled_priors_hitrate_context",
+        "residual_states_v2_distilled_weighted_mild",
+        "residual_states_v2_distilled_weighted_contrast",
+        "residual_states_v2_distilled_weighted_short_adverse",
+        "residual_states_v2_priors_local_models",
+        "residual_states_v2_priors_local_models_shrunk",
+    }
+)
+LOCAL_META_MODEL_ARMS = frozenset(
+    {
+        "residual_states_v2_priors_local_models",
+        "residual_states_v2_priors_local_models_shrunk",
+    }
+)
+RESIDUAL_STATES_V2_DISTILLED_ARMS = frozenset(
+    {
+        "residual_states_v2_distilled",
+        "residual_states_v2_distilled_local_interactions",
+        "residual_states_v2_distilled_priors",
+        "residual_states_v2_distilled_priors_hitrate_context",
+        "residual_states_v2_distilled_weighted_mild",
+        "residual_states_v2_distilled_weighted_contrast",
+        "residual_states_v2_distilled_weighted_short_adverse",
+    }
+)
+RESIDUAL_STATES_V2_WEIGHTED_ARMS = frozenset(
+    {
+        "residual_states_v2_distilled_weighted_mild",
+        "residual_states_v2_distilled_weighted_contrast",
+        "residual_states_v2_distilled_weighted_short_adverse",
+        "residual_states_v2_priors_outcome_context_weighted",
+        "residual_states_v2_priors_outcome_context_identity_weighted",
+    }
 )
 LOCAL_AEGMM_ARMS = frozenset(
     {
@@ -117,6 +220,59 @@ AE_GMM_HINTS = (
     "cluster_speed",
     "cluster_acceleration",
     "dae_b16",
+)
+OUTCOME_CONTEXT_HALFLIFE_DAYS = (3.0, 7.0, 14.0)
+OUTCOME_CONTEXT_FEATURES = tuple(
+    [
+        name
+        for hl in (3, 7, 14)
+        for name in (
+            f"base_arch_ev_recent_mean_hl{hl}d",
+            f"base_arch_ev_expected_mean_hl{hl}d",
+            f"base_arch_ev_surprise_hl{hl}d",
+            f"base_arch_bad_mae_recent_rate_hl{hl}d",
+            f"base_arch_bad_mae_expected_rate_hl{hl}d",
+            f"base_arch_bad_mae_surprise_hl{hl}d",
+            f"base_arch_timeout_recent_rate_hl{hl}d",
+            f"base_arch_timeout_expected_rate_hl{hl}d",
+            f"base_arch_timeout_surprise_hl{hl}d",
+            f"base_arch_dirty_recent_rate_hl{hl}d",
+            f"base_arch_dirty_expected_rate_hl{hl}d",
+            f"base_arch_dirty_surprise_hl{hl}d",
+            f"base_arch_outcome_support_log1p_hl{hl}d",
+            f"base_arch_outcome_effective_n_hl{hl}d",
+        )
+    ]
+)
+FAILURE_PRESSURE_CONTEXT_FEATURES = tuple(
+    [
+        name
+        for hl in (3, 7, 14)
+        for name in (
+            f"base_arch_failure_pressure_hl{hl}d",
+            f"base_arch_bad_mae_pressure_hl{hl}d",
+            f"base_arch_timeout_pressure_hl{hl}d",
+            f"base_arch_dirty_pressure_hl{hl}d",
+            f"base_arch_opportunity_pressure_hl{hl}d",
+            f"base_arch_quality_balance_hl{hl}d",
+            f"base_arch_failure_mode_bad_mae_share_hl{hl}d",
+            f"base_arch_failure_mode_timeout_share_hl{hl}d",
+            f"base_arch_failure_mode_dirty_share_hl{hl}d",
+            f"base_arch_pressure_support_hl{hl}d",
+        )
+    ]
+)
+OUTCOME_IDENTITY_INTERACTION_BASES = tuple(
+    name
+    for hl in (3, 7, 14)
+    for name in (
+        f"base_arch_bad_mae_recent_rate_hl{hl}d",
+        f"base_arch_bad_mae_surprise_hl{hl}d",
+        f"base_arch_timeout_recent_rate_hl{hl}d",
+        f"base_arch_ev_expected_mean_hl{hl}d",
+        f"base_arch_ev_surprise_hl{hl}d",
+        f"base_arch_hit_surprise_hl{hl}d",
+    )
 )
 REQUIRED_COLUMNS = (
     "__ts__",
@@ -159,6 +315,54 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, float) and not np.isfinite(value):
         return None
     return value
+
+
+def _parse_months(value: str | Sequence[str]) -> tuple[str, ...]:
+    if isinstance(value, str):
+        tokens = [part.strip() for part in value.split(",")]
+    else:
+        tokens = [str(part).strip() for part in value]
+    months: list[str] = []
+    for token in tokens:
+        if not token:
+            continue
+        try:
+            months.append(str(pd.Period(token, freq="M")))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid YYYY-MM month: {token!r}") from exc
+    if not months:
+        raise ValueError("At least one evaluation month is required")
+    return tuple(dict.fromkeys(months))
+
+
+def _feature_slug(value: Any, *, max_len: int = 80) -> str:
+    text = str(value).strip().lower()
+    text = re.sub(r"[^0-9a-zA-Z]+", "_", text).strip("_")
+    return (text or "missing")[:max_len]
+
+
+def _append_meta_identity_features(data: pd.DataFrame) -> pd.DataFrame:
+    """Add observable side/archetype identity columns for local context learning."""
+
+    out = data.copy()
+    side = out.get("side_name", pd.Series("missing", index=out.index)).astype(str).str.lower()
+    arch = out.get(
+        "archetype_policy_key", pd.Series("missing", index=out.index)
+    ).astype(str)
+    side_arch = side + "__" + arch
+    for value in sorted(side.dropna().unique().tolist()):
+        out[f"meta_identity_side__{_feature_slug(value)}"] = side.eq(value).astype(
+            np.float32
+        )
+    for value in sorted(arch.dropna().unique().tolist()):
+        out[f"meta_identity_arch__{_feature_slug(value)}"] = arch.eq(value).astype(
+            np.float32
+        )
+    for value in sorted(side_arch.dropna().unique().tolist()):
+        out[f"meta_identity_side_arch__{_feature_slug(value)}"] = side_arch.eq(
+            value
+        ).astype(np.float32)
+    return out
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -613,7 +817,7 @@ def build_walkforward_residual_features(
     output_dir: Path,
     use_ae_gmm: bool,
     force: bool,
-    min_train_months: int = 2,
+    min_train_months: int = 1,
 ) -> tuple[pd.DataFrame, dict[str, Any], ResidualArchetypeRecognizer | None]:
     cache_key = _residual_cache_key(use_ae_gmm)
     feature_path = output_dir / "cache" / f"{cache_key}.parquet"
@@ -651,6 +855,9 @@ def build_walkforward_residual_features(
     catalogs: list[pd.DataFrame] = []
     fold_manifests: list[dict[str, Any]] = []
     final_recognizer: ResidualArchetypeRecognizer | None = None
+    frozen_local_ae_gmm: dict[
+        tuple[str, str], tuple[dict[str, Any], list[str], list[str]]
+    ] = {}
     for month_idx, month in enumerate(months):
         if month_idx < int(min_train_months):
             continue
@@ -665,12 +872,22 @@ def build_walkforward_residual_features(
             rank_scope="global",
             use_residual_ae_gmm=bool(use_ae_gmm),
             allow_side_fallback=False,
+            label_mode="economic_semantic",
             random_state=20260711 + month_idx * 101,
         )
         recognizer = ResidualArchetypeRecognizer(
             config=cfg,
             candidate_features=list(candidate_features),
-        ).fit(train)
+        )
+        recognizer.frozen_ae_gmm_by_local = dict(frozen_local_ae_gmm)
+        recognizer.fit(train)
+        for key, model in recognizer.local_models.items():
+            if key not in frozen_local_ae_gmm and model.ae_gmm_state:
+                frozen_local_ae_gmm[key] = (
+                    model.ae_gmm_state,
+                    list(model.ae_gmm_input_features),
+                    list(model.ae_gmm_output_features),
+                )
         safe_valid = strip_outcomes_for_oos(valid)
         generated = recognizer.transform_oos(safe_valid)
         keys = valid.loc[
@@ -693,6 +910,7 @@ def build_walkforward_residual_features(
                 "month": str(month),
                 "train_rows": int(len(train)),
                 "valid_rows": int(len(valid)),
+                "frozen_ae_gmm_key_count": int(len(frozen_local_ae_gmm)),
                 **recognizer.manifest(),
             }
         )
@@ -719,6 +937,10 @@ def build_walkforward_residual_features(
     manifest = {
         "schema": "walkforward_residual_archetype_features_v1",
         "use_residual_ae_gmm": bool(use_ae_gmm),
+        "label_mode": "economic_semantic",
+        "ae_gmm_contract": (
+            "fit once at first supported side x archetype fold, then frozen"
+        ),
         "rows": int(len(output)),
         "months": sorted(
             output.get("calendar_month", pd.Series(dtype=str))
@@ -785,14 +1007,23 @@ def _add_reference_fold_features(
     train: pd.DataFrame,
     valid: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Reproduce the current meta model's causal base reliability overlays."""
+    """Reproduce causal base reliability overlays for meta training.
+
+    Hit-surprise features are generated for every fold but only become model
+    inputs for arms that explicitly include ``HIT_SURPRISE_NUMERIC_FEATURES``.
+    Validation rows receive train-only priors; training rows use strictly
+    earlier rows in the same fold, matching the S52 handoff contract.
+    """
 
     train = train.copy()
     valid = valid.copy()
     for frame in (train, valid):
         if "clean_exec_label" not in frame.columns:
+            clean_exec = frame.get(
+                "clean_exec", pd.Series(np.nan, index=frame.index, dtype=np.float32)
+            )
             frame["clean_exec_label"] = (
-                pd.to_numeric(frame.get("clean_exec"), errors="coerce")
+                pd.to_numeric(clean_exec, errors="coerce")
                 .fillna(0.0)
                 .gt(0.5)
                 .astype(np.float32)
@@ -800,7 +1031,352 @@ def _add_reference_fold_features(
     train, valid = _add_fold_base_prior_features(
         train, valid, selected_col="selected_top30"
     )
-    return _add_fold_reliability_features(train, valid)
+    train, valid = _add_fold_reliability_features(train, valid)
+    train, valid = _add_fold_hit_surprise_features(train, valid)
+    train, valid = _add_fold_outcome_context_features(train, valid)
+    train = _add_failure_pressure_context_features(train)
+    valid = _add_failure_pressure_context_features(valid)
+    return _add_fold_outcome_identity_interactions(train, valid)
+
+
+def _outcome_identity_interaction_columns(frame: pd.DataFrame) -> list[str]:
+    identities = [
+        name
+        for name in frame.columns
+        if name.startswith("meta_identity_arch__")
+        or name.startswith("meta_identity_side_arch__")
+    ]
+    return [
+        f"{base}__x__{identity}"
+        for base in OUTCOME_IDENTITY_INTERACTION_BASES
+        for identity in identities
+    ]
+
+
+def _add_fold_outcome_identity_interactions(
+    train: pd.DataFrame, valid: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Add compact local interactions for recent outcome context."""
+
+    train = train.copy()
+    valid = valid.copy()
+    identity_columns = [
+        name
+        for name in train.columns
+        if name.startswith("meta_identity_arch__")
+        or name.startswith("meta_identity_side_arch__")
+    ]
+    for base in OUTCOME_IDENTITY_INTERACTION_BASES:
+        if base not in train.columns:
+            continue
+        train_base = pd.to_numeric(train[base], errors="coerce").fillna(0.0).astype(
+            np.float32
+        )
+        valid_base = pd.to_numeric(
+            valid.get(base, pd.Series(0.0, index=valid.index)), errors="coerce"
+        ).fillna(0.0).astype(np.float32)
+        for identity in identity_columns:
+            name = f"{base}__x__{identity}"
+            train_identity = pd.to_numeric(
+                train[identity], errors="coerce"
+            ).fillna(0.0).astype(np.float32)
+            valid_identity = pd.to_numeric(
+                valid.get(identity, pd.Series(0.0, index=valid.index)),
+                errors="coerce",
+            ).fillna(0.0).astype(np.float32)
+            train[name] = (train_base * train_identity).astype(np.float32)
+            valid[name] = (valid_base * valid_identity).astype(np.float32)
+    return train, valid
+
+
+def _add_failure_pressure_context_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """Compress recent side x archetype outcome context into robust pressures."""
+
+    out = frame.copy()
+    for hl in (3, 7, 14):
+        suffix = f"hl{hl}d"
+        bad = _numeric_feature(
+            out, f"base_arch_bad_mae_surprise_{suffix}", default=0.0
+        ).clip(-1.0, 1.0)
+        timeout = _numeric_feature(
+            out, f"base_arch_timeout_surprise_{suffix}", default=0.0
+        ).clip(-1.0, 1.0)
+        dirty = _numeric_feature(
+            out, f"base_arch_dirty_surprise_{suffix}", default=0.0
+        ).clip(-1.0, 1.0)
+        ev = _numeric_feature(out, f"base_arch_ev_surprise_{suffix}", default=0.0)
+        hit_z = _numeric_feature(
+            out, f"base_arch_hit_surprise_z_{suffix}", default=0.0
+        ).clip(-6.0, 6.0)
+        support = _numeric_feature(
+            out, f"base_arch_outcome_effective_n_{suffix}", default=0.0
+        )
+        support_factor = (
+            np.log1p(np.maximum(support.to_numpy(dtype=np.float32), 0.0))
+            / np.log(31.0)
+        )
+        support_factor = np.clip(support_factor, 0.0, 1.0).astype(np.float32)
+
+        bad_pos = np.maximum(bad.to_numpy(dtype=np.float32), 0.0)
+        timeout_pos = np.maximum(timeout.to_numpy(dtype=np.float32), 0.0)
+        dirty_pos = np.maximum(dirty.to_numpy(dtype=np.float32), 0.0)
+        ev_arr = ev.to_numpy(dtype=np.float32)
+        hit_arr = hit_z.to_numpy(dtype=np.float32)
+        ev_negative = np.maximum(-ev_arr / 0.01, 0.0)
+        ev_positive = np.maximum(ev_arr / 0.01, 0.0)
+        hit_negative = np.maximum(-hit_arr / 3.0, 0.0)
+        hit_positive = np.maximum(hit_arr / 3.0, 0.0)
+
+        failure_pressure = support_factor * (
+            0.42 * bad_pos
+            + 0.26 * timeout_pos
+            + 0.20 * dirty_pos
+            + 0.08 * np.clip(ev_negative, 0.0, 2.0)
+            + 0.04 * np.clip(hit_negative, 0.0, 2.0)
+        )
+        opportunity_pressure = support_factor * (
+            0.50 * np.clip(ev_positive, 0.0, 2.0)
+            + 0.30 * np.clip(hit_positive, 0.0, 2.0)
+            + 0.20
+            * np.maximum(
+                -bad.to_numpy(dtype=np.float32)
+                - timeout.to_numpy(dtype=np.float32)
+                - dirty.to_numpy(dtype=np.float32),
+                0.0,
+            )
+        )
+        total_failure = np.maximum(bad_pos + timeout_pos + dirty_pos, 1e-6)
+        out[f"base_arch_failure_pressure_{suffix}"] = failure_pressure.astype(
+            np.float32
+        )
+        out[f"base_arch_bad_mae_pressure_{suffix}"] = (
+            support_factor * bad_pos
+        ).astype(np.float32)
+        out[f"base_arch_timeout_pressure_{suffix}"] = (
+            support_factor * timeout_pos
+        ).astype(np.float32)
+        out[f"base_arch_dirty_pressure_{suffix}"] = (
+            support_factor * dirty_pos
+        ).astype(np.float32)
+        out[f"base_arch_opportunity_pressure_{suffix}"] = (
+            opportunity_pressure.astype(np.float32)
+        )
+        out[f"base_arch_quality_balance_{suffix}"] = (
+            opportunity_pressure - failure_pressure
+        ).astype(np.float32)
+        out[f"base_arch_failure_mode_bad_mae_share_{suffix}"] = (
+            bad_pos / total_failure
+        ).astype(np.float32)
+        out[f"base_arch_failure_mode_timeout_share_{suffix}"] = (
+            timeout_pos / total_failure
+        ).astype(np.float32)
+        out[f"base_arch_failure_mode_dirty_share_{suffix}"] = (
+            dirty_pos / total_failure
+        ).astype(np.float32)
+        out[f"base_arch_pressure_support_{suffix}"] = support_factor.astype(
+            np.float32
+        )
+    return out
+
+
+def _numeric_feature(
+    frame: pd.DataFrame,
+    column: str,
+    *,
+    default: float = 0.0,
+    clip: tuple[float, float] | None = None,
+) -> pd.Series:
+    source = frame[column] if column in frame.columns else pd.Series(default, index=frame.index)
+    out = pd.to_numeric(source, errors="coerce").fillna(float(default)).astype(float)
+    if clip is not None:
+        out = out.clip(float(clip[0]), float(clip[1]))
+    return out
+
+
+def _add_fold_outcome_context_features(
+    train: pd.DataFrame,
+    valid: pd.DataFrame,
+    *,
+    shrinkage_k: float = 40.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Add causal recent EV/path-quality context by side x archetype.
+
+    These are model-facing descriptors of when an archetype is currently
+    working or failing.  Validation rows use train-only history.  Training rows
+    use strictly earlier rows from the same fold, excluding same-timestamp rows.
+    """
+
+    metric_specs = (
+        ("ev", "ev_after_1pct", "mean", None),
+        ("bad_mae", "full_path_bad_mae_1r", "rate", (0.0, 1.0)),
+        ("timeout", "timeout", "rate", (0.0, 1.0)),
+        ("dirty", "dirty_positive", "rate", (0.0, 1.0)),
+    )
+    train = train.copy()
+    valid = valid.copy()
+    train_days = (
+        pd.to_datetime(train["__ts__"], utc=True, errors="coerce")
+        .astype("int64")
+        .astype(np.float64)
+        / (1e9 * 86400.0)
+    )
+    valid_days = (
+        pd.to_datetime(valid["__ts__"], utc=True, errors="coerce")
+        .astype("int64")
+        .astype(np.float64)
+        / (1e9 * 86400.0)
+    )
+    train_days = pd.Series(train_days, index=train.index).where(
+        pd.to_datetime(train["__ts__"], utc=True, errors="coerce").notna(), np.nan
+    )
+    valid_days = pd.Series(valid_days, index=valid.index).where(
+        pd.to_datetime(valid["__ts__"], utc=True, errors="coerce").notna(), np.nan
+    )
+    train_key = (
+        train["side_name"].astype(str).str.lower()
+        + "__"
+        + _archetype_key(train).astype(str)
+    )
+    valid_key = (
+        valid["side_name"].astype(str).str.lower()
+        + "__"
+        + _archetype_key(valid).astype(str)
+    )
+    metric_values = {
+        metric: _numeric_feature(train, column, default=0.0, clip=clip)
+        for metric, column, _kind, clip in metric_specs
+    }
+    global_mean = {
+        metric: float(values.mean()) if len(values) else 0.0
+        for metric, values in metric_values.items()
+    }
+    source = pd.DataFrame(
+        {
+            "_key": train_key.astype(str),
+            "_day": train_days,
+            **{metric: values.astype(np.float64) for metric, values in metric_values.items()},
+        },
+        index=train.index,
+    ).replace([np.inf, -np.inf], np.nan)
+    source = source[source["_day"].notna()].sort_values(
+        ["_key", "_day"], kind="mergesort"
+    )
+    source_groups: dict[str, dict[str, Any]] = {}
+    for key, group in source.groupby("_key", sort=False):
+        days = group["_day"].to_numpy(dtype=np.float64)
+        payload: dict[str, Any] = {
+            "days": days,
+            "offset": float(days[0]) if len(days) else 0.0,
+        }
+        for metric, _column, _kind, _clip in metric_specs:
+            values = group[metric].fillna(global_mean[metric]).to_numpy(dtype=np.float64)
+            payload[f"{metric}_values"] = values
+            payload[f"{metric}_cumsum"] = np.cumsum(values)
+        source_groups[str(key)] = payload
+
+    def assign(
+        target: pd.DataFrame, target_days: pd.Series, target_key: pd.Series
+    ) -> pd.DataFrame:
+        target = target.copy()
+        for hl in OUTCOME_CONTEXT_HALFLIFE_DAYS:
+            suffix = int(hl)
+            recent = {
+                metric: np.full(len(target), global_mean[metric], dtype=np.float32)
+                for metric, _column, _kind, _clip in metric_specs
+            }
+            expected = {
+                metric: np.full(len(target), global_mean[metric], dtype=np.float32)
+                for metric, _column, _kind, _clip in metric_specs
+            }
+            support_log = np.zeros(len(target), dtype=np.float32)
+            effective_n = np.zeros(len(target), dtype=np.float32)
+            target_tmp = pd.DataFrame(
+                {
+                    "_pos": np.arange(len(target), dtype=np.int64),
+                    "_key": target_key.astype(str).to_numpy(),
+                    "_day": target_days.to_numpy(dtype=np.float64),
+                },
+                index=target.index,
+            )
+            alpha = np.log(2.0) / float(hl)
+            for key, group in target_tmp.groupby("_key", sort=False):
+                payload = source_groups.get(str(key))
+                if payload is None:
+                    continue
+                src_days = payload["days"]
+                pos = group["_pos"].to_numpy(dtype=np.int64)
+                day = group["_day"].to_numpy(dtype=np.float64)
+                valid_day = np.isfinite(day)
+                if not bool(np.any(valid_day)):
+                    continue
+                pos = pos[valid_day]
+                day = day[valid_day]
+                right = np.searchsorted(src_days, day, side="left").astype(np.int64)
+                has_prior = right > 0
+                if not bool(np.any(has_prior)):
+                    continue
+                pos = pos[has_prior]
+                day = day[has_prior]
+                right = right[has_prior]
+                left = np.searchsorted(
+                    src_days, day - 4.0 * float(hl), side="left"
+                ).astype(np.int64)
+                shifted_src_days = src_days - float(payload["offset"])
+                shifted_day = day - float(payload["offset"])
+                exp1 = np.exp(alpha * shifted_src_days)
+                exp2 = np.exp(2.0 * alpha * shifted_src_days)
+                c_exp1 = np.concatenate([[0.0], np.cumsum(exp1)])
+                c_exp2 = np.concatenate([[0.0], np.cumsum(exp2)])
+                win_exp1 = c_exp1[right] - c_exp1[left]
+                win_exp2 = c_exp2[right] - c_exp2[left]
+                scale1 = np.exp(-alpha * shifted_day)
+                scale2 = np.exp(-2.0 * alpha * shifted_day)
+                weight_sum = scale1 * win_exp1
+                weight_sq_sum = scale2 * win_exp2
+                eff_n = np.divide(
+                    weight_sum * weight_sum,
+                    np.maximum(weight_sq_sum, 1e-12),
+                    out=np.zeros_like(weight_sum),
+                    where=weight_sum > 1e-12,
+                )
+                support_log[pos] = np.log1p(weight_sum).astype(np.float32)
+                effective_n[pos] = eff_n.astype(np.float32)
+                prior_count = right.astype(np.float64)
+                prior_weight = prior_count / (prior_count + float(shrinkage_k))
+                for metric, _column, _kind, _clip in metric_specs:
+                    values = payload[f"{metric}_values"]
+                    cumsum = payload[f"{metric}_cumsum"]
+                    prior_raw = cumsum[right - 1] / np.maximum(prior_count, 1.0)
+                    prior = (
+                        prior_weight * prior_raw
+                        + (1.0 - prior_weight) * global_mean[metric]
+                    )
+                    weighted_values = values * exp1
+                    c_weighted = np.concatenate([[0.0], np.cumsum(weighted_values)])
+                    win_weighted = c_weighted[right] - c_weighted[left]
+                    recent_value = np.divide(
+                        scale1 * win_weighted,
+                        np.maximum(weight_sum, 1e-12),
+                        out=prior.copy(),
+                        where=weight_sum > 1e-12,
+                    )
+                    recent[metric][pos] = recent_value.astype(np.float32)
+                    expected[metric][pos] = prior.astype(np.float32)
+            for metric, _column, kind, _clip in metric_specs:
+                target[f"base_arch_{metric}_recent_{kind}_hl{suffix}d"] = recent[
+                    metric
+                ]
+                target[f"base_arch_{metric}_expected_{kind}_hl{suffix}d"] = expected[
+                    metric
+                ]
+                target[f"base_arch_{metric}_surprise_hl{suffix}d"] = (
+                    recent[metric] - expected[metric]
+                ).astype(np.float32)
+            target[f"base_arch_outcome_support_log1p_hl{suffix}d"] = support_log
+            target[f"base_arch_outcome_effective_n_hl{suffix}d"] = effective_n
+        return target
+
+    return assign(train, train_days, train_key), assign(valid, valid_days, valid_key)
 
 
 def _fit_ood_state(frame: pd.DataFrame, columns: Sequence[str]) -> dict[str, Any]:
@@ -850,7 +1426,10 @@ def _apply_ood_state(frame: pd.DataFrame, state: dict[str, Any]) -> pd.DataFrame
 
 
 def _merge_residual_features(
-    data: pd.DataFrame, residual: pd.DataFrame
+    data: pd.DataFrame,
+    residual: pd.DataFrame,
+    *,
+    fill_unknown: bool = False,
 ) -> pd.DataFrame:
     if residual.empty:
         return data
@@ -859,12 +1438,297 @@ def _merge_residual_features(
         for name in KEY_COLUMNS
         if name in data.columns and name in residual.columns
     ]
-    generated = [name for name in residual.columns if name.startswith("meta_resid_")]
+    negative_residual_keys = set(CFG.get("NEGATIVE_RESIDUAL_META_FEATURE_KEYS", []))
+    generated = [
+        name
+        for name in residual.columns
+        if name.startswith(("meta_resid_", "residual_state_family_"))
+        or name in negative_residual_keys
+    ]
     right = residual.loc[:, keys + generated].drop_duplicates(keys, keep="last")
     out = data.merge(right, on=keys, how="left", validate="one_to_one")
     for name in generated:
         out[name] = pd.to_numeric(out[name], errors="coerce").astype(np.float32)
+    if fill_unknown:
+        for name in generated:
+            if name.endswith("prob__base_low_edge_noise") or name.endswith("entropy"):
+                default = 1.0
+            else:
+                default = 0.0
+            out[name] = out[name].fillna(np.float32(default)).astype(np.float32)
     return out
+
+
+def _append_residual_state_v2_composites(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy(deep=False)
+
+    def values(name: str) -> pd.Series:
+        if name not in out.columns:
+            return pd.Series(0.0, index=out.index, dtype=np.float32)
+        return pd.to_numeric(out[name], errors="coerce").fillna(0.0)
+
+    adverse = (
+        values("meta_resid_arch_prob__base_dirty_high_confidence")
+        + values("meta_resid_arch_prob__base_slow_timeout_positive")
+        + values("meta_resid_arch_prob__base_bad_mae_false_positive")
+    ).clip(0.0, 1.0)
+    favorable = (
+        values("meta_resid_arch_prob__base_clean_high_confidence")
+        + values("meta_resid_arch_prob__base_missed_clean_opportunity")
+    ).clip(0.0, 1.0)
+    uncertainty = (
+        values("meta_resid_arch_prob__base_high_variance_uncertain")
+        + values("meta_resid_arch_prob__base_low_edge_noise")
+    ).clip(0.0, 1.0)
+    path_risk = (
+        values("meta_resid_arch_expected_bad_mae")
+        + values("meta_resid_arch_expected_timeout")
+        + values("meta_resid_arch_expected_dirty_positive")
+    ) / np.float32(3.0)
+    confidence = values("meta_resid_arch_confidence").clip(0.0, 1.0)
+    out["meta_resid_v2_adverse_probability"] = adverse.astype(np.float32)
+    out["meta_resid_v2_favorable_probability"] = favorable.astype(np.float32)
+    out["meta_resid_v2_uncertainty_probability"] = uncertainty.astype(np.float32)
+    out["meta_resid_v2_clean_minus_adverse"] = (favorable - adverse).astype(np.float32)
+    out["meta_resid_v2_expected_path_risk"] = path_risk.astype(np.float32)
+    out["meta_resid_v2_expected_ev"] = values(
+        "meta_resid_arch_expected_ev"
+    ).astype(np.float32)
+    out["meta_resid_v2_expected_hit_surprise"] = values(
+        "meta_resid_arch_expected_hit_surprise"
+    ).astype(np.float32)
+    out["meta_resid_v2_adverse_confident"] = (adverse * confidence).astype(
+        np.float32
+    )
+    out["meta_resid_v2_favorable_confident"] = (favorable * confidence).astype(
+        np.float32
+    )
+    out["meta_resid_v2_state_available"] = values(
+        "meta_resid_arch_local_model"
+    ).clip(0.0, 1.0).astype(np.float32)
+
+    probability_columns = sorted(
+        name for name in out.columns if name.startswith("meta_resid_arch_prob__")
+    )
+    if probability_columns:
+        probability = out[probability_columns].to_numpy(dtype=np.float32, copy=False)
+        probability = np.nan_to_num(probability, nan=0.0, posinf=0.0, neginf=0.0)
+        order = np.argsort(probability, axis=1)
+        best = order[:, -1]
+        best_probability = probability[np.arange(len(out)), best]
+        second_probability = (
+            probability[np.arange(len(out)), order[:, -2]]
+            if probability.shape[1] > 1
+            else np.zeros(len(out), dtype=np.float32)
+        )
+        out["meta_resid_v2_hard_state_id"] = best.astype(np.float32)
+        out["meta_resid_v2_hard_state_posterior_max"] = best_probability.astype(
+            np.float32
+        )
+        out["meta_resid_v2_hard_state_posterior_margin"] = (
+            best_probability - second_probability
+        ).astype(np.float32)
+        for state_index, source in enumerate(probability_columns):
+            semantic = source.removeprefix("meta_resid_arch_prob__")
+            out[f"meta_resid_v2_hard_state__{semantic}"] = (
+                best == state_index
+            ).astype(np.float32)
+
+    base_archetype = out.get(
+        "archetype_policy_key", pd.Series("missing", index=out.index)
+    ).astype(str)
+    for archetype in sorted(base_archetype.unique().tolist()):
+        slug = "".join(
+            char if char.isalnum() else "_" for char in str(archetype).lower()
+        ).strip("_")
+        out[f"meta_base_archetype__{slug}"] = base_archetype.eq(archetype).to_numpy(
+            dtype=np.float32
+        )
+    side = out.get("side_name", pd.Series("missing", index=out.index)).astype(str)
+    out["meta_side_short"] = side.str.lower().eq("short").to_numpy(dtype=np.float32)
+
+    ae_probability_columns = sorted(
+        name for name in out.columns if name.startswith("meta_resid_ae_gmm_prob_")
+    )
+    if ae_probability_columns:
+        ae_probability = out[ae_probability_columns].to_numpy(
+            dtype=np.float32, copy=False
+        )
+        ae_probability = np.nan_to_num(
+            ae_probability, nan=0.0, posinf=0.0, neginf=0.0
+        )
+        ae_best = np.argmax(ae_probability, axis=1)
+        out["meta_resid_v2_ae_hard_cluster_id"] = ae_best.astype(np.float32)
+        for cluster_index in range(ae_probability.shape[1]):
+            out[f"meta_resid_v2_ae_hard_cluster_{cluster_index}"] = (
+                ae_best == cluster_index
+            ).astype(np.float32)
+
+    market_probability_columns = sorted(
+        name for name in out.columns if name.startswith("meta_resid_market_prob__")
+    )
+    if market_probability_columns:
+        market_probability = out[market_probability_columns].to_numpy(
+            dtype=np.float32, copy=False
+        )
+        market_probability = np.nan_to_num(
+            market_probability, nan=0.0, posinf=0.0, neginf=0.0
+        )
+        market_order = np.argsort(market_probability, axis=1)
+        market_best = market_order[:, -1]
+        market_max = market_probability[np.arange(len(out)), market_best]
+        market_second = market_probability[np.arange(len(out)), market_order[:, -2]]
+        out["meta_resid_v2_market_hard_state_id"] = market_best.astype(np.float32)
+        out["meta_resid_v2_market_posterior_max"] = market_max.astype(np.float32)
+        out["meta_resid_v2_market_posterior_margin"] = (
+            market_max - market_second
+        ).astype(np.float32)
+        for state_index, source in enumerate(market_probability_columns):
+            semantic = source.removeprefix("meta_resid_market_prob__")
+            out[f"meta_resid_v2_market_hard_state__{semantic}"] = (
+                market_best == state_index
+            ).astype(np.float32)
+
+    side = out.get("side_name", pd.Series("missing", index=out.index)).astype(str)
+    arch = out.get(
+        "archetype_policy_key", pd.Series("missing", index=out.index)
+    ).astype(str)
+    group = side.str.lower() + "__" + arch
+    for key in sorted(group.unique().tolist()):
+        slug = "".join(char if char.isalnum() else "_" for char in str(key)).strip(
+            "_"
+        )
+        mask = group.eq(key).to_numpy(dtype=np.float32)
+        for suffix, source in (
+            ("adverse", adverse),
+            ("favorable", favorable),
+            ("path_risk", path_risk),
+            ("expected_ev", out["meta_resid_v2_expected_ev"]),
+        ):
+            out[f"meta_resid_v2_local__{slug}__{suffix}"] = (
+                source.to_numpy(dtype=np.float32) * mask
+            ).astype(np.float32)
+    return out
+
+
+def _residual_v2_sample_weight_multiplier(
+    frame: pd.DataFrame, arm: str
+) -> pd.Series | None:
+    """Return a causal train-only emphasis for difficult residual states.
+
+    The multiplier uses only frozen OOS residual-state predictions available as
+    model inputs. It never inspects the current fold's realized outcomes.
+    """
+
+    if arm not in RESIDUAL_STATES_V2_WEIGHTED_ARMS:
+        return None
+
+    def values(name: str) -> np.ndarray:
+        if name not in frame.columns:
+            return np.zeros(len(frame), dtype=np.float32)
+        return (
+            pd.to_numeric(frame[name], errors="coerce")
+            .fillna(0.0)
+            .to_numpy(dtype=np.float32, copy=False)
+        )
+
+    adverse = np.clip(values("meta_resid_v2_adverse_confident"), 0.0, 1.0)
+    favorable = np.clip(values("meta_resid_v2_favorable_confident"), 0.0, 1.0)
+    path_risk = np.clip(values("meta_resid_v2_expected_path_risk"), 0.0, 1.0)
+    uncertainty = np.clip(
+        values("meta_resid_v2_uncertainty_probability"), 0.0, 1.0
+    )
+    expected_surprise = np.clip(
+        values("meta_resid_v2_expected_hit_surprise"), -1.0, 1.0
+    )
+    negative_surprise = np.maximum(-expected_surprise, 0.0)
+    positive_surprise = np.maximum(expected_surprise, 0.0)
+
+    if arm in {
+        "residual_states_v2_priors_outcome_context_weighted",
+        "residual_states_v2_priors_outcome_context_identity_weighted",
+    }:
+        recent_bad = np.maximum(
+            values("base_arch_bad_mae_surprise_hl3d"),
+            values("base_arch_bad_mae_surprise_hl7d"),
+        )
+        recent_timeout = np.maximum(
+            values("base_arch_timeout_surprise_hl3d"),
+            values("base_arch_timeout_surprise_hl7d"),
+        )
+        recent_dirty = np.maximum(
+            values("base_arch_dirty_surprise_hl3d"),
+            values("base_arch_dirty_surprise_hl7d"),
+        )
+        ev_shift = np.maximum(
+            np.abs(values("base_arch_ev_surprise_hl3d")),
+            np.abs(values("base_arch_ev_surprise_hl7d")),
+        )
+        hit_shift = np.maximum(
+            np.abs(values("base_arch_hit_surprise_z_hl3d")),
+            np.abs(values("base_arch_hit_surprise_z_hl7d")),
+        )
+        support = np.maximum(
+            values("base_arch_outcome_effective_n_hl3d"),
+            values("base_arch_outcome_effective_n_hl7d"),
+        )
+        support_factor = np.clip(
+            np.log1p(np.maximum(support, 0.0)) / np.log(21.0), 0.0, 1.0
+        )
+        multiplier = (
+            1.0
+            + support_factor
+            * (
+                0.65 * np.clip(recent_bad, 0.0, 0.50)
+                + 0.45 * np.clip(recent_timeout, 0.0, 0.50)
+                + 0.25 * np.clip(recent_dirty, 0.0, 0.50)
+                + 0.20 * np.clip(ev_shift / 0.01, 0.0, 2.0)
+                + 0.10 * np.clip(hit_shift / 3.0, 0.0, 2.0)
+            )
+        )
+    elif arm == "residual_states_v2_distilled_weighted_mild":
+        multiplier = (
+            1.0
+            + 0.65 * adverse
+            + 0.30 * path_risk
+            + 0.20 * favorable
+            + 0.25 * negative_surprise
+            + 0.10 * positive_surprise
+        )
+    elif arm == "residual_states_v2_distilled_weighted_contrast":
+        multiplier = (
+            1.0
+            + 1.10 * adverse
+            + 0.55 * path_risk
+            + 0.55 * favorable
+            + 0.50 * negative_surprise
+            + 0.25 * positive_surprise
+            + 0.15 * uncertainty
+        )
+    else:
+        side = frame.get(
+            "side_name", pd.Series("missing", index=frame.index)
+        ).astype(str).str.lower()
+        archetype = frame.get(
+            "archetype_policy_key", pd.Series("missing", index=frame.index)
+        ).astype(str).str.lower()
+        short_failure = (
+            side.eq("short")
+            & (archetype.str.contains("breakout") | archetype.str.contains("mixed"))
+        ).to_numpy(dtype=np.float32)
+        multiplier = (
+            1.0
+            + 0.55 * adverse
+            + 0.25 * path_risk
+            + 0.20 * favorable
+            + short_failure * (0.85 * adverse + 0.60 * negative_surprise)
+        )
+
+    multiplier = np.clip(multiplier, 0.25, 4.0).astype(np.float32)
+    mean = float(np.mean(multiplier))
+    if np.isfinite(mean) and mean > 1e-8:
+        multiplier /= np.float32(mean)
+    return pd.Series(multiplier, index=frame.index, dtype=np.float32)
 
 
 def _local_aegmm_blocks_for_arm(arm: str) -> tuple[EconomicAEGMMBlock, ...]:
@@ -911,6 +1775,7 @@ def _append_frozen_local_aegmm(
     fit_start: str,
     fit_end: str,
     full_train_fit: bool,
+    eval_months: Sequence[str] = EVAL_MONTHS,
 ) -> tuple[pd.DataFrame, LocalEconomicAEGMM, dict[str, Any]]:
     blocks = _local_aegmm_blocks_for_arm(arm)
     if not blocks:
@@ -1002,7 +1867,7 @@ def _append_frozen_local_aegmm(
             if "fit_train" in locals()
             else None,
             "full_train_fit": bool(full_train_fit),
-            "growing_oos_months": list(EVAL_MONTHS),
+            "growing_oos_months": list(eval_months),
             "state_frozen_across_growing_oos_windows": True,
         }
     )
@@ -1026,6 +1891,183 @@ def _arm_candidate_features(
     ]
     if arm == "baseline_retrained":
         return base
+    if arm == "negative_residual_full_context":
+        additions = [
+            name
+            for name in data.columns
+            if name
+            in set(CFG.get("NEGATIVE_RESIDUAL_META_FEATURE_KEYS", []))
+        ]
+        return list(dict.fromkeys(base + additions))
+    if arm in RESIDUAL_STATES_V2_ARMS:
+        if arm in RESIDUAL_STATES_V2_DISTILLED_ARMS:
+            distilled = [
+                name
+                for name in data.columns
+                if name.startswith("meta_resid_v2_")
+                and (
+                    arm == "residual_states_v2_distilled_local_interactions"
+                    or not name.startswith("meta_resid_v2_local__")
+                )
+            ]
+            additions = list(distilled)
+            if arm in {
+                "residual_states_v2_distilled_priors",
+                "residual_states_v2_distilled_priors_hitrate_context",
+            }:
+                additions.extend(
+                    name
+                    for name in data.columns
+                    if name.startswith("meta_resid_arch_expected_")
+                )
+                additions.extend(
+                    name
+                    for name in (
+                        "meta_resid_arch_entropy",
+                        "meta_resid_arch_confidence",
+                        "meta_resid_arch_support_log1p",
+                        "meta_resid_arch_local_model",
+                    )
+                    if name in data.columns
+                )
+            if arm == "residual_states_v2_distilled_priors_hitrate_context":
+                additions.extend(HIT_SURPRISE_NUMERIC_FEATURES)
+            return list(dict.fromkeys(base + additions))
+        probabilities = [
+            name
+            for name in data.columns
+            if name.startswith("meta_resid_arch_prob__")
+        ]
+        priors = [
+            name
+            for name in data.columns
+            if name.startswith("meta_resid_arch_expected_")
+        ]
+        reliability = [
+            name
+            for name in (
+                "meta_resid_arch_entropy",
+                "meta_resid_arch_confidence",
+                "meta_resid_arch_support_log1p",
+                "meta_resid_arch_local_model",
+            )
+            if name in data.columns
+        ]
+        additions: list[str] = []
+        if arm == "residual_states_v2_archetype_market_failure_posteriors_only":
+            additions.extend(
+                name
+                for name in data.columns
+                if name.startswith("meta_resid_market_arch_")
+                and "cluster_id" not in name
+            )
+            return list(dict.fromkeys(base + additions))
+        if arm in {
+            "residual_states_v2_probabilities",
+            "residual_states_v2_probabilities_priors",
+            "residual_states_v2_probabilities_priors_market",
+            "residual_states_v2_full_aegmm",
+            "residual_states_v2_full_context",
+            "residual_states_v2_archetype_market_failure_posteriors",
+        }:
+            additions.extend(probabilities)
+        if arm in {
+            "residual_states_v2_priors",
+            "residual_states_v2_priors_market",
+            "residual_states_v2_priors_hitrate_context",
+            "residual_states_v2_priors_outcome_context",
+            "residual_states_v2_priors_outcome_context_weighted",
+            "residual_states_v2_priors_outcome_context_identity",
+            "residual_states_v2_priors_outcome_context_identity_weighted",
+            "residual_states_v2_priors_outcome_context_interactions",
+            "residual_states_v2_priors_failure_pressure_context",
+            "residual_states_v2_priors_failure_pressure_identity_context",
+            "residual_states_v2_probabilities_priors",
+            "residual_states_v2_probabilities_priors_market",
+            "residual_states_v2_full_aegmm",
+            "residual_states_v2_full_context",
+            "residual_states_v2_archetype_market_failure_posteriors",
+            "residual_states_v2_priors_local_models",
+            "residual_states_v2_priors_local_models_shrunk",
+        }:
+            additions.extend(priors)
+        if arm in {
+            "residual_states_v2_priors_hitrate_context",
+            "residual_states_v2_priors_outcome_context",
+            "residual_states_v2_priors_outcome_context_weighted",
+            "residual_states_v2_priors_outcome_context_identity",
+            "residual_states_v2_priors_outcome_context_identity_weighted",
+            "residual_states_v2_priors_outcome_context_interactions",
+            "residual_states_v2_priors_failure_pressure_context",
+            "residual_states_v2_priors_failure_pressure_identity_context",
+        }:
+            additions.extend(HIT_SURPRISE_NUMERIC_FEATURES)
+        if arm in {
+            "residual_states_v2_priors_outcome_context",
+            "residual_states_v2_priors_outcome_context_weighted",
+            "residual_states_v2_priors_outcome_context_identity",
+            "residual_states_v2_priors_outcome_context_identity_weighted",
+            "residual_states_v2_priors_outcome_context_interactions",
+            "residual_states_v2_priors_failure_pressure_context",
+            "residual_states_v2_priors_failure_pressure_identity_context",
+        }:
+            additions.extend(OUTCOME_CONTEXT_FEATURES)
+        if arm in {
+            "residual_states_v2_priors_failure_pressure_context",
+            "residual_states_v2_priors_failure_pressure_identity_context",
+        }:
+            additions.extend(FAILURE_PRESSURE_CONTEXT_FEATURES)
+        if arm in {
+            "residual_states_v2_priors_outcome_context_identity",
+            "residual_states_v2_priors_outcome_context_identity_weighted",
+            "residual_states_v2_priors_outcome_context_interactions",
+            "residual_states_v2_priors_failure_pressure_identity_context",
+        }:
+            additions.extend(
+                name for name in data.columns if name.startswith("meta_identity_")
+            )
+        if arm == "residual_states_v2_priors_outcome_context_interactions":
+            additions.extend(_outcome_identity_interaction_columns(data))
+        additions.extend(reliability)
+        if arm in {
+            "residual_states_v2_priors_market",
+            "residual_states_v2_probabilities_priors_market",
+            "residual_states_v2_full_context",
+            "residual_states_v2_archetype_market_failure_posteriors",
+        }:
+            market_features = [
+                name
+                for name in data.columns
+                if name.startswith("meta_resid_market_")
+            ]
+            if arm == "residual_states_v2_archetype_market_failure_posteriors":
+                market_features = [
+                    name
+                    for name in market_features
+                    if name.startswith("meta_resid_market_arch_")
+                    and "cluster_id" not in name
+                ]
+            additions.extend(market_features)
+        if arm in {"residual_states_v2_full_aegmm", "residual_states_v2_full_context"}:
+            additions.extend(
+                name for name in data.columns if name.startswith("meta_resid_ae_")
+            )
+        if arm == "residual_states_v2_full_context":
+            additions.extend(
+                name
+                for name in data.columns
+                if name.startswith(
+                    (
+                        "meta_resid_v2_hard_state_",
+                        "meta_resid_v2_ae_hard_cluster_",
+                        "meta_base_archetype__",
+                        "meta_side_",
+                        "meta_resid_market_",
+                        "meta_resid_v2_market_",
+                    )
+                )
+            )
+        return list(dict.fromkeys(base + additions))
     features = base + [name for name in lifecycle_keys if name in data.columns]
     if arm in {"residual_archetypes", "residual_archetypes_ae_gmm"}:
         features += [
@@ -1086,7 +2128,14 @@ def _select_arm_features(
     seed: int,
     force: bool = False,
 ) -> tuple[list[str], pd.DataFrame]:
-    if arm == "baseline_retrained":
+    if arm == "baseline_retrained" or arm in RESIDUAL_STATES_V2_ARMS:
+        method = (
+            "frozen_reference_plus_negative_residual_context"
+            if arm == "negative_residual_full_context"
+            else "frozen_reference_plus_residual_v2"
+            if arm in RESIDUAL_STATES_V2_ARMS
+            else "frozen_reference_contract"
+        )
         rows = pd.DataFrame(
             {
                 "feature": list(candidates)
@@ -1095,7 +2144,7 @@ def _select_arm_features(
                 "rank": np.arange(
                     1, len(candidates) + len(META_POST_SELECTION_OOD_FEATURE_NAMES) + 1
                 ),
-                "feature_selection_method": "frozen_reference_contract",
+                "feature_selection_method": method,
             }
         )
         return list(candidates) + list(META_POST_SELECTION_OOD_FEATURE_NAMES), rows
@@ -1154,7 +2203,7 @@ def _select_arm_features(
             ),
             flush=True,
         )
-    x_train_sel, _x_valid_sel, selected, rows = _select_features_by_lgbm_pipeline(
+    x_train_sel, _x_valid_sel, selected, _selected_by_side, rows = _select_features_by_lgbm_pipeline(
         x_train,
         x_valid,
         fs_train,
@@ -1202,6 +2251,143 @@ def _calibrate(model: LogisticRegression | None, scores: pd.Series) -> np.ndarra
     return model.predict_proba(values.reshape(-1, 1))[:, 1].astype(np.float32)
 
 
+def _fit_predict_meta_scores(
+    *,
+    arm: str,
+    x_train: pd.DataFrame,
+    target_train: pd.Series,
+    train: pd.DataFrame,
+    x_valid: pd.DataFrame,
+    valid: pd.DataFrame,
+    params: dict[str, Any],
+    seed: int,
+) -> tuple[Any, np.ndarray, dict[str, Any]]:
+    """Fit the frozen global model contract, optionally specialized by archetype."""
+
+    global_model = _fit_base_soft_label_model(
+        x_train,
+        target_train,
+        train,
+        seed,
+        lgbm_params=params,
+        sample_weight_multiplier=_residual_v2_sample_weight_multiplier(train, arm),
+    )
+    if global_model is None:
+        return None, np.full(len(valid), np.nan, dtype=np.float32), {}
+    global_scores = np.asarray(
+        _predict(global_model, x_valid, classifier=False), dtype=np.float32
+    )
+    if arm not in LOCAL_META_MODEL_ARMS:
+        return global_model, global_scores, {"global_rows": int(len(train))}
+
+    train_arch = train.get(
+        "archetype_policy_key", pd.Series("missing", index=train.index)
+    ).astype(str)
+    valid_arch = valid.get(
+        "archetype_policy_key", pd.Series("missing", index=valid.index)
+    ).astype(str)
+    scores = global_scores.copy()
+    local_models: dict[str, Any] = {}
+    support: dict[str, int] = {}
+    blend: dict[str, float] = {}
+    for group_idx, archetype in enumerate(sorted(valid_arch.unique().tolist())):
+        train_mask = train_arch.eq(archetype)
+        valid_mask = valid_arch.eq(archetype)
+        n_train = int(train_mask.sum())
+        if n_train < 10_000 or int(valid_mask.sum()) == 0:
+            continue
+        local_model = _fit_base_soft_label_model(
+            x_train.loc[train_mask],
+            target_train.loc[train_mask],
+            train.loc[train_mask],
+            seed + 10_007 * (group_idx + 1),
+            lgbm_params=params,
+        )
+        if local_model is None:
+            continue
+        local_scores = np.asarray(
+            _predict(local_model, x_valid.loc[valid_mask], classifier=False),
+            dtype=np.float32,
+        )
+        if arm == "residual_states_v2_priors_local_models_shrunk":
+            local_fraction = float(np.clip(n_train / (n_train + 50_000.0), 0.0, 0.90))
+        else:
+            local_fraction = 1.0
+        positions = np.flatnonzero(valid_mask.to_numpy())
+        scores[positions] = (
+            local_fraction * local_scores
+            + (1.0 - local_fraction) * global_scores[positions]
+        ).astype(np.float32)
+        local_models[str(archetype)] = local_model
+        support[str(archetype)] = n_train
+        blend[str(archetype)] = local_fraction
+    bundle = {"global": global_model, "local_by_archetype": local_models}
+    return bundle, scores, {
+        "global_rows": int(len(train)),
+        "local_train_rows": support,
+        "local_blend_fraction": blend,
+    }
+
+
+def _fit_walkforward_alternative_platt(
+    *,
+    data: pd.DataFrame,
+    arm: str,
+    month: str,
+    raw_selected: Sequence[str],
+    selected_features: Sequence[str],
+    params: dict[str, Any],
+    seed: int,
+) -> tuple[LogisticRegression | None, int]:
+    """Fit score calibration on the month immediately preceding an OOS fold.
+
+    The temporary model is trained strictly before the calibration month. Its
+    calibration-month predictions are therefore OOS, while the final meta
+    model remains free to use all rows before the evaluation month.
+    """
+
+    calibration_end = pd.Timestamp(pd.Period(month).start_time, tz="UTC")
+    calibration_start = calibration_end - pd.offsets.MonthBegin(1)
+    timestamps = pd.to_datetime(data["__ts__"], utc=True, errors="coerce")
+    fit = data.loc[timestamps.lt(calibration_start)].copy()
+    calibration = data.loc[
+        timestamps.ge(calibration_start) & timestamps.lt(calibration_end)
+    ].copy()
+    if len(fit) < 5_000 or len(calibration) < 200:
+        return None, 0
+    fit, calibration = _add_reference_fold_features(fit, calibration)
+    fit_target, _ = _base_soft_label_target(fit)
+    fit = fit.loc[fit_target.notna()].copy()
+    fit_target = fit_target.loc[fit.index]
+    x_fit, x_calibration, _ = _matrix_fit_transform(
+        fit, calibration, raw_selected
+    )
+    ood_state = _fit_ood_state(x_fit, raw_selected)
+    x_fit = _apply_ood_state(x_fit, ood_state).reindex(
+        columns=selected_features, fill_value=0.0
+    )
+    x_calibration = _apply_ood_state(x_calibration, ood_state).reindex(
+        columns=selected_features, fill_value=0.0
+    )
+    model, calibration_scores, _ = _fit_predict_meta_scores(
+        arm=arm,
+        x_train=x_fit,
+        target_train=fit_target,
+        train=fit,
+        x_valid=x_calibration,
+        valid=calibration,
+        params=params,
+        seed=seed,
+    )
+    if model is None:
+        return None, 0
+    platt = _fit_platt(
+        pd.Series(calibration_scores, index=calibration.index),
+        pd.to_numeric(calibration.get("clean_exec"), errors="coerce"),
+    )
+    return platt, int(len(calibration))
+
+
 def train_arm_oos(
     *,
     arm: str,
@@ -1213,6 +2399,8 @@ def train_arm_oos(
     eval_months: Sequence[str] = EVAL_MONTHS,
     artifact_tag: str = "",
     local_aegmm_state: LocalEconomicAEGMM | None = None,
+    alternative_hit_calibration: str = "walkforward",
+    regime_calibration_mode: str = "strict",
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     raw_selected = [
         name
@@ -1235,7 +2423,7 @@ def train_arm_oos(
         required_generated = [
             name for name in raw_selected if name.startswith("meta_resid_")
         ]
-        if required_generated:
+        if required_generated and arm not in RESIDUAL_STATES_V2_ARMS:
             train = train[train[required_generated].notna().all(axis=1)]
             valid = valid[valid[required_generated].notna().all(axis=1)]
         train, valid = _add_reference_fold_features(train, valid)
@@ -1244,6 +2432,20 @@ def train_arm_oos(
         target_train = target_train.loc[train.index]
         if len(train) < 5_000 or len(valid) < 100:
             continue
+        platt_alt = None
+        calibration_rows = 0
+        calibration_contract = "raw_score_no_alternative_calibration"
+        if alternative_hit_calibration == "walkforward":
+            platt_alt, calibration_rows = _fit_walkforward_alternative_platt(
+                data=data,
+                arm=arm,
+                month=month,
+                raw_selected=raw_selected,
+                selected_features=selected_features,
+                params=params,
+                seed=seed + fold_idx * 101 - 17,
+            )
+            calibration_contract = "prior_month_oos_predictions"
         x_train, x_valid, medians = _matrix_fit_transform(train, valid, raw_selected)
         ood_state = _fit_ood_state(x_train, raw_selected)
         x_train = _apply_ood_state(x_train, ood_state).reindex(
@@ -1252,24 +2454,41 @@ def train_arm_oos(
         x_valid = _apply_ood_state(x_valid, ood_state).reindex(
             columns=selected_features, fill_value=0.0
         )
-        model = _fit_base_soft_label_model(
-            x_train,
-            target_train,
-            train,
-            seed + fold_idx * 101,
-            lgbm_params=params,
+        model, score_valid, model_fit_manifest = _fit_predict_meta_scores(
+            arm=arm,
+            x_train=x_train,
+            target_train=target_train,
+            train=train,
+            x_valid=x_valid,
+            valid=valid,
+            params=params,
+            seed=seed + fold_idx * 101,
         )
         if model is None:
             raise RuntimeError(f"Meta model fit failed for arm={arm} month={month}")
-        score_train = _predict(model, x_train, classifier=False)
-        score_valid = _predict(model, x_valid, classifier=False)
         if (
             len(score_valid) != len(valid)
             or not np.isfinite(np.asarray(score_valid, dtype=np.float32)).any()
         ):
             raise RuntimeError(f"Meta prediction failed for arm={arm} month={month}")
+        if alternative_hit_calibration == "train_in_sample":
+            calibration_model = model.get("global") if isinstance(model, dict) else model
+            calibration_scores = np.asarray(
+                _predict(calibration_model, x_train, classifier=False),
+                dtype=np.float32,
+            )
+            platt_alt = _fit_platt(
+                pd.Series(calibration_scores, index=train.index),
+                pd.to_numeric(train.get("clean_exec"), errors="coerce"),
+            )
+            calibration_rows = int(len(train))
+            calibration_contract = "train_fold_in_sample_scores"
+        elif alternative_hit_calibration not in {"walkforward", "none"}:
+            raise ValueError(
+                "alternative_hit_calibration must be one of "
+                "'walkforward', 'train_in_sample', or 'none'"
+            )
         hit_train = pd.to_numeric(train.get("clean_exec"), errors="coerce")
-        platt_alt = _fit_platt(score_train, hit_train)
         platt_ref = _fit_platt(train.get("score_meta_base_soft_label"), hit_train)
         keep = [
             name
@@ -1307,6 +2526,19 @@ def train_arm_oos(
             and (name.endswith(local_state_report_suffixes) or "_prob__" in name)
             and name not in keep
         )
+        if arm in RESIDUAL_STATES_V2_ARMS:
+            keep.extend(
+                name
+                for name in valid.columns
+                if name.startswith("meta_resid_") and name not in keep
+            )
+        regime_artifact_path = default_regime_ev_calibration_artifact()
+        if regime_artifact_path is None:
+            raise FileNotFoundError("The promoted regime EV calibration artifact is missing")
+        regime_required = regime_required_feature_columns(
+            load_regime_ev_calibration(regime_artifact_path)
+        )
+        keep.extend(name for name in regime_required if name in valid.columns)
         scored = valid.loc[:, keep].copy()
         scored["calendar_month"] = str(month)
         # W-SUN periods start on Monday; W-MON would label Tuesday as the start.
@@ -1315,15 +2547,36 @@ def train_arm_oos(
             .dt.to_period("W-SUN")
             .dt.start_time.dt.tz_localize("UTC")
         )
-        scored["score_current_reference"] = pd.to_numeric(
+        scored["score_current_reference_uncalibrated"] = pd.to_numeric(
             scored["score_meta_base_soft_label"], errors="coerce"
         ).astype(np.float32)
-        scored["score_alternative"] = np.asarray(score_valid, dtype=np.float32)
+        scored["score_alternative_uncalibrated"] = np.asarray(
+            score_valid, dtype=np.float32
+        )
+        calibration_status: dict[str, Any] = {}
+        scored["score_current_reference"], current_status = (
+            _maybe_apply_frozen_regime_calibration_to_score(
+                scored,
+                source_col="score_current_reference_uncalibrated",
+                adjusted_col="score_current_reference",
+                mode=regime_calibration_mode,
+            )
+        )
+        scored["score_alternative"], alternative_status = (
+            _maybe_apply_frozen_regime_calibration_to_score(
+                scored,
+                source_col="score_alternative_uncalibrated",
+                adjusted_col="score_alternative",
+                mode=regime_calibration_mode,
+            )
+        )
+        calibration_status["current_reference"] = current_status
+        calibration_status["alternative"] = alternative_status
         scored["hit_prob_current_reference"] = _calibrate(
-            platt_ref, scored["score_current_reference"]
+            platt_ref, scored["score_current_reference_uncalibrated"]
         )
         scored["hit_prob_alternative"] = _calibrate(
-            platt_alt, scored["score_alternative"]
+            platt_alt, scored["score_alternative_uncalibrated"]
         )
         scored["oos_fold"] = str(month)
         predictions.append(scored)
@@ -1335,6 +2588,15 @@ def train_arm_oos(
                 "valid_rows": int(len(valid)),
                 "selected_features": int(len(selected_features)),
                 "target_column": target_col,
+                "calibration_rows": int(calibration_rows),
+                "calibration_contract": calibration_contract,
+                "regime_calibration_mode": regime_calibration_mode,
+                "regime_calibration_status": json.dumps(
+                    _json_safe(calibration_status), sort_keys=True
+                ),
+                "model_fit_manifest": json.dumps(
+                    _json_safe(model_fit_manifest), sort_keys=True
+                ),
             }
         )
         last_model = model
@@ -1342,6 +2604,27 @@ def train_arm_oos(
         last_ood_state = ood_state
         last_platt_alt = platt_alt
         last_platt_ref = platt_ref
+        fold_model_dir = output_dir / arm / "fold_models"
+        fold_model_dir.mkdir(parents=True, exist_ok=True)
+        joblib.dump(
+            {
+                "model": model,
+                "selected_features": list(selected_features),
+                "raw_selected_features": raw_selected,
+                "feature_medians": medians,
+                "ood_state": ood_state,
+                "params": params,
+                "hit_calibrator": platt_alt,
+                "reference_hit_calibrator": platt_ref,
+                "local_economic_aegmm_state": local_aegmm_state,
+                "fit_through": str(
+                    pd.Timestamp(pd.Period(month).start_time, tz="UTC")
+                    - pd.Timedelta(nanoseconds=1)
+                ),
+                "role": "alternative_meta_oos_fold_model",
+            },
+            fold_model_dir / f"score_{month}.joblib",
+        )
         print(
             json.dumps(
                 {
@@ -1420,6 +2703,144 @@ def _selection_mask(
     return rank.ge(1.0 - float(fraction)).fillna(False)
 
 
+def _apply_frozen_regime_calibration_to_score(
+    frame: pd.DataFrame,
+    *,
+    source_col: str,
+    adjusted_col: str,
+) -> pd.Series:
+    artifact_path = default_regime_ev_calibration_artifact()
+    if artifact_path is None:
+        raise FileNotFoundError("The promoted regime EV calibration artifact is missing")
+    artifact = load_regime_ev_calibration(artifact_path)
+    required = regime_required_feature_columns(artifact)
+    missing = [name for name in required if name not in frame.columns]
+    if missing:
+        raise ValueError(
+            "Exact regime-calibrated policy evaluation is missing features: "
+            f"{missing}"
+        )
+    calibrated = apply_regime_ev_calibration(
+        frame,
+        artifact,
+        source_score_col=source_col,
+        adjusted_score_col=adjusted_col,
+        side_col="side_name",
+        archetype_col="archetype_policy_key",
+        copy=True,
+    )
+    return pd.to_numeric(calibrated[adjusted_col], errors="coerce").astype(np.float32)
+
+
+def _maybe_apply_frozen_regime_calibration_to_score(
+    frame: pd.DataFrame,
+    *,
+    source_col: str,
+    adjusted_col: str,
+    mode: str,
+) -> tuple[pd.Series, dict[str, Any]]:
+    """Apply promoted regime calibration, or record an explicit research fallback.
+
+    The residual archetype enhancement runner is often used with compact
+    comparison frames that intentionally omit the full replay feature universe.
+    In strict mode we keep the production-like contract and raise.  In fallback
+    or skip mode the ablation remains runnable, but the manifest/fold rows make
+    clear that exact regime-calibrated policy scoring was not available.
+    """
+
+    if mode not in {"strict", "fallback", "skip"}:
+        raise ValueError("regime_calibration_mode must be strict, fallback, or skip")
+    raw = pd.to_numeric(frame[source_col], errors="coerce").astype(np.float32)
+    if mode == "skip":
+        return raw, {
+            "status": "skipped",
+            "mode": mode,
+            "source_col": source_col,
+            "adjusted_col": adjusted_col,
+        }
+    try:
+        calibrated = _apply_frozen_regime_calibration_to_score(
+            frame,
+            source_col=source_col,
+            adjusted_col=adjusted_col,
+        )
+        return calibrated, {
+            "status": "applied",
+            "mode": mode,
+            "source_col": source_col,
+            "adjusted_col": adjusted_col,
+        }
+    except (FileNotFoundError, ValueError) as exc:
+        if mode == "strict":
+            raise
+        return raw, {
+            "status": "fallback_uncalibrated",
+            "mode": mode,
+            "source_col": source_col,
+            "adjusted_col": adjusted_col,
+            "reason": str(exc),
+        }
+
+
+def append_reachable_ev_policy_decisions(
+    predictions: pd.DataFrame,
+    *,
+    policy_path: Path,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Apply the promoted causal 8d reachable-EV admission to both score streams."""
+
+    if not policy_path.exists():
+        raise FileNotFoundError(f"Threshold-basis policy is missing: {policy_path}")
+    from scripts.score_frozen_champion_full_history import (
+        _apply_causal_reachable_ev_policy,
+    )
+
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    expected_id = (
+        "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1"
+    )
+    if str(policy.get("policy_id")) != expected_id:
+        raise ValueError(
+            f"Unexpected threshold-basis policy: {policy.get('policy_id')}"
+        )
+    out = predictions.copy()
+    for suffix, score_col in (
+        ("current_reference", "score_current_reference"),
+        ("alternative", "score_alternative"),
+    ):
+        evaluated = _apply_causal_reachable_ev_policy(
+            out,
+            policy=policy,
+            score_col=score_col,
+            preserve_materialized_policy=False,
+        )
+        for target, source in (
+            (f"policy_selected_{suffix}", "threshold_basis_selected"),
+            (f"policy_rank_{suffix}", "threshold_basis_rank_score"),
+            (f"policy_dynamic_ev_target_{suffix}", "threshold_basis_dynamic_ev_target"),
+            (
+                f"policy_dynamic_score_threshold_{suffix}",
+                "threshold_basis_dynamic_score_threshold",
+            ),
+            (
+                f"policy_recent_reference_rows_{suffix}",
+                "threshold_basis_recent_reference_rows",
+            ),
+        ):
+            out[target] = evaluated[source].to_numpy(copy=False)
+    return out, {
+        "policy_path": str(policy_path),
+        "policy_id": expected_id,
+        "window_days": int(policy.get("window_days", 8)),
+        "hr_rank50": bool(policy.get("hr_rank50", False)),
+        "regime_calibration_policy_id": str(
+            policy.get("regime_calibration_policy_id", "")
+        ),
+        "current_selected_rows": int(out["policy_selected_current_reference"].sum()),
+        "alternative_selected_rows": int(out["policy_selected_alternative"].sum()),
+    }
+
+
 def _metric_record(
     frame: pd.DataFrame, mask: pd.Series, selector: str, arm: str, fraction: float
 ) -> dict[str, Any]:
@@ -1484,15 +2905,29 @@ def metrics_by_scope(predictions: pd.DataFrame, arm: str) -> pd.DataFrame:
         "week_side_archetype": ["week_start", "side_name", "archetype_policy_key"],
     }
     rows: list[dict[str, Any]] = []
+    policy_columns_available = {
+        "policy_selected_current_reference",
+        "policy_selected_alternative",
+    }.issubset(predictions.columns)
     selection_masks: dict[tuple[str, float], pd.Series] = {}
     for selector, score_col in (
         ("current_reference", "score_current_reference"),
         (arm, "score_alternative"),
     ):
         for fraction in (0.10, 0.20, 0.30):
-            selection_masks[(selector, fraction)] = _selection_mask(
-                predictions, score_col, fraction, ["__ts__"]
+            policy_column = (
+                "policy_selected_current_reference"
+                if selector == "current_reference"
+                else "policy_selected_alternative"
             )
+            if fraction == 0.10 and policy_column in predictions.columns:
+                selection_masks[(selector, fraction)] = predictions[
+                    policy_column
+                ].fillna(False).astype(bool)
+            else:
+                selection_masks[(selector, fraction)] = _selection_mask(
+                    predictions, score_col, fraction, ["__ts__"]
+                )
     for scope, group_cols in scopes.items():
         grouped: Iterable[tuple[Any, pd.DataFrame]]
         grouped = (
@@ -1512,7 +2947,15 @@ def metrics_by_scope(predictions: pd.DataFrame, arm: str) -> pd.DataFrame:
                         group.index, fill_value=False
                     )
                     record = _metric_record(group, mask, selector, arm, fraction)
-                    record["selection_basis"] = "global_within_timestamp"
+                    record["selection_basis"] = (
+                        "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1"
+                        if fraction == 0.10 and policy_columns_available
+                        else (
+                            "global_within_timestamp"
+                            if fraction == 0.10
+                            else "within_timestamp_rank_diagnostic_only"
+                        )
+                    )
                     record["scope"] = scope
                     for name, value in zip(group_cols, keys, strict=False):
                         record[name] = value
@@ -1937,35 +3380,63 @@ def surprise_calendar(
         ("current_reference", "score_current_reference", "hit_prob_current_reference"),
         (arm, "score_alternative", "hit_prob_alternative"),
     ):
-        mask = _selection_mask(work, score_col, 0.10, ["__ts__"])
-        selected = work.loc[mask].copy()
-        selected["hit_surprise"] = pd.to_numeric(
-            selected["clean_exec"], errors="coerce"
-        ) - pd.to_numeric(selected[prob_col], errors="coerce")
-        daily = (
-            selected.groupby(
-                ["date", "side_name", "archetype_policy_key"], dropna=False
-            )
-            .agg(
-                rows=("clean_exec", "size"),
-                hit_rate=("clean_exec", "mean"),
-                mean_hit_surprise=("hit_surprise", "mean"),
-                mean_ev_after_1pct=("ev_after_1pct", "mean"),
-            )
-            .reset_index()
+        policy_column = (
+            "policy_selected_current_reference"
+            if selector == "current_reference"
+            else "policy_selected_alternative"
         )
-        daily["selector"] = selector
-        daily["arm"] = arm
-        calendar_parts.append(daily)
+        selections = {
+            "raw_global_within_timestamp_top10": _selection_mask(
+                work, score_col, 0.10, ["__ts__"]
+            )
+        }
+        if policy_column in work.columns:
+            selections[
+                "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1"
+            ] = work[policy_column].fillna(False).astype(bool)
+        for selection_basis, mask in selections.items():
+            selected = work.loc[mask].copy()
+            selected["hit_surprise"] = pd.to_numeric(
+                selected["clean_exec"], errors="coerce"
+            ) - pd.to_numeric(selected[prob_col], errors="coerce")
+            selected["negative_hit_surprise"] = selected["hit_surprise"].clip(
+                upper=0.0
+            )
+            selected["positive_hit_surprise"] = selected["hit_surprise"].clip(
+                lower=0.0
+            )
+            daily = (
+                selected.groupby(
+                    ["date", "side_name", "archetype_policy_key"], dropna=False
+                )
+                .agg(
+                    rows=("clean_exec", "size"),
+                    hit_rate=("clean_exec", "mean"),
+                    mean_hit_surprise=("hit_surprise", "mean"),
+                    mean_negative_hit_surprise=("negative_hit_surprise", "mean"),
+                    mean_positive_hit_surprise=("positive_hit_surprise", "mean"),
+                    mean_ev_after_1pct=("ev_after_1pct", "mean"),
+                )
+                .reset_index()
+            )
+            daily["selector"] = selector
+            daily["arm"] = arm
+            daily["selection_basis"] = selection_basis
+            calendar_parts.append(daily)
     calendar = pd.concat(calendar_parts, ignore_index=True)
     autocorr_rows: list[dict[str, Any]] = []
-    for (selector, side, arch), group in calendar.groupby(
-        ["selector", "side_name", "archetype_policy_key"], dropna=False
+    for (selection_basis, selector, side, arch), group in calendar.groupby(
+        ["selection_basis", "selector", "side_name", "archetype_policy_key"],
+        dropna=False,
     ):
-        series = group.sort_values("date")["mean_hit_surprise"].astype(float)
+        ordered = group.sort_values("date", kind="stable")
+        series = ordered["mean_hit_surprise"].astype(float)
+        negative = ordered["mean_negative_hit_surprise"].astype(float)
+        positive = ordered["mean_positive_hit_surprise"].astype(float)
         autocorr_rows.append(
             {
                 "arm": arm,
+                "selection_basis": selection_basis,
                 "selector": selector,
                 "side_name": side,
                 "archetype_policy_key": arch,
@@ -1976,12 +3447,18 @@ def surprise_calendar(
                 "surprise_autocorr_lag3": float(series.autocorr(3))
                 if len(series) >= 5
                 else np.nan,
+                "negative_surprise_autocorr_lag1": float(negative.autocorr(1))
+                if len(negative) >= 3
+                else np.nan,
+                "positive_surprise_autocorr_lag1": float(positive.autocorr(1))
+                if len(positive) >= 3
+                else np.nan,
             }
         )
     autocorr = pd.DataFrame(autocorr_rows)
     base = calendar[calendar["selector"].eq("current_reference")].copy()
     alt = calendar[calendar["selector"].eq(arm)].copy()
-    keys = ["date", "side_name", "archetype_policy_key"]
+    keys = ["selection_basis", "date", "side_name", "archetype_policy_key"]
     comparison = base.merge(alt, on=keys, suffixes=("_base", "_alt"), how="inner")
     comparison["surprise_abs_improvement"] = (
         comparison["mean_hit_surprise_base"].abs()
@@ -1992,7 +3469,7 @@ def surprise_calendar(
     )
     if not comparison.empty:
         comparison["baseline_tail_threshold"] = comparison.groupby(
-            ["side_name", "archetype_policy_key"]
+            ["selection_basis", "side_name", "archetype_policy_key"]
         )["mean_hit_surprise_base"].transform(lambda s: s.abs().quantile(0.90))
         comparison["baseline_high_surprise"] = (
             comparison["mean_hit_surprise_base"]
@@ -2008,18 +3485,40 @@ def surprise_calendar(
 def _experiment_score(
     metrics: pd.DataFrame, autocorr: pd.DataFrame, calendar_cmp: pd.DataFrame, arm: str
 ) -> dict[str, Any]:
+    raw_basis = "raw_global_within_timestamp_top10"
+    policy_basis = (
+        "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1"
+    )
+    raw_autocorr = (
+        autocorr[autocorr["selection_basis"].eq(raw_basis)]
+        if "selection_basis" in autocorr.columns
+        else autocorr
+    )
+    policy_autocorr = (
+        autocorr[autocorr["selection_basis"].eq(policy_basis)]
+        if "selection_basis" in autocorr.columns
+        else pd.DataFrame(columns=autocorr.columns)
+    )
     overall = metrics[(metrics["scope"].eq("overall")) & (metrics["fraction"].eq(0.10))]
     base = overall[overall["selector"].eq("current_reference")].iloc[0]
     alt = overall[overall["selector"].eq(arm)].iloc[0]
     week = metrics[(metrics["scope"].eq("week")) & (metrics["fraction"].eq(0.10))]
+    month = metrics[(metrics["scope"].eq("month")) & (metrics["fraction"].eq(0.10))]
     base_worst = float(
         week[week["selector"].eq("current_reference")]["mean_ev_after_1pct"].min()
     )
     alt_worst = float(week[week["selector"].eq(arm)]["mean_ev_after_1pct"].min())
+    base_worst_month = float(
+        month[month["selector"].eq("current_reference")]["mean_ev_after_1pct"].min()
+    )
+    alt_worst_month = float(
+        month[month["selector"].eq(arm)]["mean_ev_after_1pct"].min()
+    )
     base_ac = (
         pd.to_numeric(
-            autocorr.loc[
-                autocorr["selector"].eq("current_reference"), "surprise_autocorr_lag1"
+            raw_autocorr.loc[
+                raw_autocorr["selector"].eq("current_reference"),
+                "surprise_autocorr_lag1",
             ],
             errors="coerce",
         )
@@ -2028,13 +3527,50 @@ def _experiment_score(
     )
     alt_ac = (
         pd.to_numeric(
-            autocorr.loc[autocorr["selector"].eq(arm), "surprise_autocorr_lag1"],
+            raw_autocorr.loc[
+                raw_autocorr["selector"].eq(arm), "surprise_autocorr_lag1"
+            ],
             errors="coerce",
         )
         .abs()
         .mean()
     )
-    tail = calendar_cmp[calendar_cmp.get("baseline_high_surprise", False)].copy()
+    component_autocorr: dict[str, tuple[float, float]] = {}
+    for column in (
+        "negative_surprise_autocorr_lag1",
+        "positive_surprise_autocorr_lag1",
+    ):
+        base_component = (
+            pd.to_numeric(
+                raw_autocorr.loc[
+                    raw_autocorr["selector"].eq("current_reference"), column
+                ],
+                errors="coerce",
+            )
+            .abs()
+            .mean()
+        )
+        alt_component = (
+            pd.to_numeric(
+                raw_autocorr.loc[raw_autocorr["selector"].eq(arm), column],
+                errors="coerce",
+            )
+            .abs()
+            .mean()
+        )
+        component_autocorr[column] = (float(base_component), float(alt_component))
+    base_negative_ac, alt_negative_ac = component_autocorr[
+        "negative_surprise_autocorr_lag1"
+    ]
+    base_positive_ac, alt_positive_ac = component_autocorr[
+        "positive_surprise_autocorr_lag1"
+    ]
+    tail_source = (
+        calendar_cmp[calendar_cmp["selection_basis"].eq(raw_basis)]
+        if "selection_basis" in calendar_cmp.columns
+        else calendar_cmp
+    )
+    tail = tail_source[tail_source.get("baseline_high_surprise", False)].copy()
     high_improved = (
         float(
             tail.get(
@@ -2046,8 +3582,11 @@ def _experiment_score(
     )
     score = (
         100.0 * (float(alt["mean_ev_after_1pct"]) - float(base["mean_ev_after_1pct"]))
-        + 30.0 * (base_worst - alt_worst) * -1.0
-        + 0.25 * (float(base_ac) - float(alt_ac))
+        + 30.0 * (alt_worst - base_worst)
+        + 20.0 * (alt_worst_month - base_worst_month)
+        + 0.15 * (float(base_ac) - float(alt_ac))
+        + 0.20 * (base_negative_ac - alt_negative_ac)
+        + 0.10 * (base_positive_ac - alt_positive_ac)
         + 0.10 * (0.0 if not np.isfinite(high_improved) else high_improved)
     )
     return {
@@ -2059,9 +3598,45 @@ def _experiment_score(
         "worst_week_ev_base": base_worst,
         "worst_week_ev_alt": alt_worst,
         "worst_week_ev_delta": float(alt_worst - base_worst),
+        "worst_month_ev_base": base_worst_month,
+        "worst_month_ev_alt": alt_worst_month,
+        "worst_month_ev_delta": float(alt_worst_month - base_worst_month),
         "mean_abs_surprise_autocorr_base": float(base_ac),
         "mean_abs_surprise_autocorr_alt": float(alt_ac),
         "mean_abs_surprise_autocorr_delta": float(alt_ac - base_ac),
+        "mean_abs_negative_surprise_autocorr_base": base_negative_ac,
+        "mean_abs_negative_surprise_autocorr_alt": alt_negative_ac,
+        "mean_abs_negative_surprise_autocorr_delta": float(
+            alt_negative_ac - base_negative_ac
+        ),
+        "mean_abs_positive_surprise_autocorr_base": base_positive_ac,
+        "mean_abs_positive_surprise_autocorr_alt": alt_positive_ac,
+        "mean_abs_positive_surprise_autocorr_delta": float(
+            alt_positive_ac - base_positive_ac
+        ),
+        "autocorr_objective_selection_basis": raw_basis,
+        "policy_mean_abs_surprise_autocorr_base": float(
+            pd.to_numeric(
+                policy_autocorr.loc[
+                    policy_autocorr["selector"].eq("current_reference"),
+                    "surprise_autocorr_lag1",
+                ],
+                errors="coerce",
+            )
+            .abs()
+            .mean()
+        ),
+        "policy_mean_abs_surprise_autocorr_alt": float(
+            pd.to_numeric(
+                policy_autocorr.loc[
+                    policy_autocorr["selector"].eq(arm),
+                    "surprise_autocorr_lag1",
+                ],
+                errors="coerce",
+            )
+            .abs()
+            .mean()
+        ),
         "high_surprise_period_improvement_rate": high_improved,
         "unimproved_high_surprise_periods": int(
             (
@@ -2074,13 +3649,30 @@ def _experiment_score(
 
 
 def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
-    dataset_path, dataset_manifest, reference_selected, params = prepare_dataset(
-        handoff=args.handoff,
-        reference_dir=args.reference_dir,
-        feature_root=args.feature_root,
-        output_dir=args.output_dir,
-        force=args.force_prepare,
-    )
+    eval_months = _parse_months(args.eval_months)
+    if args.prepared_dataset is not None:
+        if not args.prepared_dataset.exists():
+            raise FileNotFoundError(args.prepared_dataset)
+        reference_selected, params, reference_manifest = _reference_contract(
+            args.reference_dir
+        )
+        dataset_path = args.prepared_dataset
+        dataset_manifest = {
+            "path": str(dataset_path),
+            "status": "external_prepared_dataset",
+            "reference_manifest": str(args.reference_dir / "manifest.json"),
+            "reference_selected_features": reference_selected,
+            "reference_model_params": params,
+            "reference_model_preserved": True,
+        }
+    else:
+        dataset_path, dataset_manifest, reference_selected, params = prepare_dataset(
+            handoff=args.handoff,
+            reference_dir=args.reference_dir,
+            feature_root=args.feature_root,
+            output_dir=args.output_dir,
+            force=args.force_prepare,
+        )
     if args.prepare_only:
         return {"status": "prepared", "dataset": dataset_manifest}
     data = pd.read_parquet(dataset_path)
@@ -2094,6 +3686,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         .reset_index(drop=True)
     )
     data = _append_cross_sectional_geometry(data)
+    data = _append_meta_identity_features(data)
     requested_arms = [name.strip() for name in args.arms.split(",") if name.strip()]
     unknown = sorted(set(requested_arms) - set(MODEL_ARMS))
     if unknown:
@@ -2160,10 +3753,50 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     )
     raw_residual = pd.DataFrame()
     ae_residual = pd.DataFrame()
-    if any(
-        name in requested_arms
-        for name in ("residual_archetypes", "residual_archetypes_ae_gmm")
-    ):
+    external_residual = pd.DataFrame()
+    v2_data: pd.DataFrame | None = None
+    if any(name in RESIDUAL_STATES_V2_ARMS for name in requested_arms):
+        if args.external_residual_features is None or not args.external_residual_features.exists():
+            raise FileNotFoundError(
+                "Residual-state v2 arms require --external-residual-features"
+            )
+        available = set(_parquet_columns(args.external_residual_features))
+        include_full_aegmm = any(
+            name in requested_arms
+            for name in ("residual_states_v2_full_aegmm", "residual_states_v2_full_context")
+        )
+        external_columns = [
+            name
+            for name in [*KEY_COLUMNS, *sorted(available)]
+            if name in available
+            and (
+                name in KEY_COLUMNS
+                or name.startswith("meta_resid_arch_")
+                or name.startswith("meta_resid_market_")
+                or (include_full_aegmm and name.startswith("meta_resid_ae_"))
+                or (
+                    "negative_residual_full_context" in requested_arms
+                    and name
+                    in set(
+                            CFG.get("NEGATIVE_RESIDUAL_META_FEATURE_KEYS", [])
+                    )
+                )
+            )
+        ]
+        external_residual = pd.read_parquet(
+            args.external_residual_features,
+            columns=list(dict.fromkeys(external_columns)),
+        )
+        external_residual["__ts__"] = pd.to_datetime(
+            external_residual["__ts__"], utc=True, errors="coerce"
+        )
+        v2_data = _merge_residual_features(
+            data,
+            external_residual,
+            fill_unknown=True,
+        )
+        v2_data = _append_residual_state_v2_composites(v2_data)
+    if "residual_archetypes" in requested_arms:
         raw_residual, _, _ = build_walkforward_residual_features(
             data=data,
             candidate_features=recognizer_inputs,
@@ -2194,6 +3827,10 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             arm_data = _merge_residual_features(data, raw_residual)
         elif arm == "residual_archetypes_ae_gmm":
             arm_data = _merge_residual_features(data, ae_residual)
+        elif arm in RESIDUAL_STATES_V2_ARMS:
+            if v2_data is None:
+                raise RuntimeError("Residual-state v2 data was not materialized")
+            arm_data = v2_data
         elif arm in LOCAL_AEGMM_ARMS:
             arm_data, local_aegmm_state, local_aegmm_manifest = (
                 _append_frozen_local_aegmm(
@@ -2206,6 +3843,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                     fit_start=args.aegmm_fit_start,
                     fit_end=args.aegmm_fit_end,
                     full_train_fit=bool(args.aegmm_full_fit),
+                    eval_months=eval_months,
                 )
             )
         candidates = _arm_candidate_features(
@@ -2244,7 +3882,10 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             params=params,
             output_dir=args.output_dir,
             seed=args.seed + arm_idx * 1009,
+            eval_months=eval_months,
             local_aegmm_state=local_aegmm_state,
+            alternative_hit_calibration=str(args.alternative_hit_calibration),
+            regime_calibration_mode=str(args.regime_calibration_mode),
         )
         print(
             json.dumps(
@@ -2255,6 +3896,15 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                 }
             ),
             flush=True,
+        )
+        predictions, threshold_policy_manifest = append_reachable_ev_policy_decisions(
+            predictions,
+            policy_path=args.threshold_basis_policy,
+        )
+        predictions.to_parquet(
+            arm_dir / "oos_predictions_policy_scored.parquet",
+            index=False,
+            compression="zstd",
         )
         metrics = metrics_by_scope(predictions, arm)
         state_metrics = local_aegmm_metrics_by_state(predictions, arm)
@@ -2293,9 +3943,18 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                 "selected_feature_count": len(selected),
                 "feature_selection_fit_end": "2026-02-28",
                 "feature_selection_validation_month": "2026-03",
+                "eval_months": list(eval_months),
+                "threshold_basis_policy": threshold_policy_manifest,
                 "model_params_source": str(args.reference_dir / "manifest.json"),
                 "current_meta_model_overwritten": False,
                 "local_economic_aegmm": local_aegmm_manifest,
+                "external_residual_features": (
+                    str(args.external_residual_features)
+                    if arm in RESIDUAL_STATES_V2_ARMS
+                    else None
+                ),
+                "alternative_hit_calibration": str(args.alternative_hit_calibration),
+                "regime_calibration_mode": str(args.regime_calibration_mode),
             }
         )
         _write_json(arm_dir / "manifest.json", arm_manifest)
@@ -2334,9 +3993,13 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         "scorecards": scorecards,
         "dataset": dataset_manifest,
         "arms": arm_manifests,
-        "eval_months": list(EVAL_MONTHS),
-        "feature_selection": "once before April; canonical lgbm_pipeline staged selector; no hard feature-count cap",
+        "eval_months": list(eval_months),
+        "feature_selection": (
+            "once with train rows before 2026-03 and 2026-03 validation; "
+            "canonical lgbm_pipeline staged selector; no hard feature-count cap"
+        ),
         "model_params": "frozen from current reference meta model",
+        "alternative_hit_calibration": str(args.alternative_hit_calibration),
         "base_model_retrained": False,
         "current_meta_model_overwritten": False,
         "local_aegmm_training_archive": (
@@ -2350,8 +4013,8 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         "leakage_contract": {
             "residual_labels": "frozen current-meta OOS predictions only",
             "residual_recognizers": "monthly expanding train; OOS outcomes rejected",
-            "feature_selection": "data through February 2026, March validation, frozen for April-May-June",
-            "evaluation": "April, May, June OOS only",
+            "feature_selection": "data through February 2026, March validation, frozen for configured OOS months",
+            "evaluation": "configured expanding-window OOS months only",
         },
     }
     _write_json(args.output_dir / "manifest.json", manifest)
@@ -2364,6 +4027,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reference-dir", type=Path, default=DEFAULT_REFERENCE_DIR)
     parser.add_argument("--feature-root", type=Path, default=DEFAULT_FEATURE_ROOT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument(
+        "--prepared-dataset",
+        type=Path,
+        default=None,
+        help="Reuse an existing point-in-time prepared meta dataset without rebuilding it.",
+    )
+    parser.add_argument(
+        "--external-residual-features",
+        type=Path,
+        default=DEFAULT_EXTERNAL_RESIDUAL_FEATURES,
+    )
+    parser.add_argument(
+        "--threshold-basis-policy",
+        type=Path,
+        default=DEFAULT_THRESHOLD_BASIS_POLICY,
+        help=(
+            "Frozen reachable-EV 8d HR-off regime-calibrated policy used for "
+            "top10 ranking assessment."
+        ),
+    )
     parser.add_argument(
         "--aegmm-training-archive",
         type=Path,
@@ -2384,6 +4067,37 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--arms", default=",".join(MODEL_ARMS))
+    parser.add_argument(
+        "--eval-months",
+        default=",".join(EVAL_MONTHS),
+        help=(
+            "Comma-separated YYYY-MM OOS months. Include an earlier burn-in "
+            "month when downstream sequential calibration needs prior OOS "
+            "alternative scores."
+        ),
+    )
+    parser.add_argument(
+        "--alternative-hit-calibration",
+        choices=("walkforward", "train_in_sample", "none"),
+        default="walkforward",
+        help=(
+            "How to map alternative meta scores to hit probabilities for "
+            "hit-surprise reporting. 'walkforward' is strict but slow because "
+            "it trains an auxiliary prior-month model; 'train_in_sample' uses "
+            "the fold train scores only; 'none' reports clipped raw scores."
+        ),
+    )
+    parser.add_argument(
+        "--regime-calibration-mode",
+        choices=("strict", "fallback", "skip"),
+        default="strict",
+        help=(
+            "How to apply the promoted regime EV calibration to residual-ablation "
+            "score streams. 'strict' raises when exact replay features are absent; "
+            "'fallback' records the missing-feature reason and uses uncalibrated "
+            "scores; 'skip' always uses uncalibrated scores."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260711)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--force-prepare", action="store_true")

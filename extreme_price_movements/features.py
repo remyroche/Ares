@@ -27,6 +27,10 @@ from extreme_price_movements.features_oi import (
     compute_oi_features,
     get_oi_feature_names,
 )
+from extreme_price_movements.features_negative_residuals import (
+    add_negative_residual_features,
+    expand_negative_residual_feature_dependencies,
+)
 from extreme_price_movements.features_residual import add_residual_features
 from extreme_price_movements.frac_diff_adaptive import (
     find_min_ffd,
@@ -158,7 +162,19 @@ _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
 
 _INTRADAY_PERSISTED_KEY_SET = set(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
 _LIVE_IMPOSSIBLE_OR_LEAKAGE_FEATURE_KEYS: set[str] = set()
-_ORDERBOOK_PREFIXES = ("ob_", "obw_", "_obw_", "xasset_ob_", "xasset_mkt_ob_")
+# ``ob_*`` and cross-asset derivatives are historical hourly microstructure
+# proxies reconstructed from causal OHLCV/kline summaries.  Only the wall
+# primitives below require an actual L2 snapshot.  Keeping these contracts
+# separate prevents a live book snapshot from becoming an accidental model
+# input that cannot be reproduced in training or replay.
+_ORDERBOOK_PROXY_PREFIXES = ("ob_", "xasset_ob_", "xasset_mkt_ob_")
+_TRUE_L2_ORDERBOOK_PREFIXES = ("obw_", "_obw_", "orderbook_", "book_")
+_TRUE_L2_ORDERBOOK_EXACT_PREFIXES = (
+    "ob_bid_wall_",
+    "ob_ask_wall_",
+    "ob_nearest_bid_wall_",
+    "ob_nearest_ask_wall_",
+)
 _FUNDING_PREFIXES = (
     "fund_",
     "funding_",
@@ -314,7 +330,9 @@ def _feature_source_requirements(name: str) -> set[str]:
         or key.startswith(_NON_PORTABLE_DELETE_PREFIXES)
     ):
         requirements.add("deleted")
-    if key.startswith(_ORDERBOOK_PREFIXES):
+    if key.startswith(_TRUE_L2_ORDERBOOK_PREFIXES) or key.startswith(
+        _TRUE_L2_ORDERBOOK_EXACT_PREFIXES
+    ):
         requirements.add("orderbook")
     if key.startswith(_FUNDING_PREFIXES) or key in _FUNDING_EXACT_FEATURE_KEYS:
         requirements.add("funding")
@@ -2968,9 +2986,187 @@ def _apply_causal_transform_live_state_or_batch(
     skip_transform_set = {k for k in (skip_transform_set or set()) if k in feats}
     feat_keys_list = list(feats.keys())
     stateful_transform_used = False
-    if bool(cfg.get("live_causal_transform_state_enabled", False)):
-        state_path = cfg.get("live_causal_transform_state_path")
-        if state_path:
+    state_enabled = bool(
+        cfg.get("feature_causal_transform_state_enabled", False)
+        or cfg.get("live_causal_transform_state_enabled", False)
+    )
+    if state_enabled:
+        state_path = cfg.get("feature_causal_transform_state_path") or cfg.get(
+            "live_causal_transform_state_path"
+        )
+        use_per_feature_container = bool(
+            cfg.get(
+                "feature_causal_transform_per_feature_container_enabled",
+                cfg.get("feature_causal_transform_state_enabled", False),
+            )
+        )
+        if state_path and use_per_feature_container:
+            container = None
+            try:
+                from extreme_price_movements.inference.live_zscore_state import (
+                    CausalTransformStateContainer,
+                    CausalTransformStateContainerBusy,
+                    RollingZScoreState,
+                    causal_transform_state_container_path,
+                )
+
+                state_keys = [
+                    key for key in feat_keys_list if key not in skip_transform_set
+                ]
+                # ``transform_batch`` mutates ``feats`` in place.  Persisted
+                # state must advance from the untransformed feature values;
+                # otherwise an incremental pass applies the causal transform
+                # a second time and diverges from a full-history calculation.
+                raw_arrays: dict[str, np.ndarray] = {}
+                for key in state_keys:
+                    raw = np.asarray(feats[key], dtype=np.float32)
+                    if raw.ndim == 1:
+                        raw = np.broadcast_to(raw[:, None], feature_shape)
+                    raw_arrays[key] = np.asarray(raw, dtype=np.float32).copy()
+                transformed = transformer.transform_batch(
+                    feats,
+                    skip_keys=skip_transform_set,
+                    chunk_size=int(cfg.get("transform_chunk_size", 50)),
+                )
+                contract_hash = str(
+                    cfg.get("feature_causal_transform_contract_hash")
+                    or cfg.get("feature_transform_contract_hash")
+                    or cfg.get("static_feature_endpoint_version")
+                    or "causal_transform_formula_v3"
+                )
+                scope = str(
+                    cfg.get("feature_causal_transform_state_scope")
+                    or cfg.get("run_id")
+                    or "unknown"
+                )
+                namespace = CausalTransformStateContainer.namespace_key(
+                    scope=scope,
+                    transform_contract=contract_hash,
+                    symbols=feature_columns,
+                    window=int(transformer.roll_window),
+                    winsor_qt=float(transformer.winsor_qt),
+                    sigma_k=float(transformer.sigma_k),
+                )
+                container_path = cfg.get(
+                    "feature_causal_transform_state_container_path"
+                ) or causal_transform_state_container_path(state_path)
+                container = CausalTransformStateContainer.open(container_path)
+                state = container.get_many(
+                    namespace,
+                    feature_keys=state_keys,
+                    symbols=feature_columns,
+                    window=int(transformer.roll_window),
+                    winsor_qt=float(transformer.winsor_qt),
+                    sigma_k=float(transformer.sigma_k),
+                )
+                if state is None:
+                    state = RollingZScoreState(
+                        state_keys,
+                        feature_columns,
+                        int(transformer.roll_window),
+                        float(transformer.sigma_k),
+                        winsor_qt=float(transformer.winsor_qt),
+                    )
+
+                transformed_arrays: dict[str, np.ndarray] = {}
+                for key in state_keys:
+                    out = np.asarray(transformed[key], dtype=np.float32)
+                    if out.ndim == 1:
+                        out = np.broadcast_to(out[:, None], feature_shape).copy()
+                    transformed_arrays[key] = np.asarray(out, dtype=np.float32)
+
+                starts: dict[str, int] = {}
+                existing_keys: set[str] = set()
+                seed_rows = min(int(transformer.roll_window), len(feature_index))
+                seed_start = max(0, len(feature_index) - seed_rows)
+                for key in state_keys:
+                    cursor_raw = state.feature_last_timestamp(key)
+                    if cursor_raw is None:
+                        starts[key] = seed_start
+                        continue
+                    cursor = pd.Timestamp(cursor_raw)
+                    index_tz = getattr(feature_index, "tz", None)
+                    if cursor.tzinfo is not None and index_tz is None:
+                        cursor = cursor.tz_convert("UTC").tz_localize(None)
+                    elif cursor.tzinfo is None and index_tz is not None:
+                        cursor = cursor.tz_localize(index_tz)
+                    if len(feature_index) == 0 or pd.Timestamp(feature_index[-1]) <= cursor:
+                        continue
+                    positions = np.flatnonzero(feature_index > cursor)
+                    if positions.size == 0:
+                        continue
+                    start = int(positions[0])
+                    if start == 0 and pd.Timestamp(feature_index[0]) > cursor + pd.Timedelta(hours=1):
+                        tprint(
+                            "CausalTransform per-feature append refused across gap: "
+                            f"feature={key} request_start={pd.Timestamp(feature_index[0]).isoformat()} "
+                            f"state_last_ts={cursor.isoformat()}"
+                        )
+                        continue
+                    starts[key] = start
+                    existing_keys.add(key)
+
+                advanced: set[str] = set()
+                if starts:
+                    first_pos = min(starts.values())
+                    for pos in range(first_pos, len(feature_index)):
+                        active = [key for key, start in starts.items() if start <= pos]
+                        if not active:
+                            continue
+                        row_out = state.update(
+                            {key: raw_arrays[key][pos, :] for key in active},
+                            timestamp=pd.Timestamp(feature_index[pos]).isoformat(),
+                        )
+                        # Existing states must produce the append result from
+                        # their full persisted history. Newly introduced keys
+                        # retain the vectorized batch output while their last
+                        # window is seeded for subsequent increments.
+                        for key in active:
+                            if key in existing_keys:
+                                transformed_arrays[key][pos, :] = row_out[key]
+                        advanced.update(active)
+                    container.put_many(namespace, state, feature_keys=sorted(advanced))
+                container.close()
+                container = None
+
+                for key in state_keys:
+                    transformed[key] = pd.DataFrame(
+                        transformed_arrays[key],
+                        index=feature_index,
+                        columns=feature_columns,
+                        copy=False,
+                    )
+                for key in skip_transform_set:
+                    arr = np.asarray(transformed[key], dtype=np.float32)
+                    if arr.ndim == 1:
+                        arr = np.broadcast_to(arr[:, None], feature_shape)
+                    transformed[key] = pd.DataFrame(
+                        arr, index=feature_index, columns=feature_columns, copy=False
+                    )
+                tprint(
+                    "CausalTransform per-feature state complete: "
+                    f"features={len(state_keys)} advanced={len(advanced)} "
+                    f"path={container_path}"
+                )
+                return transformed
+            except CausalTransformStateContainerBusy:
+                tprint(
+                    "CausalTransform per-feature state is busy; using "
+                    "non-persistent batched transform for this pass."
+                )
+            except Exception as exc:
+                tprint(
+                    "CausalTransform per-feature state unavailable; falling back "
+                    f"to batched transform: {type(exc).__name__}: {exc}"
+                )
+            finally:
+                if container is not None:
+                    try:
+                        container.abort()
+                    except Exception:
+                        pass
+            use_per_feature_container = False
+        if state_path and not use_per_feature_container:
             try:
                 from extreme_price_movements.inference.live_zscore_state import (
                     RollingZScoreState,
@@ -2978,7 +3174,9 @@ def _apply_causal_transform_live_state_or_batch(
 
                 state_keys = [k for k in feat_keys_list if k not in skip_transform_set]
                 transform_contract_parts = [
-                    "live_causal_transform_state_v2",
+                    "causal_transform_state_v2"
+                    if cfg.get("feature_causal_transform_state_enabled", False)
+                    else "live_causal_transform_state_v2",
                     f"contract_hash={cfg.get('feature_transform_contract_hash') or cfg.get('feature_causal_transform_contract_hash') or ''}",
                     f"window={int(transformer.roll_window)}",
                     f"winsor_qt={float(transformer.winsor_qt):.12g}",
@@ -3256,6 +3454,17 @@ def _compute_live_lgbm_mask_features_fast(
 ) -> tuple[dict[str, pd.DataFrame], pd.Index, list[str]] | None:
     """Latest/tail path for deployment-mask keys without full feature-family rebuild."""
     if not bool(cfg.get("live_lgbm_mask_feature_fast_path_enabled", True)):
+        return None
+    # The common static endpoint persists raw rolling state by feature-store
+    # identity.  This legacy shortcut recomputes every rolling primitive from
+    # its supplied tail and therefore cannot safely participate in an
+    # incremental append contract.  Fall back to the stateful core whenever
+    # that contract is active.  Current production feature sets already take
+    # the core path because they include broader context features.
+    if (
+        cfg.get("static_feature_endpoint_version")
+        and bool(cfg.get("feature_raw_rolling_state_enabled", False))
+    ):
         return None
     if not requested_feature_keys or not requested_feature_keys.issubset(
         _LIVE_LGBM_MASK_FAST_FEATURES
@@ -3829,6 +4038,7 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
     """
     if requested_feature_keys is not None:
         requested_set = {str(k) for k in requested_feature_keys if str(k)}
+        requested_set = expand_negative_residual_feature_dependencies(requested_set)
         requested_set = _expand_regime_composite_dependencies(requested_set, cfg or {})
         fast_result = _compute_live_lgbm_mask_features_fast(
             panel,
@@ -3871,6 +4081,7 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
                 )
 
         all_keys = _expand_regime_composite_dependencies(all_keys, cfg or {})
+        all_keys = expand_negative_residual_feature_dependencies(all_keys)
         requested_feature_keys = list(all_keys)
 
     return _compute_features_impl(
@@ -4051,6 +4262,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feature_timer = _FeatureStageTimer("compute_features_hourly")
     tprint("Features: compute base matrices")
     requested_feature_set = set(requested_feature_keys or [])
+    requested_feature_set = expand_negative_residual_feature_dependencies(
+        requested_feature_set
+    )
     requested_feature_set = _expand_regime_composite_dependencies(
         {str(k) for k in requested_feature_set},
         cfg or {},
@@ -4076,6 +4290,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         cfg.get("feature_raw_rolling_state_enabled", False)
         or cfg.get("live_raw_rolling_state_enabled", False)
     ) and bool(raw_rolling_state_root)
+    raw_rolling_state_container_enabled = bool(
+        cfg.get(
+            "feature_raw_rolling_state_container_enabled",
+            cfg.get("live_raw_rolling_state_container_enabled", True),
+        )
+    ) and raw_rolling_state_enabled
+    raw_rolling_state_container = None
+    raw_rolling_state_container_attempted = False
+    raw_rolling_state_container_busy = False
     try:
         raw_rolling_min_window = int(
             cfg.get("feature_raw_rolling_state_min_window", 12)
@@ -4101,6 +4324,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         vectorized_fn,
     ) -> pd.DataFrame:
         """Use raw append-only rolling state only when it is exactly safe."""
+        nonlocal raw_rolling_state_container
+        nonlocal raw_rolling_state_container_attempted
+        nonlocal raw_rolling_state_container_busy
         window = int(window)
         if (
             not raw_rolling_state_enabled
@@ -4112,6 +4338,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         try:
             from extreme_price_movements.inference.live_zscore_state import (
                 RawRollingFeatureState,
+                RawRollingStateContainerBusy,
+                RawRollingStateContainer,
+                raw_rolling_state_container_path,
             )
 
             columns = [str(c) for c in src.columns]
@@ -4122,7 +4351,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 f"name={name}",
                 f"window={window}",
                 f"scope={cfg.get('feature_raw_rolling_state_scope') or cfg.get('run_id') or 'unknown'}",
-                f"requested={cfg.get('feature_causal_transform_requested_hash') or ''}",
                 f"feature_contract={cfg.get('feature_causal_transform_contract_hash') or cfg.get('feature_transform_contract_hash') or ''}",
             ]
             state_path = _feature_state_path_for_workset(
@@ -4131,15 +4359,90 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 columns,
                 contract_parts=contract_parts,
             )
-            state = RawRollingFeatureState.load(
-                state_path,
-                op=op,
-                name=name,
-                symbols=columns,
-                window=window,
+            state_key = os.path.splitext(os.path.basename(state_path))[0].rsplit(
+                ".", 1
+            )[-1]
+            if (
+                raw_rolling_state_container_enabled
+                and raw_rolling_state_container is None
+                and not raw_rolling_state_container_attempted
+            ):
+                raw_rolling_state_container_attempted = True
+                container_path = cfg.get(
+                    "feature_raw_rolling_state_container_path"
+                ) or cfg.get("live_raw_rolling_state_container_path")
+                if not container_path:
+                    container_path = raw_rolling_state_container_path(
+                        raw_rolling_state_root
+                    )
+                try:
+                    raw_rolling_state_container = RawRollingStateContainer.open(
+                        container_path
+                    )
+                    tprint(
+                        "Live raw rolling state container enabled: "
+                        f"path={container_path}"
+                    )
+                except RawRollingStateContainerBusy:
+                    # Do not write a legacy branch while another process owns
+                    # the append-only snapshot. The vectorized fallback below
+                    # remains numerically correct for this pass and the next
+                    # cycle resumes from the owner's committed container.
+                    raw_rolling_state_container_busy = True
+                    tprint(
+                        "Live raw rolling state container is busy; using "
+                        "non-persistent vectorized fallback for this pass."
+                    )
+                except Exception as exc:
+                    tprint(
+                        "Live raw rolling state container unavailable; falling "
+                        f"back to per-workset NPZ files: {type(exc).__name__}: {exc}"
+                    )
+            state = (
+                raw_rolling_state_container.get(
+                    state_key,
+                    op=op,
+                    name=name,
+                    symbols=columns,
+                    window=window,
+                )
+                if raw_rolling_state_container is not None
+                else None
             )
+            if state is None:
+                # Existing individual files remain a compatibility fallback.
+                # A matching legacy state is migrated into the container on its
+                # next save, without deleting the old file mid-run.
+                state = RawRollingFeatureState.load(
+                    state_path,
+                    op=op,
+                    name=name,
+                    symbols=columns,
+                    window=window,
+                )
+
+            def _persist_raw_rolling_state() -> None:
+                if raw_rolling_state_container is not None:
+                    raw_rolling_state_container.put(state_key, state)
+                elif not raw_rolling_state_container_busy:
+                    state.save(state_path)
+
             if state is not None and state.last_timestamp:
                 last_ts = _align_state_ts_for_index(state.last_timestamp, index)
+                if len(index) > 0 and pd.Timestamp(index[-1]) <= last_ts:
+                    # Historical/repeated reads are strictly read-only. The
+                    # previous implementation fell through, seeded a new
+                    # state from the caller's shorter tail, and overwrote a
+                    # longer canonical history. Return the deterministic
+                    # vectorized view without mutating persisted state.
+                    tprint(
+                        "Live raw rolling state already covers request; "
+                        "using read-only vectorized result: "
+                        f"op={op} name={name} window={window} "
+                        f"request_end={pd.Timestamp(index[-1]).isoformat()} "
+                        f"state_last_ts={last_ts.isoformat()}"
+                    )
+                    return vectorized_fn(src, window).astype(np.float32)
                 sparse_prefix_enabled = bool(
                     cfg.get("feature_raw_rolling_state_sparse_prefix_enabled", False)
                     or cfg.get("live_raw_rolling_state_sparse_prefix_enabled", False)
@@ -4148,6 +4451,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     pd.Timestamp(index[0]) > last_ts
                     or (sparse_prefix_enabled and pd.Timestamp(index[-1]) > last_ts)
                 ):
+                    if pd.Timestamp(index[0]) > last_ts + pd.Timedelta(hours=1):
+                        # Appending through an unseen gap corrupts every later
+                        # rolling primitive. A later call with the missing
+                        # contiguous rows can safely advance the state.
+                        tprint(
+                            "Live raw rolling state append refused across gap; "
+                            "using non-persistent vectorized result: "
+                            f"op={op} name={name} window={window} "
+                            f"request_start={pd.Timestamp(index[0]).isoformat()} "
+                            f"state_last_ts={last_ts.isoformat()}"
+                        )
+                        return vectorized_fn(src, window).astype(np.float32)
                     arr = np.asarray(src, dtype=np.float32)
                     out = np.full(arr.shape, np.nan, dtype=np.float32)
                     if pd.Timestamp(index[0]) > last_ts:
@@ -4178,7 +4493,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                             arr[pos, :],
                             timestamp=pd.Timestamp(index[pos]).isoformat(),
                         )
-                    state.save(state_path)
+                    _persist_raw_rolling_state()
                     tprint(
                         "Live raw rolling state append-only update: "
                         f"op={op} name={name} window={window} "
@@ -4195,7 +4510,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 window=window,
             )
             state.seed_from_frame(np.asarray(src, dtype=np.float32), src.index)
-            state.save(state_path)
+            _persist_raw_rolling_state()
             return result
         except Exception as exc:
             tprint(
@@ -6445,6 +6760,22 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             tprint(
                 "Perps mode enabled but portable funding/open_interest/spot data missing; skipping perp derivatives block."
             )
+
+        # ``mom_slow`` is a price-only feature even though its historical
+        # implementation lives in the perp derivative feature block.  Do not
+        # make its live availability depend on spot/reference coverage: that
+        # drops otherwise valid symbols and breaks train/live row parity.  The
+        # expression is identical to ``perp_features.compute_features`` and
+        # only fills values the derivative block could not materialize.
+        if (not requested_feature_set) or "mom_slow" in requested_feature_set:
+            price_only_mom_slow = (c_log.diff(2) - c_log.diff(8)).astype(np.float32)
+            existing_mom_slow = feats.get("mom_slow")
+            if isinstance(existing_mom_slow, pd.DataFrame):
+                feats["mom_slow"] = existing_mom_slow.combine_first(
+                    price_only_mom_slow
+                ).astype(np.float32)
+            else:
+                feats["mom_slow"] = price_only_mom_slow
 
     # --- Orderbook/Funding/Cross-Asset extensions (graceful with missing panels) ---
     eps = 1e-12
@@ -12263,6 +12594,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         _mark_feature_stage("regime_panel_composites")
         tprint(f"Regime panel composites added: {len(regime_composite_skip_keys)}")
 
+    negative_residual_skip_keys = add_negative_residual_features(
+        feats,
+        requested_feature_keys=requested_feature_set,
+        cfg=cfg or {},
+    )
+    if negative_residual_skip_keys:
+        skip_transform_set.update(negative_residual_skip_keys)
+        _mark_feature_stage("negative_residual_composites")
+        tprint(
+            "Negative-residual market composites added: "
+            f"{len(negative_residual_skip_keys)}"
+        )
+
     tprint(f"Features: done ({len(feats)} keys)")
     _mark_feature_stage("final")
 
@@ -12458,7 +12802,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         cfg.get("feature_causal_transform_state_enabled", False)
         or cfg.get("live_causal_transform_state_enabled", False)
     )
-    if state_enabled:
+    if state_enabled and bool(
+        cfg.get(
+            "feature_causal_transform_per_feature_container_enabled",
+            cfg.get("feature_causal_transform_state_enabled", False),
+        )
+    ):
+        feats = _apply_causal_transform_live_state_or_batch(
+            feats,
+            cfg,
+            feature_index=_feat_index,
+            feature_columns=_feat_columns,
+            skip_transform_set=active_skip_transform_set,
+        )
+        stateful_transform_used = True
+    if state_enabled and not stateful_transform_used:
         state_path = cfg.get("feature_causal_transform_state_path") or cfg.get(
             "live_causal_transform_state_path"
         )
@@ -12794,6 +13152,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats.pop(k, None)
 
     tprint(f"Features: done ({len(feats)} keys)")
+    if raw_rolling_state_container is not None:
+        persisted_states = raw_rolling_state_container.flush()
+        raw_rolling_state_container.close()
+        tprint(
+            "Live raw rolling state container committed: "
+            f"states={persisted_states} path={raw_rolling_state_container.path}"
+        )
     return feats, _feat_index, _feat_columns
 
 

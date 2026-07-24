@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+import extreme_price_movements.meta_residual_archetypes as residual_module
 
 from extreme_price_movements.meta_residual_archetypes import (
     ResidualArchetypeConfig,
@@ -12,6 +15,7 @@ from extreme_price_movements.meta_residual_archetypes import (
     residual_feature_names,
     strip_outcomes_for_oos,
 )
+from scripts import run_meta_residual_archetype_discovery as discovery_runner
 
 
 def _frame(rows: int = 4800) -> pd.DataFrame:
@@ -258,3 +262,118 @@ def test_oos_evaluation_reuses_train_score_reference_and_local_thresholds() -> N
     )
     assert recognizer.side_models == {}
     assert recognizer.local_models
+
+
+def test_discovery_appends_and_hydrates_ledger_only_rows(
+    tmp_path, monkeypatch
+) -> None:
+    data = pd.DataFrame(
+        {
+            "row_id": ["old"],
+            "__ts__": pd.to_datetime(["2026-06-30T23:00:00Z"]),
+            "__symbol__": ["BTC/USD:USD"],
+            "side_name": ["long"],
+            "archetype_policy_key": ["long_a"],
+            "score": [0.7],
+            "ev_after_1pct": [0.01],
+            "clean_exec": [1.0],
+            "feat_x": np.array([1.0], dtype=np.float32),
+        }
+    )
+    ledger_path = tmp_path / "ledger.parquet"
+    ledger = pd.concat(
+        [
+            data.drop(columns="feat_x"),
+            pd.DataFrame(
+                {
+                    "row_id": ["new"],
+                    "__ts__": pd.to_datetime(["2026-07-01T00:00:00Z"]),
+                    "__symbol__": ["BTC/USD:USD"],
+                    "side_name": ["long"],
+                    "archetype_policy_key": ["long_a"],
+                    "score": [0.8],
+                    "ev_after_1pct": [0.02],
+                    "clean_exec": [1.0],
+                }
+            ),
+        ],
+        ignore_index=True,
+    )
+    pq.write_table(pa.Table.from_pandas(ledger), ledger_path)
+    (tmp_path / "symbol=BTC_USD:USD.parquet").touch()
+
+    def fake_read(*_args, **_kwargs):
+        return pd.DataFrame(
+            {"feat_x": np.array([3.0], dtype=np.float32)},
+            index=pd.to_datetime(["2026-07-01T00:00:00Z"]),
+        )
+
+    monkeypatch.setattr(discovery_runner, "read_symbol_features", fake_read)
+    result, manifest = discovery_runner._append_feature_hydrated_ledger_rows(
+        data, ledger_path, tmp_path
+    )
+    assert len(result) == 2
+    assert manifest["appended_rows"] == 1
+    assert manifest["rows_with_observable_features"] == 1
+    assert float(result.loc[result["row_id"].eq("new"), "feat_x"].iloc[0]) == 3.0
+
+
+def test_discovery_state_inputs_exclude_post_meta_outputs() -> None:
+    frame = pd.DataFrame(
+        {
+            "score": [0.6],
+            "score_regime_calibrated": [0.7],
+            "score_meta_uncalibrated": [0.6],
+            "hit_probability": [0.8],
+            "market_state_feature": [1.0],
+        }
+    )
+    features = discovery_runner._residual_candidate_features(
+        frame, "score_regime_calibrated"
+    )
+    assert "score" in features
+    assert "market_state_feature" in features
+    assert "score_regime_calibrated" not in features
+    assert "score_meta_uncalibrated" not in features
+    assert "hit_probability" not in features
+
+
+def test_local_aegmm_state_can_be_frozen_across_growing_folds(monkeypatch) -> None:
+    frame = _frame(2400)
+    frame["side_name"] = "long"
+    frame["archetype_policy_key"] = "long_a"
+    cfg = ResidualArchetypeConfig(
+        min_local_rows=200,
+        min_cluster_rows=10,
+        max_recognizer_fit_rows=800,
+        max_recognizer_features=4,
+        mutual_info_rows=600,
+        use_residual_ae_gmm=True,
+        ae_gmm_max_rows=250,
+        ae_gmm_max_iter=5,
+        label_mode="economic_semantic",
+        semantic_min_temporal_segments=1,
+        semantic_min_segment_rows=2,
+    )
+    first = ResidualArchetypeRecognizer(
+        cfg, ["mkt_shock", "market_breadth", "oi_flush", "base_score"]
+    ).fit(frame.iloc[:1800])
+    model = first.local_models[("long", "long_a")]
+    frozen = {
+        ("long", "long_a"): (
+            model.ae_gmm_state,
+            model.ae_gmm_input_features,
+            model.ae_gmm_output_features,
+        )
+    }
+
+    def unexpected_refit(*_args, **_kwargs):
+        raise AssertionError("frozen AE/GMM must not be refit")
+
+    monkeypatch.setattr(residual_module, "fit_ae_gmm_state", unexpected_refit)
+    growing = ResidualArchetypeRecognizer(
+        cfg, ["mkt_shock", "market_breadth", "oi_flush", "base_score"]
+    )
+    growing.frozen_ae_gmm_by_local = frozen
+    growing.fit(frame)
+    assert growing.local_models[("long", "long_a")].ae_gmm_state is model.ae_gmm_state

@@ -299,11 +299,15 @@ No hidden external state may influence feature values.
 
 - The default state-input policy is `a0bis`: use ATR-normalized momentum/trend
   variants for AE/GMM state discovery where available.
-- Fit the scaler, denoising AE, and GMM on authorized training data only.
-- Sample across beginning, middle, and end subperiods; record actual row counts.
+- Fit the scaler, denoising AE, and GMM exactly once per model cycle at the
+  feature-selection/HPO reference stage.
+- Sample across beginning, middle, and end subperiods; do not fit the state on
+  the full period, and record dates, row counts, input order, and state hash.
 - Target approximately 15k AE rows and up to 100k GMM rows when available.
-- Freeze the fitted state across later growing OOS windows so cluster/posterior
-  meanings do not change fold by fold.
+- Reuse the exact serialized state across every base/meta growing window, final
+  refit, replay, and inference so cluster/posterior meanings cannot drift.
+- Treat use of later reference-period covariates as a disclosed unsupervised
+  representation-selection exception; outcomes remain prohibited.
 - Downstream models may receive cluster ID, posterior vector, entropy,
   Mahalanobis/distance measures, reconstruction error, speed, and acceleration.
 - Outcome-based cluster descriptions are diagnostics or train-derived priors;

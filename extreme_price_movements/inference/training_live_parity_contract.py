@@ -214,6 +214,26 @@ def _artifact_hashes(data_root: str, run_id: str) -> Dict[str, Any]:
         "native_model_dir": run_root / "models" / "native",
         "base_meta_contract": run_root / "base_meta_contract.json",
         "meta_feature_contract": run_root / "meta_oof" / "meta_feature_contract.json",
+        "v9_tail95_predecessor": policy_root
+        / "policy_params"
+        / "v9_tail95_predecessor_bundle.joblib",
+        "residual_event_state": policy_root
+        / "policy_params"
+        / "residual_event_state.joblib",
+        "regime_ev_calibration": policy_root
+        / "policy_params"
+        / "composite_policy_regime_ev_calibration.json",
+        "meta_reliability_priors": policy_root
+        / "policy_params"
+        / "meta_reliability_priors.json",
+        "threshold_basis_policy": _first_existing(
+            (
+                policy_root
+                / "policy_params"
+                / "threshold_basis_policy_sidearch_ev70_trim10_21d.json",
+                policy_root / "policy_params" / "threshold_basis_policy.json",
+            )
+        ),
         "simple_policy_deployment": policy_root / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
         "simple_policy_rank_manifest": policy_root / "simple_policy_optimiser" / "rank_reference" / "manifest.json",
         "cross_strategy_rank_reference": policy_root / "simple_policy_optimiser" / "rank_reference" / "cross_strategy_auction.parquet",
@@ -365,6 +385,8 @@ def build_training_live_parity_contract(
     strategy_ids: Optional[Iterable[str]] = None,
     deployment_payload: Optional[Dict[str, Any]] = None,
     portfolio_payload: Optional[Dict[str, Any]] = None,
+    feature_source_run_id: Optional[str] = None,
+    feature_source_data_root: Optional[str] = None,
 ) -> Dict[str, Any]:
     if orchestrator is None:
         if model_bundle is None:
@@ -394,14 +416,16 @@ def build_training_live_parity_contract(
         },
         "feature_source": {
             "run_id": str(
-                os.environ.get("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
+                feature_source_run_id
+                or os.environ.get("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
                 or os.environ.get("EPM_FEATURE_SOURCE_RUN_ID")
                 or os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID")
                 or ""
             ).strip()
             or None,
             "data_root": str(
-                os.environ.get("EPM_LIVE_FEATURE_DATA_ROOT")
+                feature_source_data_root
+                or os.environ.get("EPM_LIVE_FEATURE_DATA_ROOT")
                 or os.environ.get("EPM_FEATURE_DATA_ROOT")
                 or data_root
             ),
@@ -444,12 +468,24 @@ def load_training_live_parity_contract(
     data_root: str,
     run_id: str,
     require: bool = False,
+    require_feature_source: bool = False,
 ) -> Dict[str, Any]:
     for path in _contract_path_candidates(data_root, run_id):
         if not path.exists():
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
+            feature_source = payload.get("feature_source")
+            feature_source_run_id = (
+                str(feature_source.get("run_id") or "").strip()
+                if isinstance(feature_source, dict)
+                else ""
+            )
+            if require_feature_source and not feature_source_run_id:
+                raise ValueError(
+                    "Training-live parity contract is missing its pinned "
+                    f"feature_source.run_id: {path}"
+                )
             payload["_contract_path"] = str(path)
             payload["_contract_sha256"] = sha256_file(path)
             return payload

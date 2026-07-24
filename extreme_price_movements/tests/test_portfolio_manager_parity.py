@@ -17,7 +17,7 @@ def test_portfolio_manager_caps_size_at_5000_usdt():
     assert info["position_size_cap"] == 5000.0
 
 
-def test_portfolio_manager_defaults_to_75pct_total_and_15pct_position_cap():
+def test_portfolio_manager_defaults_to_70pct_total_and_15pct_position_cap():
     pm = PortfolioManager(portfolio_value=10000.0)
     can_enter, info = pm.can_enter_position(
         symbol="BTC/USDT",
@@ -31,11 +31,11 @@ def test_portfolio_manager_defaults_to_75pct_total_and_15pct_position_cap():
     assert can_enter
     assert info["position_size_cap"] == 1500.0
     state = pm.get_portfolio_state()
-    assert state["max_invested_pct"] == 0.75
+    assert state["max_invested_pct"] == 0.70
     assert state["max_position_pct"] == 0.15
 
 
-def test_portfolio_manager_leveraged_caps_apply_before_quote_notional():
+def test_portfolio_manager_leverage_cannot_expand_wallet_notional_caps():
     pm = PortfolioManager(
         portfolio_value=100.0,
         max_portfolio_pct=0.75,
@@ -49,9 +49,9 @@ def test_portfolio_manager_leveraged_caps_apply_before_quote_notional():
     )
 
     cap = pm.get_portfolio_capacity(side="long", strategy_id="long_mr")
-    assert cap["max_position_notional"] == 150.0
-    assert cap["max_total_notional"] == 750.0
-    assert cap["margin_surplus_notional"] == 1000.0
+    assert cap["max_position_notional"] == 15.0
+    assert cap["max_total_notional"] == 75.0
+    assert cap["margin_surplus_notional"] == 100.0
 
     can_enter, info = pm.can_enter_position(
         symbol="BTC/USD:USD",
@@ -64,7 +64,7 @@ def test_portfolio_manager_leveraged_caps_apply_before_quote_notional():
     )
 
     assert can_enter
-    assert info["position_size_cap"] == 150.0
+    assert info["position_size_cap"] == 15.0
 
 
 def test_portfolio_manager_clips_oversized_request_to_remaining_capacity():
@@ -91,11 +91,11 @@ def test_portfolio_manager_clips_oversized_request_to_remaining_capacity():
 
     assert can_enter
     assert info["reason"] == "allowed"
-    assert info["position_size_cap"] == 1000.0
+    assert info["position_size_cap"] == 500.0
     assert info["requested_size_clipped_to_remaining_total_notional"] is True
 
 
-def test_portfolio_manager_allows_six_positions_per_strategy_by_default():
+def test_portfolio_manager_disables_normal_position_count_caps_by_default():
     pm = PortfolioManager(portfolio_value=10000.0)
     t0 = pd.Timestamp("2026-01-01", tz="UTC")
     for i in range(6):
@@ -116,12 +116,16 @@ def test_portfolio_manager_allows_six_positions_per_strategy_by_default():
         current_time=t0 + pd.Timedelta(minutes=1),
         requested_position_size=1000.0,
     )
-    assert not can_enter
-    assert info["reason"] == "max_concurrent_per_side_reached"
+    assert can_enter
+    assert info["reason"] == "allowed"
 
 
-def test_dynamic_threshold_widens_with_open_positions():
-    pm = PortfolioManager(max_positions=4)
+def test_dynamic_threshold_widens_with_marked_notional_not_position_count():
+    pm = PortfolioManager(
+        portfolio_value=10_000.0,
+        max_portfolio_pct=0.80,
+        occupancy_threshold_alpha=1.0,
+    )
     t0 = pd.Timestamp("2026-01-01", tz="UTC")
     for i in range(2):
         pm.record_position_open(
@@ -133,7 +137,21 @@ def test_dynamic_threshold_widens_with_open_positions():
             entry_time=t0,
         )
     thr = pm.calculate_dynamic_threshold(0.5)
-    assert abs(thr - 0.75) < 1e-12
+    assert abs(thr - 0.625) < 1e-12
+
+
+def test_pending_notional_tightens_threshold_and_capacity():
+    pm = PortfolioManager(
+        portfolio_value=10_000.0,
+        max_portfolio_pct=0.80,
+        occupancy_threshold_alpha=1.0,
+    )
+    pm.reserve_pending_notional("pending-order", 2_000.0)
+
+    assert pm.calculate_dynamic_threshold(0.5) == 0.625
+    capacity = pm.get_portfolio_capacity(side="long", strategy_id="global")
+    assert capacity["pending_reserved_notional"] == 2_000.0
+    assert capacity["remaining_total_notional"] == 6_000.0
 
 
 def test_archetype_loss_streak_blocks_only_that_archetype():
@@ -164,7 +182,7 @@ def test_archetype_loss_streak_blocks_only_that_archetype():
     assert result is not None
     assert result["consecutive_losing_trades"] == 5
     assert result["archetype_consecutive_losing_trades"] == 5
-    assert result["risk_guard_events"][0]["event"] == "archetype_loss_streak_disabled"
+    assert result["risk_guard_events"][0]["event"] == "archetype_loss_streak_cooldown"
     assert not pm.manual_reset_required
 
     blocked, blocked_info = pm.can_enter_position(
@@ -301,3 +319,29 @@ def test_portfolio_manager_records_private_api_failures():
     assert len(snapshot["errors"]) == 2
     assert snapshot["error_categories"] == ["timeout", "api_error"]
     assert len(pm.failed_api_events) == 2
+
+
+def test_wallet_capacity_and_threshold_pressure_are_pre_leverage():
+    pm = PortfolioManager(
+        portfolio_value=100.0,
+        max_portfolio_pct=0.80,
+        max_position_pct=0.50,
+        occupancy_threshold_alpha=1.0,
+    )
+    pm.record_position_open(
+        symbol="A/USD:USD", side="long", strategy_id="global",
+        position_size=200.0, entry_price=10.0, effective_leverage=10.0,
+    )
+    pm.record_position_open(
+        symbol="B/USD:USD", side="short", strategy_id="global",
+        position_size=100.0, entry_price=10.0, effective_leverage=5.0,
+    )
+    capacity = pm.get_portfolio_capacity(
+        side="long", strategy_id="global", effective_leverage=10.0
+    )
+    assert capacity["open_marked_notional"] == 300.0
+    assert capacity["open_allocated_capital"] == 40.0
+    assert capacity["remaining_allocated_capital"] == 40.0
+    assert capacity["remaining_total_notional"] == 400.0
+    assert capacity["wallet_investment_utilization"] == 0.5
+    assert pm.calculate_dynamic_threshold(0.90) == 0.95

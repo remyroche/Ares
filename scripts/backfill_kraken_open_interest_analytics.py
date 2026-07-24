@@ -12,7 +12,9 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
     _fetch_kraken_futures_open_interest_analytics,
+    _kraken_oi_to_quote_notional,
     make_perp_exchange,
 )
 
@@ -117,6 +119,9 @@ def main() -> int:
 
     exchange = make_perp_exchange()
     exchange.rateLimit = max(0, int(args.rate_limit_ms))
+    price_store = PartitionedOHLCVStore(
+        root_dir=str(args.out_dir.parent), timeframe="1h"
+    )
     updated = 0
     empty = 0
     failed: list[str] = []
@@ -132,6 +137,13 @@ def main() -> int:
                 until_ms,
                 timeframe="1h",
             )
+            if not oi.empty:
+                price_frame = price_store.load(
+                    perp_symbol,
+                    start_ts=pd.to_datetime(since_ms, unit="ms", utc=True),
+                    end_ts=pd.to_datetime(until_ms, unit="ms", utc=True),
+                )
+                oi = _kraken_oi_to_quote_notional(oi, price_frame)
             if oi.empty:
                 empty += 1
                 print(f"{i:03d}/{len(items)} {perp_symbol}: empty", flush=True)

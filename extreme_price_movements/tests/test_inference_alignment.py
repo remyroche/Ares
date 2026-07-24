@@ -6,10 +6,32 @@ from extreme_price_movements.inference.feature_generator import (
     get_features_for_candidates,
 )
 from extreme_price_movements.inference.model_orchestrator import (
+    _apply_model_input_numeric_contract,
     ModelOrchestrator,
     _materialize_model_drift_feature_aliases,
     _regime_adaptor_score_from_applied,
 )
+
+
+def test_alpha_numeric_contract_matches_float16_fold_cache_roundtrip() -> None:
+    class Model:
+        epm_input_numeric_contract_ = "float16_clipped_then_float32_v1"
+
+    frame = pd.DataFrame(
+        {
+            "small": [0.1234567, -0.00012345],
+            "large": [1.75e14, -1.75e14],
+        }
+    )
+    actual = _apply_model_input_numeric_contract(frame, model=Model())
+    limit = np.float32(np.finfo(np.float16).max)
+    expected = pd.DataFrame(
+        np.clip(frame.to_numpy(dtype=np.float32), -limit, limit)
+        .astype(np.float16)
+        .astype(np.float32),
+        columns=frame.columns,
+    )
+    pd.testing.assert_frame_equal(actual.reset_index(drop=True), expected)
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.model_drift_features import (
     fit_model_drift_state,

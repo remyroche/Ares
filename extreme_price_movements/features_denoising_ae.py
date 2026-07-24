@@ -17,6 +17,8 @@ except Exception:  # pragma: no cover - optional dependency guard.
 AE_BOTTLENECKS: tuple[int, ...] = (8, 16)
 AE_NOISE_LEVELS: tuple[float, ...] = (0.05, 0.10, 0.15)
 AE_WIDTHS: tuple[str, ...] = ("small", "medium")
+AE_MASK_FRACTIONS: tuple[float, ...] = (0.0, 0.05, 0.10)
+AE_L2_ALPHAS: tuple[float, ...] = (1e-5, 1e-4, 1e-3)
 AE_FEATURE_COLUMNS: tuple[str, ...] = tuple(
     [f"ae_b8_{i:02d}" for i in range(8)]
     + ["ae_b8_reconstruction_error"]
@@ -104,12 +106,16 @@ def _model_to_spec(
     bottleneck: int,
     width: str,
     noise: float,
+    mask_fraction: float = 0.0,
+    alpha: float = 1e-4,
     metrics: Mapping[str, float],
 ) -> dict[str, Any]:
     return {
         "bottleneck": int(bottleneck),
         "width": str(width),
         "noise": float(noise),
+        "mask_fraction": float(mask_fraction),
+        "alpha": float(alpha),
         "activation": str(getattr(model, "activation", "relu")),
         "coefs": [
             np.asarray(w, dtype=np.float32).tolist()
@@ -135,7 +141,7 @@ def _forward(spec: Mapping[str, Any], x: np.ndarray) -> tuple[np.ndarray, np.nda
     latent = None
     bottleneck_layer = 1
     for i, (w, b) in enumerate(zip(coefs, intercepts)):
-        h = h @ w + b.reshape(1, -1)
+        h = np.einsum("ij,jk->ik", h, w, optimize=False) + b.reshape(1, -1)
         if i < len(coefs) - 1:
             h = _activation(h, act_name).astype(np.float32, copy=False)
             if i == bottleneck_layer:
@@ -258,6 +264,8 @@ def _fit_one(
     bottleneck: int,
     width: str,
     noise: float,
+    mask_fraction: float = 0.0,
+    alpha: float = 1e-4,
     random_state: int,
     max_iter: int,
 ) -> dict[str, Any] | None:
@@ -269,11 +277,14 @@ def _fit_one(
         -12.0,
         12.0,
     )
+    if float(mask_fraction) > 0.0:
+        mask = rng.random(noisy.shape) < float(mask_fraction)
+        noisy[mask] = 0.0
     model = MLPRegressor(
         hidden_layer_sizes=_width_layers(int(bottleneck), str(width)),
         activation="relu",
         solver="adam",
-        alpha=1e-4,
+        alpha=float(alpha),
         batch_size=max(1, min(512, len(x_train))),
         learning_rate_init=1e-3,
         max_iter=int(max_iter),
@@ -288,7 +299,13 @@ def _fit_one(
     except Exception:
         return None
     spec = _model_to_spec(
-        model, bottleneck=bottleneck, width=width, noise=noise, metrics={}
+        model,
+        bottleneck=bottleneck,
+        width=width,
+        noise=noise,
+        mask_fraction=mask_fraction,
+        alpha=alpha,
+        metrics={},
     )
     metrics = _evaluate_spec(
         spec, x_val, noise=noise, rng=np.random.default_rng(int(random_state) + 17)
@@ -360,6 +377,10 @@ def fit_denoising_autoencoder_state(
         allowed=AE_WIDTHS,
     )
     noise_levels = _env_float_tuple("EPM_DAE_NOISE_LEVELS", AE_NOISE_LEVELS)
+    mask_fractions = _env_float_tuple(
+        "EPM_DAE_MASK_FRACTIONS", AE_MASK_FRACTIONS
+    )
+    l2_alphas = _env_float_tuple("EPM_DAE_L2_ALPHAS", AE_L2_ALPHAS)
     for bottleneck in bottlenecks:
         width_trials: list[dict[str, Any]] = []
         best_width = None
@@ -372,6 +393,8 @@ def fit_denoising_autoencoder_state(
                 bottleneck=int(bottleneck),
                 width=str(width),
                 noise=0.10,
+                mask_fraction=0.0,
+                alpha=1e-4,
                 random_state=int(random_state) + int(bottleneck) * 11 + len(str(width)),
                 max_iter=int(max_iter),
             )
@@ -413,6 +436,8 @@ def fit_denoising_autoencoder_state(
                     bottleneck=int(bottleneck),
                     width=best_width,
                     noise=float(noise),
+                    mask_fraction=0.0,
+                    alpha=1e-4,
                     random_state=int(random_state)
                     + int(bottleneck) * 37
                     + int(round(noise * 1000)),
@@ -433,14 +458,60 @@ def fit_denoising_autoencoder_state(
                 best_final_score = float(score)
                 best_spec = spec
         if best_spec is not None:
+            # Final local search changes only masking and L2 around the chosen
+            # width/noise, avoiding a large joint architecture grid.
+            regularization_trials: list[dict[str, Any]] = []
+            selected_noise = float(best_spec.get("noise", 0.10))
+            selected_spec = best_spec
+            selected_score = best_final_score
+            for mask_fraction in mask_fractions:
+                for alpha in l2_alphas:
+                    if abs(mask_fraction) <= 1e-12 and abs(alpha - 1e-4) <= 1e-12:
+                        spec = best_spec
+                    else:
+                        spec = _fit_one(
+                            x_train,
+                            x_val,
+                            bottleneck=int(bottleneck),
+                            width=best_width,
+                            noise=selected_noise,
+                            mask_fraction=float(mask_fraction),
+                            alpha=float(alpha),
+                            random_state=(
+                                int(random_state)
+                                + int(bottleneck) * 71
+                                + int(round(mask_fraction * 10_000))
+                                + int(round(-np.log10(max(alpha, 1e-12))))
+                            ),
+                            max_iter=int(max_iter),
+                        )
+                    if spec is None:
+                        continue
+                    score = _score_final(spec.get("metrics", {}))
+                    regularization_trials.append(
+                        {
+                            "mask_fraction": float(mask_fraction),
+                            "alpha": float(alpha),
+                            "score": float(score),
+                            "metrics": spec.get("metrics", {}),
+                        }
+                    )
+                    if score < selected_score:
+                        selected_score = float(score)
+                        selected_spec = spec
+            best_spec = selected_spec
+            best_final_score = selected_score
             models[f"b{int(bottleneck)}"] = best_spec
             reports[f"b{int(bottleneck)}"] = {
                 "enabled": True,
                 "best_width": best_width,
                 "best_noise": float(best_spec.get("noise", 0.0)),
+                "best_mask_fraction": float(best_spec.get("mask_fraction", 0.0)),
+                "best_alpha": float(best_spec.get("alpha", 1e-4)),
                 "best_score": float(best_final_score),
                 "width_trials": width_trials,
                 "noise_trials": noise_trials,
+                "regularization_trials": regularization_trials,
                 "metrics": best_spec.get("metrics", {}),
             }
     return {
@@ -455,6 +526,8 @@ def fit_denoising_autoencoder_state(
             "bottlenecks": [int(v) for v in bottlenecks],
             "widths": [str(v) for v in widths],
             "noise_levels": [float(v) for v in noise_levels],
+            "mask_fractions": [float(v) for v in mask_fractions],
+            "l2_alphas": [float(v) for v in l2_alphas],
         },
     }
 
@@ -501,12 +574,18 @@ def refit_denoising_autoencoder_state(
         )
         width = str(metadata.get("best_width", prior.get("width", "small")))
         noise = float(metadata.get("best_noise", prior.get("noise", 0.10)))
+        mask_fraction = float(
+            metadata.get("best_mask_fraction", prior.get("mask_fraction", 0.0))
+        )
+        alpha = float(metadata.get("best_alpha", prior.get("alpha", 1e-4)))
         spec = _fit_one(
             x_train,
             x_val,
             bottleneck=int(bottleneck),
             width=width,
             noise=noise,
+            mask_fraction=mask_fraction,
+            alpha=alpha,
             random_state=int(random_state) + int(bottleneck) * 101,
             max_iter=int(max_iter),
         )
@@ -517,6 +596,8 @@ def refit_denoising_autoencoder_state(
             "enabled": True,
             "best_width": width,
             "best_noise": noise,
+            "best_mask_fraction": mask_fraction,
+            "best_alpha": alpha,
             "refit_rows": int(len(x)),
             "metrics": spec.get("metrics", {}),
         }

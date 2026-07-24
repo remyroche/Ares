@@ -41,7 +41,11 @@ from extreme_price_movements.economic_target_optimizer import (  # noqa: E402
     append_economic_target_columns,
 )
 from extreme_price_movements.features_gmm_ae import (  # noqa: E402
+    AE_GMM_CYCLE_CONTRACT_VERSION,
     AE_GMM_FEATURE_COLUMNS,
+    ae_gmm_cycle_reference_indices,
+    ae_gmm_cycle_sample_identity_hash,
+    ae_gmm_learned_transform_hash,
     fit_ae_gmm_state,
     load_ae_gmm_state_artifact,
     save_ae_gmm_state_artifact,
@@ -1364,6 +1368,7 @@ def _fit_ae_gmm_state_for_rows(
     gmm_max_train_rows: int,
     ae_max_iter: int,
     require_both_sides: bool,
+    smooth_lambda_candidates: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     pos = np.asarray(row_positions, dtype=np.int64)
     return fit_ae_gmm_state(
@@ -1378,6 +1383,7 @@ def _fit_ae_gmm_state_for_rows(
         max_train_rows=int(max_train_rows),
         gmm_max_train_rows=int(gmm_max_train_rows),
         ae_max_iter=int(ae_max_iter),
+        smooth_lambda_candidates=smooth_lambda_candidates,
         require_both_sides=bool(require_both_sides),
         min_side_cluster_frac=0.02,
         min_side_cluster_rows=10,
@@ -1408,6 +1414,7 @@ def _persist_ae_gmm_state_artifact(
     state_path = artifact_dir / f"{stem}_state.pkl"
     manifest_path = artifact_dir / f"{stem}_manifest.json"
     selected = dict(state.get("selected_config", {}) or {})
+    cycle_contract = str(state.get("cycle_contract_version", "") or "")
     save_ae_gmm_state_artifact(
         state,
         state_path,
@@ -1418,7 +1425,25 @@ def _persist_ae_gmm_state_artifact(
             "valid_rows": int(valid_rows),
             "input_feature_count": int(input_feature_count),
             "selected_config": selected,
-            "oos_transform_contract": "state_fit_on_fold_train_rows_only_then_frozen_transform_on_validation_rows",
+            "oos_transform_contract": (
+                "single_cycle_state_reused_for_all_growing_windows_final_refit_and_inference"
+                if cycle_contract
+                else "state_fit_on_fold_train_rows_only_then_frozen_transform_on_validation_rows"
+            ),
+            "cycle_contract_version": cycle_contract or None,
+            "cycle_state_hash": str(
+                state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
+            ),
+            "cycle_reference_fold": state.get("cycle_reference_fold"),
+            "cycle_reference_start": state.get("cycle_reference_start"),
+            "cycle_reference_end": state.get("cycle_reference_end"),
+            "cycle_reference_rows_available": state.get(
+                "cycle_reference_rows_available"
+            ),
+            "cycle_reference_rows_sampled": state.get("cycle_reference_rows_sampled"),
+            "cycle_reference_sample_policy": state.get(
+                "cycle_reference_sample_policy"
+            ),
             "materialized_transform_rules": {
                 "emitted_feature_subset": list(
                     state.get("_emitted_feature_subset", []) or []
@@ -1564,6 +1589,7 @@ def _append_fold_ae_gmm_state_features(
     state_artifact_name: str = "",
     fixed_state_path: Path | None = None,
     output_feature_subset: list[str] | None = None,
+    valid_context_output: dict[str, Any] | None = None,
     input_feature_cols: Sequence[str] | None = None,
     fit_x_base: pd.DataFrame | None = None,
     fit_train_frame: pd.DataFrame | None = None,
@@ -1703,6 +1729,23 @@ def _append_fold_ae_gmm_state_features(
         input_feature_count=len(base_features),
     )
     valid_generated["ae_gmm_oof_available"] = np.float32(1.0)
+    if valid_context_output is not None:
+        # Keep the complete frozen-state context available to the downstream
+        # handoff even when the base estimator only materializes its selected
+        # AE/GMM columns on the much larger training population.
+        valid_context_output["frame"] = valid_generated.reindex(
+            columns=list(
+                dict.fromkeys(
+                    [
+                        *_ae_gmm_smoke_feature_policy_columns(
+                            [str(col) for col in valid_generated.columns]
+                        ),
+                        "ae_gmm_oof_available",
+                    ]
+                )
+            ),
+            fill_value=0.0,
+        ).astype(np.float32, copy=False)
     if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES) and fixed_state_path is None:
         train_generated, crossfit_diag = _crossfit_ae_gmm_features(
             x_base=x_train_base,
@@ -4395,6 +4438,8 @@ def _run_month(
     ae_gmm_state_feature_max_train_rows: int,
     ae_gmm_state_feature_gmm_max_train_rows: int,
     ae_gmm_state_feature_max_iter: int,
+    fixed_ae_gmm_state_path: Path | None = None,
+    fixed_ae_gmm_input_features: Sequence[str] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -4446,6 +4491,8 @@ def _run_month(
             ae_max_iter=int(ae_gmm_state_feature_max_iter),
             random_state=90221
             + sum((i + 1) * ord(ch) for i, ch in enumerate(str(month))),
+            fixed_state_path=fixed_ae_gmm_state_path,
+            input_feature_cols=fixed_ae_gmm_input_features,
         )
     )
     fold_features = list(dict.fromkeys(list(features) + list(ae_gmm_state_features)))
@@ -12095,6 +12142,141 @@ def _write_markdown(
     return path
 
 
+def _fit_smoke_cycle_ae_gmm_state(
+    *,
+    frame: pd.DataFrame,
+    features: Sequence[str],
+    output_dir: Path,
+    max_train_rows: int,
+    gmm_max_train_rows: int,
+    ae_max_iter: int,
+    random_state: int,
+) -> tuple[Path, dict[str, Any]]:
+    input_features = [
+        str(col)
+        for col in features
+        if str(col) not in set(str(v) for v in AE_GMM_FEATURE_COLUMNS)
+    ]
+    if len(input_features) < 2:
+        raise RuntimeError("Cycle AE/GMM smoke fit requires at least two inputs")
+    reference_cap = max(int(max_train_rows), int(gmm_max_train_rows))
+    reference_idx = ae_gmm_cycle_reference_indices(
+        frame["__ts__"],
+        symbols=frame["__symbol__"],
+        sides=frame["side"],
+        max_rows=reference_cap,
+    )
+    x_reference = (
+        frame.iloc[reference_idx]
+        .reindex(columns=input_features)
+        .replace([np.inf, -np.inf], np.nan)
+        .astype(np.float32, copy=False)
+        .reset_index(drop=True)
+    )
+    med = x_reference.median(numeric_only=True)
+    x_reference = x_reference.fillna(med).fillna(0.0).astype(np.float32, copy=False)
+    frame_reference = frame.iloc[reference_idx].reset_index(drop=True)
+    reference_month = pd.to_datetime(
+        frame_reference["__ts__"], utc=True, errors="coerce"
+    ).dt.to_period("M").astype(str)
+    state = fit_ae_gmm_state(
+        x_reference,
+        economic_targets={
+            "side": pd.to_numeric(
+                frame_reference["side"], errors="coerce"
+            ).fillna(1.0).to_numpy(dtype=np.float32),
+            "time_bucket": pd.factorize(reference_month, sort=True)[0].astype(
+                np.float32
+            ),
+        },
+        random_state=int(random_state),
+        max_train_rows=int(max_train_rows),
+        gmm_max_train_rows=int(gmm_max_train_rows),
+        ae_max_iter=int(ae_max_iter),
+        require_both_sides=True,
+        smooth_lambda_candidates=(0.0,),
+        path_aware_hpo=False,
+        temporal_stability_hpo=False,
+        outcome_free=True,
+        temporal_feature_contract="row_independent_v1",
+    )
+    if not bool(state.get("enabled", False)):
+        raise RuntimeError(
+            "Cycle AE/GMM smoke fit failed: " + str(state.get("reason", "disabled"))
+        )
+    reference_ts = pd.to_datetime(
+        frame_reference.get("__ts__"), utc=True, errors="coerce"
+    )
+    state.update(
+        {
+            "cycle_contract_version": AE_GMM_CYCLE_CONTRACT_VERSION,
+            "temporal_feature_contract": "row_independent_v1",
+            "smooth_lambda": 0.0,
+            "cycle_reference_stage": "smoke_feature_selection_reference",
+            "cycle_reference_start": str(reference_ts.min()),
+            "cycle_reference_end": str(reference_ts.max()),
+            "cycle_reference_rows_available": int(len(frame)),
+            "cycle_reference_rows_sampled": int(len(reference_idx)),
+            "cycle_reference_sample_policy": "beginning_middle_end_time_spread",
+            "cycle_reference_ordering": "timestamp_utc,symbol,side",
+            "cycle_reference_sample_identity_hash": ae_gmm_cycle_sample_identity_hash(
+                frame_reference["__ts__"],
+                symbols=frame_reference["__symbol__"],
+                sides=frame_reference["side"],
+            ),
+            "cycle_reference_symbol_count": int(
+                frame["__symbol__"].astype(str).nunique(dropna=False)
+            ),
+            "cycle_reference_sampled_symbol_count": int(
+                frame_reference["__symbol__"].astype(str).nunique(dropna=False)
+            ),
+            "cycle_reference_side_counts": {
+                str(key): int(value)
+                for key, value in frame_reference["side"]
+                .astype(str)
+                .value_counts(dropna=False)
+                .sort_index()
+                .items()
+            },
+            "cycle_input_fill_values": {
+                str(col): float(value) if np.isfinite(value) else 0.0
+                for col, value in med.items()
+            },
+        }
+    )
+    state["cycle_state_hash"] = ae_gmm_learned_transform_hash(state)
+    state_path = output_dir / "ae_gmm_cycle" / "state.pkl"
+    save_ae_gmm_state_artifact(
+        state,
+        state_path,
+        manifest_path=state_path.with_name("manifest.json"),
+        extra_manifest={
+            "cycle_contract_version": state["cycle_contract_version"],
+            "cycle_state_hash": state["cycle_state_hash"],
+            "reuse_scope": "all_monthly_smoke_windows",
+            "reference_stage": state["cycle_reference_stage"],
+        },
+    )
+    return state_path, {
+        "contract_version": str(state["cycle_contract_version"]),
+        "state_path": str(state_path),
+        "state_hash": str(state["cycle_state_hash"]),
+        "input_feature_count": int(len(input_features)),
+        "reference_rows_available": int(len(frame)),
+        "reference_rows_sampled": int(len(reference_idx)),
+        "reference_start": str(reference_ts.min()),
+        "reference_end": str(reference_ts.max()),
+        "sample_policy": "beginning_middle_end_time_spread",
+        "ordering": "timestamp_utc,symbol,side",
+        "sample_identity_hash": str(
+            state["cycle_reference_sample_identity_hash"]
+        ),
+        "representation_selection_outcome_free": True,
+        "representation_selection_context_keys": ["side", "time_bucket"],
+        "representation_selection_outcome_keys": [],
+    }
+
+
 def run_smoke(
     *,
     labels_path: Path,
@@ -12154,6 +12336,28 @@ def run_smoke(
         frame, metrics, evaluation_utility_column
     )
     features = _feature_columns(frame)
+    ae_gmm_cycle_contract: dict[str, Any] = {
+        "contract_version": "disabled",
+        "state_path": None,
+    }
+    fixed_ae_gmm_state_path: Path | None = None
+    fixed_ae_gmm_input_features: list[str] = []
+    if bool(include_ae_gmm_state_features):
+        fixed_ae_gmm_state_path, ae_gmm_cycle_contract = (
+            _fit_smoke_cycle_ae_gmm_state(
+                frame=frame,
+                features=features,
+                output_dir=output_dir,
+                max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+                gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
+                ae_max_iter=int(ae_gmm_state_feature_max_iter),
+                random_state=int(seeds[0] if seeds else 42),
+            )
+        )
+        fixed_cycle_state = load_ae_gmm_state_artifact(fixed_ae_gmm_state_path)
+        fixed_ae_gmm_input_features = [
+            str(col) for col in fixed_cycle_state.get("feature_columns", []) or []
+        ]
     base_targets = _make_targets(frame, metrics)
     targets = _label_targets(frame, metrics)
     strict_rounda_base = {**base_targets, **targets}
@@ -12217,6 +12421,8 @@ def run_smoke(
                 ae_gmm_state_feature_gmm_max_train_rows
             ),
             ae_gmm_state_feature_max_iter=int(ae_gmm_state_feature_max_iter),
+            fixed_ae_gmm_state_path=fixed_ae_gmm_state_path,
+            fixed_ae_gmm_input_features=fixed_ae_gmm_input_features,
         )
         monthly_rows.extend(rows)
         diagnostic_rows.extend(diagnostics)
@@ -12291,17 +12497,16 @@ def run_smoke(
             "feature_policy": str(AE_GMM_SMOKE_FEATURE_POLICY or "all"),
             "side_context_mode": str(AE_GMM_SIDE_CONTEXT_MODE or "off"),
             "side_context_enabled": bool(_side_context_enabled()),
-            "train_feature_scope": "inner_chronological_oof"
-            if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES)
-            else "outer_train_in_sample",
-            "validation_feature_scope": "frozen_outer_train_artifact",
-            "crossfit_train_features": bool(AE_GMM_CROSSFIT_TRAIN_FEATURES),
+            "train_feature_scope": "single_cycle_frozen_transform",
+            "validation_feature_scope": "same_single_cycle_frozen_transform",
+            "crossfit_train_features": False,
             "feature_names": ae_gmm_feature_names,
             "max_train_rows": int(ae_gmm_state_feature_max_train_rows),
             "gmm_max_train_rows": int(ae_gmm_state_feature_gmm_max_train_rows),
             "ae_max_iter": int(ae_gmm_state_feature_max_iter),
-            "fit_scope": "prior_month_fold_only",
-            "validation_transform": "pre_entry_features_plus_prior_fold_state",
+            "fit_scope": "one_beginning_middle_end_reference_per_smoke_cycle",
+            "validation_transform": "pre_entry_features_plus_frozen_cycle_state",
+            "cycle_contract": ae_gmm_cycle_contract,
         },
         "features": features,
         "label_arms": label_arms,

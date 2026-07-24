@@ -10,19 +10,34 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 import numpy as np
 import pandas as pd
 
 from extreme_price_movements.path_utils import mode_file_candidates
+from extreme_price_movements.simple_policy_winner import (
+    WINNER_POLICY_PATHWAY_ID,
+    WINNER_REPLAY_TIMEFRAME,
+)
 
 SIMPLE_POLICY_SCHEMA = "simple_policy_v1"
 SIMPLE_POLICY_GENERATOR = "simple_policy_optimiser"
 ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
 MIN_TRAILING_GIVEBACK_FRAC = 0.003
+CAPITAL_PROTECT_CONFIRMATION_SECONDS = 10 * 60
+WINNER_TRAILING_ACTIVATION_CURVE = "total_mfe"
+WINNER_SIZING_POLICY_ID = "raw_bayesian_v1"
+WINNER_ADVERSE_EXIT_THETA = 2.4018619060516357
+WINNER_ADVERSE_EXIT_ALPHA = 1.0
+WINNER_ADVERSE_EXIT_BETA = 1.0
+WINNER_ADVERSE_EXIT_DELTA = 1.0
+WINNER_ADVERSE_EXIT_MIN_MAE_ATR = 1.4
+WINNER_ADVERSE_EXIT_MIN_SPEED = 0.3
+WINNER_ADVERSE_EXIT_FAST_BARS = 60
+WINNER_ADVERSE_EXIT_MAX_MFE_ATR = 0.25
 
 REQUIRED_SIMPLE_POLICY_STOP_FIELDS = (
     "sl_mult",
@@ -55,6 +70,12 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "params_source",
     "params_hash",
     "strategy_id",
+    "policy_pathway_id",
+    "replay_timeframe",
+    "trailing_activation_curve",
+    "capital_preservation_enabled",
+    "sizing_policy_id",
+    "raw_bayesian_sizing_state",
     "sl_mult",
     "sl_abs_cap_pct",
     "barrier_pct",
@@ -94,6 +115,7 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "capital_protect_regression_frac",
     "capital_protect_lock_frac",
     "capital_protect_min_lock_bps",
+    "capital_protect_spread_lock_mult",
     *ADVERSE_SIMPLE_POLICY_STOP_FIELDS,
 )
 
@@ -129,6 +151,7 @@ _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS = {
     "trailing_profit_buffer_bps",
     "capital_protect_lock_frac",
     "capital_protect_min_lock_bps",
+    "capital_protect_spread_lock_mult",
 }
 _ARTIFACT_AUDIT_FIELDS = {
     "_loaded_from_simple_policy_artifact",
@@ -441,6 +464,7 @@ class ValidatedSimplePolicyParams:
     capital_protect_regression_frac: float
     capital_protect_lock_frac: float
     capital_protect_min_lock_bps: float
+    capital_protect_spread_lock_mult: float
     adverse_exit_enabled: bool
     adverse_exit_alpha: float
     adverse_exit_beta: float
@@ -455,6 +479,12 @@ class ValidatedSimplePolicyParams:
     strategy_id: str
     params_source: str
     params_hash: str
+    policy_pathway_id: str
+    replay_timeframe: str
+    trailing_activation_curve: str
+    capital_preservation_enabled: bool
+    sizing_policy_id: str
+    raw_bayesian_sizing_state: Optional[Mapping[str, Any]]
     schema: str = SIMPLE_POLICY_SCHEMA
 
     def to_policy_dict(self) -> Dict[str, Any]:
@@ -499,6 +529,14 @@ class SimplePolicyStopDecision:
     capital_protect_regression_frac: Optional[float] = None
     capital_protect_lock_frac: Optional[float] = None
     capital_protect_min_lock_bps: Optional[float] = None
+    capital_protect_spread_lock_mult: Optional[float] = None
+    capital_protect_armed: bool = False
+    capital_protect_armed_now: bool = False
+    capital_protect_activation_return: Optional[float] = None
+    capital_protect_crossed_ts: Optional[str] = None
+    capital_protect_pending: bool = False
+    capital_protect_confirmation_seconds: int = CAPITAL_PROTECT_CONFIRMATION_SECONDS
+    capital_protection_observation_enabled: bool = True
     adverse_exit_enabled: bool = False
     adverse_exit_theta: Optional[float] = None
     adverse_exit_theta_quantile: Optional[float] = None
@@ -515,6 +553,12 @@ class SimplePolicyStopDecision:
     mae: Optional[float] = None
     last_eval_ts: Optional[str] = None
     params_schema: str = SIMPLE_POLICY_SCHEMA
+    policy_pathway_id: Optional[str] = None
+    replay_timeframe: Optional[str] = None
+    trailing_activation_curve: Optional[str] = None
+    capital_preservation_enabled: Optional[bool] = None
+    sizing_policy_id: Optional[str] = None
+    raw_bayesian_sizing_state: Optional[Mapping[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -608,6 +652,15 @@ def _effective_barrier_frac(
     barrier = float(barrier_frac)
     if not np.isfinite(barrier) or barrier <= 0.0:
         return barrier
+    # Position state stores the barrier emitted by the initial policy decision.
+    # That value already includes ATR-power scaling and must remain invariant for
+    # the lifetime of the trade. Reapplying the transform on each monitor pass
+    # compounds the scaling and can arm trailing/capital protection too early.
+    if bool(
+        state.get("barrier_frac_is_effective", False)
+        or state.get("policy_barrier_frac_is_effective", False)
+    ):
+        return barrier
     power = _safe_float(params.get("atr_power"), 1.0)
     if not np.isfinite(power):
         power = 1.0
@@ -635,6 +688,111 @@ def _effective_barrier_frac(
         return barrier
     ratio = max(barrier / median, 1e-6)
     return float(max(multiplier * median * (ratio**power), 1e-6))
+
+
+def _validate_winner_sizing_state(
+    raw_state: Any,
+    *,
+    sizing_policy_id: str,
+) -> Mapping[str, Any]:
+    if sizing_policy_id != WINNER_SIZING_POLICY_ID:
+        raise SimplePolicyStopParamsError(
+            "winner pathway requires sizing_policy_id=raw_bayesian_v1"
+        )
+    if not isinstance(raw_state, Mapping):
+        raise SimplePolicyStopParamsError(
+            "winner pathway requires raw_bayesian_sizing_state"
+        )
+    if str(raw_state.get("policy_id") or "").strip() != WINNER_SIZING_POLICY_ID:
+        raise SimplePolicyStopParamsError(
+            "raw_bayesian_sizing_state policy_id mismatch"
+        )
+    if str(raw_state.get("pathway_id") or "").strip() != WINNER_POLICY_PATHWAY_ID:
+        raise SimplePolicyStopParamsError(
+            "raw_bayesian_sizing_state pathway_id mismatch"
+        )
+    normalizer = _safe_float(raw_state.get("train_normalizer"), np.nan)
+    if not np.isfinite(normalizer) or normalizer <= 0.0:
+        raise SimplePolicyStopParamsError(
+            "raw_bayesian_sizing_state requires positive train_normalizer"
+        )
+    return dict(raw_state)
+
+
+def _validate_winner_side_contract(
+    validated: "ValidatedSimplePolicyParams",
+    *,
+    side: str,
+) -> None:
+    """Enforce the frozen long-only adverse guard for the promoted pathway."""
+    if validated.policy_pathway_id != WINNER_POLICY_PATHWAY_ID:
+        return
+    if side == "short":
+        if validated.adverse_exit_enabled:
+            raise SimplePolicyStopParamsError(
+                "winner pathway disables the adverse-exit guard for shorts"
+            )
+        return
+    if side != "long":
+        raise SimplePolicyStopParamsError(
+            f"unsupported side for winner simple-policy stop: {side}"
+        )
+    expected = {
+        "adverse_exit_alpha": WINNER_ADVERSE_EXIT_ALPHA,
+        "adverse_exit_beta": WINNER_ADVERSE_EXIT_BETA,
+        "adverse_exit_delta": WINNER_ADVERSE_EXIT_DELTA,
+        "adverse_exit_theta": WINNER_ADVERSE_EXIT_THETA,
+        "adverse_exit_min_mae_atr": WINNER_ADVERSE_EXIT_MIN_MAE_ATR,
+        "adverse_exit_min_speed": WINNER_ADVERSE_EXIT_MIN_SPEED,
+        "adverse_exit_fast_bars": WINNER_ADVERSE_EXIT_FAST_BARS,
+        "adverse_exit_max_mfe_atr": WINNER_ADVERSE_EXIT_MAX_MFE_ATR,
+    }
+    if not validated.adverse_exit_enabled:
+        raise SimplePolicyStopParamsError(
+            "winner pathway requires the frozen long adverse-exit guard"
+        )
+    for field, expected_value in expected.items():
+        actual = getattr(validated, field)
+        if not np.isclose(float(actual), float(expected_value), rtol=0.0, atol=1e-12):
+            raise SimplePolicyStopParamsError(
+                f"winner pathway {field} does not match the frozen guard"
+            )
+
+
+def _validate_completed_one_minute_bars(
+    bars: pd.DataFrame,
+    *,
+    latest_market_state: Any,
+    state: Mapping[str, Any],
+) -> None:
+    """Reject explicitly incomplete or non-minute bar batches for the winner."""
+    if bars.empty:
+        return
+    timeframe = state.get("policy_bar_timeframe") or state.get("bar_timeframe")
+    if timeframe is None and isinstance(latest_market_state, Mapping):
+        timeframe = latest_market_state.get("timeframe") or latest_market_state.get(
+            "bar_timeframe"
+        )
+    if timeframe is None:
+        timeframe = bars.attrs.get("timeframe") or bars.attrs.get("bar_timeframe")
+    if timeframe is not None and str(timeframe).strip().lower() != WINNER_REPLAY_TIMEFRAME:
+        raise SimplePolicyStopParamsError(
+            "winner pathway requires completed 1m bars"
+        )
+
+    for column in ("is_complete", "is_closed", "completed"):
+        if column in bars.columns and not bars[column].fillna(False).astype(bool).all():
+            raise SimplePolicyStopParamsError(
+                "winner pathway received an incomplete bar"
+            )
+
+    if isinstance(bars.index, pd.DatetimeIndex) and len(bars) > 1:
+        ordered = pd.DatetimeIndex(bars.index).sort_values()
+        elapsed = ordered[1:] - ordered[:-1]
+        if not bool((elapsed == pd.Timedelta(minutes=1)).all()):
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires contiguous completed 1m bars"
+            )
 
 
 def validate_simple_policy_stop_params(
@@ -792,6 +950,9 @@ def validate_simple_policy_stop_params(
     capital_protect_min_lock_bps = max(
         0.0, _safe_float(params.get("capital_protect_min_lock_bps"), 0.0)
     )
+    capital_protect_spread_lock_mult = max(
+        0.0, _safe_float(params.get("capital_protect_spread_lock_mult"), 1.5)
+    )
 
     schema = str(
         params.get("schema")
@@ -848,6 +1009,50 @@ def validate_simple_policy_stop_params(
             "simple-policy params_hash does not match artifact content"
         )
 
+    policy_pathway_id = str(params.get("policy_pathway_id") or "").strip()
+    replay_timeframe = str(params.get("replay_timeframe") or "").strip().lower()
+    trailing_activation_curve = str(
+        params.get("trailing_activation_curve") or ""
+    ).strip().lower()
+    capital_preservation_enabled = params.get("capital_preservation_enabled")
+    sizing_policy_id = str(params.get("sizing_policy_id") or "").strip()
+    raw_bayesian_sizing_state: Optional[Mapping[str, Any]] = None
+    if policy_pathway_id:
+        if policy_pathway_id != WINNER_POLICY_PATHWAY_ID:
+            raise SimplePolicyStopParamsError(
+                f"unsupported simple-policy pathway: {policy_pathway_id}"
+            )
+        if replay_timeframe != WINNER_REPLAY_TIMEFRAME:
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires replay_timeframe=1m"
+            )
+        if trailing_activation_curve != WINNER_TRAILING_ACTIVATION_CURVE:
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires trailing_activation_curve=total_mfe"
+            )
+        if capital_preservation_enabled is not False:
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires capital_preservation_enabled=false"
+            )
+        if not bool(params.get("enable_trailing", True)):
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires trailing-only exits"
+            )
+        if bool(params.get("exit_pressure_enabled", False)) or values["hard_tp_abs_pct"] > 0.0:
+            raise SimplePolicyStopParamsError(
+                "winner pathway does not permit pressure or hard-TP exits"
+            )
+        if not np.isclose(values["atr_power"], 1.0, rtol=0.0, atol=1e-12) or not np.isclose(
+            values["atr_multiplier"], 1.0, rtol=0.0, atol=1e-12
+        ):
+            raise SimplePolicyStopParamsError(
+                "winner pathway requires raw ATR scaling"
+            )
+        raw_bayesian_sizing_state = _validate_winner_sizing_state(
+            params.get("raw_bayesian_sizing_state"),
+            sizing_policy_id=sizing_policy_id,
+        )
+
     effective_barrier_frac = _effective_barrier_frac(barrier_frac, params, state)
     effective_trailing_activation_return = float(activation) * float(
         effective_barrier_frac
@@ -900,6 +1105,7 @@ def validate_simple_policy_stop_params(
         ),
         capital_protect_lock_frac=float(capital_protect_lock_frac),
         capital_protect_min_lock_bps=float(capital_protect_min_lock_bps),
+        capital_protect_spread_lock_mult=float(capital_protect_spread_lock_mult),
         adverse_exit_enabled=bool(params.get("adverse_exit_enabled", False)),
         adverse_exit_alpha=float(_safe_float(params.get("adverse_exit_alpha"), 1.0)),
         adverse_exit_beta=float(_safe_float(params.get("adverse_exit_beta"), 1.0)),
@@ -924,6 +1130,12 @@ def validate_simple_policy_stop_params(
         strategy_id=strategy_id,
         params_source=params_source,
         params_hash=params_hash,
+        policy_pathway_id=policy_pathway_id,
+        replay_timeframe=replay_timeframe,
+        trailing_activation_curve=trailing_activation_curve,
+        capital_preservation_enabled=bool(capital_preservation_enabled),
+        sizing_policy_id=sizing_policy_id,
+        raw_bayesian_sizing_state=raw_bayesian_sizing_state,
         schema=schema or SIMPLE_POLICY_SCHEMA,
     )
 
@@ -1151,6 +1363,7 @@ def compute_initial_simple_policy_stop_decision(
         require_barrier=True,
     )
     side_l = str(side or "long").lower()
+    _validate_winner_side_contract(validated, side=side_l)
     sl_return = _effective_sl_return(validated)
     if side_l == "long":
         stop_price = entry * (1.0 - sl_return)
@@ -1211,6 +1424,7 @@ def compute_initial_simple_policy_stop_decision(
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
         capital_protect_lock_frac=validated.capital_protect_lock_frac,
         capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
+        capital_protect_spread_lock_mult=validated.capital_protect_spread_lock_mult,
         adverse_exit_enabled=validated.adverse_exit_enabled,
         adverse_exit_theta=validated.adverse_exit_theta,
         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1218,6 +1432,12 @@ def compute_initial_simple_policy_stop_decision(
         adverse_exit_min_speed=validated.adverse_exit_min_speed,
         adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
         adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
+        policy_pathway_id=validated.policy_pathway_id,
+        replay_timeframe=validated.replay_timeframe,
+        trailing_activation_curve=validated.trailing_activation_curve,
+        capital_preservation_enabled=validated.capital_preservation_enabled,
+        sizing_policy_id=validated.sizing_policy_id,
+        raw_bayesian_sizing_state=validated.raw_bayesian_sizing_state,
         peak_price=float(entry),
         mfe=0.0,
         mae=0.0,
@@ -1269,6 +1489,7 @@ def compute_simple_policy_stop_decision(
     )
 
     side_l = str(side or state.get("side") or "long").lower()
+    _validate_winner_side_contract(validated, side=side_l)
     entry_price = _safe_float(state.get("entry_price"), default=np.nan)
     current_stop = _safe_float(state.get("stop_price"), default=np.nan)
     peak_price = _safe_float(state.get("peak_price"), default=entry_price)
@@ -1286,6 +1507,12 @@ def compute_simple_policy_stop_decision(
     effective_hard_tp_abs_pct = validated.hard_tp_abs_pct
 
     bars = _latest_bars(latest_market_state)
+    if validated.policy_pathway_id == WINNER_POLICY_PATHWAY_ID:
+        _validate_completed_one_minute_bars(
+            bars,
+            latest_market_state=latest_market_state,
+            state=state,
+        )
     if not bars.empty:
         for _, row in bars.iterrows():
             bars_in_trade += 1
@@ -1389,6 +1616,9 @@ def compute_simple_policy_stop_decision(
                         capital_protect_min_lock_bps=(
                             validated.capital_protect_min_lock_bps
                         ),
+                        capital_protect_spread_lock_mult=(
+                            validated.capital_protect_spread_lock_mult
+                        ),
                         adverse_exit_enabled=True,
                         adverse_exit_theta=validated.adverse_exit_theta,
                         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1396,6 +1626,16 @@ def compute_simple_policy_stop_decision(
                         adverse_exit_min_speed=validated.adverse_exit_min_speed,
                         adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
                         adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
+                        policy_pathway_id=validated.policy_pathway_id,
+                        replay_timeframe=validated.replay_timeframe,
+                        trailing_activation_curve=validated.trailing_activation_curve,
+                        capital_preservation_enabled=(
+                            validated.capital_preservation_enabled
+                        ),
+                        sizing_policy_id=validated.sizing_policy_id,
+                        raw_bayesian_sizing_state=(
+                            validated.raw_bayesian_sizing_state
+                        ),
                         should_exit=True,
                         exit_reason="adverse_excursion_exit",
                         peak_price=(
@@ -1463,20 +1703,133 @@ def compute_simple_policy_stop_decision(
 
     cap_mfe_mult = validated.capital_protect_mfe_mult
     cap_reg_frac = validated.capital_protect_regression_frac
-    if cap_mfe_mult > 0.0:
+    capital_protect_was_armed = bool(state.get("capital_protect_armed", False))
+    capital_protect_armed = capital_protect_was_armed
+    capital_protect_armed_now = False
+    capital_protect_activation_return = None
+    capital_protect_crossed_ts = state.get("capital_protect_crossed_ts")
+    capital_protect_pending = False
+    capital_protect_apply_now = capital_protect_was_armed
+    capital_protection_observation_enabled = not bool(
+        state.get("capital_protection_disabled_for_observation", False)
+    )
+    if (
+        (
+            validated.policy_pathway_id != WINNER_POLICY_PATHWAY_ID
+            or validated.capital_preservation_enabled
+        )
+        and cap_mfe_mult > 0.0
+        and capital_protection_observation_enabled
+    ):
         x_dist = cap_mfe_mult * validated.barrier_frac
         if np.isfinite(validated.capital_protect_lock_frac):
             lock_dist = x_dist * validated.capital_protect_lock_frac
-            min_lock = max(0.0, validated.capital_protect_min_lock_bps) / 10_000.0
-            if min_lock > 0.0:
-                lock_dist = max(lock_dist, min_lock)
         else:
             sl_dist_ret = _effective_sl_return(
                 validated,
                 multiplier=tightening_multiplier,
             )
             lock_dist = x_dist - cap_reg_frac * (x_dist + sl_dist_ret)
-        if float(mfe) >= x_dist:
+        min_lock = max(0.0, validated.capital_protect_min_lock_bps) / 10_000.0
+        expected_spread_bps = _safe_float(
+            state.get(
+                "spread_bps",
+                state.get("ticker_spread_bps", state.get("expected_spread_bps")),
+            ),
+            0.0,
+        )
+        spread_lock = (
+            max(0.0, expected_spread_bps)
+            * validated.capital_protect_spread_lock_mult
+            / 10_000.0
+        )
+        lock_dist = max(lock_dist, min_lock, spread_lock)
+        activation_dist = max(x_dist, lock_dist)
+        capital_protect_activation_return = float(activation_dist)
+
+        observation_ts = state.get("capital_protect_observation_ts")
+        if observation_ts is None and not bars.empty:
+            observation_ts = bars.index[-1]
+        try:
+            observation_ts = pd.Timestamp(observation_ts)
+            if observation_ts.tzinfo is None:
+                observation_ts = observation_ts.tz_localize("UTC")
+            else:
+                observation_ts = observation_ts.tz_convert("UTC")
+        except Exception:
+            observation_ts = None
+
+        current_price = _safe_float(
+            state.get("capital_protect_current_price", state.get("current_price")),
+            np.nan,
+        )
+        current_favorable_return = (
+            ((current_price / entry_price) - 1.0)
+            if side_l == "long"
+            else (1.0 - (current_price / entry_price))
+        )
+        threshold_is_held = bool(
+            np.isfinite(current_favorable_return)
+            and current_favorable_return >= activation_dist
+        )
+
+        # A ticker touch starts a persistent timer, matching replay's use of
+        # cumulative MFE for first-touch memory. Unlike replay, activation also
+        # requires the current executable price to be beyond the threshold once
+        # ten minutes have elapsed, avoiding a stale-MFE capital lock.
+        if (
+            not capital_protect_armed
+            and observation_ts is not None
+            and np.isfinite(current_price)
+        ):
+            crossed_ts = None
+            try:
+                crossed_ts = pd.Timestamp(capital_protect_crossed_ts)
+                if pd.isna(crossed_ts):
+                    crossed_ts = None
+                elif crossed_ts.tzinfo is None:
+                    crossed_ts = crossed_ts.tz_localize("UTC")
+                else:
+                    crossed_ts = crossed_ts.tz_convert("UTC")
+            except Exception:
+                crossed_ts = None
+
+            if threshold_is_held and (
+                crossed_ts is None or observation_ts < crossed_ts
+            ):
+                crossed_ts = observation_ts
+                capital_protect_crossed_ts = observation_ts.isoformat()
+            if crossed_ts is not None:
+                elapsed_seconds = max(
+                    0.0, float((observation_ts - crossed_ts).total_seconds())
+                )
+                capital_protect_pending = not (
+                    threshold_is_held
+                    and elapsed_seconds >= CAPITAL_PROTECT_CONFIRMATION_SECONDS
+                )
+                if not capital_protect_pending:
+                    capital_protect_armed = True
+                    capital_protect_armed_now = True
+                    capital_protect_apply_now = True
+                    reason = "capital_preservation_armed"
+                    detail = (
+                        "capital_preservation_armed: "
+                        f"current_return={current_favorable_return:.6g} "
+                        f"trigger={activation_dist:.6g} lock_dist={lock_dist:.6g} "
+                        f"held_seconds={elapsed_seconds:.1f}"
+                    )
+        elif not capital_protect_armed and float(mfe) >= activation_dist:
+            # Backward-compatible path for replay/unit callers that do not
+            # provide an observation timestamp or current executable price.
+            capital_protect_armed = True
+            capital_protect_armed_now = True
+            reason = "capital_preservation_armed"
+            detail = (
+                f"capital_preservation_armed: mfe={float(mfe):.6g} "
+                f"trigger={activation_dist:.6g} lock_dist={lock_dist:.6g}"
+            )
+
+        if capital_protect_apply_now:
             cap_stop = (
                 entry_price * (1.0 + lock_dist)
                 if side_l == "long"
@@ -1490,7 +1843,7 @@ def compute_simple_policy_stop_decision(
                 reason = "capital_preservation"
                 detail = (
                     f"capital_preservation: mfe={float(mfe):.6g} "
-                    f"trigger={x_dist:.6g} lock_dist={lock_dist:.6g}"
+                    f"trigger={activation_dist:.6g} lock_dist={lock_dist:.6g}"
                 )
 
     if effective_hard_tp_abs_pct > 0.0 and float(mfe) >= effective_hard_tp_abs_pct:
@@ -1541,6 +1894,7 @@ def compute_simple_policy_stop_decision(
             capital_protect_regression_frac=validated.capital_protect_regression_frac,
             capital_protect_lock_frac=validated.capital_protect_lock_frac,
             capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
+            capital_protect_spread_lock_mult=validated.capital_protect_spread_lock_mult,
             adverse_exit_enabled=validated.adverse_exit_enabled,
             adverse_exit_theta=validated.adverse_exit_theta,
             adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1548,6 +1902,12 @@ def compute_simple_policy_stop_decision(
             adverse_exit_min_speed=validated.adverse_exit_min_speed,
             adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
             adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
+            policy_pathway_id=validated.policy_pathway_id,
+            replay_timeframe=validated.replay_timeframe,
+            trailing_activation_curve=validated.trailing_activation_curve,
+            capital_preservation_enabled=validated.capital_preservation_enabled,
+            sizing_policy_id=validated.sizing_policy_id,
+            raw_bayesian_sizing_state=validated.raw_bayesian_sizing_state,
             should_exit=True,
             exit_reason="hard_take_profit_exit",
             peak_price=float(peak_price) if np.isfinite(peak_price) else None,
@@ -1611,6 +1971,13 @@ def compute_simple_policy_stop_decision(
             last_eval_ts = pd.Timestamp(bars.index[-1]).isoformat()
         except Exception:
             last_eval_ts = None
+    elif state.get("capital_protect_observation_ts") is not None:
+        try:
+            last_eval_ts = pd.Timestamp(
+                state["capital_protect_observation_ts"]
+            ).isoformat()
+        except Exception:
+            last_eval_ts = None
     return SimplePolicyStopDecision(
         should_replace=bool(should_replace),
         stop_price=float(candidate) if should_replace else None,
@@ -1655,6 +2022,15 @@ def compute_simple_policy_stop_decision(
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
         capital_protect_lock_frac=validated.capital_protect_lock_frac,
         capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
+        capital_protect_spread_lock_mult=validated.capital_protect_spread_lock_mult,
+        capital_protect_armed=capital_protect_armed,
+        capital_protect_armed_now=capital_protect_armed_now,
+        capital_protect_activation_return=capital_protect_activation_return,
+        capital_protect_crossed_ts=capital_protect_crossed_ts,
+        capital_protect_pending=capital_protect_pending,
+        capital_protection_observation_enabled=(
+            capital_protection_observation_enabled
+        ),
         adverse_exit_enabled=validated.adverse_exit_enabled,
         adverse_exit_theta=validated.adverse_exit_theta,
         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1662,6 +2038,12 @@ def compute_simple_policy_stop_decision(
         adverse_exit_min_speed=validated.adverse_exit_min_speed,
         adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
         adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
+        policy_pathway_id=validated.policy_pathway_id,
+        replay_timeframe=validated.replay_timeframe,
+        trailing_activation_curve=validated.trailing_activation_curve,
+        capital_preservation_enabled=validated.capital_preservation_enabled,
+        sizing_policy_id=validated.sizing_policy_id,
+        raw_bayesian_sizing_state=validated.raw_bayesian_sizing_state,
         peak_price=float(peak_price) if np.isfinite(peak_price) else None,
         mfe=float(mfe),
         mae=float(mae),

@@ -65,11 +65,11 @@ def _outcomes_from_labels(old_dir: Path, new_dir: Path) -> pd.DataFrame:
         labels["__mfe_1r_before_mae_1r__"], errors="coerce"
     ).fillna(0.0)
 
-    # Match the established S52/S59 reporting contract exactly: the trailing
-    # capture already embeds 1% round-trip cost and the executable floor applies
-    # the same additional comparison convention used by the frozen report.
+    # The trailing capture already embeds the configured 1% round-trip cost.
+    # Keep that net value as the reporting return; subtracting 0.01 here would
+    # charge the fee twice.
     exec_margin = capture_net
-    ev_after_1pct = capture_net - 0.01
+    ev_after_1pct = capture_net
     clean_exec = (
         exec_margin.gt(0.0)
         & first_mae.lt(1.0)

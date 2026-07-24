@@ -114,6 +114,17 @@ screenlog.*
 /state/
 state.json
 *.state
+/inference_trades.csv
+/extreme_price_movements/.margin_universe_cache.json
+/extreme_price_movements/logs/
+
+# Machine-local agent permissions
+/.claude/
+
+# Live/generated feature snapshots and exchange stores
+/data/artifacts/*/live_candidate_feature_matrix/
+/data/artifacts/*/live_stage_feature_matrix/
+/data/exchanges/
 
 # =============================================================================
 # ARES PROJECT SPECIFIC - REPORTS AND ANALYSIS

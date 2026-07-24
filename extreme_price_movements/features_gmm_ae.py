@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -20,6 +21,16 @@ from .features_denoising_ae import (
     fit_denoising_autoencoder_state,
     refit_denoising_autoencoder_state,
     transform_denoising_autoencoder_features,
+)
+
+
+AE_GMM_CYCLE_CONTRACT_VERSION = "single_fit_begin_middle_end_v2"
+AE_GMM_TRANSFORM_HASH_V1 = "ae_gmm_transform_hash_v1"
+AE_GMM_TRANSFORM_HASH_V2 = "ae_gmm_transform_hash_v2"
+AE_GMM_TRANSFORM_HASH_V3 = "ae_gmm_transform_hash_v3"
+AE_GMM_NUMERIC_CONTRACT = "fixed_order_rowwise_v1"
+AE_GMM_OUTCOME_FREE_CONTEXT_KEYS = frozenset(
+    {"side", "time_bucket", "month", "__time_bucket__"}
 )
 
 
@@ -51,6 +62,17 @@ def ae_gmm_state_manifest(
         "enabled": bool(state.get("enabled", False)),
         "reason": state.get("reason"),
         "input_feature_columns": feature_columns,
+        "input_feature_order_hash": str(
+            state.get("input_feature_order_hash")
+            or ae_gmm_input_feature_order_hash(feature_columns)
+        ),
+        "learned_transform_hash": str(
+            state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
+        ),
+        "learned_transform_hash_version": str(
+            state.get("learned_transform_hash_version")
+            or AE_GMM_TRANSFORM_HASH_V1
+        ),
         "input_feature_columns_count": int(len(feature_columns)),
         "feature_columns_count": int(len(feature_columns)),
         "latent_columns": list(state.get("latent_columns", []) or []),
@@ -58,6 +80,7 @@ def ae_gmm_state_manifest(
         "generated_feature_columns_count": int(len(generated_columns)),
         "gmm_n_components": int(state.get("gmm_n_components", 0) or 0),
         "gmm_covariance_type": state.get("gmm_covariance_type"),
+        "gmm_numeric_contract": str(state.get("gmm_numeric_contract") or ""),
         "gmm_reg_covar": state.get("gmm_reg_covar"),
         "smooth_lambda": state.get("smooth_lambda"),
         "max_components": int(
@@ -70,6 +93,55 @@ def ae_gmm_state_manifest(
         "gmm_max_train_rows": int(state.get("gmm_max_train_rows", 0) or 0),
         "sample_policy": str(state.get("sample_policy", "")),
         "sample_manifest": state.get("sample_manifest"),
+        "cycle_contract_version": str(
+            state.get("cycle_contract_version", "") or ""
+        ),
+        "cycle_state_hash": str(
+            state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
+        ),
+        "cycle_reference_fold": state.get("cycle_reference_fold"),
+        "cycle_reference_stage": state.get("cycle_reference_stage"),
+        "cycle_reference_start": state.get("cycle_reference_start"),
+        "cycle_reference_end": state.get("cycle_reference_end"),
+        "cycle_reference_rows_available": int(
+            state.get("cycle_reference_rows_available", 0) or 0
+        ),
+        "cycle_reference_rows_sampled": int(
+            state.get("cycle_reference_rows_sampled", 0) or 0
+        ),
+        "cycle_reference_sample_policy": str(
+            state.get("cycle_reference_sample_policy", "") or ""
+        ),
+        "cycle_reference_ordering": str(
+            state.get("cycle_reference_ordering", "") or ""
+        ),
+        "cycle_reference_sample_identity_hash": str(
+            state.get("cycle_reference_sample_identity_hash", "") or ""
+        ),
+        "cycle_reference_symbol_count": int(
+            state.get("cycle_reference_symbol_count", 0) or 0
+        ),
+        "cycle_reference_sampled_symbol_count": int(
+            state.get("cycle_reference_sampled_symbol_count", 0) or 0
+        ),
+        "cycle_reference_side_counts": dict(
+            state.get("cycle_reference_side_counts", {}) or {}
+        ),
+        "representation_selection_outcome_free": bool(
+            state.get("representation_selection_outcome_free", False)
+        ),
+        "representation_selection_context_keys": list(
+            state.get("representation_selection_context_keys", []) or []
+        ),
+        "representation_selection_outcome_keys": list(
+            state.get("representation_selection_outcome_keys", []) or []
+        ),
+        "temporal_feature_contract": str(
+            state.get("temporal_feature_contract", "") or ""
+        ),
+        "cycle_input_fill_values": dict(
+            state.get("cycle_input_fill_values", {}) or {}
+        ),
         "selected_config": selected,
         "hpo_grid": state.get("hpo_grid"),
         "hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
@@ -80,11 +152,21 @@ def ae_gmm_state_manifest(
         "transform_rules": {
             "function": "extreme_price_movements.features_gmm_ae.transform_ae_gmm_features",
             "input_alignment": "reindex incoming frame to input_feature_columns in saved order",
-            "missing_input_fill_value": 0.0,
-            "nonfinite_input_handling": "caller should replace +/-inf with NaN then fill using train medians before transform",
+            "missing_input_policy": (
+                "reject missing required columns; persisted cycle_input_fill_values "
+                "are preprocessing provenance only"
+                if str(state.get("cycle_contract_version") or "").startswith("single_fit_")
+                else "legacy state: align columns and use the saved scaler center fallback"
+            ),
+            "nonfinite_input_handling": (
+                "reject every candidate batch containing NaN or Inf in a required input"
+                if str(state.get("cycle_contract_version") or "").startswith("single_fit_")
+                else "legacy state: replace nonfinite values with the saved fallback"
+            ),
             "robust_scaler": "saved center/scale vectors from train rows",
             "clip_range": state.get("clip", [-8.0, 8.0]),
             "autoencoder_state_key": "ae_state",
+            "gmm_numeric_contract": str(state.get("gmm_numeric_contract") or ""),
             "gmm_state_keys": [
                 "gmm_weights",
                 "gmm_means",
@@ -109,11 +191,88 @@ def ae_gmm_state_manifest(
                 "gmm_posterior_delta_1",
                 "gmm_posterior_accel_1",
             ],
+            "temporal_feature_contract": str(
+                state.get("temporal_feature_contract", "") or ""
+            ),
+            "row_independent_temporal_outputs": (
+                "zero-filled until a causal per-symbol history state is supplied"
+                if str(state.get("temporal_feature_contract", ""))
+                == "row_independent_v1"
+                else "legacy batch-sequence behavior"
+            ),
         },
     }
     if extra:
         manifest.update(dict(extra))
     return _ae_gmm_json_safe(manifest)
+
+
+def _validate_ae_gmm_cycle_contract_v2(state: dict[str, Any]) -> None:
+    """Reject incomplete states that claim the outcome-free cycle contract."""
+    if str(state.get("cycle_contract_version") or "") != AE_GMM_CYCLE_CONTRACT_VERSION:
+        return
+    failures: list[str] = []
+    if not bool(state.get("representation_selection_outcome_free", False)):
+        failures.append("representation_selection_outcome_free must be true")
+    if list(state.get("representation_selection_outcome_keys", []) or []):
+        failures.append("representation_selection_outcome_keys must be empty")
+    context_keys = {
+        str(key)
+        for key in (state.get("representation_selection_context_keys", []) or [])
+    }
+    forbidden_context = sorted(
+        context_keys.difference(AE_GMM_OUTCOME_FREE_CONTEXT_KEYS)
+    )
+    if forbidden_context:
+        failures.append(
+            "representation_selection_context_keys contains forbidden keys "
+            f"{forbidden_context}"
+        )
+    if str(state.get("temporal_feature_contract") or "") != "row_independent_v1":
+        failures.append("temporal_feature_contract must be row_independent_v1")
+    if abs(float(state.get("smooth_lambda", 0.0) or 0.0)) > 1e-12:
+        failures.append("smooth_lambda must be zero")
+    if str(state.get("gmm_numeric_contract") or "") != AE_GMM_NUMERIC_CONTRACT:
+        failures.append(
+            f"gmm_numeric_contract must be {AE_GMM_NUMERIC_CONTRACT}"
+        )
+    if bool(state.get("final_refit_all_rows", False)):
+        failures.append("final_refit_all_rows must be false")
+    if str(state.get("cycle_reference_ordering") or "") != "timestamp_utc,symbol,side":
+        failures.append("cycle_reference_ordering must be timestamp_utc,symbol,side")
+    if not str(state.get("cycle_reference_sample_identity_hash") or ""):
+        failures.append("cycle_reference_sample_identity_hash is required")
+    available = int(state.get("cycle_reference_rows_available", 0) or 0)
+    sampled = int(state.get("cycle_reference_rows_sampled", 0) or 0)
+    if sampled <= 0 or available < sampled:
+        failures.append("cycle reference row counts are invalid")
+    if int(state.get("cycle_reference_symbol_count", 0) or 0) <= 0:
+        failures.append("cycle_reference_symbol_count must be positive")
+    if int(state.get("cycle_reference_sampled_symbol_count", 0) or 0) <= 0:
+        failures.append("cycle_reference_sampled_symbol_count must be positive")
+    side_counts = dict(state.get("cycle_reference_side_counts", {}) or {})
+    if not any(int(value) > 0 for value in side_counts.values()):
+        failures.append("cycle_reference_side_counts must record its fitted scope")
+    feature_columns = [str(col) for col in state.get("feature_columns", []) or []]
+    fill_values = dict(state.get("cycle_input_fill_values", {}) or {})
+    missing_fill = [col for col in feature_columns if col not in fill_values]
+    nonfinite_fill = [
+        col
+        for col in feature_columns
+        if col in fill_values and not np.isfinite(float(fill_values[col]))
+    ]
+    if missing_fill:
+        failures.append(
+            f"cycle_input_fill_values is missing columns {missing_fill[:12]}"
+        )
+    if nonfinite_fill:
+        failures.append(
+            f"cycle_input_fill_values contains nonfinite values {nonfinite_fill[:12]}"
+        )
+    if failures:
+        raise ValueError(
+            "Invalid AE/GMM single-cycle v2 state: " + "; ".join(failures)
+        )
 
 
 def save_ae_gmm_state_artifact(
@@ -126,8 +285,28 @@ def save_ae_gmm_state_artifact(
     """Persist AE/GMM state for OOS replay and live inference parity."""
     state_path = Path(path)
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    _validate_ae_gmm_cycle_contract_v2(state)
+    feature_columns = [str(c) for c in state.get("feature_columns", []) or []]
+    if bool(state.get("enabled", False)) and feature_columns:
+        expected_order_hash = ae_gmm_input_feature_order_hash(feature_columns)
+        stored_order_hash = str(state.get("input_feature_order_hash") or "")
+        if stored_order_hash and stored_order_hash != expected_order_hash:
+            raise ValueError(
+                "Refusing to persist AE/GMM state with a stale input order hash: "
+                f"expected={expected_order_hash} stored={stored_order_hash}"
+            )
+        state["input_feature_order_hash"] = expected_order_hash
+        expected_state_hash = ae_gmm_learned_transform_hash(state)
+        stored_state_hash = str(state.get("cycle_state_hash") or "")
+        if stored_state_hash and stored_state_hash != expected_state_hash:
+            raise ValueError(
+                "Refusing to persist AE/GMM state with a stale learned transform hash: "
+                f"expected={expected_state_hash} stored={stored_state_hash}"
+            )
+        state["cycle_state_hash"] = expected_state_hash
     with state_path.open("wb") as fh:
         pickle.dump(state, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    state_artifact_sha256 = hashlib.sha256(state_path.read_bytes()).hexdigest()
     manifest_file = (
         Path(manifest_path)
         if manifest_path is not None
@@ -139,6 +318,7 @@ def save_ae_gmm_state_artifact(
         extra={
             **(extra_manifest or {}),
             "state_path": str(state_path),
+            "state_artifact_sha256": state_artifact_sha256,
             "manifest_path": str(manifest_file),
         },
     )
@@ -157,11 +337,44 @@ def load_ae_gmm_state_artifact(path: str | os.PathLike[str]) -> dict[str, Any]:
         raise ValueError(
             f"AE/GMM state artifact is disabled: {state_path} reason={state.get('reason')}"
         )
+    _validate_ae_gmm_cycle_contract_v2(state)
     feature_columns = state.get("feature_columns", [])
     if not isinstance(feature_columns, list) or len(feature_columns) < 2:
         raise ValueError(
             f"AE/GMM state artifact has no usable feature_columns: {state_path}"
         )
+    expected_order_hash = str(state.get("input_feature_order_hash") or "").strip()
+    actual_order_hash = ae_gmm_input_feature_order_hash(feature_columns)
+    if expected_order_hash and expected_order_hash != actual_order_hash:
+        raise ValueError(
+            "AE/GMM state input feature order hash mismatch: "
+            f"{state_path} expected={expected_order_hash} actual={actual_order_hash}"
+        )
+    for key in ("center", "scale"):
+        values = np.asarray(state.get(key, []), dtype=np.float32)
+        if values.ndim != 1 or len(values) != len(feature_columns):
+            raise ValueError(
+                f"AE/GMM state {key} length does not match feature order: "
+                f"{state_path} {key}={len(values)} features={len(feature_columns)}"
+            )
+    expected_state_hash = str(state.get("cycle_state_hash") or "").strip()
+    actual_state_hash = ae_gmm_learned_transform_hash(state)
+    if expected_state_hash and expected_state_hash != actual_state_hash:
+        raise ValueError(
+            "AE/GMM learned transform hash mismatch: "
+            f"{state_path} expected={expected_state_hash} actual={actual_state_hash}"
+        )
+    if str(state.get("learned_transform_hash_version") or "") in {
+        AE_GMM_TRANSFORM_HASH_V2,
+        AE_GMM_TRANSFORM_HASH_V3,
+    }:
+        fill_values = dict(state.get("cycle_input_fill_values", {}) or {})
+        missing_fill = [col for col in feature_columns if col not in fill_values]
+        if missing_fill:
+            raise ValueError(
+                "AE/GMM v2 state is missing persisted input fill values: "
+                f"{state_path} missing={missing_fill[:12]}"
+            )
     return state
 
 
@@ -213,16 +426,16 @@ def _env_float_tuple(
     return tuple(out) if out else tuple(float(v) for v in default)
 
 
-AE_GMM_MAX_COMPONENTS = 7
+AE_GMM_MAX_COMPONENTS = 12
 AE_GMM_CLUSTER_CANDIDATES = _env_int_tuple(
     "EPM_AE_GMM_CLUSTER_CANDIDATES",
-    (2, 3, 4, 5, 6),
+    (4, 6, 8, 10, 12),
     min_value=2,
     max_value=AE_GMM_MAX_COMPONENTS,
 )
 AE_GMM_REG_COVAR_CANDIDATES = _env_float_tuple(
     "EPM_AE_GMM_REG_COVAR_CANDIDATES",
-    (1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3),
+    (1e-4, 3e-4, 1e-3, 3e-3),
     min_value=1e-8,
     max_value=1.0,
 )
@@ -259,6 +472,33 @@ AE_GMM_TEMPORAL_CONCENTRATION_HPO = os.environ.get(
 AE_GMM_LATENT_FEATURE_COLUMNS = tuple(
     f"dae_b16_{i:02d}" for i in range(AE_GMM_LATENT_DIM)
 )
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw not in {"0", "false", "no", "n", "off"}
+
+
+AE_GMM_ENHANCED_SEARCH = _env_bool("EPM_AE_GMM_ENHANCED_SEARCH", False)
+AE_GMM_ENCODER_FAMILIES = tuple(
+    token.strip().lower()
+    for token in os.environ.get("EPM_AE_GMM_ENCODER_FAMILIES", "dae,idec").split(",")
+    if token.strip().lower() in {"dae", "idec"}
+) or ("dae",)
+AE_GMM_REPULSION_LAMBDAS = _env_float_tuple(
+    "EPM_AE_GMM_REPULSION_LAMBDAS",
+    (0.0, 1e-4, 3e-4, 1e-3),
+    min_value=0.0,
+    max_value=1.0,
+)
+AE_GMM_REPULSION_TOP_CONFIGS = max(
+    1, int(os.environ.get("EPM_AE_GMM_REPULSION_TOP_CONFIGS", "4"))
+)
+AE_GMM_REPULSION_STEPS = max(
+    1, int(os.environ.get("EPM_AE_GMM_REPULSION_STEPS", "40"))
+)
 AE_GMM_CLUSTER_FEATURE_COLUMNS = tuple(
     [f"gmm_prob_{i}" for i in range(AE_GMM_MAX_COMPONENTS)]
     + [f"gmm_cluster_posterior_{i}" for i in range(AE_GMM_MAX_COMPONENTS)]
@@ -268,6 +508,8 @@ AE_GMM_CLUSTER_FEATURE_COLUMNS = tuple(
         "gmm_cluster_id",
         "gmm_posterior_max",
         "gmm_posterior_margin",
+        "gmm_unknown_probability",
+        "gmm_ood_score",
         "gmm_posterior_delta_1",
         "gmm_posterior_accel_1",
         "gmm_entropy",
@@ -330,12 +572,96 @@ def _robust_scale_fit(x: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _robust_scale_apply(
-    x: pd.DataFrame, center: np.ndarray, scale: np.ndarray
+    x: pd.DataFrame,
+    center: np.ndarray,
+    scale: np.ndarray,
+    *,
+    fill_values: np.ndarray | None = None,
+    clip_bounds: Sequence[float] = (-8.0, 8.0),
 ) -> np.ndarray:
     arr = x.to_numpy(dtype=np.float32, copy=True)
-    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+    fill = (
+        np.asarray(fill_values, dtype=np.float32)
+        if fill_values is not None
+        else np.asarray(center, dtype=np.float32)
+    )
+    if fill.ndim != 1 or len(fill) != arr.shape[1]:
+        raise ValueError(
+            "AE/GMM input fill vector must match the ordered input feature count"
+        )
+    finite = np.isfinite(arr)
+    if not finite.all():
+        arr = np.where(finite, arr, fill.reshape(1, -1)).astype(
+            np.float32, copy=False
+        )
     out = (arr - center.reshape(1, -1)) / scale.reshape(1, -1)
-    return np.clip(out, -8.0, 8.0).astype(np.float32)
+    bounds = list(clip_bounds)
+    lower = float(bounds[0]) if len(bounds) >= 1 else -8.0
+    upper = float(bounds[1]) if len(bounds) >= 2 else 8.0
+    if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
+        raise ValueError(f"Invalid AE/GMM clip bounds: {clip_bounds}")
+    return np.clip(out, lower, upper).astype(np.float32)
+
+
+def ae_gmm_input_feature_order_hash(feature_columns: Sequence[Any]) -> str:
+    encoded = json.dumps(
+        [str(col) for col in feature_columns],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def ae_gmm_learned_transform_hash(state: dict[str, Any]) -> str:
+    version = str(
+        state.get("learned_transform_hash_version") or AE_GMM_TRANSFORM_HASH_V1
+    )
+    legacy_keys = (
+        "schema_version",
+        "feature_columns",
+        "center",
+        "scale",
+        "ae_state",
+        "gmm_n_components",
+        "gmm_covariance_type",
+        "gmm_weights",
+        "gmm_means",
+        "gmm_covariances",
+        "temporal_feature_contract",
+        "input_feature_order_hash",
+    )
+    v2_keys = legacy_keys + (
+        "clip",
+        "smooth_lambda",
+        "cycle_input_fill_values",
+        "reconstruction_error_mean",
+        "reconstruction_error_std",
+        "ood_mahal_q95",
+        "ood_mahal_q99",
+        "ood_reconstruction_q95",
+        "ood_reconstruction_q99",
+        "max_components",
+        "learned_transform_hash_version",
+        "gmm_numeric_contract",
+    )
+    v3_keys = v2_keys + (
+        "latent_encoder_kind",
+        "latent_encoder_state",
+        "latent_dim",
+        "latent_gmm_center",
+        "latent_gmm_scale",
+    )
+    if version == AE_GMM_TRANSFORM_HASH_V3:
+        keys = v3_keys
+    elif version == AE_GMM_TRANSFORM_HASH_V2:
+        keys = v2_keys
+    else:
+        keys = legacy_keys
+    payload = {key: state.get(key) for key in keys}
+    encoded = json.dumps(
+        _ae_gmm_json_safe(payload), sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _softmax_log(logp: np.ndarray) -> np.ndarray:
@@ -346,17 +672,130 @@ def _softmax_log(logp: np.ndarray) -> np.ndarray:
     return (p / denom).astype(np.float32)
 
 
-def _diag_gmm_predict_proba(z: np.ndarray, state: dict[str, Any]) -> np.ndarray:
+if _numba_njit is not None:
+
+    @_numba_njit(cache=True)
+    def _diag_gmm_stats_numba(
+        z: np.ndarray,
+        means: np.ndarray,
+        covars: np.ndarray,
+        weights: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Use the same fixed-order arithmetic for every row and batch size."""
+        n_rows = z.shape[0]
+        n_clusters = means.shape[0]
+        n_features = means.shape[1]
+        prob = np.empty((n_rows, n_clusters), dtype=np.float32)
+        dist = np.empty((n_rows, n_clusters), dtype=np.float32)
+        mahal = np.empty((n_rows, n_clusters), dtype=np.float32)
+        logp = np.empty(n_clusters, dtype=np.float64)
+        normalizer = float(n_features) * np.log(2.0 * np.pi)
+        for row in range(n_rows):
+            max_logp = -np.inf
+            for cluster in range(n_clusters):
+                euclidean_sq = 0.0
+                mahal_sq = 0.0
+                log_det = 0.0
+                for feature in range(n_features):
+                    delta = float(z[row, feature]) - float(means[cluster, feature])
+                    covariance = max(float(covars[cluster, feature]), 1.0e-8)
+                    euclidean_sq += delta * delta
+                    mahal_sq += delta * delta / covariance
+                    log_det += np.log(covariance)
+                dist[row, cluster] = np.float32(np.sqrt(max(euclidean_sq, 0.0)))
+                mahal[row, cluster] = np.float32(np.sqrt(max(mahal_sq, 0.0)))
+                value = np.log(max(float(weights[cluster]), 1.0e-12)) - 0.5 * (
+                    mahal_sq + log_det + normalizer
+                )
+                logp[cluster] = value
+                if value > max_logp:
+                    max_logp = value
+            probability_sum = 0.0
+            for cluster in range(n_clusters):
+                value = np.exp(max(logp[cluster] - max_logp, -80.0))
+                prob[row, cluster] = np.float32(value)
+                probability_sum += value
+            denominator = max(probability_sum, 1.0e-12)
+            for cluster in range(n_clusters):
+                prob[row, cluster] = np.float32(
+                    float(prob[row, cluster]) / denominator
+                )
+        return prob, dist, mahal
+
+else:
+    _diag_gmm_stats_numba = None
+
+
+def _diag_gmm_stats(
+    z: np.ndarray, state: dict[str, Any]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     means = np.asarray(state.get("gmm_means", []), dtype=np.float32)
     covars = np.asarray(state.get("gmm_covariances", []), dtype=np.float32)
     weights = np.asarray(state.get("gmm_weights", []), dtype=np.float32)
-    if means.ndim != 2 or covars.ndim != 2 or len(means) == 0:
+    if means.ndim != 2 or len(means) == 0:
+        empty = np.zeros((len(z), 0), dtype=np.float32)
+        return empty, empty, empty
+    if weights.ndim != 1 or len(weights) != len(means):
+        weights = np.full(len(means), 1.0 / len(means), dtype=np.float32)
+    z32 = np.ascontiguousarray(z, dtype=np.float32)
+    means32 = np.ascontiguousarray(means, dtype=np.float32)
+    covars32 = np.ascontiguousarray(covars, dtype=np.float32)
+    weights32 = np.ascontiguousarray(weights, dtype=np.float32)
+    if _diag_gmm_stats_numba is not None:
+        return _diag_gmm_stats_numba(z32, means32, covars32, weights32)
+
+    prob_rows: list[np.ndarray] = []
+    dist_rows: list[np.ndarray] = []
+    mahal_rows: list[np.ndarray] = []
+    for row in z32:
+        diff = row.reshape(1, -1) - means32
+        covariance = np.maximum(covars32, np.float32(1.0e-8))
+        euclidean_sq = np.sum(diff.astype(np.float64) ** 2, axis=1)
+        mahal_sq = np.sum(
+            diff.astype(np.float64) ** 2 / covariance.astype(np.float64), axis=1
+        )
+        log_det = np.sum(np.log(covariance.astype(np.float64)), axis=1)
+        logp = np.log(np.maximum(weights32.astype(np.float64), 1.0e-12)) - 0.5 * (
+            mahal_sq + log_det + means32.shape[1] * np.log(2.0 * np.pi)
+        )
+        prob_rows.append(_softmax_log(logp.reshape(1, -1))[0])
+        dist_rows.append(np.sqrt(np.maximum(euclidean_sq, 0.0)).astype(np.float32))
+        mahal_rows.append(np.sqrt(np.maximum(mahal_sq, 0.0)).astype(np.float32))
+    return (
+        np.asarray(prob_rows, dtype=np.float32),
+        np.asarray(dist_rows, dtype=np.float32),
+        np.asarray(mahal_rows, dtype=np.float32),
+    )
+
+
+def _gmm_predict_proba(z: np.ndarray, state: dict[str, Any]) -> np.ndarray:
+    means = np.asarray(state.get("gmm_means", []), dtype=np.float32)
+    covars = np.asarray(state.get("gmm_covariances", []), dtype=np.float32)
+    weights = np.asarray(state.get("gmm_weights", []), dtype=np.float32)
+    if means.ndim != 2 or len(means) == 0:
         return np.zeros((len(z), 0), dtype=np.float32)
-    covars = np.maximum(covars, 1e-8)
     weights = np.maximum(weights, 1e-12)
     diff = z[:, None, :] - means[None, :, :]
-    quad = np.sum((diff * diff) / covars[None, :, :], axis=2)
-    log_det = np.sum(np.log(covars), axis=1)
+    covariance_type = str(state.get("gmm_covariance_type", "diag"))
+    if covariance_type == "diag":
+        prob, _dist, _mahal = _diag_gmm_stats(z, state)
+        return prob
+    else:
+        matrices = (
+            np.repeat(covars[None, :, :], len(means), axis=0)
+            if covariance_type == "tied"
+            else covars
+        )
+        quad = np.empty((len(z), len(means)), dtype=np.float64)
+        log_det = np.empty(len(means), dtype=np.float64)
+        for cluster, covariance in enumerate(matrices):
+            covariance = np.asarray(covariance, dtype=np.float64)
+            sign, value = np.linalg.slogdet(covariance)
+            log_det[cluster] = value if sign > 0 else np.log(1e-12)
+            precision = np.linalg.pinv(covariance, hermitian=True)
+            quad[:, cluster] = np.einsum(
+                "ij,jk,ik->i", diff[:, cluster], precision, diff[:, cluster]
+            )
     dim = float(means.shape[1])
     logp = np.log(weights)[None, :] - 0.5 * (
         quad + log_det[None, :] + dim * np.log(2.0 * np.pi)
@@ -369,15 +808,30 @@ def _gmm_distances(
 ) -> tuple[np.ndarray, np.ndarray]:
     means = np.asarray(state.get("gmm_means", []), dtype=np.float32)
     covars = np.asarray(state.get("gmm_covariances", []), dtype=np.float32)
-    if means.ndim != 2 or covars.ndim != 2 or len(means) == 0:
+    if means.ndim != 2 or len(means) == 0:
         empty = np.zeros((len(z), 0), dtype=np.float32)
         return empty, empty
     diff = z[:, None, :] - means[None, :, :]
     dist = np.sqrt(np.maximum(np.sum(diff * diff, axis=2), 0.0)).astype(np.float32)
-    covars = np.maximum(covars, 1e-8)
-    mahal = np.sqrt(
-        np.maximum(np.sum((diff * diff) / covars[None, :, :], axis=2), 0.0)
-    ).astype(np.float32)
+    covariance_type = str(state.get("gmm_covariance_type", "diag"))
+    if covariance_type == "diag":
+        _prob, dist, mahal = _diag_gmm_stats(z, state)
+        return dist, mahal
+    else:
+        matrices = (
+            np.repeat(covars[None, :, :], len(means), axis=0)
+            if covariance_type == "tied"
+            else covars
+        )
+        mahal_sq = np.empty((len(z), len(means)), dtype=np.float64)
+        for cluster, covariance in enumerate(matrices):
+            precision = np.linalg.pinv(
+                np.asarray(covariance, dtype=np.float64), hermitian=True
+            )
+            mahal_sq[:, cluster] = np.einsum(
+                "ij,jk,ik->i", diff[:, cluster], precision, diff[:, cluster]
+            )
+    mahal = np.sqrt(np.maximum(mahal_sq, 0.0)).astype(np.float32)
     return dist, mahal
 
 
@@ -1123,9 +1577,124 @@ def _time_spread_sample_indices(n_rows: int, max_rows: int | None) -> np.ndarray
     cap = int(max_rows or 0)
     if n <= 0:
         return np.zeros(0, dtype=np.int64)
-    if cap > 0 and n > cap:
-        return np.linspace(0, n - 1, cap, dtype=np.int64)
-    return np.arange(n, dtype=np.int64)
+    if cap <= 0 or n <= cap:
+        return np.arange(n, dtype=np.int64)
+    bands = np.array_split(np.arange(n, dtype=np.int64), min(3, n))
+    base_take, remainder = divmod(cap, len(bands))
+    selected: list[np.ndarray] = []
+    for band_idx, band in enumerate(bands):
+        take = min(len(band), base_take + (1 if band_idx < remainder else 0))
+        if take <= 0:
+            continue
+        local = np.linspace(0, len(band) - 1, take, dtype=np.int64)
+        selected.append(band[local])
+    if not selected:
+        return np.zeros(0, dtype=np.int64)
+    return np.sort(np.unique(np.concatenate(selected))).astype(np.int64, copy=False)
+
+
+def ae_gmm_cycle_reference_indices(
+    timestamps: Any,
+    *,
+    symbols: Any = None,
+    sides: Any = None,
+    max_rows: int | None,
+) -> np.ndarray:
+    """Canonical UTC/symbol/side order followed by beginning/middle/end sampling.
+
+    The returned positions are in canonical chronological order, not source-frame
+    order.  This makes the fitted representation invariant to dataframe row order
+    while preserving full cross-sectional ordering within each timestamp.
+    """
+    ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
+    n = int(len(ts))
+    if n <= 0:
+        return np.zeros(0, dtype=np.int64)
+    if bool(ts.isna().any()):
+        raise ValueError("AE/GMM cycle reference contains invalid UTC timestamps")
+    if symbols is not None and len(np.asarray(symbols)) != n:
+        raise ValueError(
+            "AE/GMM cycle reference symbol identities must match timestamp rows"
+        )
+    if sides is not None and len(np.asarray(sides)) != n:
+        raise ValueError(
+            "AE/GMM cycle reference side identities must match timestamp rows"
+        )
+    symbol_values = (
+        pd.Series(symbols).astype(str).to_numpy()
+        if symbols is not None and len(np.asarray(symbols)) == n
+        else np.full(n, "", dtype=object)
+    )
+    side_values = (
+        pd.Series(sides).astype(str).to_numpy()
+        if sides is not None and len(np.asarray(sides)) == n
+        else np.full(n, "", dtype=object)
+    )
+    ts_ns = ts.astype("int64", copy=False).to_numpy(dtype=np.int64, copy=False)
+    if symbols is not None and sides is not None:
+        identity = pd.DataFrame(
+            {"timestamp_ns": ts_ns, "symbol": symbol_values, "side": side_values}
+        )
+        duplicates = identity.duplicated(keep=False)
+        if bool(duplicates.any()):
+            example = identity.loc[duplicates].iloc[0].to_dict()
+            raise ValueError(
+                "AE/GMM cycle reference row identity must be unique by UTC timestamp, "
+                f"symbol and side; first duplicate={example}"
+            )
+    ordered = np.lexsort((side_values, symbol_values, ts_ns)).astype(
+        np.int64, copy=False
+    )
+    local = _time_spread_sample_indices(len(ordered), max_rows)
+    return ordered[local].astype(np.int64, copy=False)
+
+
+def ae_gmm_cycle_sample_identity_hash(
+    timestamps: Any,
+    *,
+    symbols: Any = None,
+    sides: Any = None,
+    indices: Any = None,
+) -> str:
+    """Hash the exact canonical row identities used for a cycle fit."""
+    ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
+    n = int(len(ts))
+    if bool(ts.isna().any()):
+        raise ValueError("AE/GMM sample identity hash contains invalid UTC timestamps")
+    if symbols is not None and len(np.asarray(symbols)) != n:
+        raise ValueError(
+            "AE/GMM sample identity hash symbol identities must match timestamp rows"
+        )
+    if sides is not None and len(np.asarray(sides)) != n:
+        raise ValueError(
+            "AE/GMM sample identity hash side identities must match timestamp rows"
+        )
+    idx = (
+        np.arange(n, dtype=np.int64)
+        if indices is None
+        else np.asarray(indices, dtype=np.int64)
+    )
+    if np.any((idx < 0) | (idx >= n)):
+        raise ValueError("AE/GMM sample identity hash received out-of-range indices")
+    symbol_values = (
+        pd.Series(symbols).astype(str).to_numpy()
+        if symbols is not None and len(np.asarray(symbols)) == n
+        else np.full(n, "", dtype=object)
+    )
+    side_values = (
+        pd.Series(sides).astype(str).to_numpy()
+        if sides is not None and len(np.asarray(sides)) == n
+        else np.full(n, "", dtype=object)
+    )
+    ts_ns = ts.astype("int64", copy=False).to_numpy(dtype=np.int64, copy=False)
+    digest = hashlib.sha256()
+    for row in idx:
+        digest.update(
+            f"{int(ts_ns[row])}\x1f{symbol_values[row]}\x1f{side_values[row]}\n".encode(
+                "utf-8"
+            )
+        )
+    return digest.hexdigest()
 
 
 def _sample_index_manifest(idx: np.ndarray, n_rows: int) -> dict[str, Any]:
@@ -1159,6 +1728,7 @@ def _sample_index_manifest(idx: np.ndarray, n_rows: int) -> dict[str, Any]:
 def fit_ae_gmm_state(
     x_reference: Any,
     *,
+    timestamps: Any = None,
     economic_targets: dict[str, Any] | None = None,
     random_state: int = 42,
     max_train_rows: int = 5000,
@@ -1166,6 +1736,7 @@ def fit_ae_gmm_state(
     ae_max_iter: int = 80,
     cluster_candidates: Any = None,
     reg_covar_candidates: Any = None,
+    covariance_type_candidates: Sequence[str] | None = None,
     smooth_lambda_candidates: Any = None,
     min_occupancy: float = AE_GMM_MIN_OCCUPANCY,
     max_occupancy: float = AE_GMM_MAX_OCCUPANCY,
@@ -1177,6 +1748,15 @@ def fit_ae_gmm_state(
     temporal_stability_hpo: bool = True,
     component_complexity_penalty: float = 0.0,
     final_refit_all_rows: bool = False,
+    final_refit_rows: int | None = None,
+    final_ae_train_rows: int | None = None,
+    enhanced_search: bool | None = None,
+    encoder_families: Sequence[str] | None = None,
+    repulsion_lambdas: Sequence[float] | None = None,
+    repulsion_top_configs: int | None = None,
+    repulsion_steps: int | None = None,
+    outcome_free: bool = False,
+    temporal_feature_contract: str = "ordered_batch_sequence_v1",
 ) -> dict[str, Any]:
     x_df = _as_float_frame(x_reference)
     if len(x_df) < 200 or x_df.shape[1] < 2:
@@ -1185,6 +1765,87 @@ def fit_ae_gmm_state(
             "reason": "insufficient_rows_or_features",
             "feature_columns": list(x_df.columns),
         }
+    temporal_contract = str(temporal_feature_contract or "").strip()
+    if temporal_contract not in {"ordered_batch_sequence_v1", "row_independent_v1"}:
+        raise ValueError(
+            f"Unsupported AE/GMM temporal feature contract: {temporal_contract!r}"
+        )
+    target_keys = {str(key) for key in (economic_targets or {})}
+    outcome_target_keys = sorted(target_keys.difference(AE_GMM_OUTCOME_FREE_CONTEXT_KEYS))
+    if bool(outcome_free):
+        forbidden = sorted(target_keys.difference(AE_GMM_OUTCOME_FREE_CONTEXT_KEYS))
+        if forbidden:
+            raise ValueError(
+                "Outcome-free AE/GMM cycle fitting received forbidden outcome keys: "
+                f"{forbidden}"
+            )
+        if bool(final_refit_all_rows):
+            raise ValueError(
+                "Outcome-free cycle AE/GMM must remain the sampled reference fit; "
+                "final_refit_all_rows is not permitted"
+            )
+    use_enhanced_search = (
+        AE_GMM_ENHANCED_SEARCH if enhanced_search is None else bool(enhanced_search)
+    )
+    # Enhanced search is intentionally outcome-free.  Legacy states retain the
+    # historical path-aware scorer for backwards-compatible reproduction only.
+    if use_enhanced_search:
+        from .ae_gmm_enhanced_search import fit_enhanced_ae_gmm_state
+
+        clusters_to_try = _candidate_ints(
+            cluster_candidates,
+            AE_GMM_CLUSTER_CANDIDATES,
+            min_value=2,
+            max_value=AE_GMM_MAX_COMPONENTS,
+        )
+        regs_to_try = _candidate_floats(
+            reg_covar_candidates,
+            AE_GMM_REG_COVAR_CANDIDATES,
+            min_value=1e-8,
+            max_value=1.0,
+        )
+        covariance_types = tuple(
+            dict.fromkeys(
+                str(value).strip().lower()
+                for value in (covariance_type_candidates or ("diag", "tied"))
+                if str(value).strip().lower() in {"diag", "tied"}
+            )
+        ) or ("diag", "tied")
+        return fit_enhanced_ae_gmm_state(
+            x_df,
+            timestamps=timestamps,
+            random_state=int(random_state),
+            ae_max_train_rows=int(max_train_rows),
+            gmm_max_train_rows=int(
+                max_train_rows if gmm_max_train_rows is None else gmm_max_train_rows
+            ),
+            final_refit_rows=int(final_refit_rows or 300_000),
+            final_ae_rows=int(final_ae_train_rows or 100_000),
+            ae_max_iter=int(ae_max_iter),
+            cluster_candidates=clusters_to_try,
+            reg_covar_candidates=regs_to_try,
+            covariance_type_candidates=covariance_types,
+            repulsion_lambdas=tuple(
+                AE_GMM_REPULSION_LAMBDAS
+                if repulsion_lambdas is None
+                else [float(value) for value in repulsion_lambdas]
+            ),
+            repulsion_top_configs=int(
+                AE_GMM_REPULSION_TOP_CONFIGS
+                if repulsion_top_configs is None
+                else repulsion_top_configs
+            ),
+            repulsion_steps=int(
+                AE_GMM_REPULSION_STEPS
+                if repulsion_steps is None
+                else repulsion_steps
+            ),
+            encoder_families=tuple(
+                AE_GMM_ENCODER_FAMILIES
+                if encoder_families is None
+                else [str(value).strip().lower() for value in encoder_families]
+            ),
+        )
     gmm_cap = int(max_train_rows if gmm_max_train_rows is None else gmm_max_train_rows)
     ae_idx = _time_spread_sample_indices(len(x_df), int(max_train_rows))
     gmm_idx = _time_spread_sample_indices(len(x_df), int(gmm_cap))
@@ -1225,7 +1886,7 @@ def fit_ae_gmm_state(
             "gmm_fit_rows": int(len(gmm_fit_df)),
             "ae_max_train_rows": int(max_train_rows),
             "gmm_max_train_rows": int(gmm_cap),
-            "sample_policy": "train_only_time_spread_evenly_spaced",
+            "sample_policy": "cycle_reference_beginning_middle_end_time_spread",
             "sample_manifest": sample_manifest,
         }
     z = ae_features[latent_cols].to_numpy(dtype=np.float32, copy=False)
@@ -1254,6 +1915,13 @@ def fit_ae_gmm_state(
         min_value=1e-8,
         max_value=1.0,
     )
+    covariance_types = tuple(
+        dict.fromkeys(
+            str(value).strip().lower()
+            for value in (covariance_type_candidates or ("diag",))
+            if str(value).strip().lower() in {"diag", "tied", "full"}
+        )
+    ) or ("diag",)
     smooth_to_try = _candidate_floats(
         smooth_lambda_candidates,
         AE_GMM_SMOOTH_LAMBDA_CANDIDATES,
@@ -1266,22 +1934,36 @@ def fit_ae_gmm_state(
         else None
     )
     use_path_aware_hpo = bool(
-        AE_GMM_PATH_AWARE_HPO if path_aware_hpo is None else path_aware_hpo
+        False
+        if outcome_free
+        else (AE_GMM_PATH_AWARE_HPO if path_aware_hpo is None else path_aware_hpo)
     )
     use_temporal_concentration_hpo = bool(
         AE_GMM_TEMPORAL_CONCENTRATION_HPO
         if temporal_concentration_hpo is None
         else temporal_concentration_hpo
     )
-    use_temporal_stability_hpo = bool(temporal_stability_hpo)
+    use_temporal_stability_hpo = bool(
+        temporal_stability_hpo and temporal_contract != "row_independent_v1"
+    )
+    if temporal_contract == "row_independent_v1":
+        smooth_to_try = (0.0,)
     for k in clusters_to_try:
         if len(z_train) < k * 20:
             continue
-        for reg_covar in regs_to_try:
+        central_reg = regs_to_try[len(regs_to_try) // 2]
+        covariance_grid = [
+            (covariance_type, reg_covar)
+            for covariance_type in covariance_types
+            for reg_covar in (
+                regs_to_try if covariance_type == "diag" else (central_reg,)
+            )
+        ]
+        for covariance_type, reg_covar in covariance_grid:
             try:
                 gmm = GaussianMixture(
                     n_components=int(k),
-                    covariance_type="diag",
+                    covariance_type=covariance_type,
                     reg_covar=float(reg_covar),
                     random_state=int(random_state + k * 17 + int(reg_covar * 1e6)),
                     max_iter=200,
@@ -1363,6 +2045,7 @@ def fit_ae_gmm_state(
                     )
                     report = {
                         "n_components": int(k),
+                        "covariance_type": covariance_type,
                         "reg_covar": float(reg_covar),
                         "smooth_lambda": float(smooth_lambda),
                         "validation_log_likelihood": ll_valid,
@@ -1447,6 +2130,7 @@ def fit_ae_gmm_state(
                 reports.append(
                     {
                         "n_components": int(k),
+                        "covariance_type": covariance_type,
                         "reg_covar": float(reg_covar),
                         "error": str(exc),
                         "occupancy_ok": False,
@@ -1467,10 +2151,12 @@ def fit_ae_gmm_state(
             "gmm_fit_rows": int(len(gmm_fit_df)),
             "ae_max_train_rows": int(max_train_rows),
             "gmm_max_train_rows": int(gmm_cap),
-            "sample_policy": "train_only_time_spread_evenly_spaced",
+            "sample_policy": "cycle_reference_beginning_middle_end_time_spread",
             "sample_manifest": sample_manifest,
             "hpo_grid": {
                 "cluster_candidates": [int(v) for v in clusters_to_try],
+                "covariance_type_candidates": list(covariance_types),
+                "covariance_search_policy": "diag_full_reg_grid_then_tied_full_central_reg",
                 "reg_covar_candidates": [float(v) for v in regs_to_try],
                 "smooth_lambda_candidates": [float(v) for v in smooth_to_try],
                 "ae_max_train_rows": int(max_train_rows),
@@ -1503,6 +2189,30 @@ def fit_ae_gmm_state(
         [r.get("occupancy_balance_score", 0.0) for r in valid_reports]
     )
     for i, r in enumerate(valid_reports):
+        if bool(outcome_free):
+            # The production cycle representation is selected without targets.
+            # Score only density fit, balanced support across sides/time, and
+            # non-degenerate occupancy.  Batch-sequence stability is excluded.
+            r["final_score"] = float(
+                0.40 * ll_rank[i]
+                + 0.10 * latent_rank[i]
+                + 0.20 * side_rank[i]
+                + 0.20 * occupancy_rank[i]
+                + 0.10 * concentration_rank[i]
+            )
+            r["representation_selection_outcome_free"] = True
+            component_span = max(max(clusters_to_try) - min(clusters_to_try), 1)
+            component_fraction = float(
+                (int(r.get("n_components", min(clusters_to_try))) - min(clusters_to_try))
+                / component_span
+            )
+            complexity_cost = max(float(component_complexity_penalty), 0.0) * max(
+                component_fraction, 0.0
+            )
+            r["component_complexity_fraction"] = component_fraction
+            r["component_complexity_cost"] = complexity_cost
+            r["final_score"] = float(r["final_score"] - complexity_cost)
+            continue
         path_weight = 0.18 if use_path_aware_hpo else 0.0
         concentration_weight = 0.08 if use_temporal_concentration_hpo else 0.0
         stability_weight = (
@@ -1585,7 +2295,7 @@ def fit_ae_gmm_state(
             try:
                 refit_gmm = GaussianMixture(
                     n_components=int(best_report["n_components"]),
-                    covariance_type="diag",
+                    covariance_type=str(best_report.get("covariance_type", "diag")),
                     reg_covar=float(best_report["reg_covar"]),
                     random_state=int(random_state) + 70_019,
                     max_iter=200,
@@ -1620,12 +2330,38 @@ def fit_ae_gmm_state(
         key=lambda r: float(r.get("final_score", -1e9)),
         reverse=True,
     )[:6]
+    distance_state = {
+        "gmm_means": best_gmm.means_,
+        "gmm_covariances": best_gmm.covariances_,
+        "gmm_weights": best_gmm.weights_,
+        "gmm_covariance_type": str(best_gmm.covariance_type),
+        "gmm_numeric_contract": AE_GMM_NUMERIC_CONTRACT,
+    }
+    distance_latent = z_final if refit_rows else z
+    _, fit_mahal = _gmm_distances(distance_latent, distance_state)
+    fit_min_mahal = (
+        np.min(fit_mahal, axis=1)
+        if fit_mahal.size
+        else np.zeros(len(distance_latent), dtype=np.float32)
+    )
+    mahal_q95 = float(np.nanquantile(fit_min_mahal, 0.95))
+    mahal_q99 = float(np.nanquantile(fit_min_mahal, 0.99))
+    recon_q95 = float(recon_mean + 1.645 * recon_std)
+    recon_q99 = float(recon_mean + 2.326 * recon_std)
+    feature_columns = list(x_df.columns)
     return {
         "enabled": True,
         "schema_version": "ae_gmm_v1",
-        "feature_columns": list(x_df.columns),
+        "learned_transform_hash_version": AE_GMM_TRANSFORM_HASH_V2,
+        "feature_columns": feature_columns,
+        "input_feature_order_hash": ae_gmm_input_feature_order_hash(feature_columns),
+        "temporal_feature_contract": temporal_contract,
         "center": center.astype(float).tolist(),
         "scale": scale.astype(float).tolist(),
+        "cycle_input_fill_values": {
+            str(col): float(center[pos])
+            for pos, col in enumerate(feature_columns)
+        },
         "clip": [-8.0, 8.0],
         "ae_state": ae_state,
         "train_rows_available": int(len(x_df)),
@@ -1637,11 +2373,15 @@ def fit_ae_gmm_state(
         "final_refit_rows": int(refit_rows),
         "hpo_ae_fit_rows": int(len(ae_fit_df)),
         "hpo_gmm_fit_rows": int(len(gmm_fit_df)),
-        "sample_policy": "train_only_time_spread_evenly_spaced",
+        "sample_policy": "cycle_reference_beginning_middle_end_time_spread",
         "sample_manifest": sample_manifest,
+        "representation_selection_outcome_free": bool(outcome_free),
+        "representation_selection_context_keys": sorted(target_keys),
+        "representation_selection_outcome_keys": outcome_target_keys,
         "latent_columns": list(AE_GMM_LATENT_FEATURE_COLUMNS),
         "gmm_n_components": int(best_gmm.n_components),
-        "gmm_covariance_type": "diag",
+        "gmm_covariance_type": str(best_gmm.covariance_type),
+        "gmm_numeric_contract": AE_GMM_NUMERIC_CONTRACT,
         "gmm_reg_covar": float(best_gmm.reg_covar),
         "gmm_weights": best_gmm.weights_.astype(float).tolist(),
         "gmm_means": best_gmm.means_.astype(float).tolist(),
@@ -1650,10 +2390,16 @@ def fit_ae_gmm_state(
         "max_components": int(AE_GMM_MAX_COMPONENTS),
         "reconstruction_error_mean": float(recon_mean),
         "reconstruction_error_std": float(recon_std),
+        "ood_mahal_q95": mahal_q95,
+        "ood_mahal_q99": mahal_q99,
+        "ood_reconstruction_q95": recon_q95,
+        "ood_reconstruction_q99": recon_q99,
         "selected_config": dict(best_report),
         "top_configs": reports_sorted,
         "hpo_grid": {
             "cluster_candidates": [int(v) for v in clusters_to_try],
+            "covariance_type_candidates": list(covariance_types),
+            "covariance_search_policy": "diag_full_reg_grid_then_tied_full_central_reg",
             "reg_covar_candidates": [float(v) for v in regs_to_try],
             "smooth_lambda_candidates": [float(v) for v in smooth_to_try],
             "ae_max_train_rows": int(max_train_rows),
@@ -1671,6 +2417,10 @@ def fit_ae_gmm_state(
             "min_side_cluster_frac": float(min_side_cluster_frac),
             "min_side_cluster_rows": int(min_side_cluster_rows),
             "final_refit_all_rows": bool(final_refit_all_rows),
+            "representation_selection_outcome_free": bool(outcome_free),
+            "representation_selection_context_keys": sorted(target_keys),
+            "representation_selection_outcome_keys": outcome_target_keys,
+            "temporal_feature_contract": temporal_contract,
         },
         "hpo_report_count": int(len(reports)),
         "hpo_reports": sorted(
@@ -1695,37 +2445,133 @@ def transform_ae_gmm_features(
     if not state or not bool(state.get("enabled", False)):
         return pd.DataFrame(0.0, index=idx, columns=out_columns, dtype=np.float32)
     feature_columns = [str(c) for c in state.get("feature_columns", list(x_df.columns))]
-    x_aligned = x_df.reindex(columns=feature_columns, fill_value=0.0)
+    strict_cycle = str(state.get("cycle_contract_version") or "").startswith(
+        "single_fit_"
+    )
+    if strict_cycle:
+        missing = [col for col in feature_columns if col not in x_df.columns]
+        if missing:
+            raise ValueError(
+                "AE/GMM cycle transform input contract violation: "
+                f"missing {len(missing)}/{len(feature_columns)} columns; "
+                f"examples={missing[:12]}"
+            )
+        expected_order_hash = str(state.get("input_feature_order_hash") or "").strip()
+        actual_order_hash = ae_gmm_input_feature_order_hash(feature_columns)
+        if expected_order_hash and expected_order_hash != actual_order_hash:
+            raise ValueError(
+                "AE/GMM cycle transform input order hash mismatch: "
+                f"expected={expected_order_hash} actual={actual_order_hash}"
+            )
+    x_aligned = x_df.reindex(columns=feature_columns)
+    if strict_cycle:
+        required_values = x_aligned.to_numpy(dtype=np.float32, copy=False)
+        invalid = ~np.isfinite(required_values)
+        if bool(invalid.any()):
+            invalid_rows = np.flatnonzero(invalid.any(axis=1))
+            invalid_columns = [
+                feature_columns[pos]
+                for pos in np.flatnonzero(invalid.any(axis=0))[:12]
+            ]
+            raise ValueError(
+                "AE/GMM cycle transform required-input contract violation: "
+                f"nonfinite_candidate_rows={len(invalid_rows)}/{len(x_aligned)}, "
+                f"nonfinite_values={int(invalid.sum())}, "
+                f"columns={invalid_columns}"
+            )
     center = np.asarray(
         state.get("center", np.zeros(len(feature_columns))), dtype=np.float32
     )
     scale = np.asarray(
         state.get("scale", np.ones(len(feature_columns))), dtype=np.float32
     )
-    x_scaled = _robust_scale_apply(x_aligned, center, scale)
-    ae_features = transform_denoising_autoencoder_features(
-        x_scaled,
-        state.get("ae_state", {}),
-        index=idx,
-    )
-    latent_source_cols = [f"ae_b16_{i:02d}" for i in range(AE_GMM_LATENT_DIM)]
-    z = ae_features.reindex(columns=latent_source_cols, fill_value=0.0).to_numpy(
+    fill_map = dict(state.get("cycle_input_fill_values", {}) or {})
+    fill_values = np.asarray(
+        [fill_map.get(col, center[pos]) for pos, col in enumerate(feature_columns)],
         dtype=np.float32,
-        copy=False,
     )
-    prob = _diag_gmm_predict_proba(z, state)
-    prob_smooth = _smooth_probabilities(
-        prob,
-        float(state.get("smooth_lambda", AE_GMM_SMOOTH_LAMBDA)),
+    x_scaled = _robust_scale_apply(
+        x_aligned,
+        center,
+        scale,
+        fill_values=fill_values,
+        clip_bounds=state.get("clip", (-8.0, 8.0)),
     )
-    dist, mahal = _gmm_distances(z, state)
+    latent_kind = str(state.get("latent_encoder_kind", "dae")).strip().lower()
+    if latent_kind == "idec":
+        from .alternative_latent_encoders import AlternativeLatentEncoder
+
+        if "side" not in x_aligned.columns:
+            raise ValueError("IDEC AE/GMM state requires the pre-entry side column")
+        encoder = AlternativeLatentEncoder.from_state(
+            state.get("latent_encoder_state", {}), device="auto"
+        )
+        native = encoder.transform_native(
+            x_aligned.to_numpy(dtype=np.float32, copy=False),
+            sides=x_aligned["side"].astype(str).to_numpy(dtype=object, copy=False),
+        )
+        raw_latent = np.asarray(native.latent, dtype=np.float32)
+        recon = np.asarray(native.reconstruction_error, dtype=np.float32)
+    else:
+        ae_features = transform_denoising_autoencoder_features(
+            x_scaled,
+            state.get("ae_state", state.get("latent_encoder_state", {})),
+            index=idx,
+        )
+        latent_dim = int(state.get("latent_dim", AE_GMM_LATENT_DIM) or AE_GMM_LATENT_DIM)
+        latent_source_cols = [f"ae_b{latent_dim}_{i:02d}" for i in range(latent_dim)]
+        raw_latent = ae_features.reindex(
+            columns=latent_source_cols, fill_value=0.0
+        ).to_numpy(dtype=np.float32, copy=False)
+        recon = pd.to_numeric(
+            ae_features.get(f"ae_b{latent_dim}_reconstruction_error", 0.0),
+            errors="coerce",
+        ).to_numpy(dtype=np.float32, copy=False)
+    latent_dim = int(state.get("latent_dim", raw_latent.shape[1]) or raw_latent.shape[1])
+    raw_latent = raw_latent[:, :latent_dim]
+    latent_center = np.asarray(
+        state.get("latent_gmm_center", np.zeros(latent_dim)), dtype=np.float32
+    )
+    latent_scale = np.asarray(
+        state.get("latent_gmm_scale", np.ones(latent_dim)), dtype=np.float32
+    )
+    if len(latent_center) != latent_dim or len(latent_scale) != latent_dim:
+        latent_center = np.zeros(latent_dim, dtype=np.float32)
+        latent_scale = np.ones(latent_dim, dtype=np.float32)
+    z = np.clip(
+        (raw_latent - latent_center.reshape(1, -1))
+        / np.maximum(latent_scale.reshape(1, -1), 1e-6),
+        -12.0,
+        12.0,
+    ).astype(np.float32, copy=False)
+    if str(state.get("gmm_covariance_type", "diag")) == "diag":
+        prob, dist, mahal = _diag_gmm_stats(z, state)
+    else:
+        prob = _gmm_predict_proba(z, state)
+        dist, mahal = _gmm_distances(z, state)
+    row_independent = (
+        str(state.get("temporal_feature_contract") or "") == "row_independent_v1"
+    )
+    prob_smooth = (
+        prob.astype(np.float32, copy=False)
+        if row_independent
+        else _smooth_probabilities(
+            prob,
+            float(state.get("smooth_lambda", AE_GMM_SMOOTH_LAMBDA)),
+        )
+    )
     k = prob.shape[1]
     labels = (
         np.argmax(prob_smooth, axis=1).astype(np.int32)
         if k > 0 and len(prob_smooth)
         else np.zeros(len(x_df), dtype=np.int32)
     )
-    age, stability, flips = _cluster_stability(labels, window=20)
+    if row_independent:
+        age = np.zeros(len(labels), dtype=np.float32)
+        stability = np.zeros(len(labels), dtype=np.float32)
+        flips = np.zeros(len(labels), dtype=np.float32)
+    else:
+        age, stability, flips = _cluster_stability(labels, window=20)
     entropy = (
         -np.sum(prob_smooth * np.log(np.maximum(prob_smooth, 1e-12)), axis=1)
         if k > 0
@@ -1748,33 +2594,69 @@ def transform_ae_gmm_features(
         posterior_margin = posterior_top2[:, 1] - posterior_top2[:, 0]
     else:
         posterior_margin = posterior_max.copy()
-    posterior_delta = _diff1(posterior_max)
-    posterior_accel = _diff1(posterior_delta)
-    entropy_delta = _diff1(entropy)
-    entropy_accel = _diff1(entropy_delta)
-    min_mahal_delta = _diff1(min_mahal)
-    expected_mahal_delta = _diff1(expected_mahal)
-    expected_mahal_accel = _diff1(expected_mahal_delta)
-    recon = pd.to_numeric(
-        ae_features.get("ae_b16_reconstruction_error", 0.0),
-        errors="coerce",
-    ).to_numpy(dtype=np.float32, copy=False)
+    if row_independent:
+        posterior_delta = np.zeros(len(x_df), dtype=np.float32)
+        posterior_accel = np.zeros(len(x_df), dtype=np.float32)
+        entropy_delta = np.zeros(len(x_df), dtype=np.float32)
+        entropy_accel = np.zeros(len(x_df), dtype=np.float32)
+        min_mahal_delta = np.zeros(len(x_df), dtype=np.float32)
+        expected_mahal_delta = np.zeros(len(x_df), dtype=np.float32)
+        expected_mahal_accel = np.zeros(len(x_df), dtype=np.float32)
+    else:
+        posterior_delta = _diff1(posterior_max)
+        posterior_accel = _diff1(posterior_delta)
+        entropy_delta = _diff1(entropy)
+        entropy_accel = _diff1(entropy_delta)
+        min_mahal_delta = _diff1(min_mahal)
+        expected_mahal_delta = _diff1(expected_mahal)
+        expected_mahal_accel = _diff1(expected_mahal_delta)
     recon = np.nan_to_num(recon, nan=0.0, posinf=0.0, neginf=0.0)
     recon_z = (
         (recon - float(state.get("reconstruction_error_mean", 0.0)))
         / max(float(state.get("reconstruction_error_std", 1.0)), 1e-6)
     ).astype(np.float32)
-    recon_delta = _diff1(recon)
-    recon_accel = _diff1(recon_delta)
-    latent_speed = _row_speed(z)
-    latent_acceleration = _diff1(latent_speed)
-    cluster_speed = (
-        _row_speed(prob_smooth) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+    mahal_scale = max(
+        float(state.get("ood_mahal_q99", 1.0))
+        - float(state.get("ood_mahal_q95", 0.0)),
+        1e-6,
     )
-    cluster_acceleration = _diff1(cluster_speed)
+    recon_scale = max(
+        float(state.get("ood_reconstruction_q99", 1.0))
+        - float(state.get("ood_reconstruction_q95", 0.0)),
+        1e-6,
+    )
+    mahal_ood = (
+        min_mahal - float(state.get("ood_mahal_q95", 0.0))
+    ) / mahal_scale
+    recon_ood = (
+        recon - float(state.get("ood_reconstruction_q95", 0.0))
+    ) / recon_scale
+    ood_score = np.maximum(mahal_ood, recon_ood).astype(np.float32)
+    unknown_logit = np.clip(2.0 * ood_score, -12.0, 12.0)
+    unknown_probability = (1.0 / (1.0 + np.exp(-unknown_logit))).astype(np.float32)
+    if row_independent:
+        recon_delta = np.zeros(len(x_df), dtype=np.float32)
+        recon_accel = np.zeros(len(x_df), dtype=np.float32)
+        latent_speed = np.zeros(len(x_df), dtype=np.float32)
+        latent_acceleration = np.zeros(len(x_df), dtype=np.float32)
+        cluster_speed = np.zeros(len(x_df), dtype=np.float32)
+        cluster_acceleration = np.zeros(len(x_df), dtype=np.float32)
+    else:
+        recon_delta = _diff1(recon)
+        recon_accel = _diff1(recon_delta)
+        latent_speed = _row_speed(z)
+        latent_acceleration = _diff1(latent_speed)
+        cluster_speed = (
+            _row_speed(prob_smooth) if k > 0 else np.zeros(len(x_df), dtype=np.float32)
+        )
+        cluster_acceleration = _diff1(cluster_speed)
     data: dict[str, np.ndarray] = {}
     for i in range(AE_GMM_LATENT_DIM):
-        data[f"{prefix}dae_b16_{i:02d}"] = z[:, i].astype(np.float32)
+        data[f"{prefix}dae_b16_{i:02d}"] = (
+            z[:, i].astype(np.float32)
+            if i < z.shape[1]
+            else np.zeros(len(x_df), dtype=np.float32)
+        )
     for i in range(AE_GMM_MAX_COMPONENTS):
         data[f"{prefix}gmm_prob_{i}"] = (
             prob_smooth[:, i].astype(np.float32)
@@ -1798,6 +2680,8 @@ def transform_ae_gmm_features(
     data[f"{prefix}gmm_cluster_id"] = labels.astype(np.float32)
     data[f"{prefix}gmm_posterior_max"] = posterior_max.astype(np.float32)
     data[f"{prefix}gmm_posterior_margin"] = posterior_margin.astype(np.float32)
+    data[f"{prefix}gmm_unknown_probability"] = unknown_probability
+    data[f"{prefix}gmm_ood_score"] = ood_score
     data[f"{prefix}gmm_posterior_delta_1"] = posterior_delta.astype(np.float32)
     data[f"{prefix}gmm_posterior_accel_1"] = posterior_accel.astype(np.float32)
     data[f"{prefix}gmm_entropy"] = entropy.astype(np.float32)

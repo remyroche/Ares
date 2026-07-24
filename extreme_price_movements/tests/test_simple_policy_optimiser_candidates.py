@@ -22,8 +22,45 @@ def test_policy_spread_fallback_quantile_defaults_to_p85():
     assert spo._spread_fallback_quantile() == pytest.approx(0.85)
 
 
+def test_worse_negative_archetype_score_gets_no_geometry_foundation():
+    _, diagnostics = spo._blend_archetype_geometry_with_parent(
+        archetype_params={"sl_mult": 4.0},
+        archetype_size_power=1.5,
+        parent_params={"sl_mult": 2.0},
+        parent_size_power=1.0,
+        rows=10_000,
+        k=1,
+        mean_score_archetype=-2.0,
+        std_score=0.1,
+        mean_score_parent=-1.0,
+    )
+
+    assert diagnostics["performance_stability_confidence"] == 0.0
+    assert diagnostics["archetype_foundation"] == 0.0
+
+
+def test_improving_negative_archetype_score_gets_partial_confidence():
+    _, diagnostics = spo._blend_archetype_geometry_with_parent(
+        archetype_params={"sl_mult": 4.0},
+        archetype_size_power=1.5,
+        parent_params={"sl_mult": 2.0},
+        parent_size_power=1.0,
+        rows=10_000,
+        k=1,
+        mean_score_archetype=-0.75,
+        std_score=1.0,
+        mean_score_parent=-1.0,
+    )
+
+    assert diagnostics["performance_stability_confidence"] == pytest.approx(0.25)
+    assert diagnostics["archetype_foundation"] == pytest.approx(0.25)
+
+
 def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch):
+    captured_kwargs = {}
+
     def fake_simulate_and_score(*args, **kwargs):
+        captured_kwargs.update(kwargs)
         return {
             "selected_mask": np.array([True]),
             "raw_gains": np.array([0.009], dtype=np.float64),
@@ -101,9 +138,10 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
     assert out["spread_adjustment_bps"].iloc[0] == pytest.approx(
         spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS
     )
-    assert out["net_return"].iloc[0] == pytest.approx(
-        0.009 - spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 10_000.0
-    )
+    assert out["net_return"].iloc[0] == pytest.approx(0.009)
+    assert captured_kwargs["max_concurrent_trades"] == 1_000_000
+    assert captured_kwargs["max_concurrent_per_asset"] == 1_000_000
+    assert captured_kwargs["max_new_entries_per_bar"] == 1_000_000
     assert out["policy_executable_entry_price"].iloc[0] == pytest.approx(100.15)
     assert out["theoretical_entry_price"].iloc[0] == pytest.approx(100.15)
     assert out["entry_reanchor_bps"].iloc[0] == pytest.approx(
@@ -216,6 +254,39 @@ def test_simulator_timeout_uses_final_close_net_of_costs():
         gross_return - 0.001 - (1.0 + gross_return) * 0.001
     )
     assert net_return > 0.0
+
+
+def test_simulator_capital_protection_cannot_arm_and_exit_same_bar():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-01", periods=1, tz="UTC"),
+            "symbol": ["TEST/USD:USD"],
+            "side": [1.0],
+            "rank_pct": [1.0],
+            "barrier_pct": [0.02],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0, 102.0]], dtype=np.float32),
+        np.array([[100.0, 103.0, 102.0]], dtype=np.float32),
+        np.array([[100.0, 99.0, 100.5]], dtype=np.float32),
+        np.array([[100.0, 102.0, 100.8]], dtype=np.float32),
+    )
+
+    out = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        sl_mult=5.0,
+        trailing_activation_mult=99.0,
+        capital_protect_mfe_mult=1.0,
+        capital_protect_lock_frac=0.5,
+        capital_protect_min_lock_bps=0.0,
+        capital_protect_spread_lock_mult=0.0,
+    )
+
+    assert list(out["exit_reason"]) == ["capital_protect"]
+    assert int(out["exit_bars"][0]) == 2
 
 
 def test_policy_candidate_export_adds_regime_ae_features_without_raw_source_passthrough(monkeypatch):
@@ -576,6 +647,30 @@ def test_policy_spread_columns_use_asset_average_with_global_fallback(monkeypatc
     assert out["exit_spread_cost_bps"].tolist() == pytest.approx([3.0, 4.5])
 
 
+def test_policy_spread_columns_prefer_asset_p90(monkeypatch, tmp_path):
+    baseline_path = tmp_path / "per_asset_spread_baseline_latest.csv"
+    baseline_path.write_text(
+        "symbol,rows,average_spread_bps,p90_spread_bps\n"
+        "BTC/USD:USD,100,6.0,11.0\n"
+        "ETH/USD:USD,100,18.0,27.0\n"
+    )
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_USE_SPREAD_MODEL", "1")
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", str(baseline_path))
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
+    rows = pd.DataFrame(
+        {
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD"],
+            "market_mode": ["perps", "perps"],
+        }
+    )
+
+    out = spo._with_policy_spread_cost_columns(rows, market_mode="perps")
+
+    assert out["expected_spread_bps"].tolist() == pytest.approx([11.0, 27.0])
+    assert out["expected_half_spread_bps"].tolist() == pytest.approx([5.5, 13.5])
+
+
 def test_policy_spread_columns_accept_baseline_json_summary(monkeypatch, tmp_path):
     baseline_path = tmp_path / "per_asset_spread_baseline_latest.json"
     baseline_path.write_text(
@@ -812,7 +907,7 @@ def test_exit_pressure_tightens_hard_take_profit_threshold():
         exit_pressure_delta=1.0,
         exit_pressure_kappa=1.0,
         exit_pressure_min_multiplier=0.25,
-        target_holding_hours=0.25,
+        target_holding_hours=1.0 / 60.0,
         max_concurrent_trades=10,
         max_concurrent_per_asset=10,
         market_mode="spot",

@@ -29,6 +29,9 @@ ADJUSTED_SCORE_DEFAULT = "score_regime_calibrated"
 RISK_SCORE_DEFAULT = "regime_ev_risk_score"
 EFFECT_COUNT_DEFAULT = "regime_ev_effect_count"
 CALIBRATION_POLICY_ID = "per_regime_archetype_calibration_v1"
+MARKET_STATE_EV_POLICY_ID = (
+    "meta_residual_v9_tail95_market_state_mlp_hier_ev_v1"
+)
 _MODEL_CACHE: dict[str, Any] = {}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -55,7 +58,13 @@ def default_regime_ev_calibration_artifact() -> Path | None:
     if enabled in {"0", "false", "no", "off"}:
         return None
     raw = os.environ.get("EPM_REGIME_EV_CALIBRATION_ARTIFACT", "").strip()
-    path = Path(raw) if raw else DEFAULT_REGIME_EV_CALIBRATION_ARTIFACT
+    if raw:
+        path = Path(raw)
+    else:
+        # Production/replay callers must bind an explicit run-scoped artifact.
+        # Neither the legacy calibrator nor the newest research report is a
+        # reproducible fallback.
+        return None
     if not path.is_absolute():
         path = REPO_ROOT / path
     return path if path.exists() else None
@@ -134,6 +143,17 @@ def _apply_shape(values: pd.Series, shape: str, params: Mapping[str, Any]) -> pd
 
 def _derive_features(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame
+    if "hit_probability" not in out.columns:
+        for candidate in (
+            "score_meta_base_soft_label",
+            "calibrated_score",
+            "meta_score_oof",
+        ):
+            if candidate in out.columns:
+                out["hit_probability"] = pd.to_numeric(
+                    out[candidate], errors="coerce"
+                ).astype("float32")
+                break
     if (
         "__derived_score_dispersion__" not in out.columns
         and "score_meta_base_soft_label" in out.columns
@@ -221,12 +241,28 @@ def _apply_pickled_model(
     artifact: Mapping[str, Any],
 ) -> pd.Series:
     feature_cols = [str(c) for c in effect.get("feature_cols") or []]
-    if not feature_cols or not all(col in frame.columns for col in feature_cols):
-        return pd.Series(0.0, index=frame.index, dtype="float32")
     model = _load_calibration_model(effect.get("model_path"), artifact)
-    x = frame[feature_cols].apply(pd.to_numeric, errors="coerce")
+    internally_derived = set(
+        str(col)
+        for col in (
+            getattr(model, "internally_derived_feature_columns", ()) or ()
+        )
+    )
+    missing = [
+        col
+        for col in feature_cols
+        if col not in frame.columns and col not in internally_derived
+    ]
+    if missing and bool(artifact.get("strict_required_features", False)):
+        raise ValueError(
+            "missing required frozen calibration features: " + ", ".join(missing[:20])
+        )
+    if not feature_cols or missing:
+        return pd.Series(0.0, index=frame.index, dtype="float32")
+    present_feature_cols = [col for col in feature_cols if col in frame.columns]
+    x = frame[present_feature_cols].apply(pd.to_numeric, errors="coerce")
     fill_values = effect.get("fill_values") or {}
-    for col in feature_cols:
+    for col in present_feature_cols:
         x[col] = x[col].fillna(_safe_float(fill_values.get(col), 0.0))
     try:
         pred = model.predict(x)
@@ -252,6 +288,32 @@ def _apply_archetype_aliases(
     values: pd.Series, artifact: Mapping[str, Any]
 ) -> pd.Series:
     out = values.astype(str)
+    # Live policy-archetype classifiers retain the explicit side prefix in the
+    # label (for example ``long__long_breakout_*``), whereas local calibration
+    # artifacts key their effect curves by side plus the unprefixed archetype
+    # name (``long`` + ``long_breakout_*``).  Canonicalize only when the
+    # stripped label is actually present in the frozen artifact, so unrelated
+    # side-prefixed labels keep their original semantics.
+    effect_keys = {
+        str(effect.get("archetype_policy_key") or effect.get("archetype") or "")
+        for effect in (artifact.get("effects") or [])
+        if isinstance(effect, Mapping)
+    }
+    # A sparse local-overlay artifact may have no model effect for an
+    # archetype while its hierarchical expected-EV map still has a calibrated
+    # local curve.  Those keys are equally valid canonical targets.
+    for key in dict((artifact.get("expected_ev_mapping") or {}).get("local") or {}):
+        if "||" in str(key):
+            effect_keys.add(str(key).split("||", 1)[1])
+    for key in artifact.get("blacklisted_side_archetypes") or []:
+        if "||" in str(key):
+            effect_keys.add(str(key).split("||", 1)[1])
+    effect_keys.discard("")
+    if effect_keys:
+        for side in ("long", "short"):
+            prefix = f"{side}__"
+            stripped = out.str.removeprefix(prefix)
+            out = out.mask(stripped.isin(effect_keys), stripped)
     aliases = {
         str(k): str(v) for k, v in dict(artifact.get("archetype_aliases") or {}).items()
     }
@@ -299,6 +361,103 @@ def _apply_score_adjustment(
     else:
         adjusted = base + delta
     return adjusted.clip(0.0, 1.0).astype("float32")
+
+
+def _apply_hierarchical_expected_ev_details(
+    score: pd.Series,
+    side: pd.Series,
+    arch: pd.Series,
+    mapping: Mapping[str, Any],
+) -> dict[str, pd.Series]:
+    """Apply the frozen side x archetype EV map and return audit fields."""
+    raw = pd.to_numeric(score, errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    global_curve = mapping.get("global") or {}
+    gx = np.asarray(global_curve.get("x") or [], dtype=float)
+    gy = np.asarray(global_curve.get("y") or [], dtype=float)
+    if not len(gx) or len(gx) != len(gy):
+        raise ValueError("hierarchical expected-EV mapping has no valid global curve")
+    global_expected = np.interp(raw, gx, gy, left=gy[0], right=gy[-1])
+    expected = global_expected.copy()
+    side_values = side.astype(str).to_numpy()
+    arch_values = arch.astype(str).to_numpy()
+    local_applied = np.zeros(len(expected), dtype=bool)
+    local_weight = np.zeros(len(expected), dtype=np.float32)
+    local_support = np.zeros(len(expected), dtype=np.int32)
+    for key, curve in dict(mapping.get("local") or {}).items():
+        if "||" not in str(key):
+            continue
+        side_key, arch_key = str(key).split("||", 1)
+        mask = (side_values == side_key) & (arch_values == arch_key)
+        if not mask.any():
+            continue
+        lx = np.asarray(curve.get("x") or [], dtype=float)
+        ly = np.asarray(curve.get("y") or [], dtype=float)
+        if not len(lx) or len(lx) != len(ly):
+            continue
+        local = np.interp(raw[mask], lx, ly, left=ly[0], right=ly[-1])
+        weight = float(np.clip(_safe_float(curve.get("weight"), 0.0), 0.0, 1.0))
+        expected[mask] = (1.0 - weight) * expected[mask] + weight * local
+        local_applied[mask] = True
+        local_weight[mask] = np.float32(weight)
+        local_support[mask] = np.int32(max(0, int(_safe_float(curve.get("support"), 0.0))))
+    refinement = mapping.get("monotonic_refinement") or {}
+    if bool(refinement.get("enabled", False)):
+        slope = max(_safe_float(refinement.get("slope"), 0.0), 0.0)
+        score_min = _safe_float(refinement.get("score_min"), 0.0)
+        score_max = _safe_float(refinement.get("score_max"), 1.0)
+        score_rank = (raw - score_min) / max(score_max - score_min, 1e-8)
+        refinement_value = slope * (
+            score_rank - _safe_float(refinement.get("centering"), 0.5)
+        )
+        global_expected += refinement_value
+        expected += refinement_value
+    if bool(mapping.get("require_side_archetype_curve", False)):
+        missing = ~local_applied
+        if missing.any():
+            keys = sorted(
+                set(
+                    zip(
+                        side_values[missing].astype(str),
+                        arch_values[missing].astype(str),
+                    )
+                )
+            )
+            preview = ", ".join(f"{s}||{a}" for s, a in keys[:12])
+            raise ValueError(
+                "hierarchical expected-EV mapping is missing required side x "
+                f"archetype curves: {preview}"
+            )
+    reference = np.asarray(mapping.get("rank_reference") or [], dtype=float)
+    if len(reference):
+        reference.sort()
+        mapped_rank = np.searchsorted(reference, expected, side="right") / float(len(reference))
+    else:
+        mapped_rank = np.zeros(len(expected), dtype=float)
+    blend = float(np.clip(_safe_float(mapping.get("rank_blend"), 1.0), 0.0, 1.0))
+    rank = (1.0 - blend) * raw + blend * mapped_rank
+    scope = np.where(local_applied, "side_x_archetype", "global_fallback")
+    return {
+        "expected_ev": pd.Series(expected.astype("float32"), index=score.index),
+        "expected_ev_global": pd.Series(
+            global_expected.astype("float32"), index=score.index
+        ),
+        "expected_ev_rank": pd.Series(rank.astype("float32"), index=score.index),
+        "local_applied": pd.Series(local_applied, index=score.index),
+        "local_weight": pd.Series(local_weight, index=score.index),
+        "local_support": pd.Series(local_support, index=score.index),
+        "mapping_scope": pd.Series(scope, index=score.index, dtype="object"),
+    }
+
+
+def _apply_hierarchical_expected_ev(
+    score: pd.Series,
+    side: pd.Series,
+    arch: pd.Series,
+    mapping: Mapping[str, Any],
+) -> tuple[pd.Series, pd.Series]:
+    """Backward-compatible common-unit expected-EV and rank interface."""
+    details = _apply_hierarchical_expected_ev_details(score, side, arch, mapping)
+    return details["expected_ev"], details["expected_ev_rank"]
 
 
 def _timestamp_series(frame: pd.DataFrame) -> pd.Series | None:
@@ -465,13 +624,70 @@ def apply_regime_ev_calibration(
     out[risk_col] = risk
     out[count_col] = count
     out[adjusted_col] = _apply_score_adjustment(raw, risk, artifact)
-    out["regime_ev_calibration_source_score_col"] = source_col
-    out["regime_ev_calibration_source"] = str(
+    policy_id = str(
         artifact.get("policy_id")
         or artifact.get("artifact_id")
         or artifact.get("source")
         or CALIBRATION_POLICY_ID
     )
+    out["meta_postprocessor_policy_id"] = policy_id
+    out["meta_postprocessor_predecessor_id"] = str(
+        artifact.get("predecessor_policy_id") or ""
+    )
+    out["meta_postprocessor_side_archetype"] = (
+        side.astype(str) + "||" + arch.astype(str)
+    )
+    out["market_state_mlp_score_correction"] = (
+        pd.to_numeric(out[adjusted_col], errors="coerce") - raw
+    ).astype("float32")
+    expected_mapping = artifact.get("expected_ev_mapping")
+    if isinstance(expected_mapping, Mapping) and expected_mapping:
+        expected_col = str(
+            artifact.get("expected_ev_col") or "expected_net_ev_after_1pct"
+        )
+        expected_rank_col = str(
+            artifact.get("expected_ev_rank_col") or "expected_ev_rank_score"
+        )
+        expected_details = _apply_hierarchical_expected_ev_details(
+            out[adjusted_col], side, arch, expected_mapping
+        )
+        expected_ev = expected_details["expected_ev"]
+        expected_rank = expected_details["expected_ev_rank"]
+        out[expected_col] = expected_ev
+        out[expected_rank_col] = expected_rank
+        out[f"{expected_col}_global"] = expected_details["expected_ev_global"]
+        out[f"{expected_col}_side_archetype"] = expected_ev
+        out["expected_ev_side_archetype_curve_applied"] = expected_details[
+            "local_applied"
+        ]
+        out["expected_ev_side_archetype_weight"] = expected_details["local_weight"]
+        out["expected_ev_side_archetype_support"] = expected_details["local_support"]
+        out["expected_ev_mapping_scope"] = expected_details["mapping_scope"]
+        out["market_state_mlp_expected_net_ev_after_1pct"] = expected_ev
+        out["market_state_mlp_expected_ev_rank_score"] = expected_rank
+    blacklist = {
+        str(value) for value in artifact.get("blacklisted_side_archetypes") or []
+    }
+    if blacklist:
+        keys = side.astype(str) + "||" + arch.astype(str)
+        blocked = keys.isin(blacklist)
+        out["regime_ev_blacklisted"] = blocked.astype(bool)
+        out.loc[blocked, adjusted_col] = np.float32(0.0)
+        for column in (
+            "expected_net_ev_after_1pct",
+            "expected_net_ev_after_1pct_side_archetype",
+            "market_state_mlp_expected_net_ev_after_1pct",
+        ):
+            if column in out.columns:
+                out.loc[blocked, column] = np.float32(-1.0)
+        for column in (
+            "expected_ev_rank_score",
+            "market_state_mlp_expected_ev_rank_score",
+        ):
+            if column in out.columns:
+                out.loc[blocked, column] = np.float32(0.0)
+    out["regime_ev_calibration_source_score_col"] = source_col
+    out["regime_ev_calibration_source"] = policy_id
     return out
 
 

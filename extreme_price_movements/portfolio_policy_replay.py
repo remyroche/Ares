@@ -33,13 +33,15 @@ DEFAULT_OFFLINE_PRICE_GAP_BPS = 50.0
 class PortfolioPolicyParams:
     """Replay parameters with the v1 global-auction contract shape."""
 
-    max_concurrent_positions: int = 8
-    max_concurrent_per_side: Optional[int] = 4
-    max_concurrent_per_strategy: Optional[int] = 4
+    capacity_mode: str = "pre_leverage_wallet"
+    enforce_position_count_cap: bool = False
+    max_concurrent_positions: int = 64
+    max_concurrent_per_side: Optional[int] = None
+    max_concurrent_per_strategy: Optional[int] = None
     max_concurrent_per_symbol: int = 1
     max_new_entries_per_bar: int = 2
     max_new_entries_per_strategy_per_bar: Optional[int] = None
-    max_total_wallet_allocation_pct: float = 0.75
+    max_total_wallet_allocation_pct: float = 0.70
 
     global_threshold_floor: float = 0.60
     threshold_viability_margin: float = 0.0
@@ -49,10 +51,12 @@ class PortfolioPolicyParams:
     allocation_threshold_power: float = 1.0
 
     rank_size_power: float = 1.50
-    rank_multiplier_min: float = 0.50
+    rank_multiplier_min: float = 0.75
     rank_multiplier_max: float = 1.50
 
     max_signal_gap_bps: Optional[float] = None
+    price_gap_deadband_bps: float = 25.0
+    price_gap_favorable_penalty_multiplier: float = 0.25
     min_liquidity_capacity_weight: Optional[float] = None
     min_position_size: float = 1.0
     cooldown_hours_after_loss: float = 24.0
@@ -69,6 +73,7 @@ class PortfolioPolicyParams:
 
     def to_live_config(self) -> Dict[str, Any]:
         return {
+            "schema_version": "portfolio_policy_v2",
             "portfolio_policy_version": self.portfolio_policy_version,
             "strategy_contract": {
                 "strategy_ids": list(self.strategy_ids),
@@ -83,6 +88,8 @@ class PortfolioPolicyParams:
                 "allocation_threshold_power": float(self.allocation_threshold_power),
             },
             "concurrency": {
+                "capacity_mode": self.capacity_mode,
+                "enforce_position_count_cap": bool(self.enforce_position_count_cap),
                 "max_concurrent_positions": int(self.max_concurrent_positions),
                 "max_concurrent_per_side": self.max_concurrent_per_side,
                 "max_concurrent_per_strategy": self.max_concurrent_per_strategy,
@@ -106,6 +113,10 @@ class PortfolioPolicyParams:
             },
             "friction": {
                 "max_signal_gap_bps": self.max_signal_gap_bps,
+                "price_gap_deadband_bps": float(self.price_gap_deadband_bps),
+                "price_gap_favorable_penalty_multiplier": float(
+                    self.price_gap_favorable_penalty_multiplier
+                ),
                 "min_liquidity_capacity_weight": self.min_liquidity_capacity_weight,
                 "offline_default_price_gap_bps": DEFAULT_OFFLINE_PRICE_GAP_BPS,
             },
@@ -131,6 +142,8 @@ class PortfolioPolicyParams:
 
     def to_policy_config(self) -> PortfolioPolicyConfig:
         return PortfolioPolicyConfig(
+            capacity_mode=str(self.capacity_mode),
+            enforce_position_count_cap=bool(self.enforce_position_count_cap),
             max_concurrent_positions=int(self.max_concurrent_positions),
             max_concurrent_per_side=self.max_concurrent_per_side,
             max_concurrent_per_strategy=self.max_concurrent_per_strategy,
@@ -155,6 +168,10 @@ class PortfolioPolicyParams:
             rank_multiplier_min=float(self.rank_multiplier_min),
             rank_multiplier_max=float(self.rank_multiplier_max),
             rank_size_power=float(self.rank_size_power),
+            price_gap_deadband_bps=float(self.price_gap_deadband_bps),
+            price_gap_favorable_penalty_multiplier=float(
+                self.price_gap_favorable_penalty_multiplier
+            ),
             max_consecutive_losing_trades=int(self.max_consecutive_losing_trades),
             max_consecutive_losing_trades_per_archetype=int(
                 self.max_consecutive_losing_trades_per_archetype
@@ -211,6 +228,20 @@ def portfolio_policy_params_from_live_config(
         return float(value)
 
     return PortfolioPolicyParams(
+        capacity_mode=str(
+            _section_get(
+                concurrency,
+                "capacity_mode",
+                PortfolioPolicyParams.capacity_mode,
+            )
+        ),
+        enforce_position_count_cap=bool(
+            _section_get(
+                concurrency,
+                "enforce_position_count_cap",
+                PortfolioPolicyParams.enforce_position_count_cap,
+            )
+        ),
         max_concurrent_positions=int(
             _section_get(
                 concurrency,
@@ -326,6 +357,20 @@ def portfolio_policy_params_from_live_config(
                 PortfolioPolicyParams.max_signal_gap_bps,
             )
         ),
+        price_gap_deadband_bps=float(
+            _section_get(
+                friction,
+                "price_gap_deadband_bps",
+                PortfolioPolicyParams.price_gap_deadband_bps,
+            )
+        ),
+        price_gap_favorable_penalty_multiplier=float(
+            _section_get(
+                friction,
+                "price_gap_favorable_penalty_multiplier",
+                PortfolioPolicyParams.price_gap_favorable_penalty_multiplier,
+            )
+        ),
         min_liquidity_capacity_weight=_none_or_float(
             _section_get(
                 friction,
@@ -414,6 +459,7 @@ class OpenPosition:
     fees_bps: float = 0.0
     mtm_path_gross_returns: Optional[Tuple[float, ...]] = None
     policy_archetype: str = "missing"
+    effective_leverage: float = 1.0
 
 
 @dataclass
@@ -660,6 +706,22 @@ class PortfolioState:
                 for pos in self.open_positions
             )
         )
+
+    def marked_notional(self, timestamp: pd.Timestamp) -> float:
+        """Gross causal quote notional of all open positions at ``timestamp``."""
+        return float(
+            sum(
+                _position_marked_notional(pos, timestamp)
+                for pos in self.open_positions
+            )
+        )
+
+    def allocated_capital(self, timestamp: pd.Timestamp) -> float:
+        return float(sum(
+            _position_marked_notional(pos, timestamp)
+            / max(float(pos.effective_leverage), 1.0)
+            for pos in self.open_positions
+        ))
 
 
 @dataclass
@@ -1055,13 +1117,13 @@ def dynamic_threshold_for_count(
     allocation_share: float = 0.0,
 ) -> float:
     base = max(float(base_strategy_threshold), float(params.global_threshold_floor))
-    occupancy = int(open_positions) / max(int(params.max_concurrent_positions), 1)
+    occupancy = float(np.clip(allocation_share, 0.0, 1.0))
     occupancy_uplift = (
         float(params.occupancy_threshold_alpha)
         * float(occupancy) ** float(params.occupancy_threshold_power)
         * (1.0 - base)
     )
-    allocated = float(np.clip(allocation_share, 0.0, 1.0))
+    allocated = occupancy
     allocation_uplift = (
         float(params.allocation_threshold_alpha)
         * allocated ** float(params.allocation_threshold_power)
@@ -1081,13 +1143,13 @@ def dynamic_threshold_values(
         np.asarray(base_strategy_thresholds, dtype=float),
         float(params.global_threshold_floor),
     )
-    occupancy = int(open_positions) / max(int(params.max_concurrent_positions), 1)
+    occupancy = float(np.clip(allocation_share, 0.0, 1.0))
     occupancy_uplift = (
         float(params.occupancy_threshold_alpha)
         * float(occupancy) ** float(params.occupancy_threshold_power)
         * (1.0 - base)
     )
-    allocated = float(np.clip(allocation_share, 0.0, 1.0))
+    allocated = occupancy
     allocation_uplift = (
         float(params.allocation_threshold_alpha)
         * allocated ** float(params.allocation_threshold_power)
@@ -1283,9 +1345,11 @@ def portfolio_priority_from_values(
     rank_ev = float(np.interp(rank, x, y))
     threshold_ev = float(np.interp(threshold, x, y))
     ev_span = max(abs(rank_ev - threshold_ev), fallback_span, EPS)
-    price_gap_penalty = (
-        (max(float(gap_bps), 0.0) + max(float(friction_bps), 0.0)) / 10_000.0
-    ) / ev_span
+    # EV curves are fitted on ``net_return`` and therefore already include the
+    # training/replay fee and spread contract. Penalise only the incremental
+    # decision-time price gap here; subtracting expected friction again would
+    # distort auction ordering through a second cost haircut.
+    price_gap_penalty = (max(float(gap_bps), 0.0) / 10_000.0) / ev_span
     return float(surplus - price_gap_penalty)
 
 
@@ -1316,8 +1380,7 @@ def portfolio_priority_values(
         ]
     )
     gap = np.maximum(np.asarray(gap_bps, dtype=float), 0.0)
-    friction = np.maximum(np.asarray(friction_bps, dtype=float), 0.0)
-    priorities = surplus - ((gap + friction) / 10_000.0) / ev_span
+    priorities = surplus - (gap / 10_000.0) / ev_span
     return np.where(np.isfinite(ranks), priorities, float("-inf"))
 
 
@@ -1433,14 +1496,14 @@ def _candidate_order_indices(
     return indices[order]
 
 
-def _position_mtm_return(pos: OpenPosition, timestamp: pd.Timestamp) -> float:
+def _position_mtm_gross_return(pos: OpenPosition, timestamp: pd.Timestamp) -> float:
     ts = pd.Timestamp(timestamp)
     entry_ts = pd.Timestamp(pos.entry_timestamp)
     exit_ts = pd.Timestamp(pos.exit_timestamp)
     if ts <= entry_ts:
         return 0.0
     if ts >= exit_ts:
-        return float(pos.net_return)
+        return float(pos.gross_return)
     total_seconds = max(float((exit_ts - entry_ts).total_seconds()), 1.0)
     elapsed_seconds = min(max(float((ts - entry_ts).total_seconds()), 0.0), total_seconds)
     progress = float(np.clip(elapsed_seconds / total_seconds, 0.0, 1.0))
@@ -1451,9 +1514,28 @@ def _position_mtm_return(pos: OpenPosition, timestamp: pd.Timestamp) -> float:
             idx = min(elapsed_bars - 1, len(path) - 1)
             gross_return = float(path[idx])
             if np.isfinite(gross_return):
-                fee_return = float(pos.gross_return) - float(pos.net_return)
-                return float(gross_return - fee_return * progress)
-    return float(pos.net_return) * progress
+                return float(gross_return)
+    return float(pos.gross_return) * progress
+
+
+def _position_mtm_return(pos: OpenPosition, timestamp: pd.Timestamp) -> float:
+    gross = _position_mtm_gross_return(pos, timestamp)
+    entry_ts = pd.Timestamp(pos.entry_timestamp)
+    exit_ts = pd.Timestamp(pos.exit_timestamp)
+    total_seconds = max(float((exit_ts - entry_ts).total_seconds()), 1.0)
+    elapsed_seconds = min(
+        max(float((pd.Timestamp(timestamp) - entry_ts).total_seconds()), 0.0),
+        total_seconds,
+    )
+    progress = float(np.clip(elapsed_seconds / total_seconds, 0.0, 1.0))
+    fee_return = float(pos.gross_return) - float(pos.net_return)
+    return float(gross - fee_return * progress)
+
+
+def _position_marked_notional(pos: OpenPosition, timestamp: pd.Timestamp) -> float:
+    gross = _position_mtm_gross_return(pos, timestamp)
+    price_ratio = 1.0 + gross if pos.side == "long" else 1.0 - gross
+    return max(float(pos.position_size) * max(float(price_ratio), 0.0), 0.0)
 
 
 def _max_abs_decision_delta(
@@ -1532,8 +1614,14 @@ def replay_candidates(
             pre_decision_snapshot_callback(ts, state.clone(), group_idx.copy(), cache)
         entries_this_bar = 0
         strategy_entries_this_bar: Dict[str, int] = {}
+        marked_notional_before_bar = state.marked_notional(ts)
+        allocated_capital_before_bar = state.allocated_capital(ts)
+        wallet_limit_before_bar = (
+            max(float(params.max_total_wallet_allocation_pct), 0.0)
+            * max(float(state.wallet), 0.0)
+        )
         allocation_share_before_bar = float(
-            state.open_notional / max(float(state.wallet), EPS)
+            allocated_capital_before_bar / max(wallet_limit_before_bar, EPS)
         )
         thresholds = dynamic_threshold_values(
             cache.base_threshold[group_idx],
@@ -1582,13 +1670,19 @@ def replay_candidates(
                 float(params.global_threshold_floor),
             )
             wallet_before = float(state.wallet)
-            open_notional_before = float(state.open_notional)
+            open_notional_before = float(state.marked_notional(ts))
+            open_allocated_before = float(state.allocated_capital(ts))
             dyn = dynamic_threshold_for_count(
                 base_threshold,
                 len(state.open_positions),
                 params,
                 allocation_share=(
-                    float(open_notional_before) / max(float(wallet_before), EPS)
+                    float(open_allocated_before)
+                    / max(
+                        float(params.max_total_wallet_allocation_pct)
+                        * max(float(wallet_before), 0.0),
+                        EPS,
+                    )
                 ),
             )
             price_gap_bps = float(cache.price_gap_bps[idx])
@@ -1632,7 +1726,7 @@ def replay_candidates(
                 * min(wallet_cap_multiplier, 1.0)
                 * max(wallet_before, 0.0)
             )
-            remaining_capital = max(capital_limit - open_notional_before, 0.0)
+            remaining_capital = max(capital_limit - open_allocated_before, 0.0)
             reason = "accepted"
             accepted = False
             position_size = 0.0
@@ -1659,12 +1753,19 @@ def replay_candidates(
                     loss_guard_reason = ""
             if reason not in {"accepted", ""}:
                 pass
-            elif len(state.open_positions) >= int(params.max_concurrent_positions):
+            elif (
+                bool(params.enforce_position_count_cap)
+                and len(state.open_positions) >= int(params.max_concurrent_positions)
+            ):
                 reason = "max_concurrent_positions_reached"
-            elif _cap_reached(side_count_before, params.max_concurrent_per_side):
+            elif (
+                bool(params.enforce_position_count_cap)
+                and _cap_reached(side_count_before, params.max_concurrent_per_side)
+            ):
                 reason = "max_concurrent_per_side_reached"
-            elif _cap_reached(
-                strategy_count_before, strategy_concurrent_cap
+            elif (
+                bool(params.enforce_position_count_cap)
+                and _cap_reached(strategy_count_before, strategy_concurrent_cap)
             ):
                 reason = "max_concurrent_per_strategy_reached"
             elif _cap_reached(
@@ -1691,7 +1792,7 @@ def replay_candidates(
                 )
                 sizing = compute_rank_based_position_size(
                     wallet_value=state.wallet,
-                    open_notional=state.open_notional,
+                    open_notional=open_notional_before,
                     adjusted_rank_score=effective_rank_score,
                     final_threshold=dyn,
                     policy=policy,
@@ -1708,19 +1809,24 @@ def replay_candidates(
                     market_mode=market_mode,
                     available_wallet_value=remaining_capital,
                     remaining_total_notional=remaining_capital,
+                    remaining_allocated_capital=remaining_capital,
                 )
+                effective_leverage = max(
+                    _coerce_float(sizing.get("perp_effective_leverage"), 1.0), 1.0
+                )
+                remaining_gross_notional = remaining_capital * effective_leverage
                 position_size = min(
                     _coerce_float(sizing.get("size_after_liquidity"), 0.0),
-                    remaining_capital,
+                    remaining_gross_notional,
                 )
                 position_size = min(
                     position_size
                     * max(_coerce_float(cache.portfolio_size_multiplier[idx], 1.0), 0.0),
-                    remaining_capital,
+                    remaining_gross_notional,
                 )
                 fixed_position_size = float(cache.portfolio_fixed_position_size[idx])
                 if np.isfinite(fixed_position_size) and fixed_position_size > 0.0:
-                    position_size = min(fixed_position_size, remaining_capital)
+                    position_size = min(fixed_position_size, remaining_gross_notional)
                 if position_size <= 0.0 or position_size < float(
                     params.min_position_size
                 ):
@@ -1787,6 +1893,7 @@ def replay_candidates(
                                 cache.mtm_path_gross_returns[idx]
                             ),
                             policy_archetype=str(cache.policy_archetype[idx]),
+                            effective_leverage=float(effective_leverage),
                         )
                     )
 
@@ -1813,7 +1920,7 @@ def replay_candidates(
                     wallet_before=float(wallet_before),
                     wallet_after=float(state.wallet),
                     open_notional_before=float(open_notional_before),
-                    open_notional_after=float(state.open_notional),
+                    open_notional_after=float(state.marked_notional(ts)),
                     position_exit_timestamp=exit_ts if accepted else None,
                     position_net_return=float(position_net_return) if accepted else np.nan,
                     position_gross_return=float(position_gross_return) if accepted else np.nan,
@@ -1829,9 +1936,17 @@ def replay_candidates(
                 "wallet": float(state.wallet),
                 "mtm_equity": float(mtm_equity),
                 "unrealized_pnl": float(unrealized_pnl),
-                "open_notional": float(state.open_notional),
+                "open_notional": float(state.marked_notional(ts)),
+                "open_allocated_capital": float(state.allocated_capital(ts)),
                 "open_capital_pct": float(
-                    state.open_notional / max(state.wallet, EPS)
+                    state.allocated_capital(ts) / max(state.wallet, EPS)
+                ),
+                "wallet_cap_utilization": float(
+                    state.allocated_capital(ts)
+                    / max(
+                        float(params.max_total_wallet_allocation_pct)
+                        * max(state.wallet, 0.0), EPS
+                    )
                 ),
                 "open_positions": int(len(state.open_positions)),
                 "entries_this_bar": int(entries_this_bar),
@@ -1861,9 +1976,17 @@ def replay_candidates(
                 "wallet": float(state.wallet),
                 "mtm_equity": float(state.wallet + unrealized_pnl),
                 "unrealized_pnl": float(unrealized_pnl),
-                "open_notional": float(state.open_notional),
+                "open_notional": float(state.marked_notional(ts)),
+                "open_allocated_capital": float(state.allocated_capital(ts)),
                 "open_capital_pct": float(
-                    state.open_notional / max(state.wallet, EPS)
+                    state.allocated_capital(ts) / max(state.wallet, EPS)
+                ),
+                "wallet_cap_utilization": float(
+                    state.allocated_capital(ts)
+                    / max(
+                        float(params.max_total_wallet_allocation_pct)
+                        * max(state.wallet, 0.0), EPS
+                    )
                 ),
                 "open_positions": int(len(state.open_positions)),
                 "entries_this_bar": 0,
@@ -2082,6 +2205,15 @@ def compute_replay_metrics(
         if not equity_curve.empty
         else 0.0
     )
+    wallet_utilization = pd.to_numeric(
+        equity_curve.get("wallet_cap_utilization", pd.Series(dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    mean_wallet_cap_utilization = float(wallet_utilization.mean() or 0.0)
+    max_wallet_cap_utilization = float(wallet_utilization.max() or 0.0)
+    time_at_wallet_cap_pct = float(
+        (wallet_utilization >= 1.0 - 1e-9).mean() if len(wallet_utilization) else 0.0
+    )
     max_total_wallet_allocation_pct = (
         params.max_total_wallet_allocation_pct if params is not None else 0.75
     )
@@ -2108,6 +2240,9 @@ def compute_replay_metrics(
         (~decisions["accepted"])
         & (pd.to_numeric(decisions["normalized_rank_score"], errors="coerce") >= 0.95)
     ]
+    high_conf_rejection = (
+        high_conf["rejection_reason"].astype(str).value_counts().to_dict()
+    )
     return {
         "objective": float(objective),
         "net_pnl": net_pnl,
@@ -2194,9 +2329,19 @@ def compute_replay_metrics(
             )
         ),
         "max_capital_allocation_pct": max_capital_pct,
+        "mean_wallet_cap_utilization": mean_wallet_cap_utilization,
+        "max_wallet_cap_utilization": max_wallet_cap_utilization,
+        "time_at_wallet_cap_pct": time_at_wallet_cap_pct,
         "side_concentration": side_conc,
         "strategy_concentration": strat_conc,
         "missed_high_confidence_trades": int(len(high_conf)),
+        "missed_high_confidence_capacity_rejections": int(
+            high_conf_rejection.get("max_new_entries_per_bar_reached", 0)
+        ),
+        "missed_high_confidence_rejections_by_reason": {
+            str(reason): int(count)
+            for reason, count in high_conf_rejection.items()
+        },
         "full_sl_rate": float(exit_counts.get("full_sl", 0.0)),
         "adverse_exit_rate": float(exit_counts.get("adverse_exit", 0.0)),
         "timeout_rate": float(exit_counts.get("timeout", 0.0)),
@@ -2225,9 +2370,9 @@ def compute_replay_metrics(
 
 
 def _parameter_grid() -> Iterable[PortfolioPolicyParams]:
-    for max_pos in [5, 6, 7, 8, 9]:
-        for max_side in [4, 5, 6, 7, None]:
-            for max_strat in [3, 4, 5, 6, None]:
+    for max_pos in [64]:
+        for max_side in [None]:
+            for max_strat in [None]:
                 for max_bar in [1, 2, 3, 4]:
                     for max_strat_bar in [1, 2, None]:
                         for floor in [0.70, 0.75, 0.80, 0.85, 0.90]:
@@ -2265,30 +2410,38 @@ def _sizing_variants(base: PortfolioPolicyParams) -> Iterable[PortfolioPolicyPar
                 )
 
 
+def _max_new_entries_search_space() -> list[int]:
+    raw = str(os.environ.get("EPM_PORTFOLIO_MAX_NEW_ENTRIES_SEARCH", "2,3,4"))
+    values = sorted(
+        {
+            max(1, int(token.strip()))
+            for token in raw.split(",")
+            if token.strip()
+        }
+    )
+    if not values:
+        raise ValueError("EPM_PORTFOLIO_MAX_NEW_ENTRIES_SEARCH is empty")
+    return values
+
+
 def _suggest_params(trial: optuna.Trial) -> PortfolioPolicyParams:
-    max_concurrent_positions = trial.suggest_categorical(
-        "max_concurrent_positions", [5, 6, 7, 8]
-    )
-    strategy_capacity_pct = trial.suggest_categorical(
-        "max_concurrent_per_strategy_pct", [0.50, 0.66, 0.75]
-    )
-    max_concurrent_per_strategy = max(
-        1, int(np.ceil(float(max_concurrent_positions) * float(strategy_capacity_pct)))
+    rank_multiplier_max = trial.suggest_categorical(
+        "rank_multiplier_max", [1.0, 1.25, 1.5, 2.0, 2.5]
     )
     return PortfolioPolicyParams(
-        max_concurrent_positions=max_concurrent_positions,
+        capacity_mode="pre_leverage_wallet",
+        enforce_position_count_cap=False,
+        max_concurrent_positions=64,
         max_concurrent_per_side=None,
-        max_concurrent_per_strategy=max_concurrent_per_strategy,
+        max_concurrent_per_strategy=None,
         max_new_entries_per_bar=trial.suggest_categorical(
-            "max_new_entries_per_bar", [2, 3, 4]
+            "max_new_entries_per_bar", _max_new_entries_search_space()
         ),
         max_new_entries_per_strategy_per_bar=trial.suggest_categorical(
             "max_new_entries_per_strategy_per_bar", [1, 2, None]
         ),
         max_concurrent_per_symbol=1,
-        max_total_wallet_allocation_pct=trial.suggest_categorical(
-            "max_total_wallet_allocation_pct", [0.60, 0.70, 0.80]
-        ),
+        max_total_wallet_allocation_pct=0.70,
         global_threshold_floor=trial.suggest_float(
             "global_threshold_floor", 0.70, 0.95, step=0.01
         ),
@@ -2300,12 +2453,8 @@ def _suggest_params(trial: optuna.Trial) -> PortfolioPolicyParams:
             "occupancy_threshold_power", 0.50, 2.50
         ),
         rank_size_power=trial.suggest_float("rank_size_power", 0.50, 2.50),
-        rank_multiplier_min=trial.suggest_categorical(
-            "rank_multiplier_min", [0.25, 0.50, 0.75, 1.0]
-        ),
-        rank_multiplier_max=trial.suggest_categorical(
-            "rank_multiplier_max", [1.0, 1.25, 1.5, 2.0, 2.5]
-        ),
+        rank_multiplier_min=float(rank_multiplier_max) / 2.0,
+        rank_multiplier_max=float(rank_multiplier_max),
         max_side_concentration=None,
         max_strategy_concentration=None,
     )
@@ -2478,6 +2627,12 @@ def optimise_params(
     best_metrics["early_stop_patience"] = int(early_stop_patience)
     best_metrics["early_stopped"] = bool(len(study.trials) < max_evaluations)
     best_metrics["optuna_best_value"] = float(study.best_value)
+    best_metrics["max_new_entries_per_bar_search_space"] = (
+        _max_new_entries_search_space()
+    )
+    best_metrics["selected_max_new_entries_per_bar"] = int(
+        best_params.max_new_entries_per_bar
+    )
     return best_params, best_metrics
 
 

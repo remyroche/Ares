@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import pickle
 import re
@@ -19,7 +20,12 @@ import pandas as pd
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    mutual_info_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
 try:
@@ -95,8 +101,13 @@ except Exception:  # pragma: no cover - standalone fallback
 
 
 from .features_gmm_ae import (
+    AE_GMM_CYCLE_CONTRACT_VERSION,
     AE_GMM_FEATURE_COLUMNS,
+    ae_gmm_cycle_reference_indices,
+    ae_gmm_cycle_sample_identity_hash,
+    ae_gmm_learned_transform_hash,
     fit_ae_gmm_state,
+    load_ae_gmm_state_artifact,
     save_ae_gmm_state_artifact,
     transform_ae_gmm_features,
 )
@@ -144,6 +155,113 @@ from .model_effectiveness_history import (
     build_model_effectiveness_history_defaults,
 )
 from .optional_model_features import is_optional_generated_model_feature_key
+from .residual_event_archetypes import (
+    residual_event_feature_names,
+    residual_event_market_feature_names,
+)
+
+LGBM_TWO_PHASE_SELECTION_CONTRACT = "lgbm_two_phase_bme_wide_then_narrow_full_fit_v1"
+BASE_SINGLE_CYCLE_MDA_SELECTION_CONTRACT = (
+    "base_single_cycle_global_economic_mda_cumulative_positive_99pct_v1"
+)
+BASE_SINGLE_CYCLE_MDA_SELECTION_RECIPE: dict[str, Any] = {
+    "contract": BASE_SINGLE_CYCLE_MDA_SELECTION_CONTRACT,
+    "scope": "single_global_largest_train_window",
+    "candidate_contract": (
+        "availability_surviving_source_features_plus_frozen_cycle_ae_gmm_outputs"
+    ),
+    "ae_gmm_fit_policy": "single_cycle_beginning_middle_end_time_spread",
+    "selection_method": "direct_topk_economic_permutation_mda",
+    "selection_target": "target_soft",
+    "selection_weight_arm": "W0_base",
+    "mda_train_rows": 60_000,
+    "mda_eval_rows": 20_000,
+    "mda_repeats": 1,
+    "noise_floor_fraction_of_best": 1e-4,
+    "cumulative_positive_importance_fraction": 0.99,
+    "maximum_feature_count": 150,
+    "explicit_feature_count": None,
+    "reuse_policy": "freeze_selected_contract_for_all_oos_windows_and_final_refit",
+}
+LGBM_TWO_PHASE_SELECTION_SAMPLE_ROWS = max(
+    300, int(os.environ.get("EPM_LGBM_TWO_PHASE_SELECTION_ROWS", "300000"))
+)
+LGBM_HPO_SAMPLE_ROWS = max(
+    300, int(os.environ.get("EPM_LGBM_HPO_SAMPLE_ROWS", "45000"))
+)
+# Zero is the established uncapped-row sentinel throughout the artifact-backed
+# base/meta runners. Keep it in the shared contract so one layer cannot drift
+# back to a bounded final-fit population independently of the other.
+LGBM_TWO_PHASE_FULL_FIT_ROW_CAP = 0
+
+
+def canonical_base_feature_selection_recipe() -> dict[str, Any]:
+    """Return the promoted process contract without a fitted feature list.
+
+    The number and names of selected features are outputs of each model cycle.
+    They must not be inherited from the reference run because the source and
+    frozen AE/GMM feature universes can change between cycles.
+    """
+
+    return dict(BASE_SINGLE_CYCLE_MDA_SELECTION_RECIPE)
+
+
+def cumulative_positive_mda_keep_count(
+    scores: Sequence[float],
+    *,
+    requested_top_n: int = 0,
+    cumulative_fraction: float = 0.99,
+    noise_floor_fraction: float = 1e-4,
+    maximum_feature_count: int | None = None,
+) -> tuple[int, str, float]:
+    """Select the smallest prefix explaining the requested positive MDA mass."""
+
+    values = np.maximum(
+        np.nan_to_num(np.asarray(scores, dtype=np.float64), nan=0.0),
+        0.0,
+    )
+    if values.size == 0:
+        return 0, "auto_mda_empty", 0.0
+    if int(requested_top_n) > 0:
+        return min(int(requested_top_n), len(values)), "explicit_top_n", 1.0
+    max_score = float(values.max(initial=0.0))
+    if float(values.sum()) <= 0.0 or max_score <= 0.0:
+        return 1, "auto_mda_no_positive_scores_keep_best", 0.0
+    floor = max(1e-12, max_score * float(noise_floor_fraction))
+    positive = values > floor
+    positive_total = float(values[positive].sum())
+    if positive_total <= 0.0:
+        return 1, "auto_mda_below_noise_floor_keep_best", floor
+    cumulative = np.cumsum(values)
+    candidates = np.flatnonzero(
+        (cumulative >= float(cumulative_fraction) * positive_total) & positive
+    )
+    keep_n = int(candidates[0] + 1) if candidates.size else int(positive.sum())
+    keep_n = max(1, min(keep_n, int(positive.sum()), len(values)))
+    status = "auto_mda_cumulative_positive_99pct"
+    if maximum_feature_count is not None and int(maximum_feature_count) > 0:
+        capped = min(keep_n, int(maximum_feature_count))
+        if capped < keep_n:
+            status += f"_capped_{int(maximum_feature_count)}"
+        keep_n = capped
+    return keep_n, status, floor
+
+
+def use_canonical_two_phase_feature_selection(
+    *,
+    has_frozen_feature_contract: bool,
+    diagnostic_single_phase: bool = False,
+) -> bool:
+    """Return whether a fresh selection must use the canonical two-phase path.
+
+    A frozen feature contract already completed phase one in its source run, so
+    it can proceed directly to a narrow full-population reload.  Bypassing the
+    split for a fresh selection is retained only as an explicit diagnostic.
+    """
+    return not bool(has_frozen_feature_contract) and not bool(
+        diagnostic_single_phase
+    )
+
 
 LGBM_CV_SPLITS = int(os.environ.get("EPM_LGBM_CV_SPLITS", "3"))
 _LGBM_CV_MODE_RAW = str(os.environ.get("EPM_LGBM_CV_MODE", "")).strip().lower()
@@ -166,11 +284,17 @@ LGBM_BASE_FORWARD_BURN_IN_DAYS = float(
 LGBM_META_FORWARD_VALIDATION_MONTHS = int(
     os.environ.get("EPM_LGBM_META_FORWARD_VALIDATION_MONTHS", "6")
 )
+LGBM_AUX_FORWARD_VALIDATION_MONTHS = int(
+    os.environ.get("EPM_LGBM_AUX_FORWARD_VALIDATION_MONTHS", "6")
+)
 LGBM_FORWARD_MIN_TRAIN_ROWS = int(
     os.environ.get("EPM_LGBM_FORWARD_MIN_TRAIN_ROWS", "200")
 )
 LGBM_FORWARD_MIN_VALID_ROWS = int(
     os.environ.get("EPM_LGBM_FORWARD_MIN_VALID_ROWS", "20")
+)
+LGBM_AUX_FORWARD_MIN_VALID_ROWS = int(
+    os.environ.get("EPM_LGBM_AUX_FORWARD_MIN_VALID_ROWS", "300")
 )
 LGBM_FORWARD_BURNIN_STRICT = os.environ.get(
     "EPM_LGBM_FORWARD_BURNIN_STRICT", "1"
@@ -395,6 +519,16 @@ LGBM_META_POST_SELECTION_OOD_FEATURES = os.environ.get(
     "n",
     "off",
 }
+LGBM_FEATURE_FAMILY_COVERAGE = os.environ.get(
+    "EPM_LGBM_FEATURE_FAMILY_COVERAGE",
+    "1",
+).strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+}
 LGBM_RAW_CONTRIB_OOF_EXPORT = os.environ.get(
     "EPM_LGBM_RAW_CONTRIB_OOF_EXPORT", "0"
 ).strip().lower() not in {
@@ -423,11 +557,20 @@ LGBM_AE_GMM_MODEL_FEATURES = os.environ.get(
     "off",
 }
 LGBM_AE_GMM_MAX_TRAIN_ROWS = int(
-    os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "15000")
+    os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "50000")
 )
 LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS = int(
     os.environ.get("EPM_LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS", "100000")
 )
+LGBM_AE_GMM_FINAL_REFIT_ROWS = int(
+    os.environ.get("EPM_LGBM_AE_GMM_FINAL_REFIT_ROWS", "300000")
+)
+LGBM_AE_GMM_FINAL_AE_TRAIN_ROWS = int(
+    os.environ.get("EPM_LGBM_AE_GMM_FINAL_AE_TRAIN_ROWS", "100000")
+)
+LGBM_AE_GMM_ENHANCED_SEARCH = os.environ.get(
+    "EPM_LGBM_AE_GMM_ENHANCED_SEARCH", "1"
+).strip().lower() not in {"0", "false", "no", "n", "off"}
 LGBM_AE_GMM_MAX_ITER = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_ITER", "80"))
 LGBM_AE_GMM_CLUSTER_CANDIDATES = os.environ.get(
     "EPM_LGBM_AE_GMM_CLUSTER_CANDIDATES", ""
@@ -695,10 +838,16 @@ LGBM_POSITIVE_PERM_RATE_MIN = float(
 )
 LGBM_LOW_PRESENCE_RATE = float(os.environ.get("EPM_LGBM_LOW_PRESENCE_RATE", "0.20"))
 LGBM_FEATURE_RECENT_MIN_COVERAGE = float(
-    os.environ.get("EPM_LGBM_FEATURE_RECENT_MIN_COVERAGE", "0.85")
+    os.environ.get("EPM_LGBM_FEATURE_RECENT_MIN_COVERAGE", "0.90")
 )
 LGBM_FEATURE_RECENT_TAIL_MONTHS = int(
     os.environ.get("EPM_LGBM_FEATURE_RECENT_TAIL_MONTHS", "4")
+)
+LGBM_FEATURE_COVERAGE_SCOPE = os.environ.get(
+    "EPM_LGBM_FEATURE_COVERAGE_SCOPE", "all_post_warmup"
+).strip().lower()
+LGBM_FEATURE_COVERAGE_WARMUP_DAYS = int(
+    os.environ.get("EPM_LGBM_FEATURE_COVERAGE_WARMUP_DAYS", "30")
 )
 LGBM_REDUNDANCY_CORR_THRESHOLD = float(
     os.environ.get("EPM_LGBM_REDUNDANCY_CORR_THRESHOLD", "0.90")
@@ -734,6 +883,10 @@ LGBM_MDA_CONFIG_DEFAULTS: dict[str, Any] = {
     "archetype_global_weight": 0.25,
     "archetype_macro_weight": 0.60,
     "archetype_worst_weight": 0.15,
+    # The preceding univariate/Relief stages remain archetype-aware. When this
+    # is enabled, the MDA tail is then fitted once per side across that union,
+    # without archetype support weights or archetype-conditioned scoring.
+    "side_tail_across_archetypes_unweighted": False,
     "positive_label": 1,
     "use_sample_weight": True,
     "permutation_mode": "path_gated_lgbm",
@@ -938,8 +1091,14 @@ if LGBM_CV_MODE not in {
 LGBM_PURGE_HOURS = max(0.0, float(LGBM_PURGE_HOURS))
 LGBM_BASE_FORWARD_BURN_IN_DAYS = max(0.0, float(LGBM_BASE_FORWARD_BURN_IN_DAYS))
 LGBM_META_FORWARD_VALIDATION_MONTHS = max(1, int(LGBM_META_FORWARD_VALIDATION_MONTHS))
+LGBM_AUX_FORWARD_VALIDATION_MONTHS = max(
+    1, int(LGBM_AUX_FORWARD_VALIDATION_MONTHS)
+)
 LGBM_FORWARD_MIN_TRAIN_ROWS = max(1, int(LGBM_FORWARD_MIN_TRAIN_ROWS))
 LGBM_FORWARD_MIN_VALID_ROWS = max(1, int(LGBM_FORWARD_MIN_VALID_ROWS))
+LGBM_AUX_FORWARD_MIN_VALID_ROWS = max(
+    1, int(LGBM_AUX_FORWARD_MIN_VALID_ROWS)
+)
 LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC = float(
     np.clip(float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC), 0.10, 0.90)
 )
@@ -1249,12 +1408,8 @@ LGBM_META_DRIFT_FEATURE_NAMES = [
 ]
 
 LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES = [
-    "meta_sel_ood_abs_z_mean",
-    "meta_sel_ood_abs_z_max",
     "meta_sel_ood_abs_z_p95",
     "meta_sel_ood_iqr_exceed_frac",
-    "meta_sel_ood_missing_frac",
-    "meta_sel_ood_centroid_l2",
 ]
 
 LGBM_META_CONTRIB_CONTEXT_FEATURE_NAMES = [
@@ -1265,11 +1420,17 @@ LGBM_META_RAW_STATE_CONTEXT_FEATURE_NAMES = list(RAW_STATE_SVD_FEATURE_NAMES) + 
 )
 LGBM_META_BASE_ERROR_CONTEXT_FEATURE_NAMES = list(BASE_ERROR_ARCHETYPE_FEATURE_NAMES)
 LGBM_META_AE_GMM_FEATURE_NAMES = list(AE_GMM_FEATURE_COLUMNS)
+LGBM_META_RESIDUAL_EVENT_AEGMM_FEATURE_NAMES = list(
+    dict.fromkeys(
+        [*residual_event_feature_names(), *residual_event_market_feature_names()]
+    )
+)
 LGBM_META_CONTEXT_FEATURE_NAMES = (
     list(LGBM_META_CONTRIB_CONTEXT_FEATURE_NAMES)
     + list(LGBM_META_RAW_STATE_CONTEXT_FEATURE_NAMES)
     + list(LGBM_META_BASE_ERROR_CONTEXT_FEATURE_NAMES)
     + list(LGBM_META_AE_GMM_FEATURE_NAMES)
+    + list(LGBM_META_RESIDUAL_EVENT_AEGMM_FEATURE_NAMES)
 )
 
 LGBM_META_FEATURE_NAMES = list(
@@ -1584,6 +1745,11 @@ class LGBMStabilityModel:
                             index=X_df.index,
                         )
                     except Exception as exc:
+                        if _ae_gmm_cycle_state_strict(ae_gmm_state):
+                            raise ValueError(
+                                "Frozen AE/GMM cycle transform failed in the raw-contribution "
+                                f"inference path: {exc}"
+                            ) from exc
                         tprint(
                             "WARNING: optional AE/GMM representation unavailable "
                             "for LGBM raw-contribution path; neutral-filling generated "
@@ -1689,6 +1855,11 @@ class LGBMStabilityModel:
                     index=X_df.index,
                 )
             except Exception as exc:
+                if _ae_gmm_cycle_state_strict(ae_gmm_state):
+                    raise ValueError(
+                        "Frozen AE/GMM cycle transform failed in the selected-feature "
+                        f"inference path: {exc}"
+                    ) from exc
                 tprint(
                     "WARNING: optional AE/GMM selected-feature representation "
                     f"unavailable; neutral-filling generated columns. error={exc}"
@@ -1976,6 +2147,12 @@ class LGBMStabilityModel:
                     index=X_df.index,
                 )
             except Exception as exc:
+                state = getattr(self, "ae_gmm_state", {}) or {}
+                if _ae_gmm_cycle_state_strict(state):
+                    raise ValueError(
+                        "Frozen AE/GMM cycle context transform failed: "
+                        f"{exc}"
+                    ) from exc
                 tprint(
                     "WARNING: optional AE/GMM context features unavailable; "
                     f"neutral-filling generated columns. error={exc}"
@@ -2085,6 +2262,211 @@ def _lgbm_ae_gmm_enabled(cfg: dict[str, Any] | None = None) -> bool:
 
 def _ae_gmm_state_enabled(state: Any) -> bool:
     return isinstance(state, Mapping) and bool(state.get("enabled", False))
+
+
+def _ae_gmm_cycle_state_strict(state: Any) -> bool:
+    return _ae_gmm_state_enabled(state) and str(
+        state.get("cycle_contract_version") or ""
+    ).startswith("single_fit_")
+
+
+def _ae_gmm_cycle_state_path(cfg: Mapping[str, Any] | None) -> Path | None:
+    if not isinstance(cfg, Mapping):
+        return None
+    explicit = str(
+        cfg.get("lgbm_ae_gmm_cycle_state_path")
+        or cfg.get("fixed_ae_gmm_state_path")
+        or ""
+    ).strip()
+    if explicit:
+        return Path(explicit)
+    data_root = str(cfg.get("data_root") or "").strip()
+    run_id = str(
+        cfg.get("output_run_id")
+        or cfg.get("run_id")
+        or cfg.get("_label_artifact_run_id")
+        or ""
+    ).strip()
+    if not data_root or not run_id:
+        return None
+    return Path(data_root) / "artifacts" / run_id / "ae_gmm_cycle" / "state.pkl"
+
+
+def _load_ae_gmm_cycle_state(cfg: Mapping[str, Any] | None) -> dict[str, Any]:
+    path = _ae_gmm_cycle_state_path(cfg)
+    if path is None or not path.is_file():
+        return {}
+    state = load_ae_gmm_state_artifact(path)
+    if not _ae_gmm_state_enabled(state):
+        raise RuntimeError(f"Configured AE/GMM cycle state is disabled: {path}")
+    return dict(state)
+
+
+def _fit_or_load_ae_gmm_cycle_state_for_selection(
+    X_df: pd.DataFrame,
+    *,
+    y_metric: np.ndarray,
+    returns: np.ndarray,
+    label_context: Mapping[str, Any] | None,
+    timestamps: Any,
+    assets: Any,
+    random_state: int,
+    cfg: Mapping[str, Any] | None,
+) -> tuple[pd.DataFrame, dict[str, Any], dict[str, Any]]:
+    """Materialize one cycle state before FS so generated outputs compete in MDA."""
+    if not _lgbm_ae_gmm_enabled(dict(cfg or {})):
+        return X_df, {}, {"enabled": False, "reason": "disabled"}
+    state = _load_ae_gmm_cycle_state(cfg)
+    state_source = "loaded_cycle_state"
+    if _ae_gmm_state_enabled(state):
+        input_features = [str(c) for c in state.get("feature_columns", []) or []]
+        missing = [col for col in input_features if col not in X_df.columns]
+        if missing:
+            raise RuntimeError(
+                "The frozen AE/GMM cycle state is incompatible with the feature-selection "
+                f"matrix; missing {len(missing)} inputs: {missing[:12]}"
+            )
+    else:
+        input_features, _ = _apply_ae_gmm_input_feature_policy(
+            list(map(str, X_df.columns)),
+            X_df.columns,
+        )
+        if len(input_features) < 2:
+            return X_df, {}, {
+                "enabled": False,
+                "reason": "insufficient_cycle_input_features",
+            }
+        n = len(X_df)
+        reference_cap = max(
+            int(LGBM_AE_GMM_MAX_TRAIN_ROWS),
+            int(LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS),
+            int(LGBM_AE_GMM_FINAL_REFIT_ROWS),
+        )
+        if timestamps is None or len(np.asarray(timestamps)) != n:
+            raise RuntimeError(
+                "Cycle AE/GMM fitting requires one UTC timestamp per reference row"
+            )
+        if assets is None or len(np.asarray(assets)) != n:
+            raise RuntimeError(
+                "Cycle AE/GMM fitting requires one symbol identity per reference row"
+            )
+        side_values = (
+            X_df["side"].to_numpy(copy=False)
+            if "side" in X_df.columns
+            else np.full(n, "global", dtype=object)
+        )
+        reference_idx = ae_gmm_cycle_reference_indices(
+            timestamps,
+            symbols=assets,
+            sides=side_values,
+            max_rows=reference_cap,
+        ).astype(np.int32)
+        state = _fit_ae_gmm_post_selection_state(
+            X_df,
+            input_features,
+            reference_idx,
+            # Do not forward outcome-bearing arrays across the cycle-state
+            # boundary. The representation fit must be invariant to labels.
+            y_metric=None,
+            returns=None,
+            label_context=None,
+            timestamps=timestamps,
+            random_state=int(random_state + 90221),
+            outcome_free=True,
+        )
+        if not _ae_gmm_state_enabled(state):
+            return X_df, state, {
+                "enabled": False,
+                "reason": str(state.get("reason", "fit_failed")),
+            }
+        reference_ts_values = _take_aligned(timestamps, reference_idx, n)
+        reference_ts = (
+            pd.Series(
+                pd.to_datetime(reference_ts_values, utc=True, errors="coerce")
+            )
+            if reference_ts_values is not None
+            else pd.Series(dtype="datetime64[ns, UTC]")
+        )
+        state.update(
+            {
+                "cycle_contract_version": AE_GMM_CYCLE_CONTRACT_VERSION,
+                "cycle_reference_stage": "feature_selection_hpo_reference",
+                "cycle_reference_start": str(reference_ts.min())
+                if len(reference_ts)
+                else None,
+                "cycle_reference_end": str(reference_ts.max())
+                if len(reference_ts)
+                else None,
+                "cycle_reference_rows_available": int(n),
+                "cycle_reference_rows_sampled": int(len(reference_idx)),
+                "cycle_reference_sample_policy": "beginning_middle_end_time_spread",
+                "cycle_reference_ordering": "timestamp_utc,symbol,side",
+                "cycle_reference_sample_identity_hash": ae_gmm_cycle_sample_identity_hash(
+                    timestamps,
+                    symbols=assets,
+                    sides=side_values,
+                    indices=reference_idx,
+                ),
+                "cycle_reference_symbol_count": int(
+                    pd.Series(assets).astype(str).nunique(dropna=False)
+                ),
+                "cycle_reference_sampled_symbol_count": int(
+                    pd.Series(np.asarray(assets)[reference_idx])
+                    .astype(str)
+                    .nunique(dropna=False)
+                ),
+                "cycle_reference_side_counts": {
+                    str(key): int(value)
+                    for key, value in pd.Series(side_values[reference_idx])
+                    .astype(str)
+                    .value_counts(dropna=False)
+                    .sort_index()
+                    .items()
+                },
+                "representation_selection_outcome_free": True,
+                "representation_selection_context_keys": ["side", "time_bucket"],
+                "representation_selection_outcome_keys": [],
+            }
+        )
+        state["cycle_state_hash"] = ae_gmm_learned_transform_hash(state)
+        cycle_path = _ae_gmm_cycle_state_path(cfg)
+        if cycle_path is None:
+            raise RuntimeError(
+                "AE/GMM cycle fitting requires output_run_id/run_id or an explicit state path"
+            )
+        cycle_path.parent.mkdir(parents=True, exist_ok=True)
+        save_ae_gmm_state_artifact(
+            state,
+            cycle_path,
+            manifest_path=cycle_path.with_name("manifest.json"),
+            extra_manifest={
+                "cycle_contract_version": state["cycle_contract_version"],
+                "cycle_state_hash": state["cycle_state_hash"],
+                "reuse_scope": "base_meta_growing_windows_final_refit_inference",
+                "reference_stage": "feature_selection_hpo_reference",
+            },
+        )
+        state_source = "fit_once_for_cycle"
+    generated_features = _ae_gmm_model_feature_names_for_objective(None)
+    augmented = _append_ae_gmm_features_to_model_frame(
+        X_df,
+        input_features,
+        state,
+        list(dict.fromkeys(list(map(str, X_df.columns)) + generated_features)),
+        index=X_df.index,
+    )
+    return augmented, state, {
+        "enabled": True,
+        "state_source": state_source,
+        "cycle_state_hash": str(
+            state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
+        ),
+        "input_feature_count": int(len(input_features)),
+        "generated_feature_count": int(len(generated_features)),
+        "reference_rows_sampled": int(
+            state.get("cycle_reference_rows_sampled", 0) or 0
+        ),
+    }
 
 
 def _ae_gmm_model_feature_names_for_objective(objective_mode: str | None) -> list[str]:
@@ -2199,6 +2581,12 @@ def _append_ae_gmm_features_to_model_frame(
     index: Any = None,
 ) -> pd.DataFrame:
     input_cols = [str(c) for c in input_features]
+    missing = [col for col in input_cols if col not in base_frame.columns]
+    if missing and _ae_gmm_cycle_state_strict(state):
+        raise ValueError(
+            "Frozen AE/GMM cycle state input contract violation: "
+            f"missing {len(missing)}/{len(input_cols)} columns; examples={missing[:12]}"
+        )
     source = base_frame.reindex(columns=input_cols, fill_value=0.0).astype(
         np.float32,
         copy=False,
@@ -2270,6 +2658,7 @@ def _fit_ae_gmm_post_selection_state(
     label_context: Mapping[str, Any] | None = None,
     timestamps: Any = None,
     random_state: int = 42,
+    outcome_free: bool = False,
 ) -> dict[str, Any]:
     input_cols = [str(c) for c in input_features]
     idx = np.asarray(fit_idx, dtype=np.int64)
@@ -2372,20 +2761,42 @@ def _fit_ae_gmm_post_selection_state(
     require_sides = bool(
         LGBM_AE_GMM_REQUIRE_BOTH_SIDES and "side" in X_model_df.columns
     )
-    return fit_ae_gmm_state(
+    if bool(outcome_free):
+        economic_targets = {
+            key: value
+            for key, value in economic_targets.items()
+            if key in {"side", "time_bucket"}
+        }
+    state = fit_ae_gmm_state(
         X_model_df.iloc[idx].reindex(columns=input_cols, fill_value=0.0),
+        timestamps=_take_aligned(timestamps, idx, len(X_model_df)),
         economic_targets=economic_targets,
         random_state=random_state,
         max_train_rows=int(LGBM_AE_GMM_MAX_TRAIN_ROWS),
         gmm_max_train_rows=int(LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS),
+        final_refit_rows=int(LGBM_AE_GMM_FINAL_REFIT_ROWS),
+        final_ae_train_rows=int(LGBM_AE_GMM_FINAL_AE_TRAIN_ROWS),
+        enhanced_search=bool(LGBM_AE_GMM_ENHANCED_SEARCH),
         ae_max_iter=int(LGBM_AE_GMM_MAX_ITER),
         cluster_candidates=LGBM_AE_GMM_CLUSTER_CANDIDATES or None,
         reg_covar_candidates=LGBM_AE_GMM_REG_COVAR_CANDIDATES or None,
-        smooth_lambda_candidates=LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES or None,
+        smooth_lambda_candidates=(0.0,),
         require_both_sides=require_sides,
         min_side_cluster_frac=float(LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC),
         min_side_cluster_rows=int(LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS),
+        path_aware_hpo=False if outcome_free else None,
+        temporal_stability_hpo=not bool(outcome_free),
+        outcome_free=bool(outcome_free),
+        temporal_feature_contract=(
+            "row_independent_v1"
+            if outcome_free
+            else "ordered_batch_sequence_v1"
+        ),
     )
+    if _ae_gmm_state_enabled(state) and bool(outcome_free):
+        state["temporal_feature_contract"] = "row_independent_v1"
+        state["smooth_lambda"] = 0.0
+    return state
 
 
 def _validate_input_lengths(
@@ -3135,8 +3546,14 @@ def _lgbm_cv_metric_fields(objective_mode: str | None = None) -> dict[str, Any]:
                 "forward_meta_validation_months": int(
                     LGBM_META_FORWARD_VALIDATION_MONTHS
                 ),
+                "forward_aux_validation_months": int(
+                    LGBM_AUX_FORWARD_VALIDATION_MONTHS
+                ),
                 "forward_min_train_rows": int(LGBM_FORWARD_MIN_TRAIN_ROWS),
                 "forward_min_valid_rows": int(LGBM_FORWARD_MIN_VALID_ROWS),
+                "forward_aux_min_valid_rows": int(
+                    LGBM_AUX_FORWARD_MIN_VALID_ROWS
+                ),
                 "forward_burnin_strict": bool(LGBM_FORWARD_BURNIN_STRICT),
                 "forward_allow_short_history_fallback": bool(
                     LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
@@ -3163,11 +3580,15 @@ def _forward_burnin_validation_start_ns(
         raise ValueError("forward_burnin CV requires at least one valid timestamp")
     earliest = int(np.min(valid_ns))
     latest = int(np.max(valid_ns))
-    if _normalize_objective_mode(objective_mode) == "train_meta":
+    objective = _normalize_objective_mode(objective_mode)
+    validation_months = None
+    if objective == "train_meta":
+        validation_months = int(LGBM_META_FORWARD_VALIDATION_MONTHS)
+    elif objective == "auxiliary_regression":
+        validation_months = int(LGBM_AUX_FORWARD_VALIDATION_MONTHS)
+    if validation_months is not None:
         latest_ts = pd.Timestamp(latest, unit="ns", tz="UTC")
-        start_ts = latest_ts - pd.DateOffset(
-            months=int(LGBM_META_FORWARD_VALIDATION_MONTHS)
-        )
+        start_ts = latest_ts - pd.DateOffset(months=validation_months)
         return int(max(earliest, min(latest, int(start_ts.value))))
     earliest_ts = pd.Timestamp(earliest, unit="ns", tz="UTC")
     start_ts = earliest_ts + pd.Timedelta(days=float(LGBM_BASE_FORWARD_BURN_IN_DAYS))
@@ -3188,6 +3609,12 @@ def _forward_short_history_validation_start_ns(
     )
     split_pos = max(1, min(int(split_pos), len(unique_ts) - 1))
     return int(unique_ts[split_pos])
+
+
+def _forward_min_valid_rows(objective_mode: str | None) -> int:
+    if _normalize_objective_mode(objective_mode) == "auxiliary_regression":
+        return int(LGBM_AUX_FORWARD_MIN_VALID_ROWS)
+    return int(LGBM_FORWARD_MIN_VALID_ROWS)
 
 
 def _aligned_mask_take(values: Any, mask: np.ndarray, n: int) -> Any:
@@ -6052,13 +6479,42 @@ def _recent_feature_coverage_survivors(
     X_raw: pd.DataFrame,
     timestamps: Any,
     exempt_features: Optional[set[str]] = None,
+    *,
+    require_joint_complete_case: bool = True,
+    min_feature_coverage: float | None = None,
+    coverage_scope: str | None = None,
+    warmup_days: int | None = None,
+    warmup_reference_start: Any = None,
 ) -> tuple[list[str], dict[str, Any]]:
+    coverage_threshold = float(
+        np.clip(
+            LGBM_FEATURE_RECENT_MIN_COVERAGE
+            if min_feature_coverage is None
+            else min_feature_coverage,
+            0.0,
+            1.0,
+        )
+    )
     all_cols = [str(c) for c in X_raw.columns]
     exempt = {str(c) for c in (exempt_features or set()) if str(c) in set(all_cols)}
+    scope = str(coverage_scope or LGBM_FEATURE_COVERAGE_SCOPE).strip().lower()
+    warmup_days_value = max(
+        0,
+        int(
+            LGBM_FEATURE_COVERAGE_WARMUP_DAYS
+            if warmup_days is None
+            else warmup_days
+        ),
+    )
     cols = [c for c in all_cols if c not in exempt]
     diagnostics: dict[str, Any] = {
-        "feature_recent_min_coverage": float(LGBM_FEATURE_RECENT_MIN_COVERAGE),
+        "feature_recent_min_coverage": coverage_threshold,
+        "feature_recent_joint_complete_case_required": bool(
+            require_joint_complete_case
+        ),
         "feature_recent_tail_months": int(LGBM_FEATURE_RECENT_TAIL_MONTHS),
+        "feature_recent_coverage_scope": scope,
+        "feature_recent_warmup_days": int(warmup_days_value),
         "feature_recent_input_count": int(len(all_cols)),
         "feature_recent_coverage_input_count": int(len(cols)),
         "feature_recent_exempt_model_derived_count": int(len(exempt)),
@@ -6087,15 +6543,30 @@ def _recent_feature_coverage_survivors(
         ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
         if len(ts) == len(X_raw) and pd.notna(ts).any():
             end_ts = ts.max()
-            try:
-                start_ts = end_ts - pd.DateOffset(
-                    months=max(1, LGBM_FEATURE_RECENT_TAIL_MONTHS)
+            if scope == "recent_tail":
+                try:
+                    start_ts = end_ts - pd.DateOffset(
+                        months=max(1, LGBM_FEATURE_RECENT_TAIL_MONTHS)
+                    )
+                except Exception:
+                    start_ts = end_ts - pd.Timedelta(
+                        days=30 * max(1, LGBM_FEATURE_RECENT_TAIL_MONTHS)
+                    )
+            elif scope == "all_post_warmup":
+                reference_start = pd.to_datetime(
+                    warmup_reference_start, utc=True, errors="coerce"
                 )
-            except Exception:
-                start_ts = end_ts - pd.Timedelta(
-                    days=30 * max(1, LGBM_FEATURE_RECENT_TAIL_MONTHS)
+                if pd.isna(reference_start):
+                    reference_start = ts.min()
+                start_ts = reference_start + pd.Timedelta(days=warmup_days_value)
+            elif scope == "all":
+                start_ts = ts.min()
+            else:
+                raise ValueError(
+                    "Unsupported feature coverage scope "
+                    f"{scope!r}; expected all_post_warmup, all, or recent_tail"
                 )
-            candidate = (ts >= start_ts) & (ts <= end_ts)
+            candidate = pd.notna(ts) & (ts >= start_ts) & (ts <= end_ts)
             if int(candidate.sum()) >= min(200, len(X_raw)):
                 row_mask = np.asarray(candidate, dtype=bool)
                 diagnostics["feature_recent_window_start"] = str(start_ts)
@@ -6134,10 +6605,15 @@ def _recent_feature_coverage_survivors(
     finite = np.isfinite(arr)
     feature_coverage = finite.mean(axis=0)
     missing = ~finite
-    active = np.ones(len(cols), dtype=bool)
+    active = feature_coverage >= coverage_threshold
     missing_count = missing.sum(axis=1).astype(np.int32, copy=False)
-    joint_coverage = float((missing_count == 0).mean()) if cols else 1.0
-    removed_iter: list[tuple[str, float]] = []
+    if not bool(np.all(active)):
+        missing_count = missing[:, active].sum(axis=1).astype(np.int32, copy=False)
+    joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+    removed_iter: list[tuple[str, float]] = [
+        (cols[index], float(1.0 - feature_coverage[index]))
+        for index in np.flatnonzero(~active)
+    ]
     removed_group_iter: list[dict[str, Any]] = []
     stopped_no_gain = False
     n_rows = max(int(len(finite)), 1)
@@ -6182,7 +6658,11 @@ def _recent_feature_coverage_survivors(
                 best_size = group_size
         return best_group, best_gain, best_size
 
-    while int(active.sum()) > 0 and joint_coverage < LGBM_FEATURE_RECENT_MIN_COVERAGE:
+    while (
+        bool(require_joint_complete_case)
+        and int(active.sum()) > 0
+        and joint_coverage < coverage_threshold
+    ):
         active_idx = np.flatnonzero(active)
         single_blocker = missing_count == 1
         if bool(single_blocker.any()):
@@ -6226,23 +6706,58 @@ def _recent_feature_coverage_survivors(
         active[worst_idx] = False
         missing_count -= missing[:, worst_idx].astype(np.int32, copy=False)
         joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+
+    # Greedy pattern removal reaches the coverage target quickly, then this
+    # restoration pass makes the result inclusion-minimal: every iteratively
+    # removed feature is re-added whenever the full retained set still clears
+    # the joint threshold. Features failing individual coverage cannot possibly
+    # participate in a >=threshold complete-case set and are not reconsidered.
+    restored_iter: list[str] = []
+    if bool(require_joint_complete_case) and joint_coverage >= coverage_threshold:
+        iterative_indices = [
+            index
+            for index in range(len(cols))
+            if not bool(active[index]) and feature_coverage[index] >= coverage_threshold
+        ]
+        iterative_indices.sort(
+            key=lambda index: (-feature_coverage[index], cols[index])
+        )
+        for index in iterative_indices:
+            trial_missing = missing_count + missing[:, index].astype(
+                np.int32, copy=False
+            )
+            trial_joint = float((trial_missing == 0).mean())
+            if trial_joint + 1e-12 < coverage_threshold:
+                continue
+            active[index] = True
+            missing_count = trial_missing
+            joint_coverage = trial_joint
+            restored_iter.append(cols[index])
     active_survivors = {c for c, is_active in zip(cols, active) if bool(is_active)}
     survivors = [c for c in all_cols if c in exempt or c in active_survivors]
     removed_by_feature = sorted(
         (
             (c, float(1.0 - rate))
             for c, rate in zip(cols, feature_coverage)
-            if float(rate) < LGBM_FEATURE_RECENT_MIN_COVERAGE
+            if float(rate) < coverage_threshold
         ),
         key=lambda item: (-item[1], item[0]),
     )
-    removed = removed_iter
+    removed = [
+        (c, float(1.0 - feature_coverage[index]))
+        for index, c in enumerate(cols)
+        if not bool(active[index])
+    ]
     diagnostics.update(
         {
             "feature_recent_row_count": int(row_mask.sum()),
             "feature_recent_survivor_count": int(len(survivors)),
             "feature_recent_removed_count": int(len(removed)),
-            "feature_recent_removed_iterative_count": int(len(removed_iter)),
+            "feature_recent_removed_iterative_count": int(
+                max(0, len(removed_iter) - len(restored_iter))
+            ),
+            "feature_recent_restored_count": int(len(restored_iter)),
+            "feature_recent_restored": restored_iter[:50],
             "feature_recent_removed_group_count": int(len(removed_group_iter)),
             "feature_recent_removed_groups": removed_group_iter[:10],
             "feature_recent_joint_coverage": float(joint_coverage),
@@ -6263,6 +6778,18 @@ _FEATURE_FAMILY_DRIFT_RE = re.compile(
 def _feature_selection_family(feature: str) -> str:
     name = str(feature)
     s = name.lower()
+    if s.startswith("meta_sel_ood_") or "ood_" in s or "novelty" in s:
+        return "drift_novelty"
+    if (
+        "gmm" in s
+        or "ae_" in s
+        or "autoencoder" in s
+        or "reconstruction" in s
+        or "mahalanobis" in s
+        or "cluster_posterior" in s
+        or "cluster_entropy" in s
+    ):
+        return "latent_state"
     if _FEATURE_FAMILY_DRIFT_RE.search(name):
         return "drift_novelty"
     if (
@@ -6880,9 +7407,10 @@ def score_for_trading(
 
 def _normalize_objective_mode(objective_mode: str | None) -> str:
     mode = str(objective_mode or "train_base").lower()
-    if mode not in {"train_base", "train_meta"}:
+    if mode not in {"train_base", "train_meta", "auxiliary_regression"}:
         raise ValueError(
-            'hpo_objective_mode must be either "train_base" or "train_meta"'
+            'hpo_objective_mode must be "train_base", "train_meta", or '
+            '"auxiliary_regression"'
         )
     return mode
 
@@ -6902,6 +7430,27 @@ def _config_bool(
     if isinstance(raw, str):
         return raw.strip().lower() not in {"0", "false", "no", "n", "off", ""}
     return bool(raw)
+
+
+def _resolve_lgbm_archetype_prescreen_config(
+    cfg: Mapping[str, Any] | None,
+) -> dict[str, bool]:
+    """Resolve archetype pre-screen modes with normalized boolean values."""
+
+    return {
+        "archetype_univariate_prescreen_enabled": _config_bool(
+            cfg,
+            "archetype_univariate_prescreen_enabled",
+            True,
+            env_key="EPM_LGBM_ARCHETYPE_UNIVARIATE_PRESCREEN_ENABLED",
+        ),
+        "archetype_relief_prescreen_enabled": _config_bool(
+            cfg,
+            "archetype_relief_prescreen_enabled",
+            True,
+            env_key="EPM_LGBM_ARCHETYPE_RELIEF_PRESCREEN_ENABLED",
+        ),
+    }
 
 
 def _string_list_config(
@@ -6946,13 +7495,39 @@ def _resolve_lgbm_time_feature_selector_bypass_features(
     *,
     objective_mode: str | None,
 ) -> list[str]:
+    """Resolve features that must survive every selection stage.
+
+    Time encodings are the historical default.  Callers can additionally pass
+    ``protected_features`` / ``force_include_features`` for causal score
+    anchors.  The latter is needed by meta models: a selector cannot assess
+    incremental context conditional on the base score if it is allowed to
+    discard the base score before the first screen.
+    """
+    available = {str(c) for c in all_columns}
+    configured_protected: list[str] = []
+    if isinstance(cfg, Mapping):
+        for key in ("protected_features", "force_include_features", "force_include"):
+            configured_protected.extend(
+                _string_list_config(cfg.get(key), (), env_key=None)
+            )
+        nested_mda = cfg.get("mda_config")
+        if isinstance(nested_mda, Mapping):
+            for key in ("protected_features", "force_include_features", "force_include"):
+                configured_protected.extend(
+                    _string_list_config(nested_mda.get(key), (), env_key=None)
+                )
+    protected = [
+        str(feature)
+        for feature in dict.fromkeys(configured_protected)
+        if str(feature) in available
+    ]
     if not _config_bool(
         cfg,
         "lgbm_time_feature_selector_bypass_enabled",
         True,
         env_key="EPM_LGBM_TIME_FEATURE_SELECTOR_BYPASS_ENABLED",
     ):
-        return []
+        return protected
     modes = {
         str(v).strip().lower()
         for v in _string_list_config(
@@ -6966,7 +7541,7 @@ def _resolve_lgbm_time_feature_selector_bypass_features(
     }
     mode = _normalize_objective_mode(objective_mode)
     if modes and mode not in modes:
-        return []
+        return protected
     configured = _string_list_config(
         (cfg or {}).get("lgbm_time_feature_selector_bypass_features")
         if isinstance(cfg, Mapping)
@@ -6974,8 +7549,49 @@ def _resolve_lgbm_time_feature_selector_bypass_features(
         LGBM_TIME_FEATURE_SELECTOR_BYPASS_DEFAULTS,
         env_key="EPM_LGBM_TIME_FEATURE_SELECTOR_BYPASS_FEATURES",
     )
-    available = {str(c) for c in all_columns}
-    return [feature for feature in configured if feature in available]
+    time_features = [feature for feature in configured if feature in available]
+    return list(dict.fromkeys(time_features + protected))
+
+
+def _resolve_lgbm_pre_mda_bypass_features(
+    all_columns: Sequence[str],
+    cfg: Mapping[str, Any] | None,
+) -> list[str]:
+    """Return features that skip cheap screens but remain MDA candidates.
+
+    Some observable state descriptors are intentionally conditional or
+    non-monotonic: categorical archetype dummies, cluster posteriors, OOD
+    measures, and reliability states may only matter through an interaction.
+    A univariate or Relief screen can remove them before the model has a
+    chance to test that interaction.  This is deliberately different from
+    ``protected_features``: these columns are *not* forced into the final
+    contract.  They still face redundancy pruning and iterative MDA.
+    """
+    if not isinstance(cfg, Mapping):
+        return []
+    configured: list[str] = []
+    for key in (
+        "pre_mda_bypass_features",
+        "pre_screen_bypass_features",
+        "mda_candidate_features",
+    ):
+        configured.extend(_string_list_config(cfg.get(key), (), env_key=None))
+    nested_mda = cfg.get("mda_config")
+    if isinstance(nested_mda, Mapping):
+        for key in (
+            "pre_mda_bypass_features",
+            "pre_screen_bypass_features",
+            "mda_candidate_features",
+        ):
+            configured.extend(
+                _string_list_config(nested_mda.get(key), (), env_key=None)
+            )
+    available = {str(column) for column in all_columns}
+    return [
+        str(feature)
+        for feature in dict.fromkeys(configured)
+        if str(feature) in available
+    ]
 
 
 def _mark_lgbm_forced_selector_bypass(
@@ -6990,7 +7606,28 @@ def _mark_lgbm_forced_selector_bypass(
     if mask.any():
         out.loc[mask, "passed"] = True
         out.loc[mask, "selector_bypass"] = True
-        out.loc[mask, "selector_bypass_reason"] = "time_feature_forced_base_meta"
+        out.loc[mask, "selector_bypass_reason"] = "protected_feature_forced_base_meta"
+    return out
+
+
+def _mark_lgbm_pre_mda_selector_bypass(
+    stats: pd.DataFrame,
+    features: Sequence[str],
+) -> pd.DataFrame:
+    """Annotate conditional candidates retained past cheap selector stages."""
+    if stats.empty or "feature" not in stats.columns or not features:
+        return stats
+    retained = {str(feature) for feature in features}
+    out = stats.copy()
+    mask = out["feature"].astype(str).isin(retained)
+    if mask.any():
+        out.loc[mask, "pre_mda_bypass"] = True
+        existing = out.get("selector_bypass_reason", pd.Series("", index=out.index))
+        out.loc[mask, "selector_bypass_reason"] = np.where(
+            existing.loc[mask].astype(str).str.len().to_numpy() > 0,
+            existing.loc[mask].astype(str).to_numpy() + ";pre_mda_conditional_candidate",
+            "pre_mda_conditional_candidate",
+        )
     return out
 
 
@@ -7027,6 +7664,9 @@ def _objective_value(
     metrics: dict[str, float], objective_mode: str | None = "train_base"
 ) -> float:
     mode = _normalize_objective_mode(objective_mode)
+    if mode == "auxiliary_regression":
+        value = metrics.get("regression_objective", np.nan)
+        return float(value) if np.isfinite(float(value)) else -999.0
     if LGBM_OBJECTIVE == "tail_control":
         prefix = "meta" if mode == "train_meta" else "base"
         value = metrics.get(
@@ -7975,6 +8615,17 @@ def _metric_pack(
         auc = max(0.0, _safe_spearman(y, p))
         pr_auc = auc
         brier = float(np.mean((p - y) ** 2))
+    regression_mae = float(np.mean(np.abs(p - y)))
+    regression_rmse = float(np.sqrt(np.mean((p - y) ** 2)))
+    regression_ic = float(_safe_spearman(y, p))
+    target_scale = float(np.nanpercentile(y, 75.0) - np.nanpercentile(y, 25.0))
+    if not np.isfinite(target_scale) or target_scale <= 1e-6:
+        target_scale = max(float(np.nanstd(y)), 1e-6)
+    regression_objective = (
+        0.55 * regression_ic
+        - 0.30 * regression_mae / target_scale
+        - 0.15 * regression_rmse / target_scale
+    )
     ret_scale = float(np.nanpercentile(np.abs(ret), 75.0) + 1e-6)
     mean_ret10 = float(np.mean(ret[top10])) if len(top10) else 0.0
     mean_ret20 = float(np.mean(ret[top20])) if len(top20) else 0.0
@@ -8088,6 +8739,11 @@ def _metric_pack(
         "pr_auc": float(pr_auc),
         "brier": float(brier),
         "oof_std": float(np.std(p)),
+        "regression_mae": regression_mae,
+        "regression_rmse": regression_rmse,
+        "regression_spearman_ic": regression_ic,
+        "regression_target_scale": target_scale,
+        "regression_objective": float(regression_objective),
     }
     out.update(base_components)
     out.update(meta_components)
@@ -8481,6 +9137,221 @@ def _begin_middle_end_sample_indices(
         fill = _evenly_spaced_take(missing, min(cap, n) - len(idx))
         idx = np.sort(np.concatenate([idx, fill]).astype(np.int32))
     return idx[: min(cap, len(idx))].astype(np.int32, copy=False)
+
+
+def materialize_bme_parquet_sample(
+    source_path: str | Path,
+    output_path: str | Path,
+    *,
+    max_rows: int,
+    seed: int,
+    timestamp_column: str = "__ts__",
+    identity_columns: Sequence[str] = ("__symbol__", "side_name"),
+    min_timestamp: Any | None = None,
+    max_timestamp_exclusive: Any | None = None,
+) -> dict[str, Any]:
+    """Materialize a wide beginning/middle/end sample without loading it in pandas.
+
+    The sample uses broad contiguous early/middle/late windows. This preserves
+    temporal coverage but lets the static feature loader prune history to three
+    bounded ranges rather than scan every timestamp between two sparse samples.
+    """
+    source = Path(source_path).resolve()
+    output = Path(output_path).resolve()
+    rows = int(max_rows)
+    if rows < 300:
+        raise ValueError("B/M/E feature-selection sample requires at least 300 rows")
+    if not source.exists():
+        raise FileNotFoundError(source)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    import duckdb
+
+    def sql_path(path: Path) -> str:
+        return str(path).replace("'", "''")
+
+    connection = duckdb.connect()
+    connection.execute("SET TimeZone='UTC'")
+    connection.execute("PRAGMA threads=4")
+    connection.execute("PRAGMA memory_limit='8GB'")
+    source_sql = sql_path(source)
+    output_sql = sql_path(output)
+    raw_source_relation = (
+        f"read_parquet('{source_sql}/*.parquet', union_by_name=true)"
+        if source.is_dir()
+        else f"read_parquet('{source_sql}')"
+    )
+    bounds: list[str] = []
+    for operator, value in ((">=", min_timestamp), ("<", max_timestamp_exclusive)):
+        if value is None:
+            continue
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("UTC").tz_localize(None)
+        bounds.append(
+            f'"{timestamp_column}" {operator} TIMESTAMP \'{ts.isoformat(sep=" ")}\''
+        )
+    source_relation = (
+        f"(SELECT * FROM {raw_source_relation} WHERE {' AND '.join(bounds)})"
+        if bounds
+        else raw_source_relation
+    )
+    schema = set(
+        connection.execute(
+            f"DESCRIBE SELECT * FROM {source_relation}"
+        ).fetchdf()["column_name"].astype(str)
+    )
+    ordered_identity = [str(col) for col in identity_columns]
+    required = [str(timestamp_column), *ordered_identity]
+    missing = [col for col in required if col not in schema]
+    if missing:
+        raise ValueError(f"B/M/E parquet source is missing identity columns: {missing}")
+    source_rows = int(
+        connection.execute(
+            f"SELECT count(*) FROM {source_relation}"
+        ).fetchone()[0]
+    )
+    first_ts, last_ts = connection.execute(
+        f"SELECT min(\"{timestamp_column}\"), max(\"{timestamp_column}\") "
+        f"FROM {source_relation}"
+    ).fetchone()
+    if first_ts is None or last_ts is None:
+        raise ValueError("B/M/E parquet source has no valid timestamp bounds")
+    target_rows = min(rows, source_rows)
+    base = target_rows // 3
+    remainder = target_rows - base * 3
+    limits = [base + (1 if band < remainder else 0) for band in range(3)]
+    case_clause = " ".join(
+        f"WHEN {band + 1} THEN {limit}" for band, limit in enumerate(limits)
+    )
+    first_pd = pd.Timestamp(first_ts)
+    last_pd = pd.Timestamp(last_ts)
+    span = max(last_pd - first_pd, pd.Timedelta(days=1))
+    target_fraction = float(target_rows / max(source_rows, 1))
+    window_fraction = min(1.0 / 3.0, max(0.08, min(0.25, target_fraction * 4.0)))
+    window = min(max(pd.Timedelta(days=7), span * window_fraction), span / 3)
+    early_start, early_end = first_pd, first_pd + window
+    middle_center = first_pd + span / 2
+    middle_start, middle_end = middle_center - window / 2, middle_center + window / 2
+    late_end = last_pd + pd.Timedelta(nanoseconds=1)
+    late_start = late_end - window
+
+    def _sql_ts(value: pd.Timestamp) -> str:
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("UTC").tz_localize(None)
+        return ts.isoformat(sep=" ")
+    identity_select = ", ".join(f'"{col}"' for col in ordered_identity)
+    normalized_identity = ", ".join(
+        f"cast(\"{col}\" AS VARCHAR)" for col in ordered_identity
+    )
+    join_clause = " AND ".join(
+        [f'h."{timestamp_column}" = k."{timestamp_column}"']
+        + [
+            f'cast(h."{col}" AS VARCHAR) = cast(k."{col}" AS VARCHAR)'
+            for col in ordered_identity
+        ]
+    )
+    order_clause = ", ".join(
+        [f'h."{timestamp_column}"'] + [f'h."{col}"' for col in ordered_identity]
+    )
+    if target_rows == source_rows:
+        # When the requested cap covers the complete eligible history, narrow
+        # B/M/E windows can only discard rows and make the expected cardinality
+        # impossible. Preserve the complete temporally ordered reference scope.
+        query = f"""
+            SELECT *
+            FROM {source_relation} AS h
+            ORDER BY {order_clause}
+        """
+        sampling_policy = "all_eligible_rows_below_bme_cap_v1"
+    else:
+        query = f"""
+        WITH windowed_keys AS (
+            SELECT
+                "{timestamp_column}", {identity_select},
+                CASE
+                    WHEN "{timestamp_column}" >= TIMESTAMP '{_sql_ts(early_start)}'
+                     AND "{timestamp_column}" < TIMESTAMP '{_sql_ts(early_end)}' THEN 1
+                    WHEN "{timestamp_column}" >= TIMESTAMP '{_sql_ts(middle_start)}'
+                     AND "{timestamp_column}" < TIMESTAMP '{_sql_ts(middle_end)}' THEN 2
+                    WHEN "{timestamp_column}" >= TIMESTAMP '{_sql_ts(late_start)}'
+                     AND "{timestamp_column}" < TIMESTAMP '{_sql_ts(late_end)}' THEN 3
+                    ELSE 0
+                END AS time_band
+            FROM {source_relation}
+        ), ranked_keys AS (
+            SELECT *, row_number() OVER (
+                PARTITION BY time_band
+                ORDER BY hash("{timestamp_column}", {normalized_identity}, {int(seed)})
+            ) AS sample_rank
+            FROM windowed_keys
+            WHERE time_band > 0
+        ), sampled_keys AS (
+            SELECT "{timestamp_column}", {identity_select}, time_band
+            FROM ranked_keys
+            WHERE sample_rank <= CASE time_band {case_clause} ELSE 0 END
+        )
+        SELECT h.*
+        FROM {source_relation} AS h
+        INNER JOIN sampled_keys AS k ON {join_clause}
+        ORDER BY {order_clause}
+        """
+        sampling_policy = "contiguous_beginning_middle_end_windows_hash_sample_v2"
+    # A failed/aborted materialization may leave a parquet without its manifest.
+    # Rebuilding the same run must replace that incomplete file atomically from
+    # the caller's perspective instead of reusing or appending it.
+    output.unlink(missing_ok=True)
+    connection.execute(
+        f"COPY ({query}) TO '{output_sql}' "
+        "(FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 10000)"
+    )
+    output_rows = int(
+        connection.execute(
+            f"SELECT count(*) FROM read_parquet('{output_sql}')"
+        ).fetchone()[0]
+    )
+    if output_rows != target_rows:
+        raise RuntimeError(
+            f"B/M/E sample row mismatch: expected={target_rows} actual={output_rows}"
+        )
+    summary = connection.execute(
+        f"""
+        SELECT count(*) AS rows, min("{timestamp_column}") AS min_ts,
+               max("{timestamp_column}") AS max_ts
+        FROM read_parquet('{output_sql}')
+        """
+    ).fetchone()
+    return {
+        "schema": "lgbm_two_phase_bme_parquet_sample_v1",
+        "training_contract": LGBM_TWO_PHASE_SELECTION_CONTRACT,
+        "source_path": str(source),
+        "output_path": str(output),
+        "source_rows": source_rows,
+        "source_min_timestamp": (
+            None if min_timestamp is None else pd.Timestamp(min_timestamp).isoformat()
+        ),
+        "source_max_timestamp_exclusive": (
+            None
+            if max_timestamp_exclusive is None
+            else pd.Timestamp(max_timestamp_exclusive).isoformat()
+        ),
+        "sample_rows": output_rows,
+        "requested_rows": rows,
+        "seed": int(seed),
+        "timestamp_column": str(timestamp_column),
+        "identity_columns": ordered_identity,
+        "band_limits": limits,
+        "sampling_policy": sampling_policy,
+        "window_fraction": float(window_fraction),
+        "window_start_end": {
+            "early": [str(early_start), str(early_end)],
+            "middle": [str(middle_start), str(middle_end)],
+            "late": [str(late_start), str(late_end)],
+        },
+        "sample_min_ts": str(summary[1]),
+        "sample_max_ts": str(summary[2]),
+        "next_phase": "reload_full_population_with_selected_columns_only",
+    }
 
 
 def _feature_selection_context_array(
@@ -9713,6 +10584,7 @@ def _forward_burnin_splitter(
     n_splits: int = LGBM_CV_SPLITS,
     purge_hours: float = LGBM_PURGE_HOURS,
     objective_mode: str | None = "train_base",
+    allow_short_history_fallback: bool | None = None,
 ) -> tuple[Any, np.ndarray]:
     del random_state
     y_arr = np.asarray(y)
@@ -9747,7 +10619,12 @@ def _forward_burnin_splitter(
             f"meta_validation_months={int(LGBM_META_FORWARD_VALIDATION_MONTHS)}, "
             f"rows={n}."
         )
-        if bool(LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK):
+        fallback_enabled = (
+            bool(LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK)
+            if allow_short_history_fallback is None
+            else bool(allow_short_history_fallback)
+        )
+        if fallback_enabled:
             fallback_start = _forward_short_history_validation_start_ns(ns, valid)
             if fallback_start is not None:
                 validation_start = int(fallback_start)
@@ -9772,6 +10649,10 @@ def _forward_burnin_splitter(
             return _splitter(y_arr, classifier, 0, n_splits=n_splits)
     n_splits_local = max(1, min(int(n_splits), int(len(unique_ts))))
     purge_ns = int(max(0.0, float(purge_hours)) * 3600.0 * 1_000_000_000.0)
+    min_valid_rows = _forward_min_valid_rows(objective_mode)
+    strict_auxiliary_support = (
+        _normalize_objective_mode(objective_mode) == "auxiliary_regression"
+    )
     ts_blocks = np.array_split(unique_ts, n_splits_local)
     all_idx = np.arange(n, dtype=np.int32)
     folds: list[tuple[np.ndarray, np.ndarray]] = []
@@ -9784,20 +10665,34 @@ def _forward_burnin_splitter(
         tr_mask = valid & (ns < lo - purge_ns)
         va = all_idx[va_mask]
         tr = all_idx[tr_mask]
-        if len(va) < int(LGBM_FORWARD_MIN_VALID_ROWS):
+        if len(va) < min_valid_rows:
+            if strict_auxiliary_support:
+                raise ValueError(
+                    "auxiliary_regression forward fold is under-supported: "
+                    f"valid_rows={len(va)}, min_valid_rows={min_valid_rows}, "
+                    f"fold_start={pd.Timestamp(lo, unit='ns', tz='UTC').isoformat()}, "
+                    f"fold_end={pd.Timestamp(hi, unit='ns', tz='UTC').isoformat()}."
+                )
             continue
         if len(tr) < int(LGBM_FORWARD_MIN_TRAIN_ROWS):
             continue
         if classifier and len(np.unique(y_split[tr])) < 2:
             continue
         folds.append((tr.astype(np.int32, copy=False), va.astype(np.int32, copy=False)))
+    if strict_auxiliary_support and len(folds) != n_splits_local:
+        raise ValueError(
+            "auxiliary_regression forward CV did not retain every requested fold: "
+            f"retained={len(folds)}, requested={n_splits_local}, "
+            f"min_train_rows={int(LGBM_FORWARD_MIN_TRAIN_ROWS)}, "
+            f"min_valid_rows={min_valid_rows}, rows={n}."
+        )
     if not folds:
         msg = (
             "forward_burnin CV produced no usable folds: "
             f"objective={_normalize_objective_mode(objective_mode)}, "
             f"splits={int(n_splits)}, purge_hours={float(purge_hours):.2f}, "
             f"min_train_rows={int(LGBM_FORWARD_MIN_TRAIN_ROWS)}, "
-            f"min_valid_rows={int(LGBM_FORWARD_MIN_VALID_ROWS)}, rows={n}."
+            f"min_valid_rows={min_valid_rows}, rows={n}."
         )
         if bool(LGBM_FORWARD_BURNIN_STRICT):
             raise ValueError(msg)
@@ -9850,6 +10745,7 @@ def _forward_burnin_latest_holdout_indices(
     *,
     timestamps: Any,
     objective_mode: str | None,
+    allow_short_history_fallback: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     splitter, y_split = _forward_burnin_splitter(
         y,
@@ -9859,6 +10755,7 @@ def _forward_burnin_latest_holdout_indices(
         n_splits=max(1, int(LGBM_CV_SPLITS)),
         purge_hours=LGBM_PURGE_HOURS,
         objective_mode=objective_mode,
+        allow_short_history_fallback=allow_short_history_fallback,
     )
     folds = list(splitter.split(np.zeros(len(y_split)), y_split))
     if not folds:
@@ -9956,6 +10853,47 @@ def _direction_score_for_feature(
     ret_arr = ret_arr[finite] if len(ret_arr) == len(finite) else ret_arr
     if len(bins) < 32 or len(np.unique(bins)) < 2:
         return 0.0, 0.0, 0, 0.0
+    if _normalize_objective_mode(objective_mode) == "auxiliary_regression":
+        # Auxiliary targets are continuous and non-negative.  Converting them
+        # to ``target > 0`` makes almost every row the same class, so the
+        # classifier-era lift/MI screen is undefined.  Score direction from
+        # signed rank association and nonlinear binned target separation.
+        rho = float(_safe_spearman(y_arr, x_arr[finite]))
+        target_scale = float(
+            np.nanpercentile(y_arr, 75.0) - np.nanpercentile(y_arr, 25.0)
+        )
+        if not np.isfinite(target_scale) or target_scale <= 1e-6:
+            target_scale = max(float(np.nanstd(y_arr)), 1e-6)
+        levels = np.unique(bins)
+        low = bins == int(levels[0])
+        high = bins == int(levels[-1])
+        low_mean = float(np.nanmean(y_arr[low])) if int(np.sum(low)) else 0.0
+        high_mean = float(np.nanmean(y_arr[high])) if int(np.sum(high)) else 0.0
+        normalized_delta = (high_mean - low_mean) / target_scale
+        try:
+            target_bins = pd.qcut(
+                pd.Series(y_arr), q=min(8, max(3, len(levels))),
+                labels=False, duplicates="drop",
+            ).to_numpy(dtype=np.float64)
+            valid_target_bins = np.isfinite(target_bins)
+            mi = float(
+                mutual_info_score(
+                    bins[valid_target_bins],
+                    target_bins[valid_target_bins].astype(np.int32),
+                )
+            )
+        except Exception:
+            mi = 0.0
+        direction_signal = rho if abs(rho) > 1e-8 else normalized_delta
+        direction = 1 if direction_signal >= 0.0 else -1
+        strength = abs(rho) + 0.25 * abs(normalized_delta) + 0.10 * max(mi, 0.0)
+        margin = abs(rho) + 0.25 * abs(normalized_delta)
+        return (
+            float(strength if direction > 0 else 0.0),
+            float(strength if direction < 0 else 0.0),
+            int(direction),
+            float(margin),
+        )
     y_bin = (
         (y_arr >= 0.5).astype(np.int32)
         if classifier
@@ -10107,6 +11045,9 @@ def _univariate_directional_filter(
     splitter, y_split = _splitter(
         y_work, classifier, random_state, n_splits=LGBM_CV_SPLITS
     )
+    auxiliary_regression = (
+        _normalize_objective_mode(objective_mode) == "auxiliary_regression"
+    )
     records: list[dict[str, Any]] = []
     for fi, name in enumerate(names):
         if fi > 0 and (fi % 25 == 0 or fi == len(names) - 1):
@@ -10147,15 +11088,22 @@ def _univariate_directional_filter(
                 returns=ret_va,
                 objective_mode=objective_mode,
             )
-            pred = x_va if direction >= 0 else -x_va
-            metrics = _metric_pack(
-                y_va, pred, classifier=classifier, groups=grp_va, returns=ret_va
-            )
             j_pos_vals.append(j_pos)
             j_neg_vals.append(j_neg)
-            p20_norm_vals.append(float(metrics.get("precision20_norm", 0.0)))
-            lift20_vals.append(float(metrics.get("lift20", 1.0)))
-            mono_vals.append(float(metrics.get("rank_bucket_monotonicity", 0.0)))
+            if not auxiliary_regression:
+                pred = x_va if direction >= 0 else -x_va
+                metrics = _metric_pack(
+                    y_va,
+                    pred,
+                    classifier=classifier,
+                    groups=grp_va,
+                    returns=ret_va,
+                )
+                p20_norm_vals.append(float(metrics.get("precision20_norm", 0.0)))
+                lift20_vals.append(float(metrics.get("lift20", 1.0)))
+                mono_vals.append(
+                    float(metrics.get("rank_bucket_monotonicity", 0.0))
+                )
             dirs.append(direction)
             margins.append(margin)
         j_pos_med = float(np.median(j_pos_vals)) if j_pos_vals else 0.0
@@ -10165,19 +11113,28 @@ def _univariate_directional_filter(
             np.asarray(dirs), np.asarray(margins)
         )
         univariate_j = max(j_pos_med, j_neg_med)
-        precision_pass = (
-            float(np.median(p20_norm_vals)) > 0.0 if p20_norm_vals else False
-        )
-        lift_pass = float(np.median(lift20_vals)) > 1.0 if lift20_vals else False
-        mono_pass = (
-            float(np.median(mono_vals)) >= LGBM_UNIVARIATE_MONOTONICITY_MIN
-            if mono_vals
-            else False
-        )
-        passed = bool(
-            (precision_pass or lift_pass or mono_pass)
-            and direction_stability >= LGBM_DIRECTION_STABILITY_MIN
-        )
+        if auxiliary_regression:
+            precision_pass = False
+            lift_pass = False
+            mono_pass = False
+            passed = bool(
+                univariate_j > 1e-6
+                and direction_stability >= LGBM_DIRECTION_STABILITY_MIN
+            )
+        else:
+            precision_pass = (
+                float(np.median(p20_norm_vals)) > 0.0 if p20_norm_vals else False
+            )
+            lift_pass = float(np.median(lift20_vals)) > 1.0 if lift20_vals else False
+            mono_pass = (
+                float(np.median(mono_vals)) >= LGBM_UNIVARIATE_MONOTONICITY_MIN
+                if mono_vals
+                else False
+            )
+            passed = bool(
+                (precision_pass or lift_pass or mono_pass)
+                and direction_stability >= LGBM_DIRECTION_STABILITY_MIN
+            )
         records.append(
             {
                 "feature": name,
@@ -10201,6 +11158,9 @@ def _univariate_directional_filter(
                 "pass_precision": bool(precision_pass),
                 "pass_lift": bool(lift_pass),
                 "pass_monotonicity": bool(mono_pass),
+                "pass_auxiliary_regression": bool(
+                    auxiliary_regression and passed
+                ),
             }
         )
     stats = pd.DataFrame(records)
@@ -10750,22 +11710,44 @@ def _relief_rescue_filter_archetype_union(
         f"rows={len(X)}, features={len(names)}, "
         "target_mode=economic_target_within_archetype."
     )
+    tasks: list[tuple[int, str, int, np.ndarray]] = []
     for arch_i, (arch, rows) in enumerate(usable.items(), start=1):
         idx = np.flatnonzero(labels == str(arch)).astype(np.int32)
         if len(idx) < int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS):
             continue
+        tasks.append((int(arch_i), str(arch), int(rows), idx))
+
+    def _run_local_relief(
+        task: tuple[int, str, int, np.ndarray],
+    ) -> tuple[int, list[str], pd.DataFrame]:
+        arch_i, arch, rows, idx = task
         y_arch = np.asarray(y)[idx]
         rescued_arch, stats_arch = _relief_rescue_filter(
-            X.iloc[idx].reset_index(drop=True),
+            X.iloc[idx],
             y_arch,
             uni_features,
             classifier=classifier,
             random_state=random_state + arch_i * 211,
         )
-        rescued_union.update(str(f) for f in rescued_arch)
         stats_arch = stats_arch.copy()
         stats_arch["archetype"] = str(arch)
         stats_arch["archetype_rows"] = int(rows)
+        return arch_i, list(map(str, rescued_arch)), stats_arch
+
+    configured_workers = int(
+        os.environ.get("EPM_LGBM_ARCHETYPE_RELIEF_WORKERS", "4") or 4
+    )
+    workers = max(1, min(len(tasks), configured_workers))
+    if workers == 1:
+        results = [_run_local_relief(task) for task in tasks]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="ares-relief"
+        ) as pool:
+            pending = [pool.submit(_run_local_relief, task) for task in tasks]
+            results = [future.result() for future in as_completed(pending)]
+    for _arch_i, rescued_arch, stats_arch in sorted(results, key=lambda item: item[0]):
+        rescued_union.update(rescued_arch)
         stats_parts.append(stats_arch)
     stats = _aggregate_relief_archetype_stats(
         stats_parts,
@@ -10783,6 +11765,113 @@ def _relief_rescue_filter_archetype_union(
     return rescued, stats, diag
 
 
+def _run_lgbm_univariate_prescreen(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    *,
+    archetype_enabled: bool,
+    classifier: bool,
+    groups: Any = None,
+    returns: Any = None,
+    timestamps: Any = None,
+    random_state: int,
+    objective_mode: str | None = "train_base",
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[list[str], pd.DataFrame, dict[str, Any]]:
+    if archetype_enabled:
+        selected, stats, diag = _univariate_directional_filter_archetype_union(
+            X,
+            y,
+            classifier=classifier,
+            groups=groups,
+            returns=returns,
+            timestamps=timestamps,
+            random_state=random_state,
+            objective_mode=objective_mode,
+            label_context=label_context,
+        )
+        diag = dict(diag)
+        diag["mode"] = "archetype_union"
+        diag["configured_enabled"] = True
+    else:
+        selected, stats = _univariate_directional_filter(
+            X,
+            y,
+            classifier=classifier,
+            groups=groups,
+            returns=returns,
+            timestamps=timestamps,
+            random_state=random_state,
+            objective_mode=objective_mode,
+        )
+        diag = {
+            "enabled": False,
+            "usable": False,
+            "source": "global",
+            "reason": "disabled_by_config",
+            "mode": "global",
+            "configured_enabled": False,
+            "selected_features": int(len(selected)),
+            "archetype_union_features": 0,
+        }
+    stats = stats.copy()
+    stats["archetype_prescreen_mode"] = str(diag["mode"])
+    return selected, stats, diag
+
+
+def _run_lgbm_relief_prescreen(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    uni_features: list[str],
+    *,
+    archetype_enabled: bool,
+    classifier: bool,
+    random_state: int,
+    timestamps: Any = None,
+    objective_mode: str | None = "train_base",
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[list[str], pd.DataFrame, dict[str, Any]]:
+    if archetype_enabled:
+        archetype_labels, archetype_diag = _feature_selection_archetype_labels(
+            X,
+            label_context=label_context,
+            timestamps=timestamps,
+            objective_mode=objective_mode,
+        )
+        rescued, stats, diag = _relief_rescue_filter_archetype_union(
+            X,
+            y,
+            uni_features,
+            classifier=classifier,
+            random_state=random_state,
+            archetype_labels=archetype_labels,
+            archetype_diag=archetype_diag,
+        )
+        diag = dict(diag)
+        diag["mode"] = "archetype_union"
+        diag["configured_enabled"] = True
+    else:
+        rescued, stats = _relief_rescue_filter(
+            X,
+            y,
+            uni_features,
+            classifier=classifier,
+            random_state=random_state,
+        )
+        diag = {
+            "enabled": False,
+            "usable": False,
+            "source": "global",
+            "reason": "disabled_by_config",
+            "mode": "global",
+            "configured_enabled": False,
+            "relief_rescued_features": int(len(rescued)),
+        }
+    stats = stats.copy()
+    stats["archetype_prescreen_mode"] = str(diag["mode"])
+    return rescued, stats, diag
+
+
 def _redundancy_cluster_filter(
     X: pd.DataFrame,
     features: list[str],
@@ -10790,6 +11879,10 @@ def _redundancy_cluster_filter(
     *,
     random_state: int,
     corr_threshold: float = LGBM_REDUNDANCY_CORR_THRESHOLD,
+    archetype_labels: np.ndarray | None = None,
+    min_retained: int = 0,
+    representative_policy: str = "univariate_score",
+    protected_features: Sequence[str] | None = None,
 ) -> list[str]:
     if len(features) <= 2:
         return list(features)
@@ -10805,9 +11898,23 @@ def _redundancy_cluster_filter(
         if len(X) > sub_n
         else np.arange(len(X))
     )
-    arr = X.iloc[sub][features].to_numpy(dtype=np.float32)
-    ranks = pd.DataFrame(arr).rank(pct=True).to_numpy(dtype=np.float32)
+    arr = X.iloc[sub][features].to_numpy(dtype=np.float32, copy=False)
+    ranks = pd.DataFrame(arr, copy=False).rank(pct=True).to_numpy(dtype=np.float32)
     corr = np.abs(np.corrcoef(ranks, rowvar=False))
+    labels = None
+    if archetype_labels is not None and len(np.asarray(archetype_labels)) == len(X):
+        labels = np.asarray(archetype_labels).astype(str, copy=False)[sub]
+    if labels is not None:
+        counts = pd.Series(labels).value_counts()
+        for archetype, count in counts.items():
+            if int(count) < max(64, int(0.02 * len(sub))):
+                continue
+            local = np.flatnonzero(labels == str(archetype))
+            if len(local) > 1_500:
+                local = local[np.linspace(0, len(local) - 1, 1_500, dtype=np.int32)]
+            local_corr = np.abs(np.corrcoef(ranks[local], rowvar=False))
+            if local_corr.shape == corr.shape:
+                corr = np.maximum(corr, np.nan_to_num(local_corr, nan=0.0))
     corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0).astype(
         np.float32,
         copy=False,
@@ -10821,20 +11928,77 @@ def _redundancy_cluster_filter(
         return list(features)
     z = linkage(condensed, method="average")
     labels = fcluster(z, t=1.0 - float(corr_threshold), criterion="distance")
+    policy = str(representative_policy).strip().lower()
+    if policy not in {"univariate_score", "availability_variance"}:
+        raise ValueError(f"Unknown redundancy representative policy: {policy}")
+    protected = {str(feature) for feature in (protected_features or [])}
+    feature_order = {str(feature): idx for idx, feature in enumerate(features)}
+    quality: dict[str, tuple[float, float, int]] = {}
+    if policy == "availability_variance":
+        for idx, feature in enumerate(features):
+            values = pd.to_numeric(X[feature], errors="coerce").to_numpy(
+                dtype=np.float64, copy=False
+            )
+            finite = np.isfinite(values)
+            coverage = float(np.mean(finite)) if len(values) else 0.0
+            variance = float(np.var(values[finite])) if finite.any() else 0.0
+            quality[str(feature)] = (coverage, variance, -idx)
+
+    def _member_key(feature: str) -> tuple[float, ...]:
+        if policy == "availability_variance":
+            return quality.get(str(feature), (0.0, 0.0, -feature_order[str(feature)]))
+        return (float(score_map.get(feature, 0.0)), -feature_order[str(feature)])
+
     keep: list[str] = []
     for lab in sorted(set(labels)):
         members = [features[i] for i in np.where(labels == lab)[0]]
-        members_sorted = sorted(
-            members, key=lambda f: float(score_map.get(f, 0.0)), reverse=True
+        members_sorted = sorted(members, key=_member_key, reverse=True)
+        keep_n = (
+            1
+            if policy == "availability_variance"
+            else min(3, max(1, int(np.ceil(0.25 * len(members_sorted)))))
         )
-        keep_n = min(3, max(1, int(np.ceil(0.25 * len(members_sorted)))))
         keep.extend(members_sorted[:keep_n])
+    keep.extend(feature for feature in features if str(feature) in protected)
+    required = min(len(features), max(0, int(min_retained)))
+    if len(set(keep)) < required:
+        omitted = [feature for feature in features if feature not in set(keep)]
+        omitted.sort(key=_member_key, reverse=True)
+        keep.extend(omitted[: required - len(set(keep))])
     keep_ordered = [f for f in features if f in set(keep)]
     tprint(
         f"LGBM redundancy clustering complete: {len(features)} -> {len(keep_ordered)} "
         f"features in {time.perf_counter() - t0:.1f}s."
     )
     return keep_ordered
+
+
+def _ensure_feature_family_coverage(
+    selected: Sequence[str],
+    candidates: Sequence[str],
+    score_map: Mapping[str, float],
+    *,
+    enabled: bool | None = None,
+) -> list[str]:
+    """Retain one evidenced representative from every available feature family."""
+    output = _ordered_unique_features(selected)
+    if enabled is None:
+        enabled = bool(LGBM_FEATURE_FAMILY_COVERAGE)
+    if not bool(enabled):
+        return output
+    selected_families = {_feature_selection_family(feature) for feature in output}
+    by_family: dict[str, list[str]] = defaultdict(list)
+    for feature in _ordered_unique_features(candidates):
+        by_family[_feature_selection_family(feature)].append(feature)
+    for family, members in sorted(by_family.items()):
+        if family in selected_families or family == "other":
+            continue
+        best = max(members, key=lambda f: float(score_map.get(f, 0.0)))
+        if float(score_map.get(best, 0.0)) <= 0.0:
+            continue
+        output.append(best)
+        selected_families.add(family)
+    return output
 
 
 def _base_lgbm_params(
@@ -12385,6 +13549,11 @@ def _fit_lgbm_archetype_states(
     X_ref = X_train
     ref_timestamps = timestamps
     ref_assets = assets
+    ref_sides = (
+        X_train["side"].to_numpy(copy=False)
+        if "side" in X_train.columns
+        else None
+    )
     cap = int(LGBM_ARCHETYPE_FIT_MAX_ROWS)
     if cap > 0 and n_train > cap:
         idx = _begin_middle_end_sample_indices(
@@ -12398,6 +13567,7 @@ def _fit_lgbm_archetype_states(
         X_ref = X_train.iloc[idx].reset_index(drop=True)
         ref_timestamps = _take_aligned(timestamps, idx, n_train)
         ref_assets = _take_aligned(assets, idx, n_train)
+        ref_sides = _take_aligned(ref_sides, idx, n_train)
         tprint(
             "LGBM archetype reference fit sampled: "
             f"rows={n_train}->{len(X_ref)}, features={len(selected_features)}, "
@@ -12433,6 +13603,7 @@ def _fit_lgbm_archetype_states(
             selected_features,
             timestamps=ref_timestamps,
             assets=ref_assets,
+            sides=ref_sides,
             random_state=random_state,
         )
         tprint(
@@ -12494,6 +13665,7 @@ def _append_archetype_meta_features(
             raw_state,
             timestamps=timestamps,
             assets=assets,
+            sides=(X["side"].to_numpy(copy=False) if "side" in X.columns else None),
             index=features.index,
         )
         for name in RAW_STATE_SVD_FEATURE_NAMES + RAW_STATE_DIAGNOSTIC_FEATURE_NAMES:
@@ -16887,6 +18059,42 @@ def _topk_mda_score(
     cfg: Mapping[str, Any],
     archetype_labels: np.ndarray | None = None,
 ) -> dict[str, float]:
+    if str(cfg.get("objective", "")).strip().lower() == "auxiliary_regression":
+        y = np.asarray(y_true, dtype=np.float64).reshape(-1)
+        pred = np.asarray(y_score, dtype=np.float64).reshape(-1)
+        n = min(len(y), len(pred))
+        y = y[:n]
+        pred = pred[:n]
+        valid = np.isfinite(y) & np.isfinite(pred)
+        if sample_weight is None or not bool(cfg.get("use_sample_weight", True)):
+            weight = np.ones(n, dtype=np.float64)
+        else:
+            weight = np.asarray(sample_weight, dtype=np.float64).reshape(-1)[:n]
+            if len(weight) != n:
+                weight = np.ones(n, dtype=np.float64)
+        valid &= np.isfinite(weight) & (weight >= 0.0)
+        if int(np.sum(valid)) < 8 or float(np.sum(weight[valid])) <= 0.0:
+            return {"score": -999.0, "rows": float(np.sum(valid))}
+        y = y[valid]
+        pred = pred[valid]
+        weight = weight[valid]
+        weight /= float(np.sum(weight))
+        error = pred - y
+        mae = float(np.sum(weight * np.abs(error)))
+        rmse = float(np.sqrt(np.sum(weight * error**2)))
+        ic = float(_safe_spearman(y, pred))
+        scale = float(np.nanpercentile(y, 75.0) - np.nanpercentile(y, 25.0))
+        if not np.isfinite(scale) or scale <= 1e-6:
+            scale = max(float(np.nanstd(y)), 1e-6)
+        score = 0.55 * ic - 0.30 * mae / scale - 0.15 * rmse / scale
+        return {
+            "score": float(score),
+            "rows": float(len(y)),
+            "regression_mae": mae,
+            "regression_rmse": rmse,
+            "regression_spearman_ic": ic,
+            "regression_target_scale": scale,
+        }
     overall = topk_opportunity_score(
         y_true,
         y_score,
@@ -17629,6 +18837,16 @@ def _compute_topk_mda_audit(
         gain_arr = np.pad(gain_arr, (0, p - len(gain_arr)))
     group_records: list[dict[str, Any]] = []
     screened_feature_to_group: dict[int, str] = {}
+    pre_mda_bypass = {
+        str(v)
+        for key in (
+            "pre_mda_bypass_features",
+            "pre_screen_bypass_features",
+            "mda_candidate_features",
+        )
+        for v in (cfg.get(key, []) or [])
+        if str(v).strip()
+    }
     if bool(cfg.get("group_first_screen_enabled", False)):
         screen_kind = str(cfg.get("group_first_screen_kind", "feature_family")).lower()
         if screen_kind == "correlation":
@@ -17695,7 +18913,11 @@ def _compute_topk_mda_audit(
             repeat_records.extend(repeats)
             if screened_out:
                 for idx in members:
-                    screened_feature_to_group[int(idx)] = group_id
+                    # Conditional state descriptors have already bypassed
+                    # cheap screens. They need an individual MDA decision,
+                    # not a family-level null verdict.
+                    if str(feature_names[int(idx)]) not in pre_mda_bypass:
+                        screened_feature_to_group[int(idx)] = group_id
     for j, feature in enumerate(feature_names):
         split_count = float(split_arr[j]) if j < len(split_arr) else 0.0
         gain_value = float(gain_arr[j]) if j < len(gain_arr) else 0.0
@@ -18201,9 +19423,14 @@ def _write_lgbm_mda_report(
         "config": _json_sanitize(dict(cfg)),
         "objective": {
             "name": (
-                "archetype_conditioned_topk_opportunity_precision"
-                if bool(cfg.get("archetype_conditioned_enabled", True))
-                else "topk_opportunity_precision"
+                "auxiliary_regression"
+                if str(cfg.get("objective", "")).strip().lower()
+                == "auxiliary_regression"
+                else (
+                    "archetype_conditioned_topk_opportunity_precision"
+                    if bool(cfg.get("archetype_conditioned_enabled", True))
+                    else "topk_opportunity_precision"
+                )
             ),
             "topk_fracs": list(cfg.get("topk_fracs", [])),
             "topk_frac_weights": list(cfg.get("topk_frac_weights", [])),
@@ -18565,6 +19792,8 @@ def _lgbm_stability_selection_pass(
     topk_effective_rows: list[float] = []
     config_records: list[dict[str, Any]] = []
     mda_cfg = _resolve_lgbm_mda_config(mda_config)
+    if p >= 64 and bool(mda_cfg.get("group_mda_enabled", True)):
+        mda_cfg["group_first_screen_enabled"] = True
     # Fractional soft-binary targets use the regressor wrapper so LightGBM can
     # preserve target magnitude. Top-k MDA is still valid: the scorer treats
     # soft labels >= 0.5 as positives while model predictions remain continuous.
@@ -19636,6 +20865,7 @@ def _cross_val_oof_lgbm_with_meta_features(
     ae_gmm_feature_names: list[str] | None = None,
     ae_gmm_context_feature_names: list[str] | None = None,
     ae_gmm_enabled: bool = False,
+    fixed_ae_gmm_state: Mapping[str, Any] | None = None,
     meta_post_selection_ood_input_features: list[str] | None = None,
     meta_post_selection_ood_enabled: bool = False,
     objective_mode: str | None = "train_base",
@@ -19780,16 +21010,12 @@ def _cross_val_oof_lgbm_with_meta_features(
             X_va = Xf.iloc[va].reset_index(drop=True)
         ae_state: dict[str, Any] | None = None
         if use_ae_gmm_transform:
-            ae_state = _fit_ae_gmm_post_selection_state(
-                X_tr,
-                base_model_features,
-                np.arange(len(X_tr), dtype=np.int32),
-                y_metric=y_metric[tr],
-                returns=ret_arr[tr],
-                label_context=_slice_label_context(label_context, tr, len(y_arr)),
-                timestamps=_take_aligned(timestamps, tr, len(y_arr)),
-                random_state=int(random_state + fold_i * 2221),
-            )
+            if not _ae_gmm_state_enabled(fixed_ae_gmm_state):
+                raise RuntimeError(
+                    "AE/GMM final OOF requires the one frozen training-cycle state; "
+                    "fold-local AE/GMM fitting is disabled."
+                )
+            ae_state = dict(fixed_ae_gmm_state or {})
             if ae_feature_names:
                 X_tr = _append_ae_gmm_features_to_model_frame(
                     X_tr,
@@ -21148,6 +22374,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
     preset_best_params: Optional[dict[str, Any]] = None,
     mda_config: Mapping[str, Any] | None = None,
     protected_features: Sequence[str] | None = None,
+    pre_mda_bypass_features: Sequence[str] | None = None,
     label_context: Mapping[str, Any] | None = None,
 ) -> tuple[
     list[str], list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]
@@ -21160,6 +22387,22 @@ def _run_lgbm_side_aware_feature_selection_tail(
         timestamps=timestamps,
         objective_mode=objective_mode,
     )
+    side_tail_across_archetypes = bool(
+        (mda_config or {}).get("side_tail_across_archetypes_unweighted", False)
+    )
+    side_tail_weight = None
+    if side_tail_across_archetypes and isinstance(label_context, Mapping):
+        candidate_weight = np.asarray(
+            label_context.get("side_mda_sample_weight", []), dtype=np.float32
+        )
+        if len(candidate_weight) == n:
+            side_tail_weight = candidate_weight
+    available = {str(column) for column in X.columns}
+    pre_mda_bypass = [
+        str(feature)
+        for feature in dict.fromkeys(pre_mda_bypass_features or [])
+        if str(feature) in available
+    ]
 
     def _run_global() -> tuple[
         list[str],
@@ -21169,11 +22412,20 @@ def _run_lgbm_side_aware_feature_selection_tail(
         np.ndarray,
         dict[str, Any],
     ]:
-        cluster = _redundancy_cluster_filter(
-            X,
-            precluster_features,
-            score_map,
-            random_state=random_state,
+        if bool((mda_config or {}).get("skip_redundancy_cluster_filter", False)):
+            cluster = list(precluster_features)
+        else:
+            cluster = _redundancy_cluster_filter(
+                X,
+                precluster_features,
+                score_map,
+                random_state=random_state,
+                archetype_labels=archetype_labels,
+            )
+        cluster = _append_lgbm_forced_selector_features(
+            cluster,
+            X.columns,
+            pre_mda_bypass,
         )
         selected, history, stats, oof, metrics = _iterative_feature_prune(
             X,
@@ -21192,6 +22444,12 @@ def _run_lgbm_side_aware_feature_selection_tail(
             protected_features=protected_features,
             archetype_labels=archetype_labels,
         )
+        selected = _ensure_feature_family_coverage(
+            selected,
+            cluster,
+            score_map,
+            enabled=bool((mda_config or {}).get("feature_family_coverage", True)),
+        )
         metrics = dict(metrics)
         metrics["per_side_feature_selection_enabled"] = False
         metrics["per_side_feature_selection_reason"] = "global_path"
@@ -21209,6 +22467,11 @@ def _run_lgbm_side_aware_feature_selection_tail(
         min_rows=LGBM_PER_SIDE_MIN_ROWS,
     )
     if len(side_indices) < 2:
+        if _normalize_objective_mode(objective_mode) == "train_meta":
+            raise ValueError(
+                "train_meta requires independent long and short feature-selection "
+                "support; global MDA fallback is disabled."
+            )
         cluster, selected, history, stats, oof, metrics = _run_global()
         metrics["per_side_feature_selection_reason"] = "insufficient_side_support"
         metrics["per_side_feature_selection_side_counts"] = side_diag.get(
@@ -21220,7 +22483,9 @@ def _run_lgbm_side_aware_feature_selection_tail(
     tprint(
         "LGBM side-aware feature-selection tail started: "
         f"sides={list(side_indices.keys())}, counts={side_diag.get('side_counts')}, "
-        f"precluster_features={len(precluster_features)}."
+        f"precluster_features={len(precluster_features)}, "
+        f"across_archetypes_unweighted={side_tail_across_archetypes}, "
+        f"weight_source={'economic_tail_only' if side_tail_weight is not None else ('uniform' if side_tail_across_archetypes else 'input_sample_weight')}."
     )
     feature_order = {str(c): i for i, c in enumerate(X.columns)}
     cluster_union: list[str] = []
@@ -21233,22 +22498,49 @@ def _run_lgbm_side_aware_feature_selection_tail(
     for offset, (side, idx) in enumerate(side_indices.items(), start=1):
         X_side = X.iloc[idx].reset_index(drop=True)
         y_side = np.asarray(y)[idx]
-        sw_side, _ = _normalize_weights(
-            np.asarray(sample_weight, dtype=np.float32)[idx]
-        )
+        if side_tail_across_archetypes:
+            raw_side_weight = (
+                side_tail_weight[idx]
+                if side_tail_weight is not None
+                else np.ones(len(idx), dtype=np.float32)
+            )
+        else:
+            raw_side_weight = np.asarray(sample_weight, dtype=np.float32)[idx]
+        sw_side, _ = _normalize_weights(raw_side_weight)
         metric_side = metric_arr[idx]
         returns_side = None if returns is None else np.asarray(returns)[idx]
         ts_side = _take_aligned(timestamps, idx, n)
         groups_side = _groups_take(groups, idx)
         side_mda_config = dict(mda_config or {})
+        if side_tail_across_archetypes:
+            side_mda_config["archetype_conditioned_enabled"] = False
         report_dir = str(side_mda_config.get("report_dir", "") or "").strip()
         if report_dir:
             side_mda_config["report_dir"] = str(Path(report_dir) / f"side_{side}")
-        cluster_side = _redundancy_cluster_filter(
-            X_side,
-            precluster_features,
-            score_map,
-            random_state=random_state + offset * 503,
+        if bool(side_mda_config.get("skip_redundancy_cluster_filter", False)):
+            cluster_side = list(precluster_features)
+        else:
+            cluster_side = _redundancy_cluster_filter(
+                X_side,
+                precluster_features,
+                score_map,
+                random_state=random_state + offset * 503,
+                archetype_labels=(
+                    None
+                    if side_tail_across_archetypes
+                    else (
+                        np.asarray(archetype_labels)[idx]
+                        if archetype_labels is not None
+                        else None
+                    )
+                ),
+            )
+        # Preserve interaction-only state descriptors through redundancy
+        # clustering; iterative MDA below remains the final arbiter.
+        cluster_side = _append_lgbm_forced_selector_features(
+            cluster_side,
+            X_side.columns,
+            pre_mda_bypass,
         )
         cluster_by_side[side] = list(cluster_side)
         cluster_union = _ordered_unique_features(
@@ -21271,11 +22563,21 @@ def _run_lgbm_side_aware_feature_selection_tail(
                 mda_config=side_mda_config,
                 protected_features=protected_features,
                 archetype_labels=(
-                    np.asarray(archetype_labels)[idx]
-                    if archetype_labels is not None
-                    else None
+                    None
+                    if side_tail_across_archetypes
+                    else (
+                        np.asarray(archetype_labels)[idx]
+                        if archetype_labels is not None
+                        else None
+                    )
                 ),
             )
+        )
+        selected_side = _ensure_feature_family_coverage(
+            selected_side,
+            cluster_side,
+            score_map,
+            enabled=bool((mda_config or {}).get("feature_family_coverage", True)),
         )
         selected_by_side[side] = list(selected_side)
         if len(oof_side) == len(idx):
@@ -21293,6 +22595,16 @@ def _run_lgbm_side_aware_feature_selection_tail(
             "J_final": float(metrics_side.get("J_final", np.nan)),
             "J_base": float(metrics_side.get("J_base", np.nan)),
             "J_meta": float(metrics_side.get("J_meta", np.nan)),
+            "across_archetypes_unweighted": bool(side_tail_across_archetypes),
+            "weight_source": (
+                "economic_tail_only"
+                if side_tail_weight is not None
+                else (
+                    "uniform"
+                    if side_tail_across_archetypes
+                    else "input_sample_weight"
+                )
+            ),
         }
         tprint(
             "LGBM side-aware feature-selection side complete: "
@@ -21323,8 +22635,15 @@ def _run_lgbm_side_aware_feature_selection_tail(
         "per_side_feature_selection_side_metrics": per_side_metrics,
         "per_side_feature_selection_cluster_union_count": int(len(cluster_union)),
         "per_side_feature_selection_selected_union_count": int(len(selected_union)),
+        "per_side_feature_selection_selected_features": {
+            str(side): list(features)
+            for side, features in selected_by_side.items()
+        },
         "per_side_feature_selection_elapsed_sec": float(time.perf_counter() - t0),
         "archetype_conditioned_mda": dict(archetype_mda_diag),
+        "per_side_mda_across_archetypes_unweighted": bool(
+            side_tail_across_archetypes
+        ),
     }
     tprint(
         "LGBM side-aware feature-selection tail complete: "
@@ -21563,6 +22882,7 @@ def train_lgbm_stability_candidate(
     mda_config = _resolve_lgbm_mda_config(
         cfg, reference_artifact_dir=reference_artifact_dir
     )
+    prescreen_config = _resolve_lgbm_archetype_prescreen_config(cfg)
     tprint(f"LGBM stability candidate training started (objective={objective_mode}).")
     t0 = time.perf_counter()
     classifier = mode == "classifier"
@@ -21608,21 +22928,94 @@ def train_lgbm_stability_candidate(
             columns=[c for c in oi_metadata_cols if c in X_raw_df.columns],
             errors="ignore",
         )
+    ae_gmm_cycle_selection_diag: dict[str, Any] = {
+        "enabled": False,
+        "reason": "cycle_state_path_unavailable",
+    }
+    if _ae_gmm_cycle_state_path(cfg) is not None:
+        X_df, _, ae_gmm_cycle_selection_diag = (
+            _fit_or_load_ae_gmm_cycle_state_for_selection(
+                X_df,
+                y_metric=y_metric,
+                returns=ret_arr,
+                label_context=label_context,
+                timestamps=timestamps,
+                assets=assets,
+                random_state=random_state,
+                cfg=cfg,
+            )
+        )
+        # Generated AE/GMM columns are complete frozen transforms and must be
+        # evaluated by the same univariate/Relief/redundancy/MDA path as raw
+        # candidates.  Keep the quality/coverage source in sync with that
+        # augmented feature-selection frame.
+        X_raw_df = X_df.copy()
     selection_stage_family_audit_rows: list[dict[str, Any]] = []
     pre_coverage_features = list(map(str, X_df.columns))
     pre_coverage_quality = _feature_selection_quality_snapshot(
         X_raw_df.reindex(columns=pre_coverage_features),
         pre_coverage_features,
     )
-    coverage_exempt_features = (
-        {str(c) for c in X_df.columns if _is_lgbm_model_derived_meta_feature(str(c))}
-        if objective_mode == "train_meta"
-        else set()
-    )
+    # A selected contract must be jointly observable. Model-derived meta
+    # features are therefore not exempt by default; an explicit experiment can
+    # still request legacy exemptions, but production base/meta selection uses
+    # the same complete-case rule for every candidate.
+    coverage_exempt_features = set()
+    if _config_bool(
+        cfg,
+        "lgbm_feature_coverage_allow_model_derived_exemptions",
+        False,
+        env_key="EPM_LGBM_FEATURE_COVERAGE_ALLOW_MODEL_DERIVED_EXEMPTIONS",
+    ) and objective_mode == "train_meta":
+        coverage_exempt_features = {
+            str(c)
+            for c in X_df.columns
+            if _is_lgbm_model_derived_meta_feature(str(c))
+        }
     coverage_survivors, coverage_diagnostics = _recent_feature_coverage_survivors(
         X_raw_df.reindex(columns=list(X_df.columns)),
         timestamps,
         exempt_features=coverage_exempt_features,
+        require_joint_complete_case=_config_bool(
+            cfg,
+            "lgbm_joint_complete_case_filter_enabled",
+            True,
+            env_key="EPM_LGBM_JOINT_COMPLETE_CASE_FILTER_ENABLED",
+        ),
+        min_feature_coverage=float(
+            np.clip(
+                float(
+                    (cfg or {}).get(
+                        "lgbm_feature_min_coverage",
+                        LGBM_FEATURE_RECENT_MIN_COVERAGE,
+                    )
+                    if isinstance(cfg, Mapping)
+                    else LGBM_FEATURE_RECENT_MIN_COVERAGE
+                ),
+                0.0,
+                1.0,
+            )
+        ),
+        coverage_scope=str(
+            (cfg or {}).get(
+                "lgbm_feature_coverage_scope", LGBM_FEATURE_COVERAGE_SCOPE
+            )
+            if isinstance(cfg, Mapping)
+            else LGBM_FEATURE_COVERAGE_SCOPE
+        ),
+        warmup_days=int(
+            (cfg or {}).get(
+                "lgbm_feature_coverage_warmup_days",
+                LGBM_FEATURE_COVERAGE_WARMUP_DAYS,
+            )
+            if isinstance(cfg, Mapping)
+            else LGBM_FEATURE_COVERAGE_WARMUP_DAYS
+        ),
+        warmup_reference_start=(
+            (cfg or {}).get("lgbm_feature_coverage_reference_start")
+            if isinstance(cfg, Mapping)
+            else None
+        ),
     )
     selection_stage_family_audit_rows.extend(
         _feature_selection_family_audit_rows(
@@ -21643,7 +23036,7 @@ def train_lgbm_stability_candidate(
             "LGBM recent complete-case feature availability filter "
             "(in-memory post-upstream feature set): "
             f"{len(X_df.columns)} -> {len(coverage_survivors)} features "
-            f"(target>={LGBM_FEATURE_RECENT_MIN_COVERAGE:.0%}, "
+            f"(target>={float(coverage_diagnostics.get('feature_recent_min_coverage', float('nan'))):.0%}, "
             f"joint={float(coverage_diagnostics.get('feature_recent_joint_coverage', float('nan'))):.1%}, "
             f"rows={int(coverage_diagnostics.get('feature_recent_row_count', 0))}, "
             f"exempt_model_derived={int(coverage_diagnostics.get('feature_recent_exempt_model_derived_count', 0))}, "
@@ -21676,11 +23069,20 @@ def train_lgbm_stability_candidate(
         cfg,
         objective_mode=objective_mode,
     )
+    pre_mda_bypass_features = _resolve_lgbm_pre_mda_bypass_features(
+        X_df.columns,
+        cfg,
+    )
     mda_config = _extend_lgbm_mda_force_include(mda_config, forced_time_features)
     if forced_time_features:
         tprint(
             "LGBM selector time-feature bypass active: "
             f"objective={objective_mode}, features={forced_time_features}."
+        )
+    if pre_mda_bypass_features:
+        tprint(
+            "LGBM pre-MDA conditional-feature bypass active: "
+            f"objective={objective_mode}, features={pre_mda_bypass_features}."
         )
     preset_features = [str(c) for c in (preset_feature_names or []) if str(c).strip()]
     regime_score_feature_diag: dict[str, Any] = {"enabled": False, "reason": "disabled"}
@@ -21926,6 +23328,7 @@ def train_lgbm_stability_candidate(
             random_state + 1701,
             timestamps=race_timestamps,
             objective_mode=objective_mode,
+            allow_short_history_fallback=True,
         )
         tprint(
             "LGBM candidate split using forward_burnin latest holdout: "
@@ -22006,13 +23409,84 @@ def train_lgbm_stability_candidate(
         X_select,
         list(map(str, X_select.columns)),
     )
+    correlation_first = bool(
+        (mda_config or {}).get("correlation_pruning_before_prescreen", False)
+    )
+    if correlation_first and not preset_features:
+        before_features = list(map(str, X_select.columns))
+        floor_ratio = float(
+            np.clip(
+                float((mda_config or {}).get("correlation_pruning_floor_ratio", 0.50)),
+                0.0,
+                1.0,
+            )
+        )
+        floor_count = max(
+            0, int((mda_config or {}).get("correlation_pruning_floor_count", 300))
+        )
+        min_retained = min(
+            len(before_features),
+            max(floor_count, int(math.ceil(floor_ratio * len(before_features)))),
+        )
+        pre_archetypes, _ = _feature_selection_archetype_labels(
+            X_select,
+            label_context=select_label_context,
+            timestamps=select_timestamps,
+            objective_mode=objective_mode,
+        )
+        protected_pre = _ordered_unique_features(
+            list(forced_time_features) + list(pre_mda_bypass_features)
+        )
+        retained = _redundancy_cluster_filter(
+            X_select,
+            before_features,
+            {},
+            random_state=random_state + 79,
+            corr_threshold=float(
+                (mda_config or {}).get(
+                    "correlation_pruning_threshold",
+                    LGBM_REDUNDANCY_CORR_THRESHOLD,
+                )
+            ),
+            archetype_labels=pre_archetypes,
+            min_retained=min_retained,
+            representative_policy="availability_variance",
+            protected_features=protected_pre,
+        )
+        X_select = X_select.reindex(columns=retained)
+        mda_config = dict(mda_config or {})
+        mda_config["skip_redundancy_cluster_filter"] = True
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=15,
+                stage="correlation_first_prune",
+                candidate_features=before_features,
+                selected_features=retained,
+                quality=selection_quality,
+                default_drop_reason="correlation_first_prune",
+                objective_mode=objective_mode,
+            )
+        )
+        tprint(
+            "LGBM correlation-first pre-screen complete: "
+            f"{len(before_features)} -> {len(retained)} features; "
+            f"floor={min_retained}."
+        )
     archetype_fs_diag: dict[str, Any] = {
         "enabled": False,
         "reason": "native_preset_or_not_started",
+        "mode": "native_preset",
+        "configured_enabled": bool(
+            prescreen_config["archetype_univariate_prescreen_enabled"]
+        ),
     }
     relief_archetype_diag: dict[str, Any] = {
         "enabled": False,
         "reason": "native_preset_or_not_started",
+        "mode": "native_preset",
+        "configured_enabled": bool(
+            prescreen_config["archetype_relief_prescreen_enabled"]
+        ),
     }
     if preset_features:
         missing_preset = [c for c in preset_features if c not in X_df.columns]
@@ -22065,18 +23539,19 @@ def train_lgbm_stability_candidate(
             f"selected={len(selected_features)}, source={preset_source or 'unknown'}."
         )
     else:
-        uni_features, uni_stats, archetype_fs_diag = (
-            _univariate_directional_filter_archetype_union(
-                X_select,
-                y_metric_select,
-                classifier=classifier,
-                groups=select_groups,
-                returns=ret_select,
-                timestamps=select_timestamps,
-                random_state=random_state + 101,
-                objective_mode=objective_mode,
-                label_context=select_label_context,
-            )
+        uni_features, uni_stats, archetype_fs_diag = _run_lgbm_univariate_prescreen(
+            X_select,
+            y_metric_select,
+            archetype_enabled=prescreen_config[
+                "archetype_univariate_prescreen_enabled"
+            ],
+            classifier=classifier,
+            groups=select_groups,
+            returns=ret_select,
+            timestamps=select_timestamps,
+            random_state=random_state + 101,
+            objective_mode=objective_mode,
+            label_context=select_label_context,
         )
         uni_features = _append_lgbm_forced_selector_features(
             uni_features,
@@ -22086,6 +23561,15 @@ def train_lgbm_stability_candidate(
         uni_stats = _mark_lgbm_forced_selector_bypass(
             uni_stats,
             forced_time_features,
+        )
+        uni_features = _append_lgbm_forced_selector_features(
+            uni_features,
+            X_select.columns,
+            pre_mda_bypass_features,
+        )
+        uni_stats = _mark_lgbm_pre_mda_selector_bypass(
+            uni_stats,
+            pre_mda_bypass_features,
         )
         tprint(f"LGBM candidate after univariate filter: {len(uni_features)} features.")
         selection_stage_family_audit_rows.extend(
@@ -22106,21 +23590,19 @@ def train_lgbm_stability_candidate(
                 uni_stats["univariate_j"].astype(float),
             )
         )
-        archetype_labels, archetype_relief_diag = _feature_selection_archetype_labels(
-            X_select,
-            label_context=select_label_context,
-            timestamps=select_timestamps,
-            objective_mode=objective_mode,
-        )
         relief_features, relief_stats, relief_archetype_diag = (
-            _relief_rescue_filter_archetype_union(
+            _run_lgbm_relief_prescreen(
                 X_select,
                 y_metric_select,
                 uni_features,
+                archetype_enabled=prescreen_config[
+                    "archetype_relief_prescreen_enabled"
+                ],
                 classifier=classifier,
                 random_state=random_state + 151,
-                archetype_labels=archetype_labels,
-                archetype_diag=archetype_relief_diag,
+                timestamps=select_timestamps,
+                objective_mode=objective_mode,
+                label_context=select_label_context,
             )
         )
         relief_score_map: dict[str, float] = {}
@@ -22143,6 +23625,11 @@ def train_lgbm_stability_candidate(
             precluster_features,
             X_select.columns,
             forced_time_features,
+        )
+        precluster_features = _append_lgbm_forced_selector_features(
+            precluster_features,
+            X_select.columns,
+            pre_mda_bypass_features,
         )
         tprint(
             "LGBM candidate after ReliefF rescue: "
@@ -22183,6 +23670,7 @@ def train_lgbm_stability_candidate(
             preset_best_params=preset_best_params,
             mda_config=mda_config,
             protected_features=forced_time_features,
+            pre_mda_bypass_features=pre_mda_bypass_features,
             label_context=select_label_context,
         )
         cluster_features = _append_lgbm_forced_selector_features(
@@ -22460,6 +23948,20 @@ def train_lgbm_stability_candidate(
     metrics["n_relief_rescued_features"] = int(len(relief_features))
     metrics["n_precluster_features"] = int(len(precluster_features))
     metrics["n_cluster_features"] = int(len(cluster_features))
+    metrics["archetype_univariate_prescreen_enabled"] = bool(
+        prescreen_config["archetype_univariate_prescreen_enabled"]
+    )
+    metrics["archetype_univariate_prescreen_mode"] = str(
+        archetype_fs_diag.get("mode", "")
+    )
+    metrics["archetype_univariate_prescreen_diagnostics"] = dict(archetype_fs_diag)
+    metrics["archetype_relief_prescreen_enabled"] = bool(
+        prescreen_config["archetype_relief_prescreen_enabled"]
+    )
+    metrics["archetype_relief_prescreen_mode"] = str(
+        relief_archetype_diag.get("mode", "")
+    )
+    metrics["archetype_relief_prescreen_diagnostics"] = dict(relief_archetype_diag)
     metrics["archetype_feature_selection_enabled"] = bool(
         archetype_fs_diag.get("enabled", False)
     )
@@ -22520,6 +24022,14 @@ def train_lgbm_stability_candidate(
     metrics["time_feature_selector_bypass_feature_count"] = int(
         len(forced_time_features)
     )
+    metrics["pre_mda_bypass_enabled"] = bool(pre_mda_bypass_features)
+    metrics["pre_mda_bypass_features"] = list(pre_mda_bypass_features)
+    metrics["pre_mda_bypass_feature_count"] = int(len(pre_mda_bypass_features))
+    metrics["pre_mda_bypass_selected_features"] = [
+        feature
+        for feature in pre_mda_bypass_features
+        if feature in set(selected_features)
+    ]
     metrics["feature_pruning_rounds_completed"] = int(len(history))
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
@@ -22569,6 +24079,13 @@ def train_lgbm_stability_candidate(
     metrics.update(_lgbm_cv_metric_fields(objective_mode))
     metrics.update(oi_diagnostics)
     metrics.update(coverage_diagnostics)
+    metrics["ae_gmm_cycle_selection"] = dict(ae_gmm_cycle_selection_diag)
+    metrics["ae_gmm_cycle_selection_enabled"] = bool(
+        ae_gmm_cycle_selection_diag.get("enabled", False)
+    )
+    metrics["ae_gmm_cycle_selection_state_hash"] = str(
+        ae_gmm_cycle_selection_diag.get("cycle_state_hash", "")
+    )
     metrics["feature_selection_sample_policy"] = "stratified_spread_across_ordered_rows"
     metrics["race_n"] = int(len(eval_local))
     metrics["race_select_n"] = int(len(select_local))
@@ -22720,6 +24237,7 @@ def fit_lgbm_stability_full_model(
     assessment_X: Any = None,
     assessment_timestamps: Any = None,
     assessment_assets: Any = None,
+    fixed_ae_gmm_state: Mapping[str, Any] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     t0 = time.perf_counter()
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
@@ -22967,12 +24485,41 @@ def fit_lgbm_stability_full_model(
     }
     X_oof_source_df = X_df if raw_contrib_input_features else X_model_df
     if _lgbm_ae_gmm_enabled(cfg):
-        ae_gmm_input_features, ae_gmm_input_policy_diag = (
-            _apply_ae_gmm_input_feature_policy(
-                selected_features,
-                X_model_df.columns,
-            )
+        cycle_state = (
+            dict(fixed_ae_gmm_state or {})
+            if _ae_gmm_state_enabled(fixed_ae_gmm_state)
+            else _load_ae_gmm_cycle_state(cfg)
         )
+        if _ae_gmm_state_enabled(cycle_state):
+            ae_gmm_input_features = [
+                str(col) for col in cycle_state.get("feature_columns", []) or []
+            ]
+            missing_cycle_inputs = [
+                col for col in ae_gmm_input_features if col not in X_model_df.columns
+            ]
+            if missing_cycle_inputs:
+                raise RuntimeError(
+                    "The frozen AE/GMM cycle state cannot be reused because its input "
+                    f"contract is missing {len(missing_cycle_inputs)} columns: "
+                    f"{missing_cycle_inputs[:12]}"
+                )
+            ae_gmm_input_policy_diag = {
+                **ae_gmm_input_policy_diag,
+                "policy": "frozen_cycle_state_feature_contract",
+                "selected_input_feature_count_before_policy": int(
+                    len(ae_gmm_input_features)
+                ),
+                "selected_input_feature_count_after_policy": int(
+                    len(ae_gmm_input_features)
+                ),
+            }
+        else:
+            ae_gmm_input_features, ae_gmm_input_policy_diag = (
+                _apply_ae_gmm_input_feature_policy(
+                    selected_features,
+                    X_model_df.columns,
+                )
+            )
         if len(ae_gmm_input_features) >= 2:
             select_idx = np.asarray(
                 stage_indices.get("lgbm_select", hpo_idx), dtype=np.int32
@@ -22986,26 +24533,28 @@ def fit_lgbm_stability_full_model(
                     ]
                 )
             ).astype(np.int32)
-            ae_gmm_state = _fit_ae_gmm_post_selection_state(
-                X_model_df,
-                ae_gmm_input_features,
-                repr_idx,
-                y_metric=y_metric,
-                returns=ret_arr,
-                label_context=label_context,
-                timestamps=timestamps,
-                random_state=random_state + 90221,
-            )
-            ae_gmm_feature_names = (
+            if _ae_gmm_state_enabled(cycle_state):
+                ae_gmm_state = dict(cycle_state)
+            else:
+                raise RuntimeError(
+                    "AE/GMM full-model fitting requires the exact state created once "
+                    "during cycle feature selection/HPO. Refitting in the final model "
+                    "or an OOS fold is forbidden."
+                )
+            eligible_ae_gmm_feature_names = (
                 _ae_gmm_model_feature_names_for_objective(objective_mode)
                 if _ae_gmm_state_enabled(ae_gmm_state)
                 else []
             )
+            # The cycle outputs entered feature selection before MDA. Do not
+            # force all of them back into the final model after selection.
+            ae_gmm_feature_names = [
+                col
+                for col in eligible_ae_gmm_feature_names
+                if col in set(selected_features)
+            ]
             ae_gmm_context_feature_names = _ae_gmm_context_feature_names_for_objective(
                 objective_mode
-            )
-            selected_features = list(
-                dict.fromkeys(list(selected_features) + list(ae_gmm_feature_names))
             )
             if ae_gmm_feature_names:
                 X_model_df = _append_ae_gmm_features_to_model_frame(
@@ -23044,7 +24593,11 @@ def fit_lgbm_stability_full_model(
                     )
                     or []
                 ),
-                "ae_gmm_fit_rows": int(len(repr_idx)),
+                "ae_gmm_fit_rows": int(
+                    ae_gmm_state.get("cycle_reference_rows_sampled", 0)
+                    or ae_gmm_state.get("gmm_fit_rows", 0)
+                    or 0
+                ),
                 "ae_gmm_train_rows_available": int(
                     ae_gmm_state.get("train_rows_available", 0) or 0
                 ),
@@ -23065,8 +24618,26 @@ def fit_lgbm_stability_full_model(
                 "ae_gmm_selected_config": _json_sanitize(
                     ae_gmm_state.get("selected_config", ae_gmm_state.get("report", {}))
                 ),
-                "ae_gmm_supervised_hpo": bool(label_context is not None),
-                "ae_gmm_oof_generation_policy": "fold_train_state_for_oof_meta_cv",
+                "ae_gmm_supervised_hpo": bool(
+                    label_context is not None
+                    and not ae_gmm_state.get(
+                        "representation_selection_outcome_free", False
+                    )
+                ),
+                "ae_gmm_representation_selection_outcome_free": bool(
+                    ae_gmm_state.get(
+                        "representation_selection_outcome_free", False
+                    )
+                ),
+                "ae_gmm_oof_generation_policy": "single_cycle_state_for_all_oof_folds",
+                "ae_gmm_cycle_contract_version": str(
+                    ae_gmm_state.get("cycle_contract_version", "")
+                ),
+                "ae_gmm_cycle_state_hash": str(
+                    ae_gmm_state.get("cycle_state_hash")
+                    or ae_gmm_learned_transform_hash(ae_gmm_state)
+                ),
+                "ae_gmm_cycle_state_path": str(_ae_gmm_cycle_state_path(cfg) or ""),
                 "ae_gmm_model_hard_cluster_id_features_enabled": bool(
                     LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES
                 ),
@@ -23948,6 +25519,7 @@ def fit_lgbm_stability_full_model(
             ae_gmm_feature_names=ae_gmm_feature_names,
             ae_gmm_context_feature_names=ae_gmm_context_feature_names,
             ae_gmm_enabled=bool(ae_gmm_input_features),
+            fixed_ae_gmm_state=ae_gmm_state,
             meta_post_selection_ood_input_features=meta_post_selection_ood_input_features,
             meta_post_selection_ood_enabled=bool(
                 meta_post_selection_ood_reference.get("enabled", False)
@@ -24518,6 +26090,7 @@ def train_lgbm_stability_pipeline(
     assessment_X: Any = None,
     assessment_timestamps: Any = None,
     assessment_assets: Any = None,
+    fixed_ae_gmm_state: Mapping[str, Any] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     candidate = train_lgbm_stability_candidate(
@@ -24697,6 +26270,7 @@ def train_lgbm_stability_pipeline(
         assessment_X=assessment_X,
         assessment_timestamps=assessment_timestamps,
         assessment_assets=assessment_assets,
+        fixed_ae_gmm_state=fixed_ae_gmm_state,
     )
 
 

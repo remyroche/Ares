@@ -4,12 +4,61 @@ This file is the entry point for automated work in this repository. Read the
 relevant contract under `agents/` before changing data, models, validation, or
 execution behavior.
 
+## Sub-Agent Delegation
+
+Use sub-agents proactively whenever a task has relevant work that can proceed
+independently. Do not wait for the user to request delegation explicitly. Before
+delegating, identify the immediate critical-path task and keep that work in the
+main agent; delegate bounded sidecars that can run in parallel without blocking
+the next local action.
+
+Use `gpt-5.6-terra` and select reasoning effort according to the work:
+
+- **Terra Medium**: targeted repository searches, artifact inventories, test-log
+  inspection, small isolated fixes, and other well-bounded routine work.
+- **Terra High**: cross-module audits, implementation of meaningful isolated
+  components, model/policy metric analysis, parity investigations, and test
+  design where several contracts interact.
+- **Terra XHigh**: difficult root-cause analysis, leakage-sensitive model or
+  feature design, production inference/replay discrepancies, major architectural
+  changes, and high-stakes quantitative validation.
+
+Prefer multiple parallel sub-agents when there are genuinely independent
+questions or disjoint write scopes. Every delegated task must have a concrete
+deliverable and, for code edits, explicit file ownership. Tell workers that the
+worktree is shared and that they must preserve and accommodate existing edits.
+Do not delegate the same investigation twice, do not delegate a task whose
+result is required before the main agent can make its next move, and do not use
+sub-agents for trivial single-command work.
+
+Use delegation to reduce main-thread context and total token use, not merely to
+move work elsewhere:
+
+- Give each sub-agent the smallest self-contained prompt and file/artifact scope
+  needed for its task. Do not fork the full conversation context unless the task
+  genuinely depends on it.
+- Ask for compact, evidence-first results: conclusions, exact paths/lines,
+  commands/tests run, metrics, and changed files. Avoid long narrative recaps.
+- Let sub-agents read large logs, reports, and artifact trees, then return only
+  the relevant findings so those raw contents do not enter the main context.
+- Reuse an existing sub-agent for closely related follow-up work instead of
+  spawning another agent and repeating context.
+- Do not delegate when the prompt, synchronization, and review overhead is
+  likely to exceed the work or token cost of handling the task locally.
+- Preserve essential sub-agent findings in a short main-thread summary before
+  closing the agent; do not copy its full output unless it is required evidence.
+
+Continue useful local work while sub-agents run. Review their evidence or code
+before relying on it, integrate only changes consistent with the contracts in
+this file, and close completed agents promptly.
+
 ## Current Pipeline
 
 The production research path is:
 
 1. Causal, point-in-time feature generation.
-2. Train-only AE/GMM state discovery, frozen before OOS assignment.
+2. Cycle-reference AE/GMM state discovery, fitted once with sampled
+   beginning/middle/end rows at feature-selection/HPO time and then frozen.
 3. Global, archetype-aware base models with explicit long/short handling.
 4. Top-30% base candidate handoff to the meta model.
 5. A side- and archetype-aware meta model trained on the base candidate stream.
@@ -48,11 +97,17 @@ explicitly tests that change.
 
 ## Non-Negotiable Contracts
 
+- Use UTC for storage, joins, model features, labels, replay, inference, and
+  artifact timestamps. Legacy naive timestamps are interpreted as UTC; never
+  infer host-local time. Europe/Paris/CEST is display, email, and UI only.
 - Preserve temporal ordering, purging, and embargo where label paths overlap.
-- Fit scalers, AE/GMM, feature selection, HPO, calibration, and priors only on
+- Fit feature selection/HPO, calibration, priors, and supervised models only on
   rows permitted by the relevant training/validation contract.
-- Keep AE/GMM state frozen across growing OOS windows so cluster semantics do
-  not change between folds.
+- Fit scaler/AE/GMM exactly once per model cycle on the designated sampled
+  beginning/middle/end reference period. Reuse that exact serialized state for
+  every base/meta growing window, final refit, replay, and inference. This
+  reference fit is an explicitly disclosed representation-selection exception;
+  it must never consume outcomes or justify an untouched-OOS claim.
 - Keep long and short rows separate in diagnostics and side-aware stages.
 - Treat archetypes as context unless a leakage-safe OOS test supports gating.
 - Compare models on identical rows, periods, costs, labels, and top-k basis.

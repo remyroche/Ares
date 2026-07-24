@@ -632,6 +632,26 @@ def _prune_generated_state_blocks(
             ) and not is_temporal(name)
         if "B5_state_transitions" in requested:
             include |= is_temporal(name)
+        if "B6_compact_residual_state" in requested:
+            include |= any(
+                token in name
+                for token in (
+                    "posterior_max",
+                    "posterior_second",
+                    "posterior_margin",
+                    "effective_components",
+                    "entropy",
+                    "novelty",
+                    "reconstruction_error",
+                    "local_arch_signature_pred_negative",
+                    "local_arch_signature_pred_positive",
+                    "local_arch_signature_expected_negative",
+                    "local_arch_signature_expected_positive",
+                    "local_arch_signature_expected_mean_ev",
+                    "local_arch_signature_expected_bad_mae",
+                    "local_arch_signature_expected_timeout",
+                )
+            ) and not is_temporal(name)
         if include:
             keep.append(name)
     return generated.loc[:, list(dict.fromkeys(keep))]
@@ -1097,6 +1117,32 @@ def _state_blocks(
         "B3_static_state_posteriors": list(dict.fromkeys(posterior)),
         "B4_state_uncertainty": list(dict.fromkeys(uncertainty)),
         "B5_state_transitions": list(dict.fromkeys(temporal)),
+        "B6_compact_residual_state": list(
+            dict.fromkeys(
+                name
+                for name in columns
+                if any(
+                    token in name
+                    for token in (
+                        "posterior_max",
+                        "posterior_second",
+                        "posterior_margin",
+                        "effective_components",
+                        "entropy",
+                        "novelty",
+                        "reconstruction_error",
+                        "local_arch_signature_pred_negative",
+                        "local_arch_signature_pred_positive",
+                        "local_arch_signature_expected_negative",
+                        "local_arch_signature_expected_positive",
+                        "local_arch_signature_expected_mean_ev",
+                        "local_arch_signature_expected_bad_mae",
+                        "local_arch_signature_expected_timeout",
+                    )
+                )
+                and not is_temporal(name)
+            )
+        ),
     }
 
 
@@ -1268,6 +1314,7 @@ def _fit_fixed_revision(
     *,
     arm: str,
     seed: int,
+    sample_weight_multiplier: pd.Series | np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, Any, dict[str, Any]]:
     train_local, eval_local = _add_reference_fold_features(train, evaluation)
     raw_features = [
@@ -1278,6 +1325,12 @@ def _fit_fixed_revision(
     ]
     target, target_column = _base_soft_label_target(train_local)
     target_mask = target.notna()
+    local_weight_multiplier = None
+    if sample_weight_multiplier is not None:
+        local_weight_multiplier = pd.Series(
+            np.asarray(sample_weight_multiplier, dtype=np.float32),
+            index=train_local.index,
+        ).loc[target_mask].reset_index(drop=True)
     train_local = train_local.loc[target_mask].reset_index(drop=True)
     target = target.loc[target_mask].reset_index(drop=True)
     x_train, x_eval, medians = _matrix_fit_transform(
@@ -1297,6 +1350,7 @@ def _fit_fixed_revision(
         train_local,
         int(seed),
         lgbm_params=dict(params),
+        sample_weight_multiplier=local_weight_multiplier,
     )
     if model is None:
         raise RuntimeError(f"Fixed champion meta fit failed for {arm}")
@@ -1356,6 +1410,7 @@ def _fit_fixed_revision(
             "model_features": model_features,
             "medians": medians,
             "ood_state": ood_state,
+            "sample_weight_multiplier_used": sample_weight_multiplier is not None,
         },
     )
 
@@ -2294,6 +2349,23 @@ def _canonical_final_model(
         dtype=np.float32
     )
     returns = pd.to_numeric(train_local["ev_after_1pct"], errors="coerce").fillna(0.0)
+    compact_residual_features = [
+        name
+        for name in raw_features
+        if any(
+            token in name
+            for token in (
+                "posterior_max",
+                "posterior_margin",
+                "entropy",
+                "novelty",
+                "reconstruction_error",
+                "local_arch_signature_expected_negative",
+                "local_arch_signature_expected_positive",
+                "local_arch_signature_expected_mean_ev",
+            )
+        )
+    ]
 
     # The final union alone pays the full selector/HPO cost.  A 45k beginning /
     # middle / end time-spread race yields about 15k rows in its evaluation tail.
@@ -2321,6 +2393,11 @@ def _canonical_final_model(
             "group_first_max_repeats": 4,
             "group_first_drop_null": True,
             "group_mda_enabled": True,
+            # Keep only the compact residual-state contract alive through the
+            # canonical selector. MDA still measures its incremental value and
+            # the final ablation decides whether the block is retained.
+            "force_include_features": compact_residual_features,
+            "protected_features": compact_residual_features,
         }
     }
     prior_objective = str(lp.LGBM_OBJECTIVE)
@@ -2359,6 +2436,7 @@ def _canonical_final_model(
             "metrics": dict(model.metrics),
             "medians": medians,
             "mda_profile": fast_cfg["mda_config"],
+            "protected_compact_residual_features": compact_residual_features,
             "hpo_objective": "topk_ev",
         },
     )
@@ -2913,18 +2991,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
             candidates.append((block, summary))
+            arm_dir = output / "greedy" / arm
+            arm_dir.mkdir(parents=True, exist_ok=True)
+            scored.to_parquet(
+                arm_dir / "selection_predictions.parquet",
+                index=False,
+                compression="zstd",
+            )
+            metrics.to_csv(arm_dir / "selection_metrics.csv", index=False)
+            joblib.dump(model, arm_dir / "model.joblib", compress=3)
+            _write_json(arm_dir / "fit_manifest.json", fit_manifest)
             _emit(
                 "greedy_revision_complete",
                 round=round_index,
                 block=block,
                 summary=summary,
             )
-            arm_dir = output / "greedy" / arm
-            arm_dir.mkdir(parents=True, exist_ok=True)
-            metrics.to_csv(arm_dir / "metrics.csv", index=False)
-            _write_json(arm_dir / "fit_manifest.json", fit_manifest)
-            joblib.dump(model, arm_dir / "model.joblib", compress=3)
-            del scored, model
+            del scored, model, metrics
+            gc.collect()
         greedy_rows.extend(summary for _, summary in candidates)
         winner_block, winner = max(
             candidates, key=lambda item: float(item[1]["objective"])
@@ -3539,7 +3623,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--evaluation-end", default="2026-07-11")
     parser.add_argument(
         "--encoder-kinds",
-        default="unsupervised_ae,residual_aware_ae,supervised_mlp,hybrid_mlp",
+        default=(
+            "unsupervised_ae,residual_aware_ae,supervised_mlp,hybrid_mlp,"
+            "variational_ae"
+        ),
     )
     parser.add_argument("--latent-dim", type=int, default=12)
     parser.add_argument("--encoder-epochs", type=int, default=160)
@@ -3570,7 +3657,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-residual-correction", action="store_true")
     parser.add_argument(
         "--residual-correction-blocks",
-        default="B3_static_state_posteriors,B4_state_uncertainty,B5_state_transitions",
+        default="B6_compact_residual_state,B4_state_uncertainty",
     )
     parser.add_argument(
         "--residual-correction-scales",

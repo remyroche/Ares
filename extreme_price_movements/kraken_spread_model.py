@@ -584,6 +584,7 @@ def _spread_snapshot_summary(
             average_spread_bps=("spread_bps", "mean"),
             median_spread_bps=("spread_bps", "median"),
             p75_spread_bps=("spread_bps", lambda x: float(np.nanpercentile(x, 75))),
+            p90_spread_bps=("spread_bps", lambda x: float(np.nanpercentile(x, 90))),
             average_spread_ticks=("spread_ticks", "mean"),
         )
         .reset_index()
@@ -1088,6 +1089,7 @@ def compute_asset_spread_baseline(frame: pd.DataFrame) -> Tuple[pd.DataFrame, fl
             average_spread_bps=("spread_bps", "mean"),
             median_spread_bps=("spread_bps", "median"),
             p75_spread_bps=("spread_bps", lambda x: float(np.nanpercentile(x, 75))),
+            p90_spread_bps=("spread_bps", lambda x: float(np.nanpercentile(x, 90))),
             average_spread_ticks=("spread_ticks", "mean"),
         )
         .reset_index()

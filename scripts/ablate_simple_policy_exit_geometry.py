@@ -339,13 +339,14 @@ def _prepare_rows(
     rank_scope: str = "per_strategy",
     regime_ev_calibration_artifact: Optional[Path] = None,
     regime_ev_feature_handoff: Optional[Path] = None,
+    apply_regime_ev_calibration_artifact: bool = True,
     regime_ev_rerank_admission: bool = False,
     regime_ev_protected_admission_floor: Optional[float] = None,
     regime_ev_retained_surplus_frac: float = 0.5,
 ) -> pd.DataFrame:
-    if regime_ev_calibration_artifact is None:
+    if apply_regime_ev_calibration_artifact and regime_ev_calibration_artifact is None:
         regime_ev_calibration_artifact = default_regime_ev_calibration_artifact()
-    if regime_ev_feature_handoff is None:
+    if apply_regime_ev_calibration_artifact and regime_ev_feature_handoff is None:
         regime_ev_feature_handoff = default_regime_ev_feature_handoff()
     rows = pd.read_parquet(path)
     required = {"timestamp", "symbol", "strategy_id", "rank_pct", "barrier_pct"}
@@ -364,7 +365,7 @@ def _prepare_rows(
             if col in rows.columns:
                 rows["archetype_policy_key"] = rows[col].astype(str)
                 break
-    if regime_ev_calibration_artifact is not None:
+    if apply_regime_ev_calibration_artifact and regime_ev_calibration_artifact is not None:
         artifact = load_regime_ev_calibration(regime_ev_calibration_artifact)
         rows = _join_regime_feature_handoff(
             rows,

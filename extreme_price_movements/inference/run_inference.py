@@ -83,6 +83,9 @@ from extreme_price_movements import hf_data_loader
 from extreme_price_movements.data_store import (
     _load_local_env_if_present,
     _resolve_perp_symbol,
+    append_missing_kraken_execution_1m,
+    read_kraken_execution_1m,
+    scoped_data_root,
 )
 from extreme_price_movements.drift_monitoring import write_live_drift_recap
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -120,6 +123,9 @@ from extreme_price_movements.inference.dynamic_strategy_performance import (
     StrategyPerformanceMonitor,
     meta_head_hash,
 )
+from extreme_price_movements.inference.entry_budget_guard import (
+    PersistentEntryBudgetGuard,
+)
 from extreme_price_movements.inference.feature_generator import (
     _coerce_feature_source_run_ids,
     _compute_policy_barrier_pct,
@@ -131,7 +137,7 @@ from extreme_price_movements.inference.feature_generator import (
     _meta_model_derived_raw_dependencies,
     _required_tail_warmup_hours,
     compute_selector_features,
-    generate_features,
+    flush_deferred_static_feature_appends,
     get_features_for_candidates,
     get_inference_required_feature_keys,
     is_model_derived_feature_key,
@@ -157,18 +163,32 @@ from extreme_price_movements.inference.liquidity_precheck import (
     fetch_ticker_snapshot,
     marketable_limit_price,
 )
+from extreme_price_movements.raw_market_data_contract import (
+    refresh_raw_market_rows,
+)
+from extreme_price_movements.simple_policy_winner import (
+    WINNER_POLICY_PATHWAY_ID,
+    apply_raw_bayesian_sizing_state,
+)
 from extreme_price_movements.inference.live_meta_feature_overlays import (
     apply_live_meta_reliability_priors,
     live_ae_gmm_input_feature_columns,
     load_live_ae_gmm_state_payload,
     load_meta_reliability_prior_payload,
+    load_residual_reference_prior_payload,
     materialize_live_ae_gmm_features,
     materialize_live_source_regime_features,
+)
+from extreme_price_movements.inference.live_residual_event_state import (
+    load_live_residual_event_state_payload,
+    materialize_live_residual_event_features,
+    residual_event_state_input_feature_columns,
 )
 from extreme_price_movements.inference.live_policy_archetype import (
     load_live_policy_archetype_classifier,
     normalize_policy_archetype_label,
     predict_live_policy_archetype,
+    predict_observable_policy_archetype,
 )
 from extreme_price_movements.inference.model_orchestrator import (
     DELETED_MODEL_FEATURE_KEYS,
@@ -203,7 +223,20 @@ from extreme_price_movements.inference.portfolio_policy import (
     load_portfolio_policy_config,
     validate_portfolio_strategy_contract,
 )
-from extreme_price_movements.inference.prediction_ledger import PredictionLedger
+from extreme_price_movements.inference.canonical_meta_postprocessor import (
+    CanonicalMetaPostprocessor,
+    MLP_HIER_EV_POLICY_ID,
+    V9_TAIL_HIER_EV_POLICY_ID,
+    V9_TAIL95_POLICY_ID,
+    V9TailPostprocessor,
+)
+from extreme_price_movements.inference.side_residual_expert import (
+    SideResidualExpertBundle,
+)
+from extreme_price_movements.inference.prediction_ledger import (
+    PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS,
+    PredictionLedger,
+)
 from extreme_price_movements.inference.prehead_symbol_guard import (
     load_prehead_symbol_guard_state,
     prehead_symbol_guard_result,
@@ -219,6 +252,7 @@ from extreme_price_movements.inference.training_live_parity_contract import (
 from extreme_price_movements.regime_ev_calibration import (
     apply_regime_ev_calibration,
     load_regime_ev_calibration,
+    required_feature_columns as regime_ev_required_feature_columns,
 )
 
 try:
@@ -241,6 +275,7 @@ from extreme_price_movements.inference.symbol_mapping import (
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
+    restore_entry_provenance,
 )
 from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.portfolio_manager import PortfolioManager
@@ -298,6 +333,33 @@ def _float32_inference_frame(frame: Any) -> Any:
         return out
 
 
+def _fill_feature_from_refresh_preserve_existing(
+    frame: pd.DataFrame,
+    column: str,
+    refreshed: pd.Series,
+) -> int:
+    """Fill absent/non-finite values without replacing canonical model inputs."""
+    replacement = pd.to_numeric(refreshed.reindex(frame.index), errors="coerce")
+    replacement_values = replacement.to_numpy(dtype=np.float32, copy=False)
+    replacement_finite = np.isfinite(replacement_values)
+    if not bool(replacement_finite.any()):
+        return 0
+
+    if column in frame.columns:
+        values = pd.to_numeric(frame[column], errors="coerce").to_numpy(
+            dtype=np.float32,
+            copy=True,
+        )
+    else:
+        values = np.full(len(frame.index), np.nan, dtype=np.float32)
+    fill_mask = ~np.isfinite(values) & replacement_finite
+    if not bool(fill_mask.any()):
+        return 0
+    values[fill_mask] = replacement_values[fill_mask]
+    frame[column] = values
+    return int(fill_mask.sum())
+
+
 def _float32_feature_dict(
     feats: Optional[Mapping[str, pd.DataFrame]],
 ) -> Dict[str, pd.DataFrame]:
@@ -313,7 +375,9 @@ def _float32_feature_dict(
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
 _CANDIDATE_FEATURE_CYCLE_CACHE: Dict[str, Dict[str, Any]] = {}
-BASE_TO_META_TOP_FRAC = 0.40
+# The deployed meta contract is trained and calibrated on the base top-30%
+# candidate stream. Keep live admission on the same denominator.
+BASE_TO_META_TOP_FRAC = 0.30
 LIVE_TEST_RANK_THRESHOLD = 0.90
 LIVE_TEST_THRESHOLD_RELAXATION = 0.06
 AUCTION_EV_MIN_NET_RETURN = float(os.getenv("EPM_AUCTION_EV_MIN_NET_RETURN", "0.002"))
@@ -531,6 +595,19 @@ def _ensure_simple_policy_shadow_state(
             "initial_shadow_stop_price": (
                 float(stop_price) if np.isfinite(stop_price) else None
             ),
+            # Persist the transformed entry-time barrier. This is the value the
+            # stop engine actually used, and it can differ materially from the
+            # raw policy/artifact barrier after ATR transforms and caps.
+            "barrier_frac": _json_safe_audit_value(
+                position_state.get("barrier_frac")
+            ),
+            "barrier_pct": _json_safe_audit_value(
+                position_state.get("barrier_pct")
+            ),
+            "barrier_frac_is_effective": bool(
+                position_state.get("barrier_frac_is_effective", True)
+            ),
+            "sl_mult": _json_safe_audit_value(position_state.get("sl_mult")),
             "shadow_stop_price": (
                 float(stop_price) if np.isfinite(stop_price) else None
             ),
@@ -800,8 +877,16 @@ def _load_policy_selection_rules(data_root: str, run_id: str) -> Dict[str, Any]:
         candidate
         for base in _policy_artifact_bases(data_root, run_id)
         for path in (
+            base / "policy_params" / "global_inference_policy_contract.json",
+            base / "global_inference_policy_contract.json",
             base / "policy_params" / "strategy_for_inference.json",
             base / "strategy_for_inference.json",
+            # Current global S52 policies intentionally have no pre-base
+            # strategy mask. Their authoritative rule is stored on the
+            # promoted policy manifest rather than the legacy per-strategy
+            # export, so consult it before defaulting to a mask requirement.
+            base / "policy_params" / "promoted_policy_manifest.json",
+            base / "promoted_policy_manifest.json",
         )
         for candidate in mode_file_candidates(path)
     ]:
@@ -1622,6 +1707,10 @@ def _active_position_matches_scored_strategy(
 _MODEL_POLICY_CONTEXT_COPY_KEYS = (
     "model_artifact_run_id",
     "policy_artifact_run_id",
+    "v9_tail95_predecessor_rank",
+    "meta_postprocessor_policy_id",
+    "meta_postprocessor_predecessor_id",
+    "meta_postprocessor_side_archetype",
     "base_pred",
     "base_rank_pct",
     "base_train_rank_pct",
@@ -1650,6 +1739,11 @@ _MODEL_POLICY_CONTEXT_COPY_KEYS = (
     "threshold_basis_policy_id",
     "threshold_basis_family",
     "threshold_basis_window_days",
+    "threshold_basis_recalibration_frequency",
+    "threshold_basis_reference_asof",
+    "threshold_basis_robust_daily_residual_trim_fraction",
+    "threshold_basis_robust_daily_residual_normalization",
+    "threshold_basis_global_days_retained",
     "threshold_basis_rank_score",
     "threshold_basis_rank_score_source",
     "threshold_basis_selected",
@@ -1661,6 +1755,48 @@ _MODEL_POLICY_CONTEXT_COPY_KEYS = (
     "threshold_basis_baseline_activity_count",
     "threshold_basis_global_dynamic_ev_target",
     "threshold_basis_global_dynamic_score_threshold",
+    "threshold_basis_apply_cutoff",
+    "threshold_basis_ev_target_multiplier",
+    "threshold_basis_ev_target_local_support",
+    "threshold_basis_ev_target_global_fallback",
+    "threshold_basis_mapped_expected_ev_side_archetype",
+    "threshold_basis_side_archetype_recent_ev_correction",
+    "threshold_basis_corrected_expected_ev",
+    "threshold_basis_corrected_expected_ev_rank",
+    "threshold_basis_parent_rank",
+    "threshold_basis_blended_rank",
+    "threshold_basis_ev_rank_blend_weight",
+    "threshold_basis_expected_ev_correction_scope",
+    "threshold_basis_archetype_baseline_window_days",
+    "threshold_basis_archetype_baseline_scope",
+    "threshold_basis_archetype_baseline_trim_fraction",
+    "threshold_basis_archetype_baseline_robust_method",
+    "threshold_basis_archetype_baseline_support",
+    "threshold_basis_archetype_baseline_retained_days",
+    "threshold_basis_archetype_baseline_trimmed_days",
+    "threshold_basis_archetype_baseline_daily_residual_iqr",
+    "threshold_basis_archetype_baseline_ev_mean",
+    "threshold_basis_archetype_baseline_ev_median",
+    "threshold_basis_archetype_baseline_ev_iqr",
+    "threshold_basis_archetype_baseline_positive_ev_rate",
+    "threshold_basis_archetype_baseline_take_profit_rate",
+    "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean",
+    "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_support",
+    "threshold_basis_archetype_baseline_clean_rate",
+    "threshold_basis_archetype_baseline_dirty_positive_rate",
+    "threshold_basis_archetype_baseline_bad_mae_rate",
+    "threshold_basis_archetype_baseline_timeout_rate",
+    "threshold_basis_archetype_baseline_stop_rate",
+    "threshold_basis_archetype_baseline_mapped_ev_decile",
+    "threshold_basis_archetype_baseline_mapped_ev_decile_support",
+    "threshold_basis_archetype_baseline_mapped_ev_decile_calibration_residual",
+    "threshold_basis_archetype_baseline_historical_scope",
+    "threshold_basis_archetype_baseline_historical_support",
+    "threshold_basis_archetype_baseline_historical_positive_ev_rate",
+    "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate",
+    "threshold_basis_archetype_baseline_gmm_cluster_id",
+    "threshold_basis_archetype_baseline_gmm_state_ev_mean",
+    "threshold_basis_archetype_baseline_gmm_state_support",
     "effective_threshold",
     "deployment_rank_threshold",
     "final_threshold",
@@ -1701,6 +1837,15 @@ _MODEL_POLICY_CONTEXT_COPY_KEYS = (
     "archetype_hit_surprise_support_confidence",
     "archetype_hit_surprise_n_eff",
     "archetype_hit_surprise_rows",
+    "resid_event_aegmm_gmm_cluster_id",
+    "resid_event_aegmm_gmm_entropy",
+    "resid_event_aegmm_gmm_posterior_margin",
+    "resid_event_aegmm_expected_adverse_path_event",
+    "resid_event_aegmm_expected_negative_residual_event",
+    "resid_event_aegmm_expected_positive_residual_event",
+    "resid_event_aegmm_expected_favorable_near_miss_event",
+    "resid_event_aegmm_expected_ev_after_1pct",
+    "resid_event_aegmm_expected_persistence_strength",
     "dynamic_hr_surprise_threshold",
     "dynamic_hr_surprise_applied",
     "dynamic_hr_surprise_reason",
@@ -1771,6 +1916,48 @@ _MODEL_POLICY_CONTEXT_COPY_KEYS = (
     "meta_lgbm_uncertainty_score",
     "prob_uncertainty",
     "prediction_entropy",
+    "support_drift_score",
+    "leaf_drift_score",
+    "aegmm_regime_drift_score",
+    "gmm_cluster_id",
+    "gmm_posterior_max",
+    "gmm_posterior_margin",
+    "gmm_entropy",
+    "gmm_ood_score",
+    "mahalanobis_distance",
+    "ae_reconstruction_error",
+    "AE_reconstruction_error",
+    "cluster_speed",
+    "cluster_acceleration",
+    "leaf_count_mean",
+    "leaf_count_median",
+    "leaf_count_q25",
+    "leaf_count_p10",
+    "leaf_count_min",
+    "rare_leaf_fraction",
+    "rare_leaf_low_support_score",
+    "leaf_model_space_distance_mean",
+    "leaf_model_space_distance_p10",
+    "meta_lgbm_leaf_count_p10",
+    "meta_lgbm_leaf_count_min",
+    "meta_lgbm_rare_leaf_fraction",
+    "meta_lgbm_leaf_model_space_distance_mean",
+    "meta_lgbm_leaf_model_space_distance_p10",
+    "meta_sel_ood_abs_z_max",
+    "meta_sel_ood_abs_z_mean",
+    "meta_sel_ood_abs_z_p95",
+    "meta_sel_ood_iqr_exceed_frac",
+    "meta_sel_ood_missing_frac",
+    "meta_sel_ood_centroid_l2",
+    "email_env_volatility",
+    "email_env_vol_of_vol",
+    "email_env_entropy",
+    "email_env_signed_trend",
+    "email_env_volume_z",
+    "email_env_atr_percentile",
+    "email_env_amihud_z",
+    "email_env_vwap_distance_atr",
+    "email_precomputed_feature_sources_json",
 )
 
 
@@ -1808,6 +1995,9 @@ def _model_context_from_scored_decision(
     signal_bar_ts: Optional[pd.Timestamp],
 ) -> Dict[str, Any]:
     chain = dict(decision.get("chain_results") or {})
+    sizing_audit = decision.get("policy_sizing")
+    if not isinstance(sizing_audit, Mapping):
+        sizing_audit = {}
     rank_percentile = _safe_float(
         chain.get(
             "sizer_rank_percentile",
@@ -1854,6 +2044,45 @@ def _model_context_from_scored_decision(
             "regime_ev_calibration_artifact_path",
             decision.get("regime_ev_calibration_artifact_path"),
         ),
+        "expected_net_ev_after_1pct": chain.get(
+            "expected_net_ev_after_1pct",
+            decision.get("expected_net_ev_after_1pct"),
+        ),
+        "expected_ev_rank_score": chain.get(
+            "expected_ev_rank_score", decision.get("expected_ev_rank_score")
+        ),
+        "market_state_mlp_score_correction": chain.get(
+            "market_state_mlp_score_correction",
+            decision.get("market_state_mlp_score_correction"),
+        ),
+        "market_state_mlp_expected_net_ev_after_1pct": chain.get(
+            "market_state_mlp_expected_net_ev_after_1pct",
+            decision.get("market_state_mlp_expected_net_ev_after_1pct"),
+        ),
+        "market_state_mlp_expected_ev_rank_score": chain.get(
+            "market_state_mlp_expected_ev_rank_score",
+            decision.get("market_state_mlp_expected_ev_rank_score"),
+        ),
+        "raw_calibrated_score": chain.get(
+            "raw_calibrated_score", decision.get("raw_calibrated_score")
+        ),
+        "score_regime_calibrated": chain.get(
+            "score_regime_calibrated", decision.get("score_regime_calibrated")
+        ),
+        "regime_ev_risk_score": chain.get(
+            "regime_ev_risk_score", decision.get("regime_ev_risk_score")
+        ),
+        "regime_ev_effect_count": chain.get(
+            "regime_ev_effect_count", decision.get("regime_ev_effect_count")
+        ),
+        "regime_ev_calibration_source": chain.get(
+            "regime_ev_calibration_source",
+            decision.get("regime_ev_calibration_source"),
+        ),
+        "regime_ev_calibration_artifact_path": chain.get(
+            "regime_ev_calibration_artifact_path",
+            decision.get("regime_ev_calibration_artifact_path"),
+        ),
         "rank_percentile": rank_percentile,
         "sizer_rank_percentile": rank_percentile,
         "policy_rank_pct": chain.get(
@@ -1875,6 +2104,18 @@ def _model_context_from_scored_decision(
             "deployment_rank_threshold", decision.get("deployment_rank_threshold")
         ),
         "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
+        "v9_tail95_predecessor_rank": chain.get(
+            "v9_tail95_predecessor_rank",
+            decision.get("v9_tail95_predecessor_rank"),
+        ),
+        "policy_pathway_id": chain.get(
+            "policy_pathway_id",
+            decision.get("policy_pathway_id", sizing_audit.get("policy_pathway_id")),
+        ),
+        "sizing_policy_id": chain.get(
+            "sizing_policy_id",
+            decision.get("sizing_policy_id", sizing_audit.get("sizing_policy_id")),
+        ),
         "last_model_score_refresh_ts": pd.Timestamp(timestamp).isoformat(),
         "last_model_score_refresh_signal_bar_ts": (
             pd.Timestamp(signal_bar_ts).isoformat()
@@ -1903,6 +2144,9 @@ def _model_context_from_scored_decision(
         "meta_lgbm_uncertainty_score",
         "prob_uncertainty",
         "prediction_entropy",
+        "support_drift_score",
+        "leaf_drift_score",
+        "aegmm_regime_drift_score",
         "dynamic_hr_surprise_z_eff",
         "hit_rate_surprise_z_eff",
         "dynamic_hr_threshold",
@@ -2527,6 +2771,72 @@ def _estimated_hit_rate_from_meta_prediction(
         ),
         "estimated_hit_rate_calibration_n": int(sum(p[2] for p in points)),
     }
+
+
+def _live_regime_calibration_raw_feature_columns(
+    artifact: Mapping[str, Any] | None,
+    residual_payload: Mapping[str, Any] | None,
+) -> list[str]:
+    """Return observable raw inputs needed before frozen regime calibration."""
+    generated = {
+        str(col)
+        for col in (residual_payload or {}).get("generated_feature_columns", [])
+        if str(col)
+    }
+    injected = {
+        "archetype_policy_key",
+        "calibrated_score",
+        "hit_probability",
+        "score_base",
+        "score_meta_base_soft_label",
+        "side_name",
+    }
+    return sorted(
+        col
+        for col in regime_ev_required_feature_columns(artifact)
+        if col not in generated and col not in injected and not col.startswith("__")
+    )
+
+
+def _hydrate_optional_frozen_features(
+    frame: pd.DataFrame,
+    *,
+    attempted_columns: Sequence[str],
+    strict_columns: Sequence[str],
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """Expose missing residual inputs for later row-level complete-case rejection."""
+
+    def _missing(columns: Sequence[str]) -> list[str]:
+        return [
+            str(col)
+            for col in columns
+            if str(col) not in frame.columns
+            or not np.isfinite(
+                pd.to_numeric(frame.get(str(col)), errors="coerce").to_numpy(
+                    dtype=float, copy=False
+                )
+            ).any()
+        ]
+
+    strict_missing = _missing(strict_columns)
+    optional_missing = sorted(
+        set(_missing(attempted_columns)).difference(strict_missing)
+    )
+    for col in optional_missing:
+        if col not in frame.columns:
+            frame[col] = np.float32(np.nan)
+    return frame, strict_missing, optional_missing
+
+
+def _effective_live_entry_cap(
+    configured_cap: int,
+    policy_cap: int,
+    *,
+    entries_allowed: bool,
+) -> int:
+    if not entries_allowed:
+        return 0
+    return min(max(0, int(configured_cap)), max(0, int(policy_cap)))
 
 
 def _estimated_ev_from_strategy_prediction(
@@ -3431,9 +3741,13 @@ def _live_prescore_market_mask_enabled(
     runtime_config: Mapping[str, Any],
     executor_mode: str,
 ) -> bool:
-    default = (
-        str(executor_mode or "").strip().lower() in _LIVE_PRESCORE_MARKET_MASK_MODES
-    )
+    # Live-only ticker spread and order-book availability must not change the
+    # base-to-meta candidate denominator used by historical replay. The same
+    # raw-close, ticker, spread and liquidity checks run again after model
+    # scoring and before order placement, so disabling this early mask keeps
+    # the model/policy contract aligned without relaxing execution safety.
+    # Experiments may still opt in explicitly through config or the env flag.
+    default = False
     return _runtime_flag(
         runtime_config,
         "live_prescore_market_mask_enabled",
@@ -4414,6 +4728,24 @@ def _prediction_ledger_row(
         "meta_model_features_json": chain.get("meta_model_features_json"),
         "base_model_feature_values_json": chain.get("base_model_feature_values_json"),
         "meta_model_feature_values_json": chain.get("meta_model_feature_values_json"),
+        "meta_postprocessor_input_features_json": chain.get(
+            "meta_postprocessor_input_features_json"
+        ),
+        "meta_postprocessor_input_values_json": chain.get(
+            "meta_postprocessor_input_values_json"
+        ),
+        "meta_postprocessor_input_hash": chain.get(
+            "meta_postprocessor_input_hash"
+        ),
+        "side_residual_expert_input_features_json": chain.get(
+            "side_residual_expert_input_features_json"
+        ),
+        "side_residual_expert_input_values_json": chain.get(
+            "side_residual_expert_input_values_json"
+        ),
+        "side_residual_expert_input_hash": chain.get(
+            "side_residual_expert_input_hash"
+        ),
         "model_feature_value_sources_json": chain.get(
             "model_feature_value_sources_json"
         ),
@@ -4430,8 +4762,33 @@ def _prediction_ledger_row(
         "raw_prediction_score": decision.get("raw_score"),
         "base_pred": chain.get("base_pred"),
         "meta_pred": chain.get("meta_pred", decision.get("raw_score")),
+        "meta_pred_raw_refit": chain.get("meta_pred_raw_refit"),
+        "meta_pred_aligned": chain.get("meta_pred_aligned"),
+        "v9_tail95_predecessor_rank": chain.get("v9_tail95_predecessor_rank"),
         "calibrated_score": chain.get(
             "calibrated_score", decision.get("calibrated_score")
+        ),
+        "score_regime_calibrated": chain.get(
+            "score_regime_calibrated", decision.get("score_regime_calibrated")
+        ),
+        "expected_net_ev_after_1pct": chain.get(
+            "expected_net_ev_after_1pct",
+            decision.get("expected_net_ev_after_1pct"),
+        ),
+        "expected_ev_rank_score": chain.get(
+            "expected_ev_rank_score", decision.get("expected_ev_rank_score")
+        ),
+        "market_state_mlp_score_correction": chain.get(
+            "market_state_mlp_score_correction",
+            decision.get("market_state_mlp_score_correction"),
+        ),
+        "market_state_mlp_expected_net_ev_after_1pct": chain.get(
+            "market_state_mlp_expected_net_ev_after_1pct",
+            decision.get("market_state_mlp_expected_net_ev_after_1pct"),
+        ),
+        "market_state_mlp_expected_ev_rank_score": chain.get(
+            "market_state_mlp_expected_ev_rank_score",
+            decision.get("market_state_mlp_expected_ev_rank_score"),
         ),
         "estimated_hit_rate": chain.get(
             "estimated_hit_rate", decision.get("estimated_hit_rate")
@@ -4582,6 +4939,26 @@ def _prediction_ledger_row(
             "threshold_basis_window_days",
             decision.get("threshold_basis_window_days"),
         ),
+        "threshold_basis_recalibration_frequency": chain.get(
+            "threshold_basis_recalibration_frequency",
+            decision.get("threshold_basis_recalibration_frequency"),
+        ),
+        "threshold_basis_reference_asof": chain.get(
+            "threshold_basis_reference_asof",
+            decision.get("threshold_basis_reference_asof"),
+        ),
+        "threshold_basis_robust_daily_residual_trim_fraction": chain.get(
+            "threshold_basis_robust_daily_residual_trim_fraction",
+            decision.get("threshold_basis_robust_daily_residual_trim_fraction"),
+        ),
+        "threshold_basis_robust_daily_residual_normalization": chain.get(
+            "threshold_basis_robust_daily_residual_normalization",
+            decision.get("threshold_basis_robust_daily_residual_normalization"),
+        ),
+        "threshold_basis_global_days_retained": chain.get(
+            "threshold_basis_global_days_retained",
+            decision.get("threshold_basis_global_days_retained"),
+        ),
         "threshold_basis_rank_score": chain.get(
             "threshold_basis_rank_score",
             decision.get("threshold_basis_rank_score"),
@@ -4625,6 +5002,54 @@ def _prediction_ledger_row(
         "threshold_basis_global_dynamic_score_threshold": chain.get(
             "threshold_basis_global_dynamic_score_threshold",
             decision.get("threshold_basis_global_dynamic_score_threshold"),
+        ),
+        "threshold_basis_apply_cutoff": chain.get(
+            "threshold_basis_apply_cutoff",
+            decision.get("threshold_basis_apply_cutoff"),
+        ),
+        "threshold_basis_ev_target_multiplier": chain.get(
+            "threshold_basis_ev_target_multiplier",
+            decision.get("threshold_basis_ev_target_multiplier"),
+        ),
+        "threshold_basis_ev_target_local_support": chain.get(
+            "threshold_basis_ev_target_local_support",
+            decision.get("threshold_basis_ev_target_local_support"),
+        ),
+        "threshold_basis_ev_target_global_fallback": chain.get(
+            "threshold_basis_ev_target_global_fallback",
+            decision.get("threshold_basis_ev_target_global_fallback"),
+        ),
+        "threshold_basis_mapped_expected_ev_side_archetype": chain.get(
+            "threshold_basis_mapped_expected_ev_side_archetype",
+            decision.get("threshold_basis_mapped_expected_ev_side_archetype"),
+        ),
+        "threshold_basis_side_archetype_recent_ev_correction": chain.get(
+            "threshold_basis_side_archetype_recent_ev_correction",
+            decision.get("threshold_basis_side_archetype_recent_ev_correction"),
+        ),
+        "threshold_basis_corrected_expected_ev": chain.get(
+            "threshold_basis_corrected_expected_ev",
+            decision.get("threshold_basis_corrected_expected_ev"),
+        ),
+        "threshold_basis_corrected_expected_ev_rank": chain.get(
+            "threshold_basis_corrected_expected_ev_rank",
+            decision.get("threshold_basis_corrected_expected_ev_rank"),
+        ),
+        "threshold_basis_parent_rank": chain.get(
+            "threshold_basis_parent_rank",
+            decision.get("threshold_basis_parent_rank"),
+        ),
+        "threshold_basis_blended_rank": chain.get(
+            "threshold_basis_blended_rank",
+            decision.get("threshold_basis_blended_rank"),
+        ),
+        "threshold_basis_ev_rank_blend_weight": chain.get(
+            "threshold_basis_ev_rank_blend_weight",
+            decision.get("threshold_basis_ev_rank_blend_weight"),
+        ),
+        "threshold_basis_expected_ev_correction_scope": chain.get(
+            "threshold_basis_expected_ev_correction_scope",
+            decision.get("threshold_basis_expected_ev_correction_scope"),
         ),
         "historical_rank_pct": chain.get("meta_train_rank_pct"),
         "batch_rank_pct": decision.get("sizer_rank_percentile"),
@@ -4868,6 +5293,27 @@ def _prediction_ledger_row(
             "auction_selected_before_capacity",
             chain.get("auction_selected_before_capacity"),
         ),
+        "persistent_entry_budget_schema": chain.get(
+            "persistent_entry_budget_schema"
+        ),
+        "persistent_entry_budget_policy_id": chain.get(
+            "persistent_entry_budget_policy_id"
+        ),
+        "persistent_entry_budget_signal_bar_ts": chain.get(
+            "persistent_entry_budget_signal_bar_ts"
+        ),
+        "persistent_entry_budget_active_count": chain.get(
+            "persistent_entry_budget_active_count"
+        ),
+        "persistent_entry_budget_remaining": chain.get(
+            "persistent_entry_budget_remaining"
+        ),
+        "persistent_entry_budget_reason": chain.get(
+            "persistent_entry_budget_reason"
+        ),
+        "persistent_entry_budget_unresolved_reservation": chain.get(
+            "persistent_entry_budget_unresolved_reservation"
+        ),
         "portfolio_state_snapshot_json": decision.get("portfolio_state_snapshot_json"),
         "portfolio_state_snapshot_hash": decision.get("portfolio_state_snapshot_hash"),
         "portfolio_state_snapshot_error": decision.get(
@@ -4936,6 +5382,35 @@ def _prediction_ledger_row(
         "position_size_after_liquidity": sizing.get(
             "size_after_liquidity",
             snap.get("position_size_after_liquidity"),
+        ),
+        "policy_pathway_id": chain.get(
+            "policy_pathway_id", decision.get("policy_pathway_id")
+        ),
+        "sizing_policy_id": chain.get(
+            "sizing_policy_id", decision.get("sizing_policy_id")
+        ),
+        "sizing_overlay_source": chain.get(
+            "sizing_overlay_source", decision.get("sizing_overlay_source")
+        ),
+        "raw_bayesian_size_multiplier": chain.get(
+            "raw_bayesian_size_multiplier",
+            decision.get("raw_bayesian_size_multiplier"),
+        ),
+        "size_before_sizing_overlay": chain.get(
+            "size_before_sizing_overlay",
+            decision.get("size_before_sizing_overlay"),
+        ),
+        "size_after_sizing_overlay": chain.get(
+            "size_after_sizing_overlay",
+            decision.get("size_after_sizing_overlay"),
+        ),
+        "raw_bayesian_state_fit_rows": chain.get(
+            "raw_bayesian_state_fit_rows",
+            decision.get("raw_bayesian_state_fit_rows"),
+        ),
+        "sizing_policy_strategy_id": chain.get(
+            "sizing_policy_strategy_id",
+            decision.get("sizing_policy_strategy_id"),
         ),
         "portfolio_decision": portfolio_decision,
         "portfolio_reject_reason": portfolio_reject_reason,
@@ -5361,6 +5836,29 @@ def _prediction_ledger_row(
             row[f"meta_lgbm_{diag_key}"] = meta_lgbm_diagnostics.get(diag_key)
         if diag_key in base_lgbm_diagnostics:
             row[f"base_lgbm_{diag_key}"] = base_lgbm_diagnostics.get(diag_key)
+
+    # The ledger is the audit counterpart of the entry-time close-email
+    # contract. Keep it aligned with the scored decision rather than relying on
+    # a manually maintained subset of policy, OOD, and archetype fields.
+    for key in PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS:
+        current = row.get(key)
+        if current is not None:
+            try:
+                if not pd.isna(current):
+                    continue
+            except (TypeError, ValueError):
+                continue
+        for source in (chain, decision):
+            value = source.get(key)
+            if value is None:
+                continue
+            try:
+                if pd.isna(value):
+                    continue
+            except (TypeError, ValueError):
+                pass
+            row[key] = value
+            break
     return row
 
 
@@ -5382,6 +5880,7 @@ def _historical_score_paths(
                 continue
             names.extend(
                 [
+                    f"meta_score_reference_{stem}.parquet",
                     f"meta_oof_{stem}_clf.parquet",
                     f"meta_oof_{stem}_tbm_clf.parquet",
                 ]
@@ -5414,7 +5913,7 @@ def _load_historical_score_distribution(
         return cached
 
     columns = (
-        ["oof_meta_clf", "oof_pred", "oof_p_move"]
+        ["oof_meta_clf", "oof_pred", "oof_p_move", "score"]
         if kind == "meta"
         else ["oof_prob_uncertainty_weighted", "oof_prob", "oof_prob_ebm_raw"]
     )
@@ -5598,6 +6097,10 @@ def _resolve_live_feature_source_run_ids(config: Dict[str, Any]) -> List[str]:
     )
     values: List[str] = []
     for value in (
+        # The serialized train/live contract is the authoritative source. Any
+        # runtime defaults below are fallbacks and must not shadow it.
+        feature_source.get("run_id"),
+        parity_contract.get("feature_sources"),
         config.get("live_feature_source_run_ids"),
         config.get("feature_source_run_ids"),
         config.get("live_feature_source_run_id"),
@@ -5607,8 +6110,6 @@ def _resolve_live_feature_source_run_ids(config: Dict[str, Any]) -> List[str]:
         os.getenv("EPM_FEATURE_SOURCE_RUN_ID"),
         os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID"),
         os.getenv("EPM_SOURCE_RUN_ID"),
-        parity_contract.get("feature_sources"),
-        feature_source.get("run_id"),
     ):
         values.extend(_coerce_feature_source_run_ids(value))
     deduped: List[str] = []
@@ -5711,6 +6212,9 @@ def _build_live_feature_runtime_cfg(
         "live_data_root": str(config.get("live_data_root") or config["data_root"]),
         "accepted_strategy_ids": sorted(accepted_strategies or []),
         "policy_selection_rules": dict(policy_selection_rules or {}),
+        "live_ae_gmm_input_feature_columns": list(
+            config.get("live_ae_gmm_input_feature_columns") or []
+        ),
     }
     live_feature_state_dir = (
         Path(str(config["data_root"]))
@@ -5734,10 +6238,17 @@ def _build_live_feature_runtime_cfg(
         "live_feature_rolling_cache_latest_only_read_enabled", True
     )
     feature_runtime_cfg.setdefault("live_feature_memory_cache_enabled", True)
+    feature_runtime_cfg.setdefault("live_feature_latest_row_incremental_enabled", True)
+    feature_runtime_cfg.setdefault("live_feature_persist_after_scoring", True)
     feature_runtime_cfg.setdefault("live_raw_rolling_state_enabled", True)
     feature_runtime_cfg.setdefault(
         "live_raw_rolling_state_path",
         str(live_feature_state_dir / "raw_rolling_state.npz"),
+    )
+    feature_runtime_cfg.setdefault("live_raw_rolling_state_container_enabled", True)
+    feature_runtime_cfg.setdefault(
+        "live_raw_rolling_state_container_path",
+        str(live_feature_state_dir / "raw_rolling_state.container.sqlite"),
     )
     feature_runtime_cfg.setdefault("live_causal_transform_state_enabled", True)
     feature_runtime_cfg.setdefault(
@@ -5781,11 +6292,18 @@ def _live_warmup_state_fail_closed(config: Mapping[str, Any]) -> bool:
 
 
 def _state_file_health(
-    path_raw: Any, *, now: pd.Timestamp, max_age_hours: float
+    path_raw: Any,
+    *,
+    now: pd.Timestamp,
+    max_age_hours: float,
+    container_path_raw: Any = None,
 ) -> Dict[str, Any]:
     path = Path(str(path_raw)) if path_raw else None
+    container_path = Path(str(container_path_raw)) if container_path_raw else None
     out: Dict[str, Any] = {
         "path": str(path) if path is not None else "",
+        "container_path": str(container_path) if container_path is not None else "",
+        "container_exists": False,
         "exists": False,
         "exact_exists": False,
         "mtime": None,
@@ -5799,6 +6317,39 @@ def _state_file_health(
     }
     if path is None:
         return out
+    if container_path is not None and container_path.exists():
+        try:
+            # SQLite's WAL can hold the most recent committed state, so use
+            # the newest related file for freshness rather than only the main
+            # database inode.  This remains a metadata-only health check.
+            candidates = [container_path]
+            for suffix in ("-wal", "-shm"):
+                candidate = Path(str(container_path) + suffix)
+                if candidate.exists():
+                    candidates.append(candidate)
+            latest_path = max(
+                candidates, key=lambda candidate: candidate.stat().st_mtime
+            )
+            mtime = pd.Timestamp(latest_path.stat().st_mtime, unit="s", tz="UTC")
+            age_hours = max(
+                float((pd.Timestamp(now) - mtime).total_seconds()) / 3600.0,
+                0.0,
+            )
+            fresh = bool(np.isfinite(age_hours) and age_hours <= float(max_age_hours))
+            out.update(
+                {
+                    "container_exists": True,
+                    "exists": True,
+                    "mtime": mtime.isoformat(),
+                    "age_hours": age_hours,
+                    "ok": fresh,
+                    "reason": "ok_state_container" if fresh else "stale_state_container",
+                }
+            )
+            return out
+        except Exception as exc:
+            out["reason"] = f"container_stat_failed:{type(exc).__name__}"
+            return out
     if not path.exists():
         hashed_candidates: List[Path] = []
         try:
@@ -6037,6 +6588,15 @@ def _live_warmup_state_health_snapshot(
             feature_runtime_cfg.get("live_raw_rolling_state_path"),
             now=now,
             max_age_hours=max_state_age_hours,
+            container_path_raw=(
+                feature_runtime_cfg.get("live_raw_rolling_state_container_path")
+                if bool(
+                    feature_runtime_cfg.get(
+                        "live_raw_rolling_state_container_enabled", True
+                    )
+                )
+                else None
+            ),
         )
         if bool(feature_runtime_cfg.get("live_raw_rolling_state_enabled", True))
         else {"ok": True, "reason": "disabled"}
@@ -6118,6 +6678,36 @@ def _subset_panel(
         cols = [c for c in keep if c in df.columns]
         if cols:
             out[key] = df.loc[:, cols]
+    return out
+
+
+def _truncate_panel_through(
+    panel: Dict[str, pd.DataFrame],
+    end_ts: pd.Timestamp,
+) -> Dict[str, pd.DataFrame]:
+    """Remove observations after a historical decision timestamp.
+
+    ``DataFetcher.get_panel`` returns the latest local tail. Historical parity
+    runs must not let observations newer than the requested decision candle
+    choose a different feature sidecar or enter a causal transform.
+    """
+    cutoff = pd.Timestamp(end_ts)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.tz_localize("UTC")
+    else:
+        cutoff = cutoff.tz_convert("UTC")
+    out: Dict[str, pd.DataFrame] = {}
+    for key, frame in panel.items():
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        index = pd.DatetimeIndex(frame.index)
+        if index.tz is None:
+            index = index.tz_localize("UTC")
+        else:
+            index = index.tz_convert("UTC")
+        keep = index <= cutoff
+        if bool(np.any(keep)):
+            out[key] = frame.loc[keep]
     return out
 
 
@@ -6498,6 +7088,13 @@ def _strategy_feature_contracts_from_orchestrator(
             if not is_model_derived_feature_key(str(c))
             and _meta_live_unavailable_neutral_default(str(c)) is None
         )
+        # These observable inputs participate in the source-regime formulas
+        # consumed by the frozen AE/GMM state. They are indirect dependencies,
+        # so they may be absent from the direct base/meta feature names even
+        # though the historical scorer used them. Always retain them in the
+        # decision feature frame; strict row-level guards reject affected rows
+        # when either value is unavailable.
+        feat_cols.extend(("abs_ret_per_oi_z_24h", "quote_volume_z_30d"))
         if feat_cols:
             seen: set[str] = set()
             ordered: List[str] = []
@@ -6551,11 +7148,20 @@ def _filter_strategy_masks_by_finite_model_contract(
     """Keep symbols whose blocking deployed model inputs are finite."""
     if not strategy_candidate_masks or not strategy_feature_contracts:
         return strategy_candidate_masks, {}
-    allow_train_tolerated_nonfinite = _cfg_flag(
+    strict_feature_parity = _cfg_flag(
         cfg,
-        "live_model_contract_allow_train_tolerated_nonfinite",
-        "EPM_LIVE_MODEL_CONTRACT_ALLOW_TRAIN_TOLERATED_NONFINITE",
+        "strict_feature_parity",
+        "EPM_STRICT_FEATURE_PARITY",
         True,
+    )
+    allow_train_tolerated_nonfinite = (
+        not strict_feature_parity
+        and _cfg_flag(
+            cfg,
+            "live_model_contract_allow_train_tolerated_nonfinite",
+            "EPM_LIVE_MODEL_CONTRACT_ALLOW_TRAIN_TOLERATED_NONFINITE",
+            False,
+        )
     )
     filtered: Dict[str, List[str]] = {}
     diagnostics: Dict[str, Dict[str, Any]] = {}
@@ -6812,7 +7418,6 @@ def _select_candidates_and_load_features(
         strategy_candidate_masks: Dict[str, List[str]] = {}
         pre_model_strategy_masks_authoritative = False
         if not lgbm_strategy_mask_rows:
-            mode_cfg = dict((cfg or {}).get("candidate_mask_params_by_mode", {}) or {})
             policy_rules = dict((cfg or {}).get("policy_selection_rules", {}) or {})
             mask_contract_required = bool(
                 policy_rules.get("requires_lgbm_regime_mask_contract", True)
@@ -6822,7 +7427,7 @@ def _select_candidates_and_load_features(
                 for sid in ((cfg or {}).get("accepted_strategy_ids") or [])
                 if str(sid).strip()
             ]
-            if not mode_cfg and not mask_contract_required and accepted_contract_ids:
+            if not mask_contract_required and accepted_contract_ids:
                 tradable_ordered = [str(sym) for sym in symbols if str(sym).strip()]
                 long_strategy_ids = [
                     sid for sid in accepted_contract_ids if strategy_side(sid) == "long"
@@ -6842,8 +7447,8 @@ def _select_candidates_and_load_features(
                     if strategy_side(sid) in {"long", "short"}
                 }
                 tprint(
-                    "No deployed pre-model mask contract and no per-mode mask params; "
-                    "using full tradable universe for model/policy rank gating "
+                    "No deployed pre-model mask contract; using the full tradable "
+                    "universe for global base/meta/policy rank gating "
                     f"strategies={len(strategy_candidate_masks)} "
                     f"long={len(long_cands)} short={len(short_cands)} "
                     f"symbols={len(tradable_ordered)}"
@@ -7188,6 +7793,17 @@ def _select_candidates_and_load_features(
                 model_raw_feature_keys = raw_required_feature_keys(
                     active_model_feature_keys
                 )
+                # AE/GMM outputs in the selected contract are transformed from
+                # this broader frozen input basket. Strategy narrowing must not
+                # discard those dependencies and silently recompute them from a
+                # different rolling feature path.
+                model_raw_feature_keys.update(
+                    str(name)
+                    for name in (
+                        (cfg or {}).get("live_ae_gmm_input_feature_columns") or []
+                    )
+                    if str(name)
+                )
                 model_decision_feature_keys = set(active_model_feature_keys)
                 raw_feature_keys = (
                     set(mask_raw_feature_keys)
@@ -7212,6 +7828,9 @@ def _select_candidates_and_load_features(
             f"coverage_symbols={len(model_feature_coverage_symbols)}."
         )
         model_feats = load_or_compute_features(
+            # Coverage and order eligibility use the source-eligible subset,
+            # but cross-sectional regime/AE-GMM context must retain the same
+            # stable universe used by historical scoring.
             panel=_subset_panel(panel, model_feature_symbols),
             basket_syms=model_feature_symbols,
             run_id=run_id,
@@ -7819,6 +8438,209 @@ def _candidate_threshold_rank_score(decision: Mapping[str, Any]) -> float:
     return base
 
 
+def _candidate_corrected_ev_rank_for_sizing(
+    decision: Mapping[str, Any],
+) -> float:
+    """Return the side x archetype corrected-EV rank for position sizing."""
+    chain = decision.get("chain_results")
+    if not isinstance(chain, Mapping):
+        chain = {}
+    for key in (
+        "threshold_basis_corrected_expected_ev_rank",
+        "market_state_mlp_expected_ev_rank_score",
+        "expected_ev_rank_score",
+    ):
+        value = _safe_float(chain.get(key, decision.get(key)), np.nan)
+        if np.isfinite(value):
+            return float(np.clip(value, 0.0, 1.0))
+    return _safe_float(
+        decision.get(
+            "normalized_rank_score",
+            decision.get("threshold_score", decision.get("calibrated_score")),
+        )
+    )
+
+
+def _raw_bayesian_sizing_inputs(
+    decision: Mapping[str, Any],
+    *,
+    side: str,
+    state: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Build the exact inference-time row consumed by the frozen Bayesian sizer."""
+    chain = decision.get("chain_results")
+    if not isinstance(chain, Mapping):
+        chain = {}
+    merged: Dict[str, Any] = dict(decision)
+    merged.update({key: value for key, value in chain.items() if key not in merged})
+    meta_input = decision.get("_meta_model_input_features")
+    if not isinstance(meta_input, pd.DataFrame):
+        meta_input = chain.get("_meta_model_input_features")
+    if isinstance(meta_input, pd.DataFrame) and not meta_input.empty:
+        for key, value in meta_input.iloc[-1].items():
+            merged.setdefault(str(key), value)
+
+    # The production postprocessor exposes the same hierarchical MLP EV under
+    # its canonical inference name. Research ledgers retained the historical
+    # ``*_mlp_direct`` alias when the sizing state was fitted.
+    ev_column = str(state.get("ev_column") or "")
+    if ev_column and not np.isfinite(_safe_float(merged.get(ev_column), np.nan)):
+        for alias in (
+            "market_state_mlp_expected_net_ev_after_1pct",
+            "expected_net_ev_after_1pct",
+            "expected_net_ev_after_1pct_side_archetype",
+            "estimated_ev_net_return",
+        ):
+            value = _safe_float(merged.get(alias), np.nan)
+            if np.isfinite(value):
+                merged[ev_column] = value
+                break
+
+    uncertainty_column = str(state.get("uncertainty_column") or "")
+    if uncertainty_column and not np.isfinite(
+        _safe_float(merged.get(uncertainty_column), np.nan)
+    ):
+        for alias in (
+            "v9_tail95_predecessor_rank",
+            "policy_parent_rank",
+            "hit_probability",
+        ):
+            probability = _safe_float(merged.get(alias), np.nan)
+            if np.isfinite(probability):
+                probability = float(np.clip(probability, 0.0, 1.0))
+                merged[uncertainty_column] = probability * (1.0 - probability)
+                break
+
+    archetype_column = str(state.get("archetype_column") or "policy_archetype")
+    archetype = (
+        merged.get(archetype_column)
+        or merged.get("policy_archetype")
+        or merged.get("threshold_basis_policy_archetype")
+        or merged.get("archetype_policy_key")
+        or merged.get("archetype")
+    )
+    if not str(archetype or "").strip():
+        raise ValueError("raw Bayesian sizing requires a policy archetype")
+
+    required_numeric = [
+        ev_column,
+        uncertainty_column,
+    ]
+    if abs(float(state.get("ood_weight", 0.0))) > 1e-12:
+        required_numeric.extend(str(value) for value in state.get("ood_columns", []))
+    missing = [key for key in required_numeric if key and key not in merged]
+    if missing:
+        raise ValueError(
+            "raw Bayesian sizing inputs missing frozen-state columns: "
+            + ",".join(sorted(set(missing)))
+        )
+    non_finite = [
+        key
+        for key in required_numeric
+        if key and not np.isfinite(_safe_float(merged.get(key), np.nan))
+    ]
+    if non_finite:
+        raise ValueError(
+            "raw Bayesian sizing inputs are non-finite: "
+            + ",".join(sorted(set(non_finite)))
+        )
+    merged["side"] = str(side)
+    merged[archetype_column] = str(archetype)
+    merged["policy_archetype"] = str(archetype)
+    merged["rank_pct"] = _candidate_corrected_ev_rank_for_sizing(decision)
+    return pd.DataFrame([merged])
+
+
+def _resolved_runtime_policy_params(
+    executor: Any,
+    *,
+    strategy_id: str,
+    side: str,
+    decision: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any]]:
+    chain = decision.get("chain_results")
+    if not isinstance(chain, Mapping):
+        chain = {}
+    resolved_strategy_id = str(strategy_id)
+    resolver = getattr(executor, "resolve_simple_policy_strategy_id", None)
+    if callable(resolver):
+        resolved = resolver(
+            strategy_core_id(strategy_id),
+            side,
+            decision.get("policy_archetype") or chain.get("policy_archetype"),
+        )
+        if resolved:
+            resolved_strategy_id = str(resolved)
+    getter = getattr(executor, "get_simple_policy_stop_params", None)
+    params = getter(resolved_strategy_id) if callable(getter) else {}
+    return resolved_strategy_id, params or {}
+
+
+def _apply_runtime_sizing_overlay(
+    requested_position_usdt: float,
+    *,
+    decision: MutableMapping[str, Any],
+    executor: Any,
+    strategy_id: str,
+    side: str,
+    remaining_total_notional: Any = None,
+) -> tuple[float, Dict[str, Any]]:
+    """Apply the deployed sizing overlay once and return a complete audit row."""
+    chain = decision.get("chain_results")
+    if not isinstance(chain, MutableMapping):
+        chain = dict(chain or {})
+        decision["chain_results"] = chain
+    resolved_strategy_id, params = _resolved_runtime_policy_params(
+        executor,
+        strategy_id=strategy_id,
+        side=side,
+        decision=decision,
+    )
+
+    pathway_id = str(params.get("policy_pathway_id") or "")
+    if pathway_id == WINNER_POLICY_PATHWAY_ID:
+        state = params.get("raw_bayesian_sizing_state")
+        if not isinstance(state, Mapping) or not state:
+            raise RuntimeError(
+                "winner policy requires a frozen raw_bayesian_sizing_state"
+            )
+        inputs = _raw_bayesian_sizing_inputs(decision, side=side, state=state)
+        multiplier = float(apply_raw_bayesian_sizing_state(inputs, state)[0])
+        source = "raw_bayesian_v1_frozen_train_state"
+        state_fit_rows = int(state.get("fit_rows", 0) or 0)
+        state_policy_id = str(state.get("policy_id") or "raw_bayesian_v1")
+    else:
+        multiplier = _safe_float(
+            chain.get(
+                "uncertainty_ev_size_multiplier",
+                decision.get("uncertainty_ev_size_multiplier"),
+            ),
+            1.0,
+        )
+        multiplier = float(np.clip(multiplier, 0.0, 1.25))
+        source = "legacy_uncertainty_ev_size_multiplier"
+        state_fit_rows = 0
+        state_policy_id = "legacy"
+
+    before = float(requested_position_usdt)
+    after = before * multiplier
+    remaining_cap = _safe_float(remaining_total_notional, np.nan)
+    if np.isfinite(remaining_cap):
+        after = min(after, max(remaining_cap, 0.0))
+    audit = {
+        "policy_pathway_id": pathway_id or "legacy",
+        "sizing_policy_id": state_policy_id,
+        "sizing_overlay_source": source,
+        "raw_bayesian_size_multiplier": multiplier,
+        "size_before_sizing_overlay": before,
+        "size_after_sizing_overlay": float(after),
+        "raw_bayesian_state_fit_rows": state_fit_rows,
+        "sizing_policy_strategy_id": resolved_strategy_id,
+    }
+    chain.update(audit)
+    return float(after), audit
+
+
 def _annotate_portfolio_gate_info(
     info: Mapping[str, Any],
     *,
@@ -7951,12 +8773,19 @@ def _refresh_candidate_priority_after_live_friction_ev(
 
 def _auction_ev_target_for_occupancy(
     *,
-    open_positions: int,
+    invested_allocated_capital: float,
+    wallet_value: float,
     policy: PortfolioPolicyConfig,
 ) -> float:
     """Progressively require more realised EV as portfolio capacity fills."""
-    max_positions = max(int(getattr(policy, "max_concurrent_positions", 1) or 1), 1)
-    occupancy = float(np.clip(int(open_positions) / max_positions, 0.0, 1.0))
+    limit = max(
+        float(getattr(policy, "max_total_wallet_allocation_pct", 0.70))
+        * max(float(wallet_value), 0.0),
+        0.0,
+    )
+    occupancy = float(
+        np.clip(float(invested_allocated_capital) / max(limit, 1e-9), 0.0, 1.0)
+    )
     progress = occupancy
     lo = float(AUCTION_EV_MIN_NET_RETURN)
     hi = float(AUCTION_EV_MAX_NET_RETURN)
@@ -8388,6 +9217,15 @@ def _portfolio_replay_snapshot_payload(
         in {
             "wallet_value",
             "open_notional",
+            "open_marked_notional",
+            "pending_reserved_notional",
+            "invested_marked_notional",
+            "open_allocated_capital",
+            "pending_allocated_capital",
+            "invested_allocated_capital",
+            "configured_wallet_capital",
+            "remaining_allocated_capital",
+            "wallet_investment_utilization",
             "available_wallet_quote",
             "total_assets_quote",
             "total_liabilities_quote",
@@ -8398,7 +9236,7 @@ def _portfolio_replay_snapshot_payload(
         }
     }
     snapshot = {
-        "schema": "portfolio_replay_state_v2",
+        "schema": "portfolio_replay_state_v4_pre_leverage_wallet",
         "asof": _json_safe_audit_value(now_utc or pd.Timestamp.now(tz="UTC")),
         "open_positions": open_positions,
         "cooldowns": _json_safe_audit_value(cooldowns),
@@ -8508,6 +9346,148 @@ def _attach_portfolio_replay_state_after_for_ledger(
     decision["available_wallet_after"] = capacity_payload.get("available_wallet_quote")
 
 
+_EMAIL_PRECOMPUTED_FEATURE_SPECS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("inference_drift_score", ("inference_drift_score",)),
+    (
+        "feature_drift_psi_core",
+        ("feature_drift_psi_core", "feature_drift_psi_core_80"),
+    ),
+    (
+        "feature_drift_ks_bin_mean",
+        ("feature_drift_ks_bin_mean", "feature_drift_ks_core"),
+    ),
+    ("uncertainty_score", ("uncertainty_score",)),
+    ("prob_uncertainty", ("prob_uncertainty",)),
+    ("prediction_entropy", ("prediction_entropy",)),
+    ("leaf_count_p10", ("leaf_count_p10",)),
+    ("leaf_count_min", ("leaf_count_min",)),
+    ("rare_leaf_fraction", ("rare_leaf_fraction",)),
+    ("rare_leaf_low_support_score", ("rare_leaf_low_support_score",)),
+    (
+        "leaf_model_space_distance_mean",
+        ("leaf_model_space_distance_mean",),
+    ),
+    (
+        "leaf_model_space_distance_p10",
+        ("leaf_model_space_distance_p10",),
+    ),
+    ("meta_sel_ood_abs_z_max", ("meta_sel_ood_abs_z_max",)),
+    ("meta_sel_ood_abs_z_mean", ("meta_sel_ood_abs_z_mean",)),
+    ("meta_sel_ood_abs_z_p95", ("meta_sel_ood_abs_z_p95",)),
+    (
+        "meta_sel_ood_iqr_exceed_frac",
+        ("meta_sel_ood_iqr_exceed_frac",),
+    ),
+    ("meta_sel_ood_missing_frac", ("meta_sel_ood_missing_frac",)),
+    ("meta_sel_ood_centroid_l2", ("meta_sel_ood_centroid_l2",)),
+    (
+        "gmm_cluster_id",
+        ("gmm_cluster_id", "aegmm_cluster", "side_aegmm_cluster"),
+    ),
+    ("gmm_posterior_max", ("gmm_posterior_max",)),
+    ("gmm_posterior_margin", ("gmm_posterior_margin",)),
+    ("gmm_entropy", ("gmm_entropy", "cluster_entropy")),
+    ("gmm_ood_score", ("gmm_ood_score",)),
+    (
+        "mahalanobis_distance",
+        (
+            "mahalanobis_distance",
+            "gmm_mahalanobis_distance",
+            "aegmm_mahalanobis_distance",
+        ),
+    ),
+    (
+        "ae_reconstruction_error",
+        (
+            "ae_reconstruction_error",
+            "AE_reconstruction_error",
+            "dae_reconstruction_error",
+        ),
+    ),
+    ("cluster_speed", ("cluster_speed",)),
+    ("cluster_acceleration", ("cluster_acceleration",)),
+    ("email_env_volatility", ("rvol_z", "rv_24", "realized_vol", "vol_z")),
+    (
+        "email_env_vol_of_vol",
+        ("volatility_of_volatility_48", "vol_of_vol"),
+    ),
+    (
+        "email_env_entropy",
+        ("direction_entropy_20", "bar_direction_entropy", "price_entropy", "entropy"),
+    ),
+    (
+        "email_env_signed_trend",
+        ("regime_trend_score", "trend_slope_24_z", "trend_slope_12_z"),
+    ),
+    (
+        "email_env_volume_z",
+        ("volume_zscore_48h", "volume_z_24", "volume_z_12"),
+    ),
+    ("email_env_atr_percentile", ("atr_percentile",)),
+    (
+        "email_env_amihud_z",
+        ("amihud_z", "amihud_z_peer_resid", "ra_amihud_robust_z"),
+    ),
+    (
+        "email_env_vwap_distance_atr",
+        (
+            "dist_vwap_atr",
+            "distance_from_vwap_atr",
+            "loc_vwap_dev_z_24",
+            "loc_vwap_dev_z_48",
+            "distance_to_vwap",
+        ),
+    ),
+)
+
+
+def _snapshot_precomputed_email_context(
+    *,
+    symbol: str,
+    candidate_features: Optional[pd.DataFrame],
+    meta_model_input_features: Optional[pd.DataFrame],
+) -> Dict[str, Any]:
+    """Capture a compact entry-time market/latent-state snapshot for close emails.
+
+    This deliberately reads only frames already materialized for scoring.  It does
+    not derive indicators, query live data, or use realized outcomes after entry.
+    Candidate features take precedence over model inputs so the email reports the
+    native feature value rather than an optional model-side alias or transform.
+    """
+
+    sources: Dict[str, str] = {}
+    context: Dict[str, Any] = {}
+    frames = (
+        ("candidate_features", candidate_features),
+        ("meta_model_input", meta_model_input_features),
+    )
+    for destination, candidates in _EMAIL_PRECOMPUTED_FEATURE_SPECS:
+        found = False
+        for frame_name, frame in frames:
+            if not isinstance(frame, pd.DataFrame) or symbol not in frame.index:
+                continue
+            for source_key in candidates:
+                if source_key not in frame.columns:
+                    continue
+                value = frame.at[symbol, source_key]
+                if isinstance(value, pd.Series):
+                    if value.empty:
+                        continue
+                    value = value.iloc[-1]
+                numeric = _safe_float(value, default=np.nan)
+                if not np.isfinite(numeric):
+                    continue
+                context[destination] = float(numeric)
+                sources[destination] = f"{frame_name}:{source_key}"
+                found = True
+                break
+            if found:
+                break
+    if sources:
+        context["email_precomputed_feature_sources_json"] = _audit_json_dumps(sources)
+    return context
+
+
 def _model_feature_ledger_snapshot_for_decision(
     *,
     orchestrator: Any,
@@ -8551,6 +9531,11 @@ def _model_feature_ledger_snapshot_for_decision(
         "missing": missing,
     }
     snapshot_json = _audit_json_dumps(payload)
+    email_context = _snapshot_precomputed_email_context(
+        symbol=symbol,
+        candidate_features=candidate_features,
+        meta_model_input_features=meta_model_input_features,
+    )
     return {
         "model_feature_audit_schema": "selected_model_features_v1",
         "model_feature_snapshot_hash": hashlib.sha256(
@@ -8566,6 +9551,7 @@ def _model_feature_ledger_snapshot_for_decision(
         "meta_model_feature_values_json": _audit_json_dumps(meta_values),
         "model_feature_value_sources_json": _audit_json_dumps(sources),
         "model_feature_missing_json": _audit_json_dumps(missing),
+        **email_context,
     }
 
 
@@ -8823,17 +9809,8 @@ def _portfolio_policy_notional_leverage_multiplier(
     policy: PortfolioPolicyConfig,
     config: Dict[str, Any],
 ) -> float:
-    """Return leverage used to convert wallet allocation caps to quote notional."""
-    base = _safe_float(getattr(policy, "leverage_wallet_multiplier", 1.0), np.nan)
-    if not np.isfinite(base) or base <= 0.0:
-        base = 1.0
-    if _is_perps_config(config):
-        perp_default = _safe_float(
-            getattr(policy, "perp_default_leverage", 1.0), np.nan
-        )
-        if np.isfinite(perp_default) and perp_default > 0.0:
-            base = max(float(base), float(perp_default))
-    return max(float(base), 1.0)
+    """Capacity is gross marked quote notional and is leverage invariant."""
+    return 1.0
 
 
 def _live_exchange_symbol(exchange: Any, config: Dict[str, Any], symbol: str) -> str:
@@ -9098,15 +10075,6 @@ def _email_liquidation_guard_plain_lines(
 ) -> List[Optional[str]]:
     return [
         _email_line(
-            "perp_liquidation_guard_enabled",
-            source.get("perp_liquidation_guard_enabled"),
-            _email_fmt_bool,
-        ),
-        _email_line(
-            "perp_liquidation_guard_reason",
-            source.get("perp_liquidation_guard_reason"),
-        ),
-        _email_line(
             "perp_liquidation_leverage_capped",
             source.get("perp_liquidation_leverage_capped"),
             _email_fmt_bool,
@@ -9114,11 +10082,6 @@ def _email_liquidation_guard_plain_lines(
         _email_line(
             "perp_liquidation_requested_leverage",
             source.get("perp_liquidation_requested_leverage"),
-            _email_fmt_float(4, "x"),
-        ),
-        _email_line(
-            "perp_liquidation_guarded_leverage",
-            source.get("perp_liquidation_guarded_leverage"),
             _email_fmt_float(4, "x"),
         ),
         _email_line(
@@ -9137,33 +10100,8 @@ def _email_liquidation_guard_plain_lines(
             _email_fmt_float(4),
         ),
         _email_line(
-            "perp_liquidation_required_distance_pct",
-            source.get("perp_liquidation_required_distance_pct"),
-            _email_fmt_pct,
-        ),
-        _email_line(
             "perp_liquidation_distance_at_requested_pct",
             source.get("perp_liquidation_distance_at_requested_pct"),
-            _email_fmt_pct,
-        ),
-        _email_line(
-            "perp_liquidation_distance_at_guarded_pct",
-            source.get("perp_liquidation_distance_at_guarded_pct"),
-            _email_fmt_pct,
-        ),
-        _email_line(
-            "perp_liquidation_maintenance_margin_pct",
-            source.get("perp_liquidation_maintenance_margin_pct"),
-            _email_fmt_pct,
-        ),
-        _email_line(
-            "perp_liquidation_safety_buffer_pct",
-            source.get("perp_liquidation_safety_buffer_pct"),
-            _email_fmt_pct,
-        ),
-        _email_line(
-            "perp_liquidation_fee_buffer_pct",
-            source.get("perp_liquidation_fee_buffer_pct"),
             _email_fmt_pct,
         ),
     ]
@@ -9174,12 +10112,6 @@ def _email_liquidation_guard_html_rows(
 ) -> List[Tuple[str, Any, Optional[Any]]]:
     return [
         (
-            "Guard Enabled",
-            source.get("perp_liquidation_guard_enabled"),
-            _email_fmt_bool,
-        ),
-        ("Guard Reason", source.get("perp_liquidation_guard_reason"), None),
-        (
             "Leverage Capped",
             source.get("perp_liquidation_leverage_capped"),
             _email_fmt_bool,
@@ -9187,11 +10119,6 @@ def _email_liquidation_guard_html_rows(
         (
             "Requested Leverage",
             source.get("perp_liquidation_requested_leverage"),
-            _email_fmt_float(4, "x"),
-        ),
-        (
-            "Guarded Leverage",
-            source.get("perp_liquidation_guarded_leverage"),
             _email_fmt_float(4, "x"),
         ),
         (
@@ -9210,33 +10137,8 @@ def _email_liquidation_guard_html_rows(
             _email_fmt_float(4),
         ),
         (
-            "Required Liquidation Distance",
-            source.get("perp_liquidation_required_distance_pct"),
-            _email_fmt_pct,
-        ),
-        (
             "Distance at Requested Leverage",
             source.get("perp_liquidation_distance_at_requested_pct"),
-            _email_fmt_pct,
-        ),
-        (
-            "Distance at Guarded Leverage",
-            source.get("perp_liquidation_distance_at_guarded_pct"),
-            _email_fmt_pct,
-        ),
-        (
-            "Maintenance Margin Assumption",
-            source.get("perp_liquidation_maintenance_margin_pct"),
-            _email_fmt_pct,
-        ),
-        (
-            "Safety Buffer",
-            source.get("perp_liquidation_safety_buffer_pct"),
-            _email_fmt_pct,
-        ),
-        (
-            "Liquidation Fee Buffer",
-            source.get("perp_liquidation_fee_buffer_pct"),
             _email_fmt_pct,
         ),
     ]
@@ -9819,6 +10721,829 @@ def _email_archetype_recent_performance_html_rows(
     ]
 
 
+def _email_first_present(source: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = source.get(key)
+        if _email_value_present(value):
+            return value
+    return None
+
+
+def _canonical_meta_postprocessor_for_side(
+    postprocessor: Any,
+    portfolio_policy: Any,
+    side: str,
+) -> Any:
+    configured = {
+        str(value).strip().lower()
+        for value in (
+            getattr(portfolio_policy, "canonical_meta_postprocessor_sides", (),)
+            or ()
+        )
+        if str(value).strip()
+    }
+    if configured and str(side or "").strip().lower() not in configured:
+        return None
+    return postprocessor
+
+
+def _email_entry_snapshot_source_label(
+    source: Mapping[str, Any],
+    key: str,
+    *,
+    fallback: str,
+) -> str:
+    """Return the exact stored feature name behind an entry-time email value."""
+
+    raw = source.get("email_precomputed_feature_sources_json")
+    try:
+        mapping = json.loads(str(raw)) if raw else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        mapping = {}
+    value = mapping.get(key) if isinstance(mapping, Mapping) else None
+    if not value:
+        return fallback
+    return str(value).split(":", 1)[-1] or fallback
+
+
+def _email_entry_snapshot_label(
+    source: Mapping[str, Any],
+    key: str,
+    label: str,
+) -> str:
+    feature_name = _email_entry_snapshot_source_label(
+        source,
+        key,
+        fallback=key.removeprefix("email_env_").replace("_", " "),
+    )
+    return f"{label} ({feature_name})"
+
+
+def _email_strategy_state_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    archetype_name = (
+        source.get("policy_archetype")
+        or source.get("local_side_archetype")
+        or source.get("source_archetype")
+        or source.get("archetype_label_family")
+    )
+    return [
+        ("Strategy", source.get("strategy_id"), None),
+        ("Model Artifact", source.get("model_artifact_run_id"), None),
+        ("Policy Artifact", source.get("policy_artifact_run_id"), None),
+        ("Primary Archetype", archetype_name, None),
+        ("Policy Archetype", source.get("policy_archetype"), None),
+        ("Archetype Source", source.get("policy_archetype_source"), None),
+        ("Local Side Archetype", source.get("local_side_archetype"), None),
+        ("Source Archetype", source.get("source_archetype"), None),
+        ("Archetype Family", source.get("archetype_label_family"), None),
+        ("AE/GMM Cluster", source.get("aegmm_cluster"), None),
+        ("Side AE/GMM Cluster", source.get("side_aegmm_cluster"), None),
+        ("GMM Cluster ID", source.get("gmm_cluster_id"), _email_fmt_float(0)),
+        (
+            "GMM Posterior Max",
+            source.get("gmm_posterior_max"),
+            _email_fmt_float(6),
+        ),
+        (
+            "GMM Posterior Margin",
+            source.get("gmm_posterior_margin"),
+            _email_fmt_float(6),
+        ),
+        ("GMM Entropy", source.get("gmm_entropy"), _email_fmt_float(6)),
+        (
+            "GMM Centroid Distance (Mahalanobis)",
+            source.get("mahalanobis_distance"),
+            _email_fmt_float(6),
+        ),
+        ("GMM OOD Score", source.get("gmm_ood_score"), _email_fmt_float(6)),
+        (
+            "AE Reconstruction Error",
+            _email_first_present(
+                source, "ae_reconstruction_error", "AE_reconstruction_error"
+            ),
+            _email_fmt_float(6),
+        ),
+        ("Cluster Speed", source.get("cluster_speed"), _email_fmt_float(6)),
+        (
+            "Cluster Acceleration",
+            source.get("cluster_acceleration"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Residual-State Cluster",
+            source.get("resid_event_aegmm_gmm_cluster_id"),
+            _email_fmt_float(0),
+        ),
+    ]
+
+
+def _email_market_environment_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    """Render precomputed, entry-time market-state values without recalculation."""
+
+    return [
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_volatility", "Volatility"
+            ),
+            source.get("email_env_volatility"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_vol_of_vol", "Volatility of Volatility"
+            ),
+            source.get("email_env_vol_of_vol"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_entropy", "Direction / State Entropy"
+            ),
+            source.get("email_env_entropy"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_signed_trend", "Signed Trend"
+            ),
+            source.get("email_env_signed_trend"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_volume_z", "Volume z-score"
+            ),
+            source.get("email_env_volume_z"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_atr_percentile", "ATR Percentile / Compression"
+            ),
+            source.get("email_env_atr_percentile"),
+            _email_fmt_pct,
+        ),
+        (
+            _email_entry_snapshot_label(
+                source, "email_env_amihud_z", "Amihud Illiquidity z-score"
+            ),
+            source.get("email_env_amihud_z"),
+            _email_fmt_float(6),
+        ),
+        (
+            _email_entry_snapshot_label(
+                source,
+                "email_env_vwap_distance_atr",
+                "Signed Distance from VWAP (ATR-normalized)",
+            ),
+            source.get("email_env_vwap_distance_atr"),
+            _email_fmt_float(6),
+        ),
+    ]
+
+
+def _email_model_health_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    return [
+        ("Drift Score", source.get("inference_drift_score"), _email_fmt_float(6)),
+        (
+            "Base LGBM Drift Score",
+            source.get("base_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta LGBM Drift Score",
+            source.get("meta_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Feature Population Drift PSI",
+            source.get("feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Feature Population Drift KS",
+            source.get("feature_drift_ks_bin_mean"),
+            _email_fmt_float(6),
+        ),
+        ("OOD Score", source.get("ood_score"), _email_fmt_float(6)),
+        (
+            "Meta OOD Absolute z p95",
+            source.get("meta_sel_ood_abs_z_p95"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD Absolute z Mean",
+            source.get("meta_sel_ood_abs_z_mean"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD Absolute z Max",
+            source.get("meta_sel_ood_abs_z_max"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD IQR-Exceed Fraction",
+            source.get("meta_sel_ood_iqr_exceed_frac"),
+            _email_fmt_pct,
+        ),
+        (
+            "Meta OOD Missing-Feature Fraction",
+            source.get("meta_sel_ood_missing_frac"),
+            _email_fmt_pct,
+        ),
+        (
+            "Meta OOD Centroid L2 Distance",
+            source.get("meta_sel_ood_centroid_l2"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Uncertainty Score",
+            source.get("uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta Uncertainty",
+            source.get("meta_lgbm_uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Prediction Entropy",
+            source.get("prediction_entropy"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Leaf Support P10",
+            _email_first_present(
+                source, "meta_lgbm_leaf_count_p10", "leaf_count_p10"
+            ),
+            _email_fmt_float(4),
+        ),
+        (
+            "Leaf Support Minimum",
+            _email_first_present(
+                source, "meta_lgbm_leaf_count_min", "leaf_count_min"
+            ),
+            _email_fmt_float(4),
+        ),
+        (
+            "Rare-Leaf Fraction",
+            _email_first_present(
+                source, "meta_lgbm_rare_leaf_fraction", "rare_leaf_fraction"
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Rare-Leaf Low-Support Score",
+            source.get("rare_leaf_low_support_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Leaf-Space Distance Mean",
+            _email_first_present(
+                source,
+                "meta_lgbm_leaf_model_space_distance_mean",
+                "leaf_model_space_distance_mean",
+            ),
+            _email_fmt_float(6),
+        ),
+        (
+            "Leaf-Space Distance P10",
+            _email_first_present(
+                source,
+                "meta_lgbm_leaf_model_space_distance_p10",
+                "leaf_model_space_distance_p10",
+            ),
+            _email_fmt_float(6),
+        ),
+    ]
+
+
+def _email_policy_context_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    return [
+        ("Admission Policy", source.get("threshold_basis_policy_id"), None),
+        ("Admission Family", source.get("threshold_basis_family"), None),
+        (
+            "Side x Archetype Mapped EV",
+            source.get("threshold_basis_mapped_expected_ev_side_archetype"),
+            _email_fmt_pct,
+        ),
+        (
+            "Recent EV Correction",
+            source.get("threshold_basis_side_archetype_recent_ev_correction"),
+            _email_fmt_pct,
+        ),
+        (
+            "Corrected Expected EV",
+            source.get("threshold_basis_corrected_expected_ev"),
+            _email_fmt_pct,
+        ),
+        (
+            "Side x Archetype EV Target",
+            source.get("threshold_basis_dynamic_ev_target"),
+            _email_fmt_pct,
+        ),
+        (
+            "Admission Local Support",
+            source.get("threshold_basis_ev_target_local_support"),
+            _email_fmt_float(0),
+        ),
+        (
+            "Recent Hit Rate",
+            _email_first_present(
+                source,
+                "archetype_hit_surprise_actual_hit_rate",
+                "threshold_basis_archetype_baseline_positive_ev_rate",
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Historical Baseline Hit Rate",
+            _email_first_present(
+                source,
+                "archetype_hit_surprise_expected_hit_rate",
+                "threshold_basis_archetype_baseline_historical_positive_ev_rate",
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Recent vs Baseline Hit-Rate Delta",
+            _email_first_present(
+                source,
+                "archetype_hit_surprise_hit_rate_delta",
+                "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate",
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Hit-Rate Surprise z",
+            source.get("archetype_hit_surprise_hit_rate_surprise_z"),
+            _email_fmt_float(4),
+        ),
+        (
+            "Recent Performance n_eff",
+            source.get("archetype_hit_surprise_n_eff"),
+            _email_fmt_float(4),
+        ),
+    ]
+
+
+def _email_archetype_28d_baseline_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    """Render the causal robust baseline saved with the entry decision."""
+
+    return [
+        (
+            "Baseline Window",
+            source.get("threshold_basis_archetype_baseline_window_days"),
+            _email_fmt_float(0, " days"),
+        ),
+        (
+            "Baseline Scope",
+            source.get("threshold_basis_archetype_baseline_scope"),
+            None,
+        ),
+        (
+            "Robust Daily Trim",
+            source.get("threshold_basis_archetype_baseline_trim_fraction"),
+            _email_fmt_pct,
+        ),
+        (
+            "Baseline Support",
+            source.get("threshold_basis_archetype_baseline_support"),
+            _email_fmt_float(0),
+        ),
+        (
+            "Retained / Trimmed Outcome Days",
+            (
+                f"{_format_float(source.get('threshold_basis_archetype_baseline_retained_days'), 0)} / "
+                f"{_format_float(source.get('threshold_basis_archetype_baseline_trimmed_days'), 0)}"
+            )
+            if _email_value_present(
+                source.get("threshold_basis_archetype_baseline_retained_days")
+            )
+            else None,
+            None,
+        ),
+        (
+            "28d Net EV Mean",
+            source.get("threshold_basis_archetype_baseline_ev_mean"),
+            _email_fmt_pct,
+        ),
+        (
+            "28d Net EV Median",
+            source.get("threshold_basis_archetype_baseline_ev_median"),
+            _email_fmt_pct,
+        ),
+        (
+            "28d Net EV IQR",
+            source.get("threshold_basis_archetype_baseline_ev_iqr"),
+            _email_fmt_pct,
+        ),
+        (
+            "Positive-EV Rate",
+            source.get("threshold_basis_archetype_baseline_positive_ev_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "First-Touch TP Rate",
+            source.get("threshold_basis_archetype_baseline_take_profit_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "First-Touch Stop Rate",
+            source.get("threshold_basis_archetype_baseline_stop_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "First-Touch Timeout Rate",
+            source.get("threshold_basis_archetype_baseline_timeout_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Historical Positive-EV Rate",
+            source.get(
+                "threshold_basis_archetype_baseline_historical_positive_ev_rate"
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "28d vs Historical Positive-EV Delta",
+            source.get(
+                "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate"
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Historical Baseline Scope / Support",
+            (
+                f"{source.get('threshold_basis_archetype_baseline_historical_scope')} / "
+                f"{_format_float(source.get('threshold_basis_archetype_baseline_historical_support'), 0)}"
+            )
+            if _email_value_present(
+                source.get("threshold_basis_archetype_baseline_historical_support")
+            )
+            else None,
+            None,
+        ),
+        (
+            "Avg First-Touch MAE, Positive-EV Trades (% Initial Stop)",
+            source.get(
+                "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean"
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Positive-EV MAE Support",
+            source.get(
+                "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_support"
+            ),
+            _email_fmt_float(0),
+        ),
+        (
+            "Clean-Executable Rate",
+            source.get("threshold_basis_archetype_baseline_clean_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Dirty-Positive Rate",
+            source.get("threshold_basis_archetype_baseline_dirty_positive_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Bad-MAE Rate",
+            source.get("threshold_basis_archetype_baseline_bad_mae_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Mapped-EV Decile",
+            source.get("threshold_basis_archetype_baseline_mapped_ev_decile"),
+            _email_fmt_float(0),
+        ),
+        (
+            "Mapped-EV Decile Calibration Residual",
+            source.get(
+                "threshold_basis_archetype_baseline_mapped_ev_decile_calibration_residual"
+            ),
+            _email_fmt_pct,
+        ),
+        (
+            "Mapped-EV Decile Support",
+            source.get("threshold_basis_archetype_baseline_mapped_ev_decile_support"),
+            _email_fmt_float(0),
+        ),
+        (
+            "Current GMM-State 28d EV",
+            source.get("threshold_basis_archetype_baseline_gmm_state_ev_mean"),
+            _email_fmt_pct,
+        ),
+        (
+            "Current GMM-State Support",
+            source.get("threshold_basis_archetype_baseline_gmm_state_support"),
+            _email_fmt_float(0),
+        ),
+    ]
+
+
+def _email_archetype_28d_baseline_plain_lines(
+    source: Mapping[str, Any],
+) -> List[Optional[str]]:
+    return _email_plain_lines_from_rows(
+        _email_archetype_28d_baseline_html_rows(source)
+    )
+
+
+def _email_plain_lines_from_rows(
+    rows: Sequence[Tuple[str, Any, Optional[Any]]],
+) -> List[Optional[str]]:
+    return [
+        _email_line(label, value, formatter)
+        for label, value, formatter in rows
+    ]
+
+
+def _email_meta_postprocessor_plain_lines(
+    source: Mapping[str, Any],
+) -> List[Optional[str]]:
+    return [
+        _email_line(
+            "meta_postprocessor_policy_id",
+            source.get("meta_postprocessor_policy_id")
+            or source.get("regime_ev_calibration_source"),
+        ),
+        _email_line(
+            "residual_overlay_predecessor_id",
+            source.get("meta_postprocessor_predecessor_id"),
+        ),
+        _email_line(
+            "postprocessor_side_archetype",
+            source.get("meta_postprocessor_side_archetype"),
+        ),
+        _email_line(
+            "residual_state_cluster_id",
+            source.get("resid_event_aegmm_gmm_cluster_id"),
+            _email_fmt_float(0),
+        ),
+        _email_line(
+            "residual_state_entropy",
+            source.get("resid_event_aegmm_gmm_entropy"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "residual_state_posterior_margin",
+            source.get("resid_event_aegmm_gmm_posterior_margin"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "expected_negative_residual_event",
+            source.get("resid_event_aegmm_expected_negative_residual_event"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "expected_positive_residual_event",
+            source.get("resid_event_aegmm_expected_positive_residual_event"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "expected_adverse_path_event",
+            source.get("resid_event_aegmm_expected_adverse_path_event"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "expected_favorable_near_miss_event",
+            source.get("resid_event_aegmm_expected_favorable_near_miss_event"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "residual_state_expected_ev_after_1pct",
+            source.get("resid_event_aegmm_expected_ev_after_1pct"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "residual_state_expected_persistence",
+            source.get("resid_event_aegmm_expected_persistence_strength"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "residual_market_state_effect_count",
+            source.get("regime_ev_effect_count"),
+        ),
+        _email_line(
+            "market_state_mlp_score_correction",
+            source.get("market_state_mlp_score_correction"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "market_state_expected_net_ev_after_1pct",
+            source.get("market_state_mlp_expected_net_ev_after_1pct")
+            if _email_value_present(
+                source.get("market_state_mlp_expected_net_ev_after_1pct")
+            )
+            else source.get("expected_net_ev_after_1pct"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "market_state_expected_ev_rank_score",
+            source.get("market_state_mlp_expected_ev_rank_score")
+            if _email_value_present(source.get("market_state_mlp_expected_ev_rank_score"))
+            else source.get("expected_ev_rank_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "postprocessor_archetype_blacklisted",
+            source.get("regime_ev_blacklisted"),
+            _email_fmt_bool,
+        ),
+    ]
+
+
+def _email_meta_postprocessor_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    expected_ev = source.get("market_state_mlp_expected_net_ev_after_1pct")
+    if not _email_value_present(expected_ev):
+        expected_ev = source.get("expected_net_ev_after_1pct")
+    expected_rank = source.get("market_state_mlp_expected_ev_rank_score")
+    if not _email_value_present(expected_rank):
+        expected_rank = source.get("expected_ev_rank_score")
+    return [
+        (
+            "Postprocessor Policy",
+            source.get("meta_postprocessor_policy_id")
+            or source.get("regime_ev_calibration_source"),
+            None,
+        ),
+        (
+            "Residual Overlay Predecessor",
+            source.get("meta_postprocessor_predecessor_id"),
+            None,
+        ),
+        (
+            "Postprocessor Side x Archetype",
+            source.get("meta_postprocessor_side_archetype"),
+            None,
+        ),
+        (
+            "Residual-State Cluster",
+            source.get("resid_event_aegmm_gmm_cluster_id"),
+            _email_fmt_float(0),
+        ),
+        (
+            "Residual-State Entropy",
+            source.get("resid_event_aegmm_gmm_entropy"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Residual-State Posterior Margin",
+            source.get("resid_event_aegmm_gmm_posterior_margin"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Expected Negative Residual Event",
+            source.get("resid_event_aegmm_expected_negative_residual_event"),
+            _email_fmt_pct,
+        ),
+        (
+            "Expected Positive Residual Event",
+            source.get("resid_event_aegmm_expected_positive_residual_event"),
+            _email_fmt_pct,
+        ),
+        (
+            "Expected Adverse Path Event",
+            source.get("resid_event_aegmm_expected_adverse_path_event"),
+            _email_fmt_pct,
+        ),
+        (
+            "Expected Favorable Near-Miss Event",
+            source.get("resid_event_aegmm_expected_favorable_near_miss_event"),
+            _email_fmt_pct,
+        ),
+        (
+            "Residual-State Expected EV after 1%",
+            source.get("resid_event_aegmm_expected_ev_after_1pct"),
+            _email_fmt_pct,
+        ),
+        (
+            "Residual-State Expected Persistence",
+            source.get("resid_event_aegmm_expected_persistence_strength"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Residual / Market-State Effects",
+            source.get("regime_ev_effect_count"),
+            None,
+        ),
+        (
+            "MLP Score Correction",
+            source.get("market_state_mlp_score_correction"),
+            _email_fmt_float(6),
+        ),
+        ("Market-State Expected EV after 1%", expected_ev, _email_fmt_pct),
+        ("Market-State Expected-EV Rank", expected_rank, _email_fmt_float(6)),
+        (
+            "Archetype Blacklisted",
+            source.get("regime_ev_blacklisted"),
+            _email_fmt_bool,
+        ),
+    ]
+
+
+def _email_threshold_basis_plain_lines(
+    source: Mapping[str, Any],
+) -> List[Optional[str]]:
+    return [
+        _email_line("admission_policy_id", source.get("threshold_basis_policy_id")),
+        _email_line("admission_family", source.get("threshold_basis_family")),
+        _email_line(
+            "admission_window_days",
+            source.get("threshold_basis_window_days"),
+            _email_fmt_float(0),
+        ),
+        _email_line(
+            "admission_selected", source.get("threshold_basis_selected"), _email_fmt_bool
+        ),
+        _email_line("admission_reason", source.get("threshold_basis_reason")),
+        _email_line(
+            "admission_rank_score",
+            source.get("threshold_basis_rank_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "admission_apply_cutoff",
+            source.get("threshold_basis_apply_cutoff"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "side_archetype_ev_target",
+            source.get("threshold_basis_dynamic_ev_target"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "side_archetype_parent_score_threshold",
+            source.get("threshold_basis_dynamic_score_threshold"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "side_archetype_ev_multiplier",
+            source.get("threshold_basis_ev_target_multiplier"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "side_archetype_local_support",
+            source.get("threshold_basis_ev_target_local_support"),
+            _email_fmt_float(0),
+        ),
+        _email_line(
+            "side_archetype_global_fallback",
+            source.get("threshold_basis_ev_target_global_fallback"),
+            _email_fmt_bool,
+        ),
+        _email_line(
+            "recent_reference_rows",
+            source.get("threshold_basis_recent_reference_rows"),
+            _email_fmt_float(0),
+        ),
+        _email_line(
+            "all_prior_reference_rows",
+            source.get("threshold_basis_reference_rows"),
+            _email_fmt_float(0),
+        ),
+    ]
+
+
+def _email_threshold_basis_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    return [
+        ("Admission Policy", source.get("threshold_basis_policy_id"), None),
+        ("Admission Family", source.get("threshold_basis_family"), None),
+        (
+            "Admission Window",
+            source.get("threshold_basis_window_days"),
+            _email_fmt_float(0, " days"),
+        ),
+        ("Admission Selected", source.get("threshold_basis_selected"), _email_fmt_bool),
+        ("Admission Reason", source.get("threshold_basis_reason"), None),
+        ("Admission Rank Score", source.get("threshold_basis_rank_score"), _email_fmt_float(6)),
+        ("Admission Apply Cutoff", source.get("threshold_basis_apply_cutoff"), _email_fmt_float(6)),
+        ("Side x Archetype EV Target", source.get("threshold_basis_dynamic_ev_target"), _email_fmt_pct),
+        ("Side x Archetype Parent Threshold", source.get("threshold_basis_dynamic_score_threshold"), _email_fmt_float(6)),
+        ("Side x Archetype EV Multiplier", source.get("threshold_basis_ev_target_multiplier"), _email_fmt_float(6)),
+        ("Side x Archetype Local Support", source.get("threshold_basis_ev_target_local_support"), _email_fmt_float(0)),
+        ("Global Admission Fallback", source.get("threshold_basis_ev_target_global_fallback"), _email_fmt_bool),
+        ("Recent Reference Rows", source.get("threshold_basis_recent_reference_rows"), _email_fmt_float(0)),
+        ("All Prior Reference Rows", source.get("threshold_basis_reference_rows"), _email_fmt_float(0)),
+    ]
+
+
 def _email_drift_uncertainty_plain_lines(
     source: Mapping[str, Any],
 ) -> List[Optional[str]]:
@@ -9875,6 +11600,36 @@ def _email_drift_uncertainty_plain_lines(
         ),
         _email_line("ood_score", source.get("ood_score"), _email_fmt_float(6)),
         _email_line("odd_score", source.get("odd_score"), _email_fmt_float(6)),
+        _email_line(
+            "meta_sel_ood_abs_z_p95",
+            source.get("meta_sel_ood_abs_z_p95"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_sel_ood_abs_z_mean",
+            source.get("meta_sel_ood_abs_z_mean"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_sel_ood_abs_z_max",
+            source.get("meta_sel_ood_abs_z_max"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_sel_ood_iqr_exceed_frac",
+            source.get("meta_sel_ood_iqr_exceed_frac"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "meta_sel_ood_missing_frac",
+            source.get("meta_sel_ood_missing_frac"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "meta_sel_ood_centroid_l2",
+            source.get("meta_sel_ood_centroid_l2"),
+            _email_fmt_float(6),
+        ),
         _email_line(
             "uncertainty_score",
             source.get("uncertainty_score"),
@@ -9995,6 +11750,36 @@ def _email_drift_uncertainty_html_rows(
         ),
         ("OOD Score", source.get("ood_score"), _email_fmt_float(6)),
         ("ODD Score", source.get("odd_score"), _email_fmt_float(6)),
+        (
+            "Meta OOD Absolute z p95",
+            source.get("meta_sel_ood_abs_z_p95"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD Absolute z Mean",
+            source.get("meta_sel_ood_abs_z_mean"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD Absolute z Max",
+            source.get("meta_sel_ood_abs_z_max"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta OOD IQR-Exceed Fraction",
+            source.get("meta_sel_ood_iqr_exceed_frac"),
+            _email_fmt_pct,
+        ),
+        (
+            "Meta OOD Missing-Feature Fraction",
+            source.get("meta_sel_ood_missing_frac"),
+            _email_fmt_pct,
+        ),
+        (
+            "Meta OOD Centroid L2 Distance",
+            source.get("meta_sel_ood_centroid_l2"),
+            _email_fmt_float(6),
+        ),
         ("Uncertainty Score", source.get("uncertainty_score"), _email_fmt_float(6)),
         (
             "Base LGBM Uncertainty Score",
@@ -10050,6 +11835,7 @@ def _build_trade_close_email_body(
     closed_trade: Mapping[str, Any],
     config: Mapping[str, Any],
 ) -> str:
+    closed_trade = restore_entry_provenance(closed_trade)
     holding_time_hours = _safe_float(closed_trade.get("holding_time_hours"))
     if not np.isfinite(holding_time_hours):
         holding_time_hours = _holding_time_hours(
@@ -10121,16 +11907,6 @@ def _build_trade_close_email_body(
                     _email_fmt_pct,
                 ),
                 _email_line(
-                    "net_pnl_pct_wallet_leverage_adjusted",
-                    closed_trade.get("leverage_adjusted_net_pnl_pct"),
-                    _email_fmt_pct,
-                ),
-                _email_line(
-                    "net_pnl_pct_wallet_estimated_fees",
-                    closed_trade.get("net_pnl_pct_wallet_estimated"),
-                    _email_fmt_pct,
-                ),
-                _email_line(
                     "exchange_entry_leverage_used_for_margin_roi",
                     actual_entry_leverage,
                     _email_fmt_float(4, "x"),
@@ -10148,11 +11924,6 @@ def _build_trade_close_email_body(
                         closed_trade.get("requested_configured_entry_leverage"),
                     ),
                     _email_fmt_float(4, "x"),
-                ),
-                _email_line(
-                    "estimated_margin_roi_pct_at_entry_leverage",
-                    actual_leverage_pnl_pct,
-                    _email_fmt_pct,
                 ),
                 _email_line(
                     "gross_pnl_quote_est_position",
@@ -10918,8 +12689,52 @@ def _build_trade_close_email_body(
     )
     lines.extend(
         _email_section(
+            "Strategy and latent state",
+            _email_plain_lines_from_rows(_email_strategy_state_html_rows(closed_trade)),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Model health at entry",
+            _email_plain_lines_from_rows(_email_model_health_html_rows(closed_trade)),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Market environment at entry",
+            _email_plain_lines_from_rows(
+                _email_market_environment_html_rows(closed_trade)
+            ),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Policy context at entry",
+            _email_plain_lines_from_rows(_email_policy_context_html_rows(closed_trade)),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Policy: 28-day archetype evidence at entry",
+            _email_archetype_28d_baseline_plain_lines(closed_trade),
+        )
+    )
+    lines.extend(
+        _email_section(
             "Archetype recent performance",
             _email_archetype_recent_performance_plain_lines(closed_trade),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Residual and market-state postprocessors",
+            _email_meta_postprocessor_plain_lines(closed_trade),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "28-day side x archetype admission",
+            _email_threshold_basis_plain_lines(closed_trade),
         )
     )
     lines.extend(
@@ -11529,21 +13344,22 @@ def _email_html_document(
     return (
         '<!doctype html><html><head><meta charset="utf-8">'
         "<style>"
-        "body{margin:0;background:#f3f4f6;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;}"
-        ".wrap{max-width:980px;margin:0 auto;padding:24px;}"
-        ".header{background:#111827;color:#fff;border-radius:12px;padding:22px 24px;margin-bottom:16px;}"
+        "body{margin:0;background:#f5f7fa;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;}"
+        ".wrap{max-width:1080px;margin:0 auto;padding:24px;}"
+        ".header{background:#111827;border:1px solid #1f2937;color:#fff;border-radius:10px;padding:24px;margin-bottom:18px;box-shadow:0 8px 24px rgba(17,24,39,.12);}"
         ".header h1{font-size:22px;line-height:1.25;margin:0 0 6px 0;}"
         ".subtitle{color:#d1d5db;font-size:13px;margin:0;}"
-        ".dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0;}"
-        ".metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;}"
+        ".dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(156px,1fr));gap:10px;margin:16px 0 18px;}"
+        ".metric{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px 13px;box-shadow:0 1px 2px rgba(15,23,42,.04);min-height:52px;}"
         ".metric-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;margin-bottom:5px;}"
         ".metric-value{font-size:18px;font-weight:700;line-height:1.25;word-break:break-word;}"
-        ".card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:12px 0;}"
-        ".card h2{font-size:15px;margin:0 0 10px 0;}"
+        ".card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:17px 18px;margin:12px 0;box-shadow:0 1px 2px rgba(15,23,42,.035);}"
+        ".card h2{font-size:15px;letter-spacing:0;margin:0 0 10px 0;color:#0f172a;}"
         ".kv-table{width:100%;border-collapse:collapse;font-size:13px;}"
-        ".kv-table th{text-align:left;color:#6b7280;font-weight:600;width:34%;padding:7px 10px;border-top:1px solid #f3f4f6;vertical-align:top;}"
-        ".kv-table td{padding:7px 10px;border-top:1px solid #f3f4f6;vertical-align:top;word-break:break-word;}"
+        ".kv-table th{text-align:left;color:#64748b;font-weight:600;width:36%;padding:7px 10px;border-top:1px solid #f1f5f9;vertical-align:top;}"
+        ".kv-table td{padding:7px 10px;border-top:1px solid #f1f5f9;vertical-align:top;word-break:break-word;}"
         ".audit{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.45;background:#0f172a;color:#e5e7eb;border-radius:8px;padding:12px;overflow:auto;}"
+        "@media(max-width:640px){.wrap{padding:12px}.header{padding:18px}.metric-value{font-size:16px}.kv-table th{width:42%;padding-left:4px}.kv-table td{padding-right:4px}}"
         '</style></head><body><div class="wrap">'
         f'<div class="header"><h1>{_email_html_escape(title)}</h1>'
         f'<p class="subtitle">{_email_html_escape(subtitle)}</p></div>'
@@ -11583,6 +13399,7 @@ def _build_trade_close_email_html_body(
     closed_trade: Mapping[str, Any],
     config: Mapping[str, Any],
 ) -> str:
+    closed_trade = restore_entry_provenance(closed_trade)
     plain_body = _build_trade_close_email_body(
         closed_trade=closed_trade,
         config=config,
@@ -11618,13 +13435,22 @@ def _build_trade_close_email_html_body(
     base_rank_value = _email_base_rank_pct(closed_trade)
     exit_type = _email_close_exit_type(closed_trade)
     close_cause_plain = _email_close_cause_plain(closed_trade)
-    rank_value = closed_trade.get(
+    rank_value = _email_first_present(
+        closed_trade,
+        "threshold_basis_rank_score",
+        "final_gate_rank_score",
+        "normalized_rank_score",
         "policy_rank_pct",
-        closed_trade.get("rank_percentile", closed_trade.get("calibrated_score")),
+        "rank_percentile",
+        "calibrated_score",
     )
-    threshold_value = closed_trade.get(
+    threshold_value = _email_first_present(
+        closed_trade,
+        "threshold_basis_apply_cutoff",
+        "final_gate_threshold",
         "deployment_rank_threshold",
-        closed_trade.get("effective_threshold", closed_trade.get("rank_threshold")),
+        "effective_threshold",
+        "rank_threshold",
     )
     prediction_gap_value = _safe_float(prediction_outcome_gap_bps, default=np.nan)
     prediction_gap_tone = (
@@ -11632,6 +13458,27 @@ def _build_trade_close_email_html_body(
         if np.isfinite(prediction_gap_value) and abs(prediction_gap_value) <= 10.0
         else "warn"
     )
+    archetype_name = (
+        closed_trade.get("policy_archetype")
+        or closed_trade.get("local_side_archetype")
+        or closed_trade.get("source_archetype")
+        or closed_trade.get("archetype_label_family")
+        or "unavailable: entry predates archetype context"
+    )
+    corrected_expected_ev = _email_first_present(
+        closed_trade,
+        "threshold_basis_corrected_expected_ev",
+        "market_state_mlp_expected_net_ev_after_1pct",
+        "expected_net_ev_after_1pct",
+        "estimated_ev_net_return",
+    )
+    recent_hit_rate_delta = _email_first_present(
+        closed_trade,
+        "archetype_hit_surprise_hit_rate_delta",
+        "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate",
+    )
+    base_score = closed_trade.get("base_pred")
+    meta_score = closed_trade.get("meta_pred")
     dashboard = "".join(
         [
             _email_html_metric("Outcome", outcome, tone=tone),
@@ -11658,18 +13505,35 @@ def _build_trade_close_email_html_body(
             ),
             _email_html_metric("Exit Type", exit_type),
             _email_html_metric("Close Cause", close_cause_plain),
+            _email_html_metric("Archetype", archetype_name),
             _email_html_metric(
-                "Rank / Threshold",
+                "Base / Meta Score",
+                f"{_format_float(base_score, 4)} / {_format_float(meta_score, 4)}",
+            ),
+            _email_html_metric(
+                "Admission Rank / Threshold",
                 f"{_format_float(rank_value, 4)} / {_format_float(threshold_value, 4)}",
+            ),
+            _email_html_metric(
+                "Corrected Expected EV",
+                corrected_expected_ev,
+                formatter=_email_fmt_pct,
+            ),
+            _email_html_metric(
+                "Recent HR vs Baseline",
+                recent_hit_rate_delta,
+                formatter=_email_fmt_pct,
+                tone=(
+                    "good"
+                    if _safe_float(recent_hit_rate_delta, np.nan) >= 0.0
+                    else "warn"
+                ),
             ),
             _email_html_metric(
                 "Pred vs Outcome Gap",
                 prediction_outcome_gap_bps,
                 formatter=_email_fmt_float(2),
                 tone=prediction_gap_tone,
-            ),
-            _email_html_metric(
-                "Fee Status", closed_trade.get("net_pnl_verification_status")
             ),
         ]
     )
@@ -11693,19 +13557,57 @@ def _build_trade_close_email_html_body(
             ),
         ),
         (
+            "Strategy and Latent State",
+            _email_html_rows(_email_strategy_state_html_rows(closed_trade)),
+        ),
+        (
             "Prediction Versus Outcome",
             _email_html_rows(
                 [
+                    ("Base Score", closed_trade.get("base_pred"), _email_fmt_float(6)),
                     ("Base Rank pct", base_rank_value, _email_fmt_float(6)),
+                    (
+                        "Base OOS Rank pct",
+                        closed_trade.get("base_train_rank_pct"),
+                        _email_fmt_float(6),
+                    ),
                     ("Meta Pred", closed_trade.get("meta_pred"), _email_fmt_float(6)),
                     (
-                        "Calibrated Score",
-                        closed_trade.get("calibrated_score"),
+                        "V9 Tail-95 Parent Rank",
+                        closed_trade.get("v9_tail95_predecessor_rank"),
                         _email_fmt_float(6),
                     ),
                     (
-                        "Policy Rank",
-                        closed_trade.get("policy_rank_pct"),
+                        "MLP Expected EV after 1%",
+                        closed_trade.get(
+                            "market_state_mlp_expected_net_ev_after_1pct"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Side x Archetype Mapped EV",
+                        closed_trade.get(
+                            "threshold_basis_mapped_expected_ev_side_archetype"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "21d Archetype EV Correction",
+                        closed_trade.get(
+                            "threshold_basis_side_archetype_recent_ev_correction"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Corrected Expected EV",
+                        closed_trade.get("threshold_basis_corrected_expected_ev"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Corrected EV Rank",
+                        closed_trade.get(
+                            "threshold_basis_corrected_expected_ev_rank"
+                        ),
                         _email_fmt_float(6),
                     ),
                     (
@@ -11812,7 +13714,6 @@ def _build_trade_close_email_html_body(
                         None,
                     ),
                     ("Realized Net PnL % Position Notional", pnl_pct, _email_fmt_pct),
-                    ("Estimated Wallet Net PnL %", wallet_pnl_pct, _email_fmt_pct),
                     (
                         "Exchange Entry Leverage Used",
                         actual_entry_leverage,
@@ -11836,19 +13737,34 @@ def _build_trade_close_email_html_body(
                         ),
                         _email_fmt_float(4, "x"),
                     ),
-                    (
-                        "Estimated Margin ROI % @ Entry Leverage",
-                        actual_leverage_pnl_pct,
-                        _email_fmt_pct,
-                    ),
                 ]
             ),
+        ),
+        (
+            "Market Environment at Entry",
+            _email_html_rows(_email_market_environment_html_rows(closed_trade)),
+        ),
+        (
+            "Policy Context at Entry",
+            _email_html_rows(_email_policy_context_html_rows(closed_trade)),
+        ),
+        (
+            "Policy: 28-Day Archetype Evidence at Entry",
+            _email_html_rows(_email_archetype_28d_baseline_html_rows(closed_trade)),
         ),
         (
             "Archetype Recent Performance",
             _email_html_rows(
                 _email_archetype_recent_performance_html_rows(closed_trade)
             ),
+        ),
+        (
+            "Residual and Market-State Postprocessors",
+            _email_html_rows(_email_meta_postprocessor_html_rows(closed_trade)),
+        ),
+        (
+            "28-Day Side x Archetype Admission",
+            _email_html_rows(_email_threshold_basis_html_rows(closed_trade)),
         ),
         (
             "Liquidation Guard",
@@ -11932,8 +13848,8 @@ def _build_trade_close_email_html_body(
             ),
         ),
         (
-            "Drift, Uncertainty and OOD",
-            _email_html_rows(_email_drift_uncertainty_html_rows(closed_trade)),
+            "Model Health: Drift, Support, Uncertainty and OOD",
+            _email_html_rows(_email_model_health_html_rows(closed_trade)),
         ),
         (
             "Fees",
@@ -11968,12 +13884,6 @@ def _build_trade_close_email_html_body(
                         "Estimated Fees",
                         closed_trade.get("estimated_fees_amount"),
                         _email_fmt_float(8),
-                    ),
-                    ("Estimated Wallet Net PnL %", wallet_pnl_pct, _email_fmt_pct),
-                    (
-                        "Estimated Margin ROI % @ Entry Leverage",
-                        actual_leverage_pnl_pct,
-                        _email_fmt_pct,
                     ),
                     (
                         "Fee Source",
@@ -12026,10 +13936,21 @@ def _build_trade_open_email_html_body(
         predictions=predictions,
         config=config,
     )
-    rank_value = decision.get("policy_rank_pct", decision.get("rank_percentile"))
-    threshold_value = decision.get(
+    rank_value = _email_first_present(
+        decision,
+        "threshold_basis_rank_score",
+        "final_gate_rank_score",
+        "normalized_rank_score",
+        "policy_rank_pct",
+        "rank_percentile",
+    )
+    threshold_value = _email_first_present(
+        decision,
+        "threshold_basis_apply_cutoff",
+        "final_gate_threshold",
         "deployment_rank_threshold",
-        decision.get("effective_threshold", decision.get("rank_threshold")),
+        "effective_threshold",
+        "rank_threshold",
     )
     email_context: Dict[str, Any] = dict(trade_result)
     email_context.update(predictions)
@@ -12043,7 +13964,7 @@ def _build_trade_open_email_html_body(
                 formatter=_email_fmt_float(4),
             ),
             _email_html_metric(
-                "Rank / Threshold",
+                "Admission Rank / Threshold",
                 f"{_format_float(rank_value, 4)} / {_format_float(threshold_value, 4)}",
             ),
             _email_html_metric(
@@ -12101,13 +14022,51 @@ def _build_trade_open_email_html_body(
                     ),
                     ("Meta Pred", predictions.get("meta_pred"), _email_fmt_float(6)),
                     (
-                        "Calibrated Score",
-                        decision.get("calibrated_score"),
+                        "V9 Tail-95 Parent Rank",
+                        decision.get("v9_tail95_predecessor_rank"),
                         _email_fmt_float(6),
                     ),
                     (
-                        "Policy Rank",
-                        decision.get("policy_rank_pct"),
+                        "MLP Expected EV after 1%",
+                        decision.get(
+                            "market_state_mlp_expected_net_ev_after_1pct"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Side x Archetype Mapped EV",
+                        decision.get(
+                            "threshold_basis_mapped_expected_ev_side_archetype"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "21d Archetype EV Correction",
+                        decision.get(
+                            "threshold_basis_side_archetype_recent_ev_correction"
+                        ),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Corrected Expected EV",
+                        decision.get("threshold_basis_corrected_expected_ev"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Corrected EV Rank",
+                        decision.get("threshold_basis_corrected_expected_ev_rank"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "EV70 Admission Rank",
+                        decision.get("threshold_basis_rank_score"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Final Gate Rank",
+                        _email_first_present(
+                            decision, "final_gate_rank_score", "adjusted_rank_score"
+                        ),
                         _email_fmt_float(6),
                     ),
                     ("Rank Threshold", threshold_value, _email_fmt_float(6)),
@@ -12584,13 +14543,6 @@ def _write_margin_reconciliation_report(
         tprint(f"Warning: could not save cross-margin reconciliation report: {exc}")
 
 
-def _safe_exchange_data_component(value: Any) -> str:
-    raw = str(value or "unknown").strip().lower()
-    safe = re.sub(r"[^a-z0-9_.=-]+", "_", raw)
-    safe = safe.strip("._")
-    return safe or "unknown"
-
-
 def _resolve_live_data_root(
     *,
     artifact_data_root: str,
@@ -12598,17 +14550,45 @@ def _resolve_live_data_root(
     market_mode: str,
     explicit_live_data_root: Optional[str] = None,
 ) -> str:
-    """Return the exchange-scoped root for live market cache and runtime state."""
-    explicit = explicit_live_data_root or os.environ.get("EPM_LIVE_DATA_ROOT")
-    if explicit:
-        return str(Path(explicit))
+    """Return the canonical exchange-scoped root for live market data/state."""
     exchange_id = (
         getattr(exchange, "id", None)
         or os.environ.get("EPM_EXCHANGE")
         or ("perps" if market_mode == "perps" else "spot")
     )
-    exchange_key = _safe_exchange_data_component(exchange_id)
-    return str(Path(artifact_data_root) / "exchanges" / exchange_key)
+    canonical = Path(
+        scoped_data_root(
+            {
+                "data_root": str(artifact_data_root),
+                "exchange_id": str(exchange_id),
+                "market_mode": str(market_mode),
+                "use_perps": str(market_mode).lower() == "perps",
+                "exchange_scoped_data": True,
+            }
+        )
+    )
+    explicit = explicit_live_data_root or os.environ.get("EPM_LIVE_DATA_ROOT")
+    if not explicit:
+        return str(canonical)
+
+    candidate = Path(explicit)
+    try:
+        same_root = candidate.resolve(strict=False) == canonical.resolve(strict=False)
+    except OSError:
+        same_root = os.path.normpath(str(candidate)) == os.path.normpath(str(canonical))
+    if same_root:
+        return str(canonical)
+    if _env_flag("EPM_ALLOW_SEPARATE_LIVE_DATA_STORE", False):
+        tprint(
+            "WARNING: noncanonical live data root explicitly allowed: "
+            f"live={candidate} canonical={canonical}"
+        )
+        return str(candidate)
+    raise ValueError(
+        "Live data must share the canonical exchange-scoped store used by "
+        f"training/replay. Got {candidate}, expected {canonical}. Set "
+        "EPM_ALLOW_SEPARATE_LIVE_DATA_STORE=1 only for an isolated audit."
+    )
 
 
 def _resolve_prediction_ledger_path(
@@ -12659,9 +14639,30 @@ def _sync_reconciled_positions_to_portfolio_manager(
     for symbol, state in active_positions.items():
         if not isinstance(state, dict):
             continue
+        quantity = abs(_safe_float(state.get("size"), 0.0))
+        mark_price = np.nan
+        for key in (
+            "current_price",
+            "last_price",
+            "mark_price",
+            "markPrice",
+            "realized_entry_price",
+            "entry_price",
+        ):
+            candidate_mark = _safe_float(state.get(key), np.nan)
+            if np.isfinite(candidate_mark) and candidate_mark > 0.0:
+                mark_price = float(candidate_mark)
+                break
+        if symbol in portfolio_mgr.positions:
+            if np.isfinite(mark_price):
+                portfolio_mgr.update_position_mark(
+                    str(symbol),
+                    mark_price=float(mark_price),
+                    quantity=quantity if quantity > 0.0 else None,
+                )
+            continue
         if (
             not bool(state.get("external_position"))
-            or symbol in portfolio_mgr.positions
         ):
             continue
         try:
@@ -12687,11 +14688,49 @@ def _sync_reconciled_positions_to_portfolio_manager(
                 or state.get("source_archetype"),
                 local_side_archetype=state.get("local_side_archetype"),
                 source_archetype=state.get("source_archetype"),
+                effective_leverage=_safe_float(
+                    state.get("perp_effective_leverage")
+                    or state.get("actual_entry_leverage")
+                    or state.get("exchange_entry_leverage")
+                    or state.get("leverage"),
+                    portfolio_mgr.default_effective_leverage,
+                ),
             )
+            if np.isfinite(mark_price):
+                portfolio_mgr.update_position_mark(
+                    str(symbol),
+                    mark_price=float(mark_price),
+                    quantity=quantity if quantity > 0.0 else None,
+                )
         except Exception as exc:
             tprint(
                 f"[PortfolioManager] Failed to sync reconciled position {symbol}: {exc}"
             )
+
+
+_PERSISTENT_ENTRY_PENDING_TOKEN = "__persistent_entry_budget_guard__"
+
+
+def _sync_persistent_entry_pending_notional(
+    entry_budget_guard: PersistentEntryBudgetGuard,
+    portfolio_mgr: Optional[PortfolioManager],
+) -> float:
+    """Mirror unresolved persistent reservations into live portfolio pressure."""
+    pending = float(entry_budget_guard.pending_reserved_notional())
+    pending_allocated = float(entry_budget_guard.pending_allocated_capital())
+    if portfolio_mgr is None:
+        return pending
+    portfolio_mgr.release_pending_notional(_PERSISTENT_ENTRY_PENDING_TOKEN)
+    if pending > 0.0:
+        portfolio_mgr.reserve_pending_notional(
+            _PERSISTENT_ENTRY_PENDING_TOKEN,
+            pending,
+            effective_leverage=(
+                pending / max(pending_allocated, 1e-9)
+                if pending_allocated > 0.0 else 1.0
+            ),
+        )
+    return pending
 
 
 def _apply_reconciliation_entry_gate(
@@ -13597,6 +15636,139 @@ def _log_feature_coverage(candidate_features: pd.DataFrame, side: str) -> None:
         )
 
 
+def _build_residual_event_feature_runtime_cfg(
+    runtime_config: Mapping[str, Any],
+    *,
+    coverage_symbols: Iterable[str],
+    optional_feature_keys: Iterable[str],
+    same_cycle_memory: bool,
+) -> Dict[str, Any]:
+    """Return the canonical batch feature contract for post-meta context.
+
+    Base/meta and post-meta scoring consume the same canonical point-in-time
+    static feature store. Source repairs must be materialized in that shared
+    store before scoring; recomputing only the residual namespace can omit
+    valid training features and breaks replay/live parity.
+    """
+
+    return {
+        **dict(runtime_config or {}),
+        "live_feature_cache_namespace": "residual_event",
+        "live_feature_return_latest_only": True,
+        "live_feature_coverage_symbols": [str(s) for s in coverage_symbols],
+        "live_feature_prefer_offline_cache": True,
+        "live_feature_offline_cache_enabled": True,
+        "live_feature_offline_cache_authoritative": True,
+        "live_feature_snapshot_cache_enabled": False,
+        "live_feature_rolling_cache_enabled": False,
+        "live_feature_memory_cache_enabled": bool(same_cycle_memory),
+        "live_causal_transform_state_enabled": False,
+        "feature_causal_transform_state_enabled": False,
+        "live_raw_rolling_state_enabled": False,
+        "feature_raw_rolling_state_enabled": False,
+        "live_feature_cache_optional_feature_keys": sorted(
+            {str(key) for key in optional_feature_keys if str(key)}
+        ),
+    }
+
+
+def _expanded_live_refresh_feature_keys(
+    required_columns: Iterable[str],
+) -> list[str]:
+    """Return generated aliases together with their observable raw sources."""
+
+    required = {str(column) for column in required_columns if str(column)}
+    required.update(raw_required_feature_keys(required))
+    return sorted(required)
+
+
+def _incremental_generation_feature_contract(
+    primary_required: Iterable[str],
+    *,
+    ae_gmm_inputs: Iterable[str] = (),
+    residual_state_inputs: Iterable[str] = (),
+    side_residual_inputs: Iterable[str] = (),
+    postprocessor_inputs: Iterable[str] = (),
+) -> set[str]:
+    """Return every observable input that must exist at the decision hour.
+
+    Residual/V9 inputs are loaded only after the base top-30 handoff, but their
+    raw values still have to be generated for the full market context before
+    that handoff. Keeping generation broad and scoring lazy avoids widening
+    the base/meta model matrix while preventing new hours from inheriting NaN
+    placeholders for frozen postprocessor inputs.
+    """
+
+    required = set(raw_required_feature_keys(primary_required))
+    for columns in (
+        ae_gmm_inputs,
+        residual_state_inputs,
+        side_residual_inputs,
+        postprocessor_inputs,
+    ):
+        required.update(raw_required_feature_keys(columns))
+    required.difference_update({"side_name", "archetype_policy_key"})
+    return required
+
+
+def _full_universe_ae_gmm_feature_contract(
+    base_contract: Iterable[str],
+    *,
+    side: str,
+    side_residual_expert: Optional[SideResidualExpertBundle],
+) -> list[str]:
+    """Include downstream AE/GMM outputs before any candidate truncation."""
+
+    required = {str(column) for column in base_contract if str(column)}
+    if side_residual_expert is not None:
+        required.update(side_residual_expert.required_input_features(side))
+    return sorted(required)
+
+
+def _live_meta_selected_feature_contract(
+    orchestrator: ModelOrchestrator,
+    *,
+    side: str,
+    strategy_id: str,
+) -> list[str]:
+    """Return the deployed side-specific meta contract without scoring it."""
+    core = strategy_core_id(str(strategy_id))
+    side_s = str(side or "").lower()
+    candidates = [
+        str(strategy_id),
+        core,
+        f"{side_s}_{strategy_id}" if side_s else "",
+        f"{side_s}_{core}" if side_s and core else "",
+        f"{strategy_id}_clf",
+        f"{core}_clf" if core else "",
+        f"{side_s}_{strategy_id}_clf" if side_s else "",
+        f"{side_s}_{core}_clf" if side_s and core else "",
+        f"{strategy_id}_tbm_clf",
+        f"{core}_tbm_clf" if core else "",
+        f"{side_s}_{strategy_id}_tbm_clf" if side_s else "",
+        f"{side_s}_{core}_tbm_clf" if side_s and core else "",
+    ]
+    meta_models = getattr(orchestrator, "meta_models", {}) or {}
+    model = next(
+        (
+            meta_models.get(key)
+            for key in candidates
+            if key and key in meta_models
+        ),
+        None,
+    )
+    if model is None:
+        return []
+    columns = _effective_selected_feature_contract(model)
+    if not columns and hasattr(model, "feature_columns"):
+        columns = list(getattr(model, "feature_columns", []) or [])
+    return [
+        str(column)
+        for column in columns
+        if str(column) and str(column) not in DELETED_MODEL_FEATURE_KEYS
+    ]
+
+
 def _persist_live_candidate_feature_matrix(
     candidate_features: pd.DataFrame,
     *,
@@ -13604,12 +15776,14 @@ def _persist_live_candidate_feature_matrix(
     signal_bar_ts: Any,
     runtime_config: Mapping[str, Any],
     run_id: str,
+    stage: str = "candidate",
 ) -> None:
-    """Persist post-overlay candidate features for exact replay parity.
+    """Persist a point-in-time feature matrix for exact replay parity.
 
-    This is observability only. It captures the batch context used by live
-    AE/GMM speed/acceleration style features, which cannot be reconstructed
-    exactly from the final prediction ledger alone.
+    This is observability only. Candidate matrices capture the batch context
+    used by live AE/GMM features. Canonical-postprocessor matrices additionally
+    freeze the lazily hydrated residual/V9 inputs that otherwise depend on a
+    mutable selected-feature cache.
     """
 
     if not isinstance(candidate_features, pd.DataFrame) or candidate_features.empty:
@@ -13628,14 +15802,33 @@ def _persist_live_candidate_feature_matrix(
     except Exception:
         return
     side_s = "short" if str(side).lower().startswith("short") else "long"
+    stage_s = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(stage or "candidate")).strip(
+        "._"
+    ) or "candidate"
     data_root = Path(str(runtime_config.get("data_root") or "data"))
     run_s = str(run_id or runtime_config.get("run_id") or "latest")
     key = hashlib.sha256(
         f"{run_s}|{side_s}|{ts.isoformat()}|{len(candidate_features)}".encode("utf-8")
     ).hexdigest()[:24]
-    out_dir = (
-        data_root / "artifacts" / run_s / "live_candidate_feature_matrix" / side_s / key
-    )
+    if stage_s == "candidate":
+        out_dir = (
+            data_root
+            / "artifacts"
+            / run_s
+            / "live_candidate_feature_matrix"
+            / side_s
+            / key
+        )
+    else:
+        out_dir = (
+            data_root
+            / "artifacts"
+            / run_s
+            / "live_stage_feature_matrix"
+            / stage_s
+            / side_s
+            / key
+        )
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
         data_path = out_dir / "data.parquet"
@@ -13648,11 +15841,12 @@ def _persist_live_candidate_feature_matrix(
         meta = {
             "run_id": run_s,
             "side": side_s,
+            "stage": stage_s,
             "signal_bar_ts": ts.isoformat(),
             "rows": int(len(frame)),
             "columns": [str(c) for c in frame.columns],
             "symbols": [str(s) for s in frame.index],
-            "schema": "live_candidate_feature_matrix_v1",
+            "schema": "live_stage_feature_matrix_v1",
         }
         tmp_meta.write_text(
             json.dumps(meta, sort_keys=True, indent=2) + "\n", encoding="utf-8"
@@ -13660,12 +15854,14 @@ def _persist_live_candidate_feature_matrix(
         os.replace(tmp_data, data_path)
         os.replace(tmp_meta, meta_path)
         tprint(
-            "Persisted live candidate feature matrix: "
-            f"side={side_s} rows={len(frame)} cols={frame.shape[1]} ts={ts}"
+            "Persisted live feature matrix: "
+            f"stage={stage_s} side={side_s} rows={len(frame)} "
+            f"cols={frame.shape[1]} ts={ts}"
         )
     except Exception as exc:
         tprint(
-            f"Live candidate feature matrix persistence failed: {type(exc).__name__}: {exc}"
+            "Live feature matrix persistence failed: "
+            f"stage={stage_s} {type(exc).__name__}: {exc}"
         )
 
 
@@ -14013,6 +16209,7 @@ def _selected_model_feature_store_gap_report(
     signal_bar_ts: pd.Timestamp,
     min_finite_fraction: float,
     min_full_rows: int = 5,
+    allow_training_neutral_fill: bool = False,
     max_report: int = 20,
 ) -> Dict[str, Any]:
     keys = sorted(
@@ -14030,6 +16227,7 @@ def _selected_model_feature_store_gap_report(
     min_finite = int(np.ceil(total * min_finite_fraction))
     min_full_rows = max(1, int(min_full_rows))
     issues: List[Dict[str, Any]] = []
+    unsupported_keys: List[str] = []
     full_row_ok = np.ones(len(symbols_s), dtype=bool)
     ts = pd.Timestamp(signal_bar_ts)
     ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
@@ -14090,6 +16288,8 @@ def _selected_model_feature_store_gap_report(
                     reason = f"coverage_error:{type(exc).__name__}"
         if reason:
             full_row_ok &= np.zeros(len(symbols_s), dtype=bool)
+        if reason or finite <= 0:
+            unsupported_keys.append(str(key))
         if finite < min_finite and len(issues) < int(max_report):
             attribution = _sparse_selected_feature_source_attribution(
                 key=key,
@@ -14116,7 +16316,19 @@ def _selected_model_feature_store_gap_report(
     full_rows = int(full_row_ok.sum()) if keys else int(total)
     ok_by_feature_fraction = not issues
     ok_by_full_rows = full_rows >= min_full_rows
-    ok = bool(ok_by_feature_fraction or ok_by_full_rows)
+    # lgbm_pipeline._frame() is the canonical training/scoring adapter and
+    # neutral-fills non-finite values. When live inference is configured to use
+    # that same adapter, requiring one row where every raw/AE input is finite is
+    # both stricter than training and usually impossible. Still fail closed if
+    # a contracted feature frame is absent or has zero support at this hour.
+    ok_by_training_neutral_fill = bool(
+        allow_training_neutral_fill and keys and not unsupported_keys
+    )
+    ok = bool(
+        ok_by_feature_fraction
+        or ok_by_full_rows
+        or ok_by_training_neutral_fill
+    )
     repair_incident_features = [
         issue
         for issue in issues
@@ -14128,7 +16340,15 @@ def _selected_model_feature_store_gap_report(
         "reason": (
             "ok"
             if ok_by_feature_fraction
-            else ("ok_min_full_rows" if ok_by_full_rows else "feature_store_gap")
+            else (
+                "ok_min_full_rows"
+                if ok_by_full_rows
+                else (
+                    "ok_training_neutral_fill"
+                    if ok_by_training_neutral_fill
+                    else "feature_store_gap"
+                )
+            )
         ),
         "signal_bar_ts": pd.Timestamp(signal_bar_ts).isoformat(),
         "symbols": int(total),
@@ -14139,6 +16359,10 @@ def _selected_model_feature_store_gap_report(
         "full_feature_rows": int(full_rows),
         "ok_by_feature_fraction": bool(ok_by_feature_fraction),
         "ok_by_full_rows": bool(ok_by_full_rows),
+        "ok_by_training_neutral_fill": bool(ok_by_training_neutral_fill),
+        "training_neutral_fill_enabled": bool(allow_training_neutral_fill),
+        "unsupported_feature_count": int(len(unsupported_keys)),
+        "unsupported_feature_sample": unsupported_keys[: int(max_report)],
         "low_finite_features": issues,
         "repair_incident": bool(repair_incident_features),
         "repair_incident_features": repair_incident_features[: int(max_report)],
@@ -14202,6 +16426,20 @@ def _asset_policy_row(policy_params: Dict[str, Any], symbol: str) -> Dict[str, A
     return {}
 
 
+def _resolve_policy_size_power(
+    policy_params: Mapping[str, Any],
+    *,
+    fallback: float = 1.1,
+) -> float:
+    """Resolve the deployed sizing-power field with a legacy fallback."""
+    params = policy_params if isinstance(policy_params, Mapping) else {}
+    for key in ("size_power", "best_size_power"):
+        value = _safe_float(params.get(key), np.nan)
+        if np.isfinite(value) and value > 0.0:
+            return float(value)
+    return float(fallback)
+
+
 def _meta_policy_position_size(
     *,
     calibrated_score: float,
@@ -14209,7 +16447,7 @@ def _meta_policy_position_size(
     policy_params: Dict[str, Any],
     symbol: str,
 ) -> Dict[str, Any]:
-    size_power = float(policy_params.get("best_size_power", 1.0) or 1.0)
+    size_power = _resolve_policy_size_power(policy_params, fallback=1.0)
     min_size = float(policy_params.get("min_position_size", 0.05) or 0.05)
     max_size = float(policy_params.get("max_position_size", 0.15) or 0.15)
     threshold = float(np.clip(threshold, 0.0, 0.999999))
@@ -14353,7 +16591,9 @@ def run_inference_step(
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
     strategy_feature_contracts: Optional[Mapping[str, Sequence[str]]] = None,
     live_ae_gmm_state_payload: Optional[Mapping[str, Any]] = None,
+    live_residual_event_state_payload: Optional[Mapping[str, Any]] = None,
     required_feature_keys: Optional[Iterable[str]] = None,
+    ae_gmm_context_symbols: Optional[Sequence[str]] = None,
     stale_entry_context: bool = False,
     stale_entry_max_abs_signal_gap_bps: float | None = None,
 ) -> Dict[str, Any]:
@@ -14476,16 +16716,140 @@ def run_inference_step(
         inference_min_base_train_rank_pct = None
     live_test_mode = _is_live_test_mode(executor)
     try:
-        starting_active_position_count = len(executor.get_active_positions())
+        starting_active_positions = executor.get_active_positions()
+        starting_active_position_count = len(starting_active_positions)
     except Exception:
+        starting_active_positions = {}
         starting_active_position_count = 0
     live_feature_layer_debug = feature_layer_debug_enabled(
         runtime_config,
         live_test_mode=live_test_mode,
     )
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
+    entry_budget_guard_path = runtime_config.get("entry_budget_guard_path")
+    if not entry_budget_guard_path:
+        logger_db_path = Path(
+            str(getattr(logger, "db_path", "") or "inference_trades.sqlite")
+        )
+        entry_budget_guard_path = logger_db_path.with_name(
+            f"{logger_db_path.stem}.entry_budget.sqlite"
+        )
+    entry_budget_guard = PersistentEntryBudgetGuard(
+        entry_budget_guard_path,
+        policy_id=policy_context_run_id,
+        max_entries_per_bar=int(portfolio_policy.max_new_entries_per_bar),
+    )
+    successful_entry_records: list[dict[str, Any]] = []
+    try:
+        read_logs = getattr(logger, "read_logs", None)
+        historical_entries = read_logs() if callable(read_logs) else pd.DataFrame()
+        if isinstance(historical_entries, pd.DataFrame) and not historical_entries.empty:
+            logged_signal_ts = pd.to_datetime(
+                historical_entries.get("signal_bar_ts"), utc=True, errors="coerce"
+            )
+            lifecycle = historical_entries.get(
+                "lifecycle_event", pd.Series("", index=historical_entries.index)
+            ).astype(str).str.lower()
+            action = historical_entries.get(
+                "action", pd.Series("", index=historical_entries.index)
+            ).astype(str).str.lower()
+            status = historical_entries.get(
+                "status", pd.Series("", index=historical_entries.index)
+            ).astype(str).str.lower()
+            successful = historical_entries.loc[
+                action.eq("enter")
+                & lifecycle.isin({"entry_placed", "entry_recorded"})
+                & ~status.isin({"failed", "rejected", "error"})
+                & logged_signal_ts.notna()
+            ].copy()
+            policy_col = successful.get("policy_artifact_run_id")
+            if policy_col is not None:
+                policy_values = policy_col.astype(str).str.strip()
+                successful = successful.loc[
+                    policy_values.eq("") | policy_values.eq(policy_context_run_id)
+                ]
+            successful_entry_records = successful.to_dict("records")
+            current_signal_ts = pd.to_datetime(
+                signal_bar_ts, utc=True, errors="coerce"
+            )
+            current_successful_records = successful.loc[
+                pd.to_datetime(
+                    successful.get("signal_bar_ts"), utc=True, errors="coerce"
+                ).eq(current_signal_ts)
+            ].to_dict("records")
+            if current_successful_records:
+                entry_budget_guard.bootstrap_committed(
+                    signal_bar_ts=signal_bar_ts,
+                    entries=current_successful_records,
+                )
+        active_position_records: list[dict[str, Any]] = []
+        if isinstance(starting_active_positions, Mapping):
+            for symbol, value in starting_active_positions.items():
+                row = dict(value or {}) if isinstance(value, Mapping) else {}
+                row.setdefault("symbol", symbol)
+                active_position_records.append(row)
+        elif isinstance(starting_active_positions, Iterable) and not isinstance(
+            starting_active_positions, (str, bytes)
+        ):
+            active_position_records = [
+                dict(row) for row in starting_active_positions if isinstance(row, Mapping)
+            ]
+        entry_budget_reconciliation = entry_budget_guard.reconcile_reserved(
+            successful_entries=successful_entry_records,
+            active_positions=active_position_records,
+            grace_seconds=float(
+                runtime_config.get("entry_budget_reconciliation_grace_seconds", 120.0)
+            ),
+            now=now_utc,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Persistent entry-budget bootstrap failed closed: {exc}"
+        ) from exc
+    entry_budget_snapshot = entry_budget_guard.snapshot(signal_bar_ts)
+    persistent_pending_notional = _sync_persistent_entry_pending_notional(
+        entry_budget_guard,
+        portfolio_mgr,
+    )
+    entry_budget_snapshot["all_bars_pending_reserved_notional"] = float(
+        persistent_pending_notional
+    )
+    results["persistent_entry_budget"] = entry_budget_snapshot
+    results["persistent_entry_budget"]["reconciliation"] = dict(
+        entry_budget_reconciliation
+    )
+    tprint(
+        "Persistent entry budget: "
+        f"bar={entry_budget_snapshot['signal_bar_ts']} "
+        f"active={entry_budget_snapshot['active_count']} "
+        f"remaining={entry_budget_snapshot['remaining']} "
+        f"cap={entry_budget_snapshot['max_entries_per_bar']} "
+        f"path={entry_budget_snapshot['path']}"
+    )
     regime_ev_calibration_artifact: Dict[str, Any] = {}
+    canonical_meta_postprocessor: Optional[CanonicalMetaPostprocessor | V9TailPostprocessor] = None
+    side_residual_expert: Optional[SideResidualExpertBundle] = None
+    residual_reference_prior_payload: Dict[str, Any] = {}
     regime_ev_calibration_path: Optional[Path] = None
+    if bool(getattr(portfolio_policy, "side_residual_expert_enabled", False)):
+        side_residual_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "side_residual_expert_artifact_path", ""
+            ),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(
+                runtime_config.get("policy_artifact_run_id")
+                or runtime_config.get("run_id")
+                or ""
+            ),
+        )
+        if side_residual_path is None or not side_residual_path.is_file():
+            raise FileNotFoundError(
+                "Side-residual meta expert is enabled but unavailable: "
+                f"{side_residual_path}"
+            )
+        side_residual_expert = SideResidualExpertBundle.load(side_residual_path)
+        tprint(f"Loaded canonical side-residual meta expert: {side_residual_path}")
     if bool(getattr(portfolio_policy, "regime_ev_calibration_enabled", False)):
         regime_ev_calibration_path = _resolve_policy_sidecar_path(
             path_value=getattr(
@@ -14518,6 +16882,143 @@ def run_inference_step(
                 "Regime EV calibration enabled but artifact path is missing: "
                 f"{regime_ev_calibration_path}"
             )
+    if (
+        str(regime_ev_calibration_artifact.get("policy_id") or "")
+        == MLP_HIER_EV_POLICY_ID
+    ):
+        use_mlp_postprocessor = bool(
+            getattr(portfolio_policy, "mlp_postprocessor_enabled", False)
+        )
+        use_v9_hierarchical_ev = bool(
+            getattr(portfolio_policy, "v9_tail_postprocessor_enabled", False)
+            and getattr(portfolio_policy, "hierarchical_ev_mapping_enabled", False)
+        )
+        if not use_mlp_postprocessor and not use_v9_hierarchical_ev:
+            raise RuntimeError(
+                "Policy disables the MLP but did not explicitly retain the "
+                "V9 hierarchical expected-EV mapping."
+            )
+        predecessor_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "regime_ev_predecessor_bundle_path", ""
+            ),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(
+                runtime_config.get("policy_artifact_run_id")
+                or runtime_config.get("run_id")
+                or ""
+            ),
+        )
+        residual_state_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "regime_ev_residual_event_state_path", ""
+            ),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(
+                runtime_config.get("policy_artifact_run_id")
+                or runtime_config.get("run_id")
+                or ""
+            ),
+        )
+        try:
+            if predecessor_path is None or not predecessor_path.exists():
+                raise FileNotFoundError(
+                    f"V9 predecessor bundle is missing: {predecessor_path}"
+                )
+            if residual_state_path is None or not residual_state_path.exists():
+                raise FileNotFoundError(
+                    f"residual-event state is missing: {residual_state_path}"
+                )
+            if regime_ev_calibration_path is None:
+                raise FileNotFoundError("regime EV calibration path is missing")
+            if use_mlp_postprocessor:
+                canonical_meta_postprocessor = CanonicalMetaPostprocessor.load(
+                    predecessor_bundle_path=predecessor_path,
+                    residual_event_state_path=residual_state_path,
+                    regime_ev_artifact_path=regime_ev_calibration_path,
+                )
+                tprint(
+                    "Loaded canonical V9 tail95 + MLP + hierarchical-EV chain: "
+                    f"predecessor={predecessor_path}"
+                )
+            else:
+                canonical_meta_postprocessor = V9TailPostprocessor.load(
+                    predecessor_bundle_path=predecessor_path,
+                    residual_event_state_path=residual_state_path,
+                    hierarchical_ev_artifact_path=regime_ev_calibration_path,
+                )
+                tprint(
+                    "Loaded V9 tail95 + hierarchical-EV chain with MLP disabled: "
+                    f"predecessor={predecessor_path}"
+                )
+                # Downstream feature hydration reads this same artifact. Keep
+                # the frozen EV curves and aliases, but do not advertise the
+                # retired MLP effects or their raw feature requirements.
+                regime_ev_calibration_artifact = dict(
+                    regime_ev_calibration_artifact
+                )
+                regime_ev_calibration_artifact["effects"] = []
+                regime_ev_calibration_artifact["policy_id"] = (
+                    V9_TAIL_HIER_EV_POLICY_ID
+                )
+                regime_ev_calibration_artifact["predecessor_policy_id"] = (
+                    V9_TAIL95_POLICY_ID
+                )
+            residual_reference_prior_payload = load_residual_reference_prior_payload(
+                str(runtime_config.get("data_root") or "data_perp"),
+                str(
+                    runtime_config.get("policy_artifact_run_id")
+                    or runtime_config.get("run_id")
+                    or "latest"
+                ),
+            )
+            if not residual_reference_prior_payload:
+                raise FileNotFoundError(
+                    "Frozen V9 residual-reference priors are missing"
+                )
+        except Exception as exc:
+            tprint(f"Canonical meta postprocessor failed to load: {exc}")
+            raise RuntimeError(
+                "Promoted V9/MLP/hierarchical-EV policy cannot run without "
+                "its canonical postprocessor"
+            ) from exc
+        except Exception as exc:
+            # Do not silently score a partial chain. The per-row strict guard in
+            # run_inference_step remains the final fail-closed boundary.
+            tprint(
+                "Frozen V9/MLP postprocessor prewarm contract failed to load: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    elif bool(getattr(portfolio_policy, "v9_tail_postprocessor_enabled", False)):
+        predecessor_path = _resolve_policy_sidecar_path(
+            path_value=getattr(portfolio_policy, "regime_ev_predecessor_bundle_path", ""),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(runtime_config.get("policy_artifact_run_id") or runtime_config.get("run_id") or ""),
+        )
+        residual_state_path = _resolve_policy_sidecar_path(
+            path_value=getattr(portfolio_policy, "regime_ev_residual_event_state_path", ""),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(runtime_config.get("policy_artifact_run_id") or runtime_config.get("run_id") or ""),
+        )
+        if predecessor_path is None or residual_state_path is None:
+            raise FileNotFoundError("V9-only postprocessor paths are incomplete")
+        canonical_meta_postprocessor = V9TailPostprocessor.load(
+            predecessor_bundle_path=predecessor_path,
+            residual_event_state_path=residual_state_path,
+            hierarchical_ev_artifact_path=(
+                regime_ev_calibration_path
+                if bool(
+                    getattr(
+                        portfolio_policy, "hierarchical_ev_mapping_enabled", False
+                    )
+                )
+                else None
+            ),
+        )
+        tprint(f"Loaded V9 tail-only postprocessor: predecessor={predecessor_path}")
+    residual_event_state_required = bool(
+        regime_ev_calibration_artifact.get("strict_required_features", False)
+    )
     parity_contract = runtime_config.get("training_live_parity_contract")
     if isinstance(parity_contract, dict) and parity_contract:
         accepted_strategies = _resolve_active_strategy_filter_for_policy(
@@ -14656,6 +17157,9 @@ def run_inference_step(
         getattr(portfolio_policy, "portfolio_policy_version", "")
     ).startswith("global_auction")
     global_auction_decisions: List[Dict[str, Any]] = []
+    expected_auction_sides: set[str] = set()
+    completed_auction_sides: set[str] = set()
+    failed_auction_sides: Dict[str, str] = {}
 
     # Step 1: Select candidates. When the caller already selected candidates
     # on selector-only features before loading the full model feature set, keep
@@ -14700,47 +17204,116 @@ def run_inference_step(
     for side, candidates in [("long", long_cands), ("short", short_cands)]:
         if not candidates:
             continue
-
-        # Get features for candidates
-        candidate_features = _get_features_for_candidates_at_ts(
-            feats, candidates, ts=signal_bar_ts
+        side_meta_postprocessor = _canonical_meta_postprocessor_for_side(
+            canonical_meta_postprocessor,
+            portfolio_policy,
+            side,
         )
+        if global_auction_enabled:
+            expected_auction_sides.add(str(side))
+
+        # Historical scoring builds timestamp-cross-sectional source-regime
+        # inputs on the complete context universe and only then filters rows.
+        # Transforming the candidate subset would change those percentile
+        # inputs and, in turn, the frozen AE/GMM coordinates.
+        context_symbols = list(
+            dict.fromkeys(
+                str(symbol)
+                for symbol in (ae_gmm_context_symbols or candidates)
+                if str(symbol).strip()
+            )
+        )
+        context_features = _get_features_for_candidates_at_ts(
+            feats, context_symbols, ts=signal_bar_ts
+        )
+        if not isinstance(context_features, pd.DataFrame) or context_features.empty:
+            context_features = _get_features_for_candidates_at_ts(
+                feats, candidates, ts=signal_bar_ts
+            )
         timer.mark(f"{side}_candidate_feature_matrix")
 
-        # Defensive check: ensure candidate_features is a DataFrame
-        if not isinstance(candidate_features, pd.DataFrame):
+        # Defensive check: ensure context_features is a DataFrame
+        if not isinstance(context_features, pd.DataFrame):
             tprint(
-                f"Warning: candidate_features is not a DataFrame: {type(candidate_features)}"
+                "Warning: context_features is not a DataFrame: "
+                f"{type(context_features)}"
             )
+            failed_auction_sides[str(side)] = "invalid_context_feature_type"
             continue
 
         # Safely check for empty - handle case where it might be a string or other type
         try:
             is_empty = (
-                candidate_features is None
-                or not isinstance(candidate_features, (pd.DataFrame, pd.Series))
-                or (hasattr(candidate_features, "empty") and candidate_features.empty)
+                context_features is None
+                or not isinstance(context_features, (pd.DataFrame, pd.Series))
+                or (hasattr(context_features, "empty") and context_features.empty)
             )
         except Exception as e:
             tprint(
-                f"Error checking candidate_features.empty: {e}, type: {type(candidate_features)}"
+                "Error checking context_features.empty: "
+                f"{e}, type: {type(context_features)}"
             )
+            failed_auction_sides[str(side)] = "context_feature_empty_check_failed"
             continue
 
         if is_empty:
+            failed_auction_sides[str(side)] = "empty_context_features"
             continue
 
-        candidate_features = candidate_features.copy()
-        candidate_features["side"] = np.float32(
+        context_features = context_features.copy()
+        context_features["side"] = np.float32(
             1.0 if str(side).lower().startswith("long") else -1.0
         )
-        candidate_features["side_name"] = str(side).lower()
-        candidate_features = materialize_live_ae_gmm_features(
-            candidate_features,
+        context_features["side_name"] = str(side).lower()
+        candidate_pre_ae_gmm = context_features.reindex(
+            [symbol for symbol in candidates if symbol in context_features.index]
+        )
+        _persist_live_candidate_feature_matrix(
+            candidate_pre_ae_gmm,
             side=side,
             signal_bar_ts=signal_bar_ts,
-            required_columns=required_feature_keys,
+            runtime_config=runtime_config,
+            run_id=model_context_run_id,
+            stage="candidate_pre_ae_gmm",
+        )
+        # Materialize every frozen AE/GMM output consumed anywhere in the
+        # decision chain on the full side universe.  V9-only outputs such as
+        # expected_mahalanobis and posterior columns are cross-sectional; if
+        # they are first created after the base top-30 handoff their values no
+        # longer match the historical scorer's inference contract.
+        ae_gmm_required_columns = set(required_feature_keys or ())
+        if side_meta_postprocessor is not None:
+            ae_gmm_required_columns.update(
+                side_meta_postprocessor.required_input_features()
+            )
+        _persist_live_candidate_feature_matrix(
+            context_features,
+            side=side,
+            signal_bar_ts=signal_bar_ts,
+            runtime_config=runtime_config,
+            run_id=model_context_run_id,
+            stage="ae_gmm_context_pre",
+        )
+        context_features = materialize_live_ae_gmm_features(
+            context_features,
+            side=side,
+            signal_bar_ts=signal_bar_ts,
+            required_columns=ae_gmm_required_columns,
             state_payload=live_ae_gmm_state_payload,
+            # Store-side AE/GMM columns may come from an older state. Recompute
+            # once from the frozen production state on the complete universe.
+            overwrite_existing=True,
+        )
+        _persist_live_candidate_feature_matrix(
+            context_features,
+            side=side,
+            signal_bar_ts=signal_bar_ts,
+            runtime_config=runtime_config,
+            run_id=model_context_run_id,
+            stage="ae_gmm_context_post",
+        )
+        candidate_features = context_features.reindex(
+            [symbol for symbol in candidates if symbol in context_features.index]
         )
         _log_feature_coverage(candidate_features, side)
         _persist_live_candidate_feature_matrix(
@@ -14914,6 +17487,12 @@ def run_inference_step(
                         side=side,
                         signal_bar_ts=signal_bar_ts,
                         required_columns=decision_feature_contract,
+                        # Source-regime scores are cross-sectional transforms of
+                        # the current decision universe. Cached values may have
+                        # been built with a different universe, so recompute them
+                        # before the frozen AE/GMM transform. The later top-30
+                        # residual hydration remains fill-only.
+                        overwrite_existing=True,
                     )
                     eligible_features = materialize_live_ae_gmm_features(
                         eligible_features,
@@ -14923,11 +17502,21 @@ def run_inference_step(
                         state_payload=live_ae_gmm_state_payload,
                     )
                     try:
+                        missing_candidate_columns = [
+                            col
+                            for col in eligible_features.columns
+                            if col not in candidate_features.columns
+                        ]
+                        for col in missing_candidate_columns:
+                            candidate_features[col] = np.float32(np.nan)
                         candidate_features.loc[
                             eligible_features.index, eligible_features.columns
-                        ] = eligible_features
-                    except Exception:
-                        pass
+                        ] = eligible_features.to_numpy(copy=False)
+                    except Exception as exc:
+                        tprint(
+                            "Warning: failed to persist the exact scored candidate "
+                            f"feature matrix for {side}/{selected_strategy}: {exc}"
+                        )
                     _persist_live_candidate_feature_matrix(
                         candidate_features,
                         side=side,
@@ -14975,6 +17564,11 @@ def run_inference_step(
                     _effective_alpha_feature_contract(alpha_model_info)
                     if isinstance(alpha_model_info, dict)
                     else []
+                )
+                alpha_feature_contract = _full_universe_ae_gmm_feature_contract(
+                    alpha_feature_contract,
+                    side=side,
+                    side_residual_expert=side_residual_expert,
                 )
                 if alpha_feature_contract:
                     eligible_features = materialize_live_ae_gmm_features(
@@ -15036,6 +17630,83 @@ def run_inference_step(
                 )
                 side_metrics["base_gate_pass"] += int(len(base_gate))
                 if base_gate:
+                    meta_contract = _live_meta_selected_feature_contract(
+                        orchestrator,
+                        side=side,
+                        strategy_id=str(selected_strategy),
+                    )
+                    meta_raw_refresh = _expanded_live_refresh_feature_keys(
+                        meta_contract
+                    )
+                    if meta_raw_refresh:
+                        close_panel = panel.get("close", pd.DataFrame())
+                        coverage_symbols = (
+                            list(close_panel.columns)
+                            if isinstance(close_panel, pd.DataFrame)
+                            else []
+                        )
+                        panel_hours = max(
+                            72,
+                            int(
+                                runtime_config.get(
+                                    "live_residual_feature_lookback_hours",
+                                    runtime_config.get(
+                                        "live_decision_panel_lookback_hours", 72
+                                    ),
+                                )
+                                or 72
+                            ),
+                        )
+                        meta_refresh_cfg = _build_residual_event_feature_runtime_cfg(
+                            runtime_config,
+                            coverage_symbols=coverage_symbols,
+                            optional_feature_keys=meta_raw_refresh,
+                            same_cycle_memory=True,
+                        )
+                        meta_refresh_cfg["live_feature_cache_namespace"] = (
+                            "meta_selected_batch"
+                        )
+                        refreshed = load_or_compute_features(
+                            panel=panel,
+                            basket_syms=coverage_symbols,
+                            run_id=str(
+                                runtime_config.get("run_id")
+                                or runtime_config.get("model_artifact_run_id")
+                                or "latest"
+                            ),
+                            data_root=str(
+                                runtime_config.get("live_data_root")
+                                or runtime_config.get("data_root")
+                                or "data"
+                            ),
+                            cfg=meta_refresh_cfg,
+                            lookback_hours=panel_hours,
+                            required_feature_keys=set(meta_raw_refresh),
+                        )
+                        refreshed_rows = _get_features_for_candidates_at_ts(
+                            refreshed,
+                            list(base_gate),
+                            ts=signal_bar_ts,
+                        )
+                        refreshed_columns: list[str] = []
+                        refreshed_cells = 0
+                        for col in meta_contract:
+                            if col not in refreshed_rows.columns:
+                                continue
+                            filled = _fill_feature_from_refresh_preserve_existing(
+                                eligible_features,
+                                col,
+                                refreshed_rows[col],
+                            )
+                            if filled:
+                                refreshed_columns.append(col)
+                                refreshed_cells += filled
+                        tprint(
+                            "Batch-filled missing selected meta features before scoring: "
+                            f"side={side} rows={len(base_gate)} "
+                            f"contract={len(meta_contract)} "
+                            f"features={len(refreshed_columns)} cells={refreshed_cells}"
+                        )
                     run_cfg_for_priors = getattr(executor, "config", {}) or {}
                     artifact_data_root_for_priors = str(
                         run_cfg_for_priors.get("data_root", "data")
@@ -15177,8 +17848,17 @@ def run_inference_step(
                             )
                         )
                 batch_meta_preds = pd.Series(dtype=np.float32)
+                batch_meta_pre_alignment_preds = pd.Series(dtype=np.float32)
                 batch_meta_model_inputs: Optional[pd.DataFrame] = None
                 batch_meta_diagnostics: Optional[pd.DataFrame] = None
+                base_gate_symbols: list[str] = []
+                batch_policy_archetypes: dict[str, str] = {}
+                batch_policy_archetype_sources: dict[str, str] = {}
+                batch_residual_event_features: Optional[pd.DataFrame] = None
+                batch_canonical_postprocessor_features: Optional[pd.DataFrame] = None
+                batch_postprocessor_rejections: dict[str, str] = {}
+                batch_side_residual_expert_snapshots: dict[str, dict[str, Any]] = {}
+                residual_event_state_error = ""
                 if base_gate:
                     base_gate_symbols = [
                         symbol
@@ -15214,6 +17894,34 @@ def run_inference_step(
                                 batch_meta_model_inputs = _float32_inference_frame(
                                     last_meta_input
                                 )
+                            if side_meta_postprocessor is not None:
+                                meta_model_key = getattr(
+                                    orchestrator, "_last_meta_model_key", None
+                                )
+                                meta_model = (
+                                    getattr(orchestrator, "meta_models", {}) or {}
+                                ).get(meta_model_key)
+                                if (
+                                    meta_model is None
+                                    or not isinstance(
+                                        batch_meta_model_inputs, pd.DataFrame
+                                    )
+                                ):
+                                    raise RuntimeError(
+                                        "Canonical V9 predecessor cannot recover the "
+                                        "raw pre-alignment meta prediction"
+                                    )
+                                raw_meta = np.asarray(
+                                    meta_model.predict(batch_meta_model_inputs),
+                                    dtype=np.float32,
+                                ).reshape(-1)
+                                batch_meta_pre_alignment_preds = pd.Series(
+                                    raw_meta,
+                                    index=batch_meta_model_inputs.index,
+                                    dtype=np.float32,
+                                )
+                            else:
+                                batch_meta_pre_alignment_preds = batch_meta_preds.copy()
                             last_meta_diag_frame = getattr(
                                 orchestrator, "_last_meta_diagnostics_frame", None
                             )
@@ -15241,6 +17949,531 @@ def run_inference_step(
                                 f"Batch meta prediction failed for {side}/{strategy_core_id(str(selected_strategy))}: {exc}"
                             )
                             batch_meta_preds = pd.Series(dtype=np.float32)
+                if (
+                    base_gate_symbols
+                    and regime_ev_calibration_artifact
+                    and live_residual_event_state_payload
+                    and isinstance(batch_meta_preds, pd.Series)
+                ):
+                    try:
+                        post_meta_symbols = [
+                            str(symbol)
+                            for symbol in base_gate_symbols
+                            if symbol in batch_meta_preds.index
+                            and np.isfinite(
+                                pd.to_numeric(
+                                    pd.Series([batch_meta_preds.get(symbol)]),
+                                    errors="coerce",
+                                ).iloc[0]
+                            )
+                        ]
+                        for symbol in post_meta_symbols:
+                            symbol_key = str(symbol)
+                            meta_input_row = None
+                            if (
+                                isinstance(batch_meta_model_inputs, pd.DataFrame)
+                                and symbol in batch_meta_model_inputs.index
+                            ):
+                                meta_input_row = batch_meta_model_inputs.loc[[symbol]]
+                            archetype = _infer_live_policy_archetype(
+                                side=side,
+                                chain_results={},
+                                candidate_feature_row=candidate_features.loc[[symbol]],
+                                meta_model_input_row=meta_input_row,
+                            )
+                            source = "live_row" if archetype else ""
+                            if not archetype:
+                                archetype = predict_observable_policy_archetype(
+                                    side=side,
+                                    candidate_feature_row=candidate_features.loc[[symbol]],
+                                    meta_model_input_row=meta_input_row,
+                                )
+                                if archetype:
+                                    source = "observable_regime_family"
+                            if not archetype and live_policy_archetype_classifier:
+                                archetype = predict_live_policy_archetype(
+                                    side=side,
+                                    payload=live_policy_archetype_classifier,
+                                    candidate_feature_row=candidate_features.loc[[symbol]],
+                                    meta_model_input_row=meta_input_row,
+                                )
+                                if archetype:
+                                    source = "frozen_classifier"
+                            batch_policy_archetypes[symbol_key] = str(archetype or "")
+                            batch_policy_archetype_sources[symbol_key] = source
+
+                        # Start with the full live feature row, then add the exact
+                        # meta input aliases required by the frozen residual state.
+                        residual_input = eligible_features.loc[
+                            post_meta_symbols
+                        ].copy()
+                        if isinstance(batch_meta_model_inputs, pd.DataFrame):
+                            for col in batch_meta_model_inputs.columns:
+                                replacement = pd.to_numeric(
+                                    batch_meta_model_inputs.reindex(
+                                        residual_input.index
+                                    )[col],
+                                    errors="coerce",
+                                )
+                                if col not in residual_input.columns:
+                                    residual_input[col] = batch_meta_model_inputs.loc[
+                                        residual_input.index, col
+                                    ].to_numpy(copy=False)
+                                    continue
+                                existing = pd.to_numeric(
+                                    residual_input[col], errors="coerce"
+                                )
+                                missing = ~np.isfinite(
+                                    existing.to_numpy(dtype=float, copy=False)
+                                )
+                                if bool(missing.any()):
+                                    values = existing.to_numpy(
+                                        dtype=np.float32, copy=True
+                                    )
+                                    values[missing] = replacement.to_numpy(
+                                        dtype=np.float32, copy=False
+                                    )[missing]
+                                    residual_input[col] = values
+                        residual_required = residual_event_state_input_feature_columns(
+                            live_residual_event_state_payload
+                        )
+                        calibration_raw_required = (
+                            _live_regime_calibration_raw_feature_columns(
+                                regime_ev_calibration_artifact,
+                                live_residual_event_state_payload,
+                            )
+                        )
+                        lazy_state_required = sorted(
+                            set(residual_required)
+                            | set(calibration_raw_required)
+                            | (
+                                set(side_residual_expert.required_input_features(side))
+                                - {
+                                    "score",
+                                    "score_base",
+                                    "side_name",
+                                    "archetype_policy_key",
+                                }
+                                if side_residual_expert is not None
+                                else set()
+                            )
+                            | set(
+                                side_meta_postprocessor.required_input_features()
+                                if side_meta_postprocessor is not None
+                                else []
+                            )
+                        )
+                        residual_missing = [
+                            col
+                            for col in lazy_state_required
+                            if col not in residual_input.columns
+                            or not np.isfinite(
+                                pd.to_numeric(
+                                    residual_input.get(col), errors="coerce"
+                                ).to_numpy(dtype=float, copy=False)
+                                ).any()
+                        ]
+                        # Refresh every observable postprocessor input from the
+                        # canonical point-in-time sidecar. The loader falls back
+                        # to causal recomputation only for genuinely absent keys.
+                        residual_refresh = _expanded_live_refresh_feature_keys(
+                            lazy_state_required
+                        )
+                        if residual_refresh:
+                            close_panel = panel.get("close", pd.DataFrame())
+                            panel_hours = max(
+                                72,
+                                int(
+                                    runtime_config.get(
+                                        "live_residual_feature_lookback_hours",
+                                        runtime_config.get(
+                                            "live_decision_panel_lookback_hours", 72
+                                        ),
+                                    )
+                                    or 72
+                                ),
+                            )
+                            residual_coverage_symbols = (
+                                list(close_panel.columns)
+                                if isinstance(close_panel, pd.DataFrame)
+                                else []
+                            )
+                            # The post-meta residual/V9 namespace is evaluated
+                            # against the same incrementally generated features
+                            # as historical scoring. The in-process cache lets
+                            # the second side reuse the first side's lookup.
+                            residual_runtime_cfg = (
+                                _build_residual_event_feature_runtime_cfg(
+                                    runtime_config,
+                                    coverage_symbols=residual_coverage_symbols,
+                                    optional_feature_keys=set(
+                                        residual_refresh
+                                    ).difference(residual_required),
+                                    same_cycle_memory=True,
+                                )
+                            )
+                            extra_features = load_or_compute_features(
+                                panel=panel,
+                                basket_syms=list(
+                                    panel.get("close", pd.DataFrame()).columns
+                                ),
+                                run_id=str(
+                                    runtime_config.get("run_id")
+                                    or runtime_config.get("model_artifact_run_id")
+                                    or "latest"
+                                ),
+                                data_root=str(
+                                    runtime_config.get("data_root")
+                                    or "data"
+                                ),
+                                cfg=residual_runtime_cfg,
+                                lookback_hours=panel_hours,
+                                required_feature_keys=set(residual_refresh),
+                            )
+                            extra_rows = _get_features_for_candidates_at_ts(
+                                extra_features,
+                                post_meta_symbols,
+                                ts=signal_bar_ts,
+                            )
+                            refreshed_columns: list[str] = []
+                            for col in residual_refresh:
+                                if col in extra_rows.columns:
+                                    replacement = pd.to_numeric(
+                                        extra_rows.reindex(residual_input.index)[col],
+                                        errors="coerce",
+                                    )
+                                    finite = np.isfinite(
+                                        replacement.to_numpy(dtype=float, copy=False)
+                                    )
+                                    if col not in residual_input.columns:
+                                        residual_input[col] = replacement.to_numpy(
+                                            copy=False
+                                        )
+                                    elif bool(finite.any()):
+                                        values = pd.to_numeric(
+                                            residual_input[col], errors="coerce"
+                                        ).to_numpy(dtype=np.float32, copy=True)
+                                        # Preserve context already materialized on
+                                        # the full tradable universe. Recomputing
+                                        # source/AE-GMM features after the base
+                                        # top-30 gate changes their cross-sectional
+                                        # meaning and breaks historical parity.
+                                        missing = ~np.isfinite(values)
+                                        fill = missing & finite
+                                        values[fill] = replacement.to_numpy(
+                                            dtype=np.float32, copy=False
+                                        )[fill]
+                                        residual_input[col] = values
+                                    refreshed_columns.append(col)
+                            residual_input = materialize_live_source_regime_features(
+                                residual_input,
+                                side=side,
+                                signal_bar_ts=signal_bar_ts,
+                                required_columns=lazy_state_required,
+                                overwrite_existing=False,
+                            )
+                            (
+                                residual_input,
+                                still_missing,
+                                optional_missing,
+                            ) = _hydrate_optional_frozen_features(
+                                residual_input,
+                                attempted_columns=residual_refresh,
+                                strict_columns=residual_required,
+                            )
+                            tprint(
+                                "Loaded residual/calibration inputs lazily after base top30: "
+                                f"rows={len(residual_input)} missing={len(residual_missing)} "
+                                f"refreshed={len(refreshed_columns)} "
+                                f"residual_required={len(residual_required)} "
+                                f"calibration_raw_required={len(calibration_raw_required)} "
+                                f"frozen_fill={len(optional_missing)}"
+                            )
+                        if side_residual_expert is not None:
+                            residual_input["side_name"] = str(side)
+                            residual_input["archetype_policy_key"] = pd.Series(
+                                batch_policy_archetypes,
+                                index=residual_input.index,
+                                dtype="object",
+                            ).reindex(residual_input.index)
+                            residual_input["score"] = pd.Series(
+                                {
+                                    symbol: values.get("base_pred", np.nan)
+                                    for symbol, values in base_gate.items()
+                                },
+                                dtype=np.float32,
+                            ).reindex(residual_input.index)
+                            # The canonical residual experts were trained with
+                            # score_base as their explicit backbone anchor.
+                            # Keep score as the compatibility alias, but never
+                            # ask the feature store to manufacture this value.
+                            residual_input["score_base"] = residual_input["score"]
+                            expert_input_features = sorted(
+                                set(side_residual_expert.required_input_features(side))
+                            )
+                            for expert_symbol in residual_input.index:
+                                expert_values = {
+                                    str(column): (
+                                        residual_input.at[expert_symbol, column]
+                                        if column in residual_input.columns
+                                        else np.nan
+                                    )
+                                    for column in expert_input_features
+                                }
+                                expert_values_json = _audit_json_dumps(expert_values)
+                                batch_side_residual_expert_snapshots[
+                                    str(expert_symbol)
+                                ] = {
+                                    "features_json": _audit_json_dumps(
+                                        expert_input_features
+                                    ),
+                                    "values_json": expert_values_json,
+                                    "hash": hashlib.sha256(
+                                        expert_values_json.encode("utf-8")
+                                    ).hexdigest(),
+                                }
+                            expert_output = side_residual_expert.transform(residual_input)
+                            expert_complete = expert_output[
+                                "meta_residual_expert_complete_case"
+                            ].astype(bool)
+                            if not bool(expert_complete.all()):
+                                expert_contract = list(
+                                    dict.fromkeys(
+                                        side_residual_expert.feature_contract(str(side))
+                                    )
+                                )
+                                expert_numeric = residual_input.reindex(
+                                    columns=expert_contract
+                                ).apply(pd.to_numeric, errors="coerce")
+                                nonfinite_counts = (
+                                    ~np.isfinite(
+                                        expert_numeric.to_numpy(
+                                            dtype=np.float32, copy=False
+                                        )
+                                    )
+                                ).sum(axis=0)
+                                worst_inputs = sorted(
+                                    (
+                                        (str(column), int(count))
+                                        for column, count in zip(
+                                            expert_contract, nonfinite_counts
+                                        )
+                                        if int(count) > 0
+                                    ),
+                                    key=lambda item: (-item[1], item[0]),
+                                )[:15]
+                                tprint(
+                                    "Side-residual expert incomplete inputs: "
+                                    f"side={side} complete={int(expert_complete.sum())}/"
+                                    f"{len(expert_complete)} worst={worst_inputs}"
+                                )
+                                for symbol in expert_output.index[~expert_complete]:
+                                    batch_postprocessor_rejections[str(symbol)] = (
+                                        "non_finite_side_residual_expert_inputs"
+                                    )
+                                residual_input = residual_input.loc[expert_complete].copy()
+                                expert_output = expert_output.loc[expert_complete]
+                            if residual_input.empty:
+                                raise RuntimeError(
+                                    "No rows satisfy the side-residual meta feature contract"
+                                )
+                            expert_rank = pd.to_numeric(
+                                expert_output[
+                                    "score_base_residual_ev_rank_train_reference"
+                                ],
+                                errors="coerce",
+                            ).astype(np.float32)
+                            if not bool(np.isfinite(expert_rank).all()):
+                                raise RuntimeError(
+                                    "Side-residual meta expert emitted non-finite ranks"
+                                )
+                            batch_meta_preds = expert_rank.copy()
+                            batch_meta_pre_alignment_preds = expert_rank.copy()
+                            residual_input["score_meta_base_soft_label"] = expert_rank
+                            residual_input[
+                                "score_meta_base_soft_label_raw_refit"
+                            ] = expert_rank
+                            for column in expert_output.columns:
+                                residual_input[column] = expert_output[column]
+                            tprint(
+                                "Applied canonical side-residual meta expert: "
+                                f"side={side} rows={len(expert_rank)} "
+                                f"min={float(expert_rank.min()):.6f} "
+                                f"max={float(expert_rank.max()):.6f}"
+                            )
+                        canonical_predecessor = None
+                        if side_meta_postprocessor is not None:
+                            # This is normally a no-op because all frozen
+                            # AE/GMM outputs are materialized on the full side
+                            # universe above. Keep the fill-only call as a
+                            # defensive contract check for unusual callers that
+                            # supply a pre-truncated candidate frame.
+                            residual_input = materialize_live_ae_gmm_features(
+                                residual_input,
+                                side=side,
+                                signal_bar_ts=signal_bar_ts,
+                                required_columns=(
+                                    side_meta_postprocessor.required_input_features()
+                                ),
+                                state_payload=live_ae_gmm_state_payload,
+                            )
+                            residual_input["side_name"] = str(side)
+                            residual_input["archetype_policy_key"] = pd.Series(
+                                batch_policy_archetypes,
+                                index=residual_input.index,
+                                dtype="object",
+                            ).reindex(residual_input.index)
+                            # The final refit's raw score domain differs from the
+                            # OOF champion used to train V9/MLP. Feed the frozen
+                            # side-specific monotonic bridge output into every
+                            # post-meta stage; retain the raw value separately for
+                            # diagnostics only.
+                            if side_residual_expert is None:
+                                residual_input[
+                                    "score_meta_base_soft_label_raw_refit"
+                                ] = (
+                                    batch_meta_pre_alignment_preds.reindex(
+                                        residual_input.index
+                                    )
+                                    .astype(np.float32)
+                                    .to_numpy(copy=False)
+                                )
+                                residual_input["score_meta_base_soft_label"] = (
+                                    batch_meta_preds.reindex(residual_input.index)
+                                    .astype(np.float32)
+                                    .to_numpy(copy=False)
+                                )
+                            residual_input["score_base"] = pd.Series(
+                                {
+                                    symbol: values.get("base_pred", np.nan)
+                                    for symbol, values in base_gate.items()
+                                },
+                                dtype=np.float32,
+                            ).reindex(residual_input.index)
+                            residual_input["score"] = residual_input[
+                                "score_base"
+                            ].to_numpy(copy=False)
+                            residual_input["__ts__"] = signal_bar_ts
+                            residual_input["__symbol__"] = residual_input.index.astype(
+                                str
+                            )
+                            residual_input = apply_live_meta_reliability_priors(
+                                residual_input,
+                                side=side,
+                                base_predictions={
+                                    str(symbol): {
+                                        "base_pred": float(
+                                            pd.to_numeric(
+                                                residual_input.at[symbol, "score_base"],
+                                                errors="coerce",
+                                            )
+                                        )
+                                    }
+                                    for symbol in residual_input.index
+                                },
+                                prior_payload=residual_reference_prior_payload,
+                            )
+                            complete_case = (
+                                side_meta_postprocessor.complete_case_report(
+                                    residual_input
+                                )
+                            )
+                            rejected = ~complete_case["complete_case"].astype(bool)
+                            for symbol in complete_case.index[rejected]:
+                                batch_postprocessor_rejections[str(symbol)] = (
+                                    "non_finite_postprocessor_inputs:"
+                                    + str(complete_case.at[symbol, "missing_features"])
+                                )
+                            residual_input = residual_input.loc[~rejected].copy()
+                            if residual_input.empty:
+                                raise RuntimeError(
+                                    "No rows satisfy the strict V9/residual/MLP "
+                                    "complete-case contract"
+                                )
+                            tprint(
+                                "Strict canonical postprocessor complete cases: "
+                                f"accepted={len(residual_input)} "
+                                f"rejected={int(rejected.sum())}"
+                            )
+                            canonical_predecessor = (
+                                side_meta_postprocessor.predict_predecessor(
+                                    residual_input
+                                )
+                            )
+                            residual_input = (
+                                side_meta_postprocessor.attach_predecessor(
+                                    residual_input, canonical_predecessor
+                                )
+                            )
+                            # The historical scorer fits/transforms the
+                            # residual-state block with ``score`` equal to the
+                            # base-model score. V9's historical rank is an
+                            # output of the predecessor and must not overwrite
+                            # that residual-state input.
+                            residual_meta_scores = residual_input["score_base"]
+                        else:
+                            residual_meta_scores = batch_meta_preds.reindex(
+                                residual_input.index
+                            )
+                        batch_residual_event_features = (
+                            materialize_live_residual_event_features(
+                                residual_input,
+                                payload=live_residual_event_state_payload,
+                                side=side,
+                                policy_archetypes=batch_policy_archetypes,
+                                meta_scores=residual_meta_scores,
+                                signal_bar_ts=signal_bar_ts,
+                            )
+                        )
+                        # The frozen residual transformer emits its own input and
+                        # generated contract only. Preserve separately hydrated raw
+                        # calibration inputs for the downstream frozen MLP/EV map.
+                        for col in calibration_raw_required:
+                            if (
+                                col in residual_input.columns
+                                and col not in batch_residual_event_features.columns
+                            ):
+                                batch_residual_event_features[col] = residual_input[
+                                    col
+                                ].to_numpy(copy=False)
+                        if side_meta_postprocessor is not None:
+                            canonical_input = residual_input.copy()
+                            for col in batch_residual_event_features.columns:
+                                canonical_input[col] = batch_residual_event_features[
+                                    col
+                                ].to_numpy(copy=False)
+                            _persist_live_candidate_feature_matrix(
+                                canonical_input,
+                                side=side,
+                                signal_bar_ts=signal_bar_ts,
+                                runtime_config=runtime_config,
+                                run_id=str(
+                                    runtime_config.get("run_id")
+                                    or runtime_config.get("model_artifact_run_id")
+                                    or "latest"
+                                ),
+                                stage="canonical_postprocessor_input",
+                            )
+                            batch_canonical_postprocessor_features = (
+                                side_meta_postprocessor.apply_from_components(
+                                    canonical_input,
+                                    predecessor=canonical_predecessor,
+                                    residual_state_features=batch_residual_event_features,
+                                    copy=False,
+                                )
+                            )
+                        tprint(
+                            "Materialized frozen residual-event state: "
+                            f"side={side} rows={len(batch_residual_event_features)} "
+                            f"features={batch_residual_event_features.shape[1]}"
+                        )
+                    except Exception as exc:
+                        residual_event_state_error = str(exc)
+                        batch_residual_event_features = None
+                        tprint(
+                            "Frozen residual-event state materialization failed: "
+                            f"side={side} error_type={type(exc).__name__} error={exc}"
+                        )
                 for symbol in eligible_candidates:
                     if (
                         symbol not in candidate_features.index
@@ -15312,9 +18545,35 @@ def run_inference_step(
                         )
                         continue
                     chain_results.update(base_gate.get(symbol, {}))
+                    expert_snapshot = batch_side_residual_expert_snapshots.get(
+                        str(symbol)
+                    )
+                    if expert_snapshot:
+                        chain_results[
+                            "side_residual_expert_input_features_json"
+                        ] = expert_snapshot["features_json"]
+                        chain_results[
+                            "side_residual_expert_input_values_json"
+                        ] = expert_snapshot["values_json"]
+                        chain_results["side_residual_expert_input_hash"] = (
+                            expert_snapshot["hash"]
+                        )
                     prescore_snapshot = pre_score_market_snapshots.get(str(symbol))
                     if prescore_snapshot:
                         chain_results.update(prescore_snapshot)
+                    postprocessor_rejection = batch_postprocessor_rejections.get(
+                        str(symbol)
+                    )
+                    if side_meta_postprocessor is not None and postprocessor_rejection:
+                        side_metrics["postprocessor_incomplete"] = int(
+                            side_metrics.get("postprocessor_incomplete", 0)
+                        ) + 1
+                        tprint(
+                            "Canonical postprocessor complete-case block: "
+                            f"{symbol} {side}/{strategy_id} reason={postprocessor_rejection}. "
+                            "The row is unscored and cannot enter policy ranking."
+                        )
+                        continue
                     if live_feature_layer_debug and np.isfinite(
                         _safe_float(chain_results.get("meta_pred"))
                     ):
@@ -15408,15 +18667,30 @@ def run_inference_step(
                         and symbol in batch_meta_model_inputs.index
                     ):
                         archetype_meta_input_row = batch_meta_model_inputs.loc[[symbol]]
-                    live_policy_archetype = _infer_live_policy_archetype(
-                        side=side,
-                        chain_results=chain_results,
-                        candidate_feature_row=candidate_features.loc[[symbol]],
-                        meta_model_input_row=archetype_meta_input_row,
+                    live_policy_archetype = batch_policy_archetypes.get(
+                        str(symbol), ""
                     )
-                    live_policy_archetype_source = (
-                        "live_row" if live_policy_archetype else ""
+                    live_policy_archetype_source = batch_policy_archetype_sources.get(
+                        str(symbol), ""
                     )
+                    if not live_policy_archetype:
+                        live_policy_archetype = _infer_live_policy_archetype(
+                            side=side,
+                            chain_results=chain_results,
+                            candidate_feature_row=candidate_features.loc[[symbol]],
+                            meta_model_input_row=archetype_meta_input_row,
+                        )
+                        live_policy_archetype_source = (
+                            "live_row" if live_policy_archetype else ""
+                        )
+                    if not live_policy_archetype:
+                        live_policy_archetype = predict_observable_policy_archetype(
+                            side=side,
+                            candidate_feature_row=candidate_features.loc[[symbol]],
+                            meta_model_input_row=archetype_meta_input_row,
+                        )
+                        if live_policy_archetype:
+                            live_policy_archetype_source = "observable_regime_family"
                     if not live_policy_archetype and live_policy_archetype_classifier:
                         live_policy_archetype = predict_live_policy_archetype(
                             side=side,
@@ -15482,11 +18756,24 @@ def run_inference_step(
                             1.0,
                         )
                     )
-                    auction_ev_open_positions = int(
-                        starting_active_position_count
-                    ) + int(total_entries_executed)
+                    try:
+                        if portfolio_mgr is None:
+                            raise RuntimeError("portfolio manager unavailable")
+                        auction_ev_capacity = portfolio_mgr.get_portfolio_capacity(
+                            side=side,
+                            strategy_id=strategy_id,
+                        )
+                    except Exception:
+                        auction_ev_capacity = {}
                     auction_ev_target = _auction_ev_target_for_occupancy(
-                        open_positions=auction_ev_open_positions,
+                        invested_allocated_capital=_safe_float(
+                            auction_ev_capacity.get("invested_allocated_capital"),
+                            0.0,
+                        ),
+                        wallet_value=_safe_float(
+                            auction_ev_capacity.get("wallet_value"),
+                            getattr(portfolio_mgr, "portfolio_value", 0.0),
+                        ),
                         policy=portfolio_policy,
                     )
                     raw_calibrated_score_for_policy = float(calibrated_score)
@@ -15529,7 +18816,18 @@ def run_inference_step(
                             1.0,
                         )
                     )
-                    if regime_ev_calibration_artifact:
+                    if residual_event_state_required and (
+                        batch_residual_event_features is None
+                        or symbol not in batch_residual_event_features.index
+                    ):
+                        calibrated_score = 0.0
+                        chain_results["regime_ev_calibration_fail_closed"] = True
+                        chain_results["regime_ev_calibration_error"] = (
+                            batch_postprocessor_rejections.get(str(symbol))
+                            or residual_event_state_error
+                            or "strict residual-event state is unavailable for row"
+                        )
+                    elif regime_ev_calibration_artifact:
                         try:
                             regime_frame = candidate_features.loc[[symbol]].copy()
                             if archetype_meta_input_row is not None:
@@ -15538,29 +18836,114 @@ def run_inference_step(
                                         regime_frame[col] = archetype_meta_input_row[
                                             col
                                         ].to_numpy()
+                            if (
+                                isinstance(batch_residual_event_features, pd.DataFrame)
+                                and symbol in batch_residual_event_features.index
+                            ):
+                                residual_row = batch_residual_event_features.loc[
+                                    [symbol]
+                                ]
+                                for col in residual_row.columns:
+                                    regime_frame[col] = residual_row[col].to_numpy(
+                                        copy=False
+                                    )
+                                for col in (
+                                    "resid_event_aegmm_gmm_cluster_id",
+                                    "resid_event_aegmm_gmm_entropy",
+                                    "resid_event_aegmm_gmm_posterior_margin",
+                                    "resid_event_aegmm_expected_adverse_path_event",
+                                    "resid_event_aegmm_expected_negative_residual_event",
+                                    "resid_event_aegmm_expected_positive_residual_event",
+                                    "resid_event_aegmm_expected_favorable_near_miss_event",
+                                    "resid_event_aegmm_expected_ev_after_1pct",
+                                    "resid_event_aegmm_expected_persistence_strength",
+                                ):
+                                    if col in residual_row.columns:
+                                        chain_results[col] = _safe_float(
+                                            residual_row[col].iloc[0], np.nan
+                                        )
                             regime_frame["side_name"] = side
                             regime_frame["archetype_policy_key"] = live_policy_archetype
-                            regime_frame["score_meta_base_soft_label"] = float(
-                                calibrated_score
-                            )
-                            regime_frame["calibrated_score"] = float(calibrated_score)
+                            regime_frame["score_meta_base_soft_label"] = float(raw_score)
                             regime_frame["score_base"] = _safe_float(
                                 chain_results.get("base_pred"), np.nan
                             )
-                            regime_frame = apply_regime_ev_calibration(
-                                regime_frame,
-                                regime_ev_calibration_artifact,
-                                source_score_col="score_meta_base_soft_label",
-                                copy=False,
+                            regime_frame["hit_probability"] = _safe_float(
+                                estimated_hit_rate.get("estimated_hit_rate"),
+                                np.nan,
                             )
-                            adjusted_col = str(
-                                regime_ev_calibration_artifact.get(
-                                    "adjusted_score_col", "score_regime_calibrated"
+                            if side_meta_postprocessor is not None:
+                                if (
+                                    batch_canonical_postprocessor_features is None
+                                    or symbol
+                                    not in batch_canonical_postprocessor_features.index
+                                ):
+                                    raise RuntimeError(
+                                        "canonical batch postprocessor output is unavailable"
+                                    )
+                                regime_frame = (
+                                    batch_canonical_postprocessor_features.loc[
+                                        [symbol]
+                                    ].copy()
+                                )
+                            elif (
+                                str(
+                                    regime_ev_calibration_artifact.get("policy_id")
+                                    or ""
+                                )
+                                == MLP_HIER_EV_POLICY_ID
+                            ):
+                                raise RuntimeError(
+                                    "canonical V9 predecessor is unavailable"
+                                )
+                            else:
+                                regime_frame["calibrated_score"] = float(
+                                    calibrated_score
+                                )
+                                regime_frame = apply_regime_ev_calibration(
+                                    regime_frame,
+                                    regime_ev_calibration_artifact,
+                                    source_score_col="calibrated_score",
+                                    copy=False,
+                                )
+                            v9_tail_only = isinstance(
+                                side_meta_postprocessor, V9TailPostprocessor
+                            )
+                            adjusted_col = (
+                                "calibrated_score"
+                                if v9_tail_only
+                                else str(
+                                    regime_ev_calibration_artifact.get(
+                                        "adjusted_score_col",
+                                        "score_regime_calibrated",
+                                    )
                                 )
                             )
                             regime_ev_adjusted_score = _safe_float(
                                 regime_frame[adjusted_col].iloc[0], np.nan
                             )
+                            common_expected_ev = _safe_float(
+                                regime_frame.get(
+                                    "expected_net_ev_after_1pct",
+                                    pd.Series([np.nan], index=regime_frame.index),
+                                ).iloc[0],
+                                np.nan,
+                            )
+                            common_expected_ev_rank = _safe_float(
+                                regime_frame.get(
+                                    "expected_ev_rank_score",
+                                    pd.Series([np.nan], index=regime_frame.index),
+                                ).iloc[0],
+                                np.nan,
+                            )
+                            if v9_tail_only and not np.isfinite(common_expected_ev_rank):
+                                common_expected_ev_rank = _safe_float(
+                                    regime_frame.get(
+                                        "historical_rank",
+                                        pd.Series([np.nan], index=regime_frame.index),
+                                    ).iloc[0],
+                                    np.nan,
+                                )
                             regime_ev_risk_score = _safe_float(
                                 regime_frame.get(
                                     "regime_ev_risk_score",
@@ -15588,13 +18971,94 @@ def run_inference_step(
                                 or "per_regime_archetype_calibration_v1"
                             )
                             if np.isfinite(regime_ev_adjusted_score):
-                                calibrated_score = float(regime_ev_adjusted_score)
+                                calibrated_score = float(
+                                    regime_ev_adjusted_score
+                                    if v9_tail_only
+                                    else (
+                                        common_expected_ev_rank
+                                        if np.isfinite(common_expected_ev_rank)
+                                        else regime_ev_adjusted_score
+                                    )
+                                )
+                                raw_refit_score = _safe_float(
+                                    batch_meta_pre_alignment_preds.get(symbol),
+                                    np.nan,
+                                )
+                                aligned_refit_score = _safe_float(raw_score, np.nan)
+                                predecessor_rank = _safe_float(
+                                    regime_frame.get(
+                                        "historical_rank",
+                                        pd.Series([np.nan], index=regime_frame.index),
+                                    ).iloc[0],
+                                    np.nan,
+                                )
+                                chain_results["meta_pred_raw_refit"] = raw_refit_score
+                                chain_results["meta_pred_aligned"] = aligned_refit_score
+                                chain_results["v9_tail95_predecessor_rank"] = (
+                                    predecessor_rank
+                                )
+                                postprocessor_input_cols = (
+                                    side_meta_postprocessor.required_input_features()
+                                )
+                                postprocessor_input_values = {
+                                    str(col): (
+                                        _safe_float(regime_frame[col].iloc[0], np.nan)
+                                        if col in regime_frame.columns
+                                        else np.nan
+                                    )
+                                    for col in postprocessor_input_cols
+                                }
+                                postprocessor_input_json = _audit_json_dumps(
+                                    postprocessor_input_values
+                                )
+                                chain_results[
+                                    "meta_postprocessor_input_features_json"
+                                ] = _audit_json_dumps(postprocessor_input_cols)
+                                chain_results[
+                                    "meta_postprocessor_input_values_json"
+                                ] = postprocessor_input_json
+                                chain_results["meta_postprocessor_input_hash"] = (
+                                    hashlib.sha256(
+                                        postprocessor_input_json.encode("utf-8")
+                                    ).hexdigest()
+                                )
                                 chain_results["raw_calibrated_score"] = float(
                                     raw_calibrated_score_for_policy
                                 )
                                 chain_results["score_regime_calibrated"] = float(
                                     regime_ev_adjusted_score
                                 )
+                                if v9_tail_only:
+                                    chain_results["v9_tail_score_correction"] = (
+                                        float(regime_ev_adjusted_score - predecessor_rank)
+                                        if np.isfinite(predecessor_rank)
+                                        else np.nan
+                                    )
+                                else:
+                                    chain_results["market_state_mlp_score_correction"] = (
+                                        float(regime_ev_adjusted_score - predecessor_rank)
+                                        if np.isfinite(predecessor_rank)
+                                        else np.nan
+                                    )
+                                if np.isfinite(common_expected_ev):
+                                    chain_results["expected_net_ev_after_1pct"] = float(
+                                        common_expected_ev
+                                    )
+                                    chain_results[
+                                        "expected_net_ev_after_1pct_side_archetype"
+                                    ] = float(common_expected_ev)
+                                    if not v9_tail_only:
+                                        chain_results[
+                                            "market_state_mlp_expected_net_ev_after_1pct"
+                                        ] = float(common_expected_ev)
+                                if np.isfinite(common_expected_ev_rank):
+                                    chain_results["expected_ev_rank_score"] = float(
+                                        common_expected_ev_rank
+                                    )
+                                    if not v9_tail_only:
+                                        chain_results[
+                                            "market_state_mlp_expected_ev_rank_score"
+                                        ] = float(common_expected_ev_rank)
                                 chain_results["regime_ev_risk_score"] = float(
                                     regime_ev_risk_score
                                 )
@@ -15623,6 +19087,13 @@ def run_inference_step(
                                 "Regime EV calibration failed for "
                                 f"{symbol} {side}/{strategy_id}: {exc}"
                             )
+                            if bool(
+                                regime_ev_calibration_artifact.get(
+                                    "strict_required_features", False
+                                )
+                            ):
+                                calibrated_score = 0.0
+                                chain_results["regime_ev_calibration_fail_closed"] = True
                     estimated_ev = _estimated_ev_from_strategy_prediction(
                         calibrated_score,
                         strategy_id,
@@ -15630,6 +19101,14 @@ def run_inference_step(
                         side=side,
                         policy_archetype=live_policy_archetype,
                     )
+                    mapped_common_ev = _safe_float(
+                        chain_results.get("expected_net_ev_after_1pct"), np.nan
+                    )
+                    if np.isfinite(mapped_common_ev):
+                        estimated_ev["estimated_ev_net_return"] = float(mapped_common_ev)
+                        estimated_ev["estimated_ev_source"] = (
+                            "hierarchical_market_state_side_archetype_expected_ev_after_1pct"
+                        )
                     if bool(portfolio_policy.inference_ev_cost_rebase_enabled):
                         spread_baseline_bps, spread_baseline_source = (
                             _live_ev_haircut_spread_baseline_bps(
@@ -15670,6 +19149,39 @@ def run_inference_step(
                             ),
                         )
                         chain_results.update(pre_rank_ev_adjusted)
+                        if np.isfinite(mapped_common_ev):
+                            mapped_after = float(mapped_common_ev) - float(
+                                _safe_float(
+                                    pre_rank_ev_adjusted.get("ev_haircut_bps"), 0.0
+                                )
+                            ) / 10000.0
+                            pre_rank_ev_adjusted[
+                                "ev_adjusted_net_return_before_friction"
+                            ] = float(mapped_common_ev)
+                            pre_rank_ev_adjusted[
+                                "ev_adjusted_net_return_after_friction"
+                            ] = mapped_after
+                            reference = np.asarray(
+                                (
+                                    regime_ev_calibration_artifact.get(
+                                        "expected_ev_mapping", {}
+                                    ).get("rank_reference", [])
+                                ),
+                                dtype=float,
+                            )
+                            if len(reference):
+                                reference.sort()
+                                mapped_rank_after = float(
+                                    np.searchsorted(reference, mapped_after, side="right")
+                                    / len(reference)
+                                )
+                                pre_rank_ev_adjusted[
+                                    "ev_adjusted_calibrated_score"
+                                ] = mapped_rank_after
+                            pre_rank_ev_adjusted["ev_adjusted_source"] = (
+                                "hierarchical_market_state_expected_ev_minus_excess_live_friction"
+                            )
+                            chain_results.update(pre_rank_ev_adjusted)
                         adjusted_ev_after = _safe_float(
                             pre_rank_ev_adjusted.get(
                                 "ev_adjusted_net_return_after_friction"
@@ -16683,7 +20195,17 @@ def run_inference_step(
                     uncertainty_ev.get("uncertainty_ev_size_multiplier"),
                     1.0,
                 )
-                if np.isfinite(uncertainty_size_multiplier):
+                _, runtime_policy_params = _resolved_runtime_policy_params(
+                    executor,
+                    strategy_id=str(decision.get("strategy_id") or ""),
+                    side=str(decision.get("side") or side),
+                    decision=decision,
+                )
+                uses_raw_bayesian_sizing = (
+                    str(runtime_policy_params.get("policy_pathway_id") or "")
+                    == WINNER_POLICY_PATHWAY_ID
+                )
+                if np.isfinite(uncertainty_size_multiplier) and not uses_raw_bayesian_sizing:
                     decision["size"] = float(decision.get("size") or 0.0) * float(
                         np.clip(uncertainty_size_multiplier, 0.0, 1.25)
                     )
@@ -16692,6 +20214,8 @@ def run_inference_step(
                         np.clip(uncertainty_size_multiplier, 0.0, 1.25)
                     )
                     decision["policy_sizing"] = policy_sizing
+                elif uses_raw_bayesian_sizing:
+                    chain_results["legacy_uncertainty_size_multiplier_skipped"] = True
                 update_live_feature_layer_rank_summary(
                     chain_results.get("live_feature_layer_debug_dir"),
                     decision=decision,
@@ -16782,7 +20306,12 @@ def run_inference_step(
                 bucket_key = strategy_core_id(strategy_id)
                 resolver = getattr(executor, "resolve_simple_policy_strategy_id", None)
                 if callable(resolver):
-                    resolved_bucket_key = resolver(bucket_key, side)
+                    resolved_bucket_key = resolver(
+                        bucket_key,
+                        side,
+                        decision.get("policy_archetype")
+                        or chain_results.get("policy_archetype"),
+                    )
                     if resolved_bucket_key:
                         bucket_key = str(resolved_bucket_key)
                 threshold_for_size = float(decision["effective_threshold"])
@@ -16862,6 +20391,12 @@ def run_inference_step(
                     side_metrics["non_fatal_issues"] += 1
                     continue
                 side_metrics["cooldown_pass"] += 1
+                allocation_rank_for_sizing = (
+                    _candidate_corrected_ev_rank_for_sizing(decision)
+                )
+                chain_results["portfolio_allocation_rank_score_source"] = (
+                    "side_archetype_corrected_expected_ev_rank"
+                )
                 if portfolio_mgr is not None:
                     capacity = portfolio_mgr.get_portfolio_capacity(
                         side=side,
@@ -16891,12 +20426,14 @@ def run_inference_step(
                     sizing_audit = compute_rank_based_position_size(
                         wallet_value=float(capacity["wallet_value"]),
                         open_notional=float(capacity["open_notional"]),
-                        adjusted_rank_score=rank_for_size,
+                        adjusted_rank_score=allocation_rank_for_sizing,
                         final_threshold=threshold_for_size,
                         policy=portfolio_policy,
                         liquidity_capacity_weight=1.0,
                         live_test_mode=live_test_mode,
-                        rank_size_power=float(policy_size.get("size_power", 1.1)),
+                        rank_size_power=_resolve_policy_size_power(
+                            policy_size, fallback=1.1
+                        ),
                         total_assets_quote=capacity.get("total_assets_quote"),
                         total_liabilities_quote=capacity.get("total_liabilities_quote"),
                         open_positions=capacity.get("open_positions"),
@@ -16904,6 +20441,9 @@ def run_inference_step(
                         available_wallet_value=capacity.get("available_wallet_quote"),
                         remaining_total_notional=capacity.get(
                             "remaining_total_notional"
+                        ),
+                        remaining_allocated_capital=capacity.get(
+                            "remaining_allocated_capital"
                         ),
                         stop_loss_pct=_resolve_live_stop_loss_pct_for_sizing(
                             executor=executor,
@@ -16916,30 +20456,19 @@ def run_inference_step(
                     requested_position_usdt = float(
                         sizing_audit["size_after_liquidity"]
                     )
-                    uncertainty_size_multiplier = _safe_float(
-                        chain_results.get(
-                            "uncertainty_ev_size_multiplier",
-                            decision.get("uncertainty_ev_size_multiplier"),
-                        ),
-                        1.0,
+                    requested_position_usdt, sizing_overlay_audit = (
+                        _apply_runtime_sizing_overlay(
+                            requested_position_usdt,
+                            decision=decision,
+                            executor=executor,
+                            strategy_id=strategy_id,
+                            side=side,
+                            remaining_total_notional=sizing_audit.get(
+                                "remaining_total_notional"
+                            ),
+                        )
                     )
-                    if np.isfinite(uncertainty_size_multiplier):
-                        requested_position_usdt *= float(
-                            np.clip(uncertainty_size_multiplier, 0.0, 1.25)
-                        )
-                        remaining_cap = _safe_float(
-                            sizing_audit.get("remaining_total_notional"), np.nan
-                        )
-                        if np.isfinite(remaining_cap):
-                            requested_position_usdt = min(
-                                requested_position_usdt, max(remaining_cap, 0.0)
-                            )
-                        sizing_audit["uncertainty_ev_size_multiplier"] = float(
-                            np.clip(uncertainty_size_multiplier, 0.0, 1.25)
-                        )
-                        sizing_audit["size_after_uncertainty_ev"] = float(
-                            requested_position_usdt
-                        )
+                    sizing_audit.update(sizing_overlay_audit)
                     chain_results["portfolio_rank_sizing"] = sizing_audit
                     threshold_gate_rank = _candidate_threshold_rank_score(decision)
                     ordering_rank_score = _candidate_rank_score(decision)
@@ -16953,6 +20482,9 @@ def run_inference_step(
                         requested_position_size=requested_position_usdt,
                         policy_archetype=decision.get("policy_archetype")
                         or chain_results.get("policy_archetype"),
+                        effective_leverage=_safe_float(
+                            sizing_audit.get("perp_effective_leverage"), 1.0
+                        ),
                     )
                     info = _annotate_portfolio_gate_info(
                         info,
@@ -17363,7 +20895,10 @@ def run_inference_step(
                                 decision_mid=decision_mid,
                                 policy=portfolio_policy,
                             )
-                            adjusted_rank = max(rank_for_size - float(gap_penalty), 0.0)
+                            adjusted_rank = max(
+                                allocation_rank_for_sizing - float(gap_penalty),
+                                0.0,
+                            )
                             execution_snapshot.update(gap_info)
                             adverse_gap_bps = _adverse_signal_gap_bps(
                                 side=side,
@@ -17828,6 +21363,9 @@ def run_inference_step(
                                         remaining_total_notional=capacity.get(
                                             "remaining_total_notional"
                                         ),
+                                        remaining_allocated_capital=capacity.get(
+                                            "remaining_allocated_capital"
+                                        ),
                                         stop_loss_pct=(
                                             _resolve_live_stop_loss_pct_for_sizing(
                                                 executor=executor,
@@ -17857,6 +21395,10 @@ def run_inference_step(
                                             "policy_archetype"
                                         )
                                         or chain_results.get("policy_archetype"),
+                                        effective_leverage=_safe_float(
+                                            sizing_audit.get("perp_effective_leverage"),
+                                            1.0,
+                                        ),
                                     )
                                     info = _annotate_portfolio_gate_info(
                                         info,
@@ -18551,11 +22093,17 @@ def run_inference_step(
                             f"error={trade_result.get('error', '')}"
                         )
                     if portfolio_mgr is not None and (trade_success):
+                        filled_entry_notional = _safe_float(
+                            _derive_entry_notional_quote_for_log(
+                                features_log, trade_result
+                            ),
+                            abs(size),
+                        )
                         portfolio_mgr.record_position_open(
                             symbol=symbol,
                             side=side,
                             strategy_id=strategy_id,
-                            position_size=float(abs(size)),
+                            position_size=float(abs(filled_entry_notional)),
                             entry_price=_entry_accounting_price(
                                 trade_result,
                                 fallback_price=execution_price,
@@ -18567,6 +22115,12 @@ def run_inference_step(
                             or chain_results.get("local_side_archetype"),
                             source_archetype=decision.get("source_archetype")
                             or chain_results.get("source_archetype"),
+                            effective_leverage=_safe_float(
+                                trade_result.get("actual_entry_leverage")
+                                or trade_result.get("exchange_entry_leverage")
+                                or sizing_audit.get("perp_effective_leverage"),
+                                1.0,
+                            ),
                         )
                         try:
                             post_capacity = portfolio_mgr.get_portfolio_capacity(
@@ -18771,14 +22325,83 @@ def run_inference_step(
                     f"WARNING: systemic meta prediction failure for {side}: "
                     f"missing={side_metrics['meta_missing']} chain_enter={side_metrics['chain_enter']}"
                 )
+            side_scoring_failure = ""
+            if strategy_ids and side_metrics["eligible_candidates"] > 0:
+                if not any(np.isfinite(base_preds_all)):
+                    side_scoring_failure = "no_finite_base_predictions"
+                elif (
+                    side_metrics["chain_enter"] > 0
+                    and side_metrics["meta_missing"] >= side_metrics["chain_enter"]
+                    and not any(np.isfinite(meta_preds_all))
+                ):
+                    side_scoring_failure = "no_finite_meta_predictions"
+            if side_scoring_failure:
+                failed_auction_sides[str(side)] = side_scoring_failure
+            else:
+                completed_auction_sides.add(str(side))
         except Exception as e:
             tprint(f"Error running inference chain for {side}: {e}")
+            failed_auction_sides[str(side)] = f"{type(e).__name__}: {e}"
             continue
+
+    incomplete_auction_sides = sorted(
+        expected_auction_sides.difference(completed_auction_sides)
+    )
+    auction_complete = not incomplete_auction_sides
+    results["global_auction_completeness"] = {
+        "enabled": bool(global_auction_enabled),
+        "complete": bool(auction_complete),
+        "expected_sides": sorted(expected_auction_sides),
+        "completed_sides": sorted(completed_auction_sides),
+        "failed_sides": {
+            side: failed_auction_sides.get(side, "side_did_not_complete")
+            for side in incomplete_auction_sides
+        },
+        "candidate_rows_before_fail_closed": int(len(global_auction_decisions)),
+    }
+    if global_auction_enabled and not auction_complete:
+        failure_json = _audit_json_dumps(
+            results["global_auction_completeness"]["failed_sides"]
+        )
+        tprint(
+            "CRITICAL: global auction failed closed because side scoring was "
+            f"incomplete: {failure_json}"
+        )
+        _attach_global_auction_metadata(
+            global_auction_decisions,
+            entry_cap=0,
+            max_new_entries_per_bar=int(portfolio_policy.max_new_entries_per_bar),
+            sorted_at=now_utc,
+        )
+        for decision in global_auction_decisions:
+            chain = dict(decision.get("chain_results") or {})
+            chain["global_auction_complete"] = False
+            chain["global_auction_incomplete_sides_json"] = failure_json
+            decision["chain_results"] = chain
+            if prediction_ledger is not None and _should_log_prediction_candidate(
+                decision, policy=portfolio_policy
+            ):
+                prediction_ledger_rows.append(
+                    _prediction_ledger_row(
+                        decision,
+                        timestamp=now_utc.isoformat(),
+                        side=str(decision.get("_auction_side") or decision.get("side") or ""),
+                        portfolio_decision="portfolio_rejected",
+                        portfolio_reject_reason="global_auction_incomplete_side_scoring",
+                    )
+                )
+        global_auction_decisions = []
 
     if global_auction_enabled and global_auction_decisions:
         global_entry_cap = max(0, int(max_entries_total))
         for row in global_auction_decisions:
             row["portfolio_priority"] = _candidate_portfolio_priority(row)
+            chain = dict(row.get("chain_results") or {})
+            chain["global_auction_complete"] = True
+            chain["global_auction_completed_sides_json"] = _audit_json_dumps(
+                sorted(completed_auction_sides)
+            )
+            row["chain_results"] = chain
         global_auction_decisions.sort(
             key=lambda row: (
                 _safe_float(row.get("portfolio_priority"), -float("inf")),
@@ -18845,7 +22468,8 @@ def run_inference_step(
                     )
                 )
 
-        entries_this_bar = 0
+        entry_budget_snapshot = entry_budget_guard.snapshot(signal_bar_ts)
+        entries_this_bar = int(entry_budget_snapshot["active_count"])
         for auction_i, decision in enumerate(global_auction_decisions):
             if total_entries_executed >= global_entry_cap:
                 _log_global_auction_capacity_rejects(
@@ -18898,11 +22522,11 @@ def run_inference_step(
                 or chain_results.get("threshold_rank_score_source")
                 or "threshold_rank_score"
             )
-            allocation_rank_for_sizing = _safe_float(
-                decision.get(
-                    "normalized_rank_score",
-                    decision.get("threshold_score", decision.get("calibrated_score")),
-                )
+            allocation_rank_for_sizing = _candidate_corrected_ev_rank_for_sizing(
+                decision
+            )
+            chain_results["portfolio_allocation_rank_score_source"] = (
+                "side_archetype_corrected_expected_ev_rank"
             )
             barrier_features_log: Dict[str, Any] = {}
             if (
@@ -19051,10 +22675,11 @@ def run_inference_step(
                     policy=portfolio_policy,
                     liquidity_capacity_weight=1.0,
                     live_test_mode=live_test_mode,
-                    rank_size_power=float(
-                        decision_policy_sizing.get(
-                            "size_power", chain_results.get("size_power", 1.1)
-                        )
+                    rank_size_power=_resolve_policy_size_power(
+                        decision_policy_sizing,
+                        fallback=_resolve_policy_size_power(
+                            chain_results, fallback=1.1
+                        ),
                     ),
                     total_assets_quote=capacity.get("total_assets_quote"),
                     total_liabilities_quote=capacity.get("total_liabilities_quote"),
@@ -19062,6 +22687,9 @@ def run_inference_step(
                     market_mode=runtime_config.get("market_mode", "spot"),
                     available_wallet_value=capacity.get("available_wallet_quote"),
                     remaining_total_notional=capacity.get("remaining_total_notional"),
+                    remaining_allocated_capital=capacity.get(
+                        "remaining_allocated_capital"
+                    ),
                     stop_loss_pct=_resolve_live_stop_loss_pct_for_sizing(
                         executor=executor,
                         strategy_id=strategy_id,
@@ -19082,30 +22710,19 @@ def run_inference_step(
                     else np.nan
                 )
                 requested_position_usdt = float(sizing_audit["size_after_liquidity"])
-                uncertainty_size_multiplier = _safe_float(
-                    chain_results.get(
-                        "uncertainty_ev_size_multiplier",
-                        decision.get("uncertainty_ev_size_multiplier"),
-                    ),
-                    1.0,
+                requested_position_usdt, sizing_overlay_audit = (
+                    _apply_runtime_sizing_overlay(
+                        requested_position_usdt,
+                        decision=decision,
+                        executor=executor,
+                        strategy_id=strategy_id,
+                        side=side,
+                        remaining_total_notional=sizing_audit.get(
+                            "remaining_total_notional"
+                        ),
+                    )
                 )
-                if np.isfinite(uncertainty_size_multiplier):
-                    requested_position_usdt *= float(
-                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
-                    )
-                    remaining_cap = _safe_float(
-                        sizing_audit.get("remaining_total_notional"), np.nan
-                    )
-                    if np.isfinite(remaining_cap):
-                        requested_position_usdt = min(
-                            requested_position_usdt, max(remaining_cap, 0.0)
-                        )
-                    sizing_audit["uncertainty_ev_size_multiplier"] = float(
-                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
-                    )
-                    sizing_audit["size_after_uncertainty_ev"] = float(
-                        requested_position_usdt
-                    )
+                sizing_audit.update(sizing_overlay_audit)
                 chain_results["portfolio_rank_sizing"] = sizing_audit
                 decision["chain_results"] = chain_results
                 can_enter, info = portfolio_mgr.can_enter_position(
@@ -19118,6 +22735,9 @@ def run_inference_step(
                     requested_position_size=requested_position_usdt,
                     policy_archetype=decision.get("policy_archetype")
                     or chain_results.get("policy_archetype"),
+                    effective_leverage=_safe_float(
+                        sizing_audit.get("perp_effective_leverage"), 1.0
+                    ),
                 )
                 info = _annotate_portfolio_gate_info(
                     info,
@@ -19427,7 +23047,9 @@ def run_inference_step(
                         decision_mid=decision_mid,
                         policy=portfolio_policy,
                     )
-                    adjusted_rank = max(rank_for_size - float(gap_penalty), 0.0)
+                    adjusted_rank = max(
+                        allocation_rank_for_sizing - float(gap_penalty), 0.0
+                    )
                     execution_snapshot.update(gap_info)
                     adverse_gap_bps = _adverse_signal_gap_bps(
                         side=side,
@@ -19914,11 +23536,11 @@ def run_inference_step(
                                     book_snapshot.liquidity_capacity_weight
                                 ),
                                 live_test_mode=live_test_mode,
-                                rank_size_power=float(
-                                    decision_policy_sizing.get(
-                                        "size_power",
-                                        chain_results.get("size_power", 1.1),
-                                    )
+                                rank_size_power=_resolve_policy_size_power(
+                                    decision_policy_sizing,
+                                    fallback=_resolve_policy_size_power(
+                                        chain_results, fallback=1.1
+                                    ),
                                 ),
                                 total_assets_quote=capacity.get("total_assets_quote"),
                                 total_liabilities_quote=capacity.get(
@@ -19928,6 +23550,12 @@ def run_inference_step(
                                 market_mode=runtime_config.get("market_mode", "spot"),
                                 available_wallet_value=capacity.get(
                                     "available_wallet_quote"
+                                ),
+                                remaining_total_notional=capacity.get(
+                                    "remaining_total_notional"
+                                ),
+                                remaining_allocated_capital=capacity.get(
+                                    "remaining_allocated_capital"
                                 ),
                                 stop_loss_pct=_resolve_live_stop_loss_pct_for_sizing(
                                     executor=executor,
@@ -19955,6 +23583,9 @@ def run_inference_step(
                                 requested_position_size=size,
                                 policy_archetype=decision.get("policy_archetype")
                                 or chain_results.get("policy_archetype"),
+                                effective_leverage=_safe_float(
+                                    sizing_audit.get("perp_effective_leverage"), 1.0
+                                ),
                             )
                             info = _annotate_portfolio_gate_info(
                                 info,
@@ -20196,7 +23827,12 @@ def run_inference_step(
             bucket_key = strategy_core_id(strategy_id)
             resolver = getattr(executor, "resolve_simple_policy_strategy_id", None)
             if callable(resolver):
-                resolved_bucket_key = resolver(bucket_key, side)
+                resolved_bucket_key = resolver(
+                    bucket_key,
+                    side,
+                    decision.get("policy_archetype")
+                    or chain_results.get("policy_archetype"),
+                )
                 if resolved_bucket_key:
                     bucket_key = str(resolved_bucket_key)
             sizing_context = chain_results.get("portfolio_rank_sizing", {}) or {}
@@ -20223,6 +23859,119 @@ def run_inference_step(
                 timestamp=now_utc,
                 signal_bar_ts=signal_bar_ts,
             )
+            reservation_capacity = (
+                portfolio_mgr.get_portfolio_capacity(
+                    side=side,
+                    strategy_id=strategy_id,
+                    effective_leverage=_safe_float(
+                        sizing_context.get("perp_effective_leverage"),
+                        1.0,
+                    ),
+                )
+                if portfolio_mgr is not None
+                else {
+                    "max_total_notional": float(abs(size)),
+                    "open_marked_notional": 0.0,
+                    "configured_wallet_capital": float(abs(size)),
+                    "open_allocated_capital": 0.0,
+                }
+            )
+            entry_budget_reservation = entry_budget_guard.reserve(
+                signal_bar_ts=signal_bar_ts,
+                symbol=symbol,
+                side=side,
+                strategy_id=strategy_id,
+                requested_notional=float(abs(size)),
+                max_total_notional=float(
+                    reservation_capacity.get("max_total_notional") or 0.0
+                ),
+                open_marked_notional=float(
+                    reservation_capacity.get("open_marked_notional") or 0.0
+                ),
+                effective_leverage=_safe_float(
+                    sizing_context.get("perp_effective_leverage"), 1.0
+                ),
+                max_total_allocated_capital=float(
+                    reservation_capacity.get("configured_wallet_capital") or 0.0
+                ),
+                open_allocated_capital=float(
+                    reservation_capacity.get("open_allocated_capital") or 0.0
+                ),
+            )
+            _sync_persistent_entry_pending_notional(
+                entry_budget_guard,
+                portfolio_mgr,
+            )
+            chain_results.update(
+                {
+                    "persistent_entry_budget_schema": "entry_budget_guard_v2_notional",
+                    "persistent_entry_budget_path": str(entry_budget_guard.path),
+                    "persistent_entry_budget_policy_id": policy_context_run_id,
+                    "persistent_entry_budget_signal_bar_ts": pd.to_datetime(
+                        signal_bar_ts, utc=True
+                    ).isoformat(),
+                    "persistent_entry_budget_active_count": int(
+                        entry_budget_reservation.active_count
+                    ),
+                    "persistent_entry_budget_remaining": int(
+                        entry_budget_reservation.remaining
+                    ),
+                    "persistent_entry_budget_reason": entry_budget_reservation.reason,
+                    "persistent_reserved_notional": float(
+                        entry_budget_reservation.reserved_notional
+                    ),
+                    "persistent_pending_reserved_notional": float(
+                        entry_budget_reservation.pending_reserved_notional
+                    ),
+                    "persistent_remaining_notional": (
+                        entry_budget_reservation.remaining_notional
+                    ),
+                }
+            )
+            decision["chain_results"] = chain_results
+            if not entry_budget_reservation.allowed:
+                side_metrics["non_fatal_issues"] = (
+                    int(side_metrics.get("non_fatal_issues", 0)) + 1
+                )
+                _log_global_auction_skip(
+                    "persistent_entry_budget",
+                    entry_budget_reservation.reason,
+                    extra={
+                        "persistent_active_count": entry_budget_reservation.active_count,
+                        "persistent_remaining": entry_budget_reservation.remaining,
+                    },
+                    execution_snapshot=execution_snapshot,
+                )
+                _commit_global_side_metrics()
+                continue
+            reserved_size = float(entry_budget_reservation.reserved_notional)
+            if reserved_size > 0.0:
+                size = min(float(size), reserved_size)
+            min_reserved_entry = _minimum_entry_quote_notional(
+                portfolio_policy,
+                live_test_mode=live_test_mode,
+            )
+            if size < min_reserved_entry:
+                entry_budget_guard.release(
+                    str(entry_budget_reservation.token or ""),
+                    detail="below_min_entry_quote_notional_after_notional_reservation",
+                )
+                _sync_persistent_entry_pending_notional(
+                    entry_budget_guard,
+                    portfolio_mgr,
+                )
+                _log_global_auction_skip(
+                    "persistent_notional_budget",
+                    "below_min_entry_quote_notional_after_notional_reservation",
+                    extra={
+                        "reserved_notional": reserved_size,
+                        "min_entry_quote_notional": min_reserved_entry,
+                    },
+                    execution_snapshot=execution_snapshot,
+                )
+                _commit_global_side_metrics()
+                continue
+            execution_snapshot["position_size_after_notional_reservation"] = float(size)
             trade_result = _execute_trade_with_optional_context(
                 executor,
                 symbol=symbol,
@@ -20349,6 +24098,39 @@ def run_inference_step(
                 or trade_result.get("status") == "recorded"
             )
             order_error_category = str(trade_result.get("error_category", "") or "")
+            reservation_token = str(entry_budget_reservation.token or "")
+            if trade_success:
+                committed = entry_budget_guard.commit(
+                    reservation_token,
+                    order_id=_order_identifier(trade_result.get("order")),
+                    detail=trade_result.get("status") or "entry_success",
+                )
+                if not committed:
+                    raise RuntimeError(
+                        "Successful entry could not commit its persistent bar-budget "
+                        f"reservation: {symbol} {side}/{strategy_id}"
+                    )
+                _sync_persistent_entry_pending_notional(
+                    entry_budget_guard,
+                    portfolio_mgr,
+                )
+            elif order_error_category not in {
+                "",
+                "network_timeout",
+                "exchange_error",
+                "unclassified_order_error",
+            }:
+                entry_budget_guard.release(
+                    reservation_token,
+                    detail=order_error_category,
+                )
+                _sync_persistent_entry_pending_notional(
+                    entry_budget_guard,
+                    portfolio_mgr,
+                )
+            else:
+                chain_results["persistent_entry_budget_unresolved_reservation"] = True
+                decision["chain_results"] = chain_results
             predictions = {
                 "base_pred": chain_results.get("base_pred"),
                 "meta_pred": chain_results.get("meta_pred"),
@@ -20404,11 +24186,15 @@ def run_inference_step(
             }
             _merge_trade_result_entry_log_fields(features_log, trade_result)
             if portfolio_mgr is not None and trade_success:
+                filled_entry_notional = _safe_float(
+                    _derive_entry_notional_quote_for_log(features_log, trade_result),
+                    abs(size),
+                )
                 portfolio_mgr.record_position_open(
                     symbol=symbol,
                     side=side,
                     strategy_id=strategy_id,
-                    position_size=float(abs(size)),
+                    position_size=float(abs(filled_entry_notional)),
                     entry_price=_entry_accounting_price(
                         trade_result,
                         fallback_price=execution_price,
@@ -20420,6 +24206,9 @@ def run_inference_step(
                     or chain_results.get("local_side_archetype"),
                     source_archetype=decision.get("source_archetype")
                     or chain_results.get("source_archetype"),
+                    effective_leverage=_safe_float(
+                        sizing_context.get("perp_effective_leverage"), 1.0
+                    ),
                 )
                 try:
                     post_capacity = portfolio_mgr.get_portfolio_capacity(
@@ -20513,6 +24302,11 @@ def run_inference_step(
                             "shadow_initial_stop_price": shadow_state.get(
                                 "initial_shadow_stop_price"
                             ),
+                            "shadow_barrier_frac": shadow_state.get("barrier_frac"),
+                            "shadow_barrier_frac_is_effective": shadow_state.get(
+                                "barrier_frac_is_effective"
+                            ),
+                            "shadow_sl_mult": shadow_state.get("sl_mult"),
                             "shadow_latest_stop_price": shadow_state.get(
                                 "shadow_stop_price"
                             ),
@@ -20654,10 +24448,15 @@ def run_inference_step(
         try:
             open_df = portfolio_mgr.get_open_positions_summary()
             concurrent = int(len(open_df)) if isinstance(open_df, pd.DataFrame) else 0
-            max_pos = int(getattr(portfolio_mgr, "max_positions", 0))
-            util = (float(concurrent) / float(max_pos)) if max_pos > 0 else float("nan")
+            capacity = portfolio_mgr.get_portfolio_capacity(side="", strategy_id="")
+            invested = float(capacity.get("invested_allocated_capital") or 0.0)
+            limit = float(capacity.get("configured_wallet_capital") or 0.0)
+            util = invested / limit if limit > 0.0 else float("nan")
             tprint(
-                f"Concurrent positions snapshot: open={concurrent}, max={max_pos}, utilization={util:.3f}"
+                "Portfolio capacity snapshot: "
+                f"open={concurrent}, invested_allocated_capital={invested:.2f}, "
+                f"gross_marked_notional={float(capacity.get('invested_marked_notional') or 0.0):.2f}, "
+                f"limit={limit:.2f}, utilization={util:.3f}"
             )
             _log_concurrent_positions_snapshot(portfolio_mgr, label="end")
         except Exception as exc:
@@ -20786,6 +24585,9 @@ def run_inference_loop(
             data_root=data_root,
             run_id=model_artifact_run_id,
             require=_is_live_test_mode(mode) or str(mode).lower() == "live",
+            require_feature_source=(
+                _is_live_test_mode(mode) or str(mode).lower() == "live"
+            ),
         )
         config["training_live_parity_contract"] = parity_contract
     policy_strategy_filter = resolve_deployment_strategy_filter(
@@ -20841,6 +24643,36 @@ def run_inference_loop(
 
     # Initialize logger
     logger = TradeLogger(run_id=run_id)
+    # Compatibility loop callers must use the same feature lifecycle as the
+    # production entrypoint: selected static-store reads, incremental tail
+    # generation, frozen transforms, and cache/state validation.  This loop is
+    # older than ``main()``, but retaining a separate raw-only feature path here
+    # would make it an accidental parity bypass for programmatic users.
+    shared_required_feature_keys = get_inference_required_feature_keys(
+        model_bundle,
+        accepted_strategies,
+    )
+    shared_feature_cfg = dict(config)
+    shared_runtime_cfg = dict(config.get("runtime_cfg") or {})
+    shared_runtime_cfg.setdefault(
+        "bundle",
+        model_bundle.get("bundle", model_bundle)
+        if isinstance(model_bundle, dict)
+        else model_bundle,
+    )
+    for contract_key in (
+        "feature_transform_contract",
+        "feature_transform_contract_hash",
+        "feature_transform_manifest",
+    ):
+        if contract_key in shared_feature_cfg:
+            shared_runtime_cfg.setdefault(
+                contract_key, shared_feature_cfg[contract_key]
+            )
+        elif isinstance(full_state, dict) and contract_key in full_state:
+            shared_feature_cfg[contract_key] = full_state[contract_key]
+            shared_runtime_cfg.setdefault(contract_key, full_state[contract_key])
+    shared_feature_cfg["runtime_cfg"] = shared_runtime_cfg
 
     # Main loop
     iteration = 0
@@ -20877,163 +24709,24 @@ def run_inference_loop(
                 time.sleep(inference_interval)
                 continue
 
-            # Generate features
-            tprint("Generating features...")
-            feats = generate_features(
+            # Canonical training/live feature endpoint.  It applies the frozen
+            # transform contract itself, so do not run the legacy ad-hoc
+            # CausalFeatureTransformer a second time below.
+            tprint("Loading or incrementally generating shared features...")
+            feats = load_or_compute_features(
                 panel=panel,
                 basket_syms=symbols,
+                run_id=run_id,
+                data_root=data_root,
+                cfg=shared_feature_cfg,
+                lookback_hours=lookback_periods,
+                required_feature_keys=set(shared_required_feature_keys),
             )
 
             if not feats:
                 tprint("Warning: No features generated, skipping iteration")
                 time.sleep(inference_interval)
                 continue
-
-            # Apply feature normalization
-            tprint("Applying feature normalization...")
-            import gc
-
-            transformer = CausalFeatureTransformer(
-                winsor_qt=0.02,
-                roll_window=24 * 30,
-                cache_dir="./cache/feature_transforms",
-                enable_cache=False,
-            )
-
-            skip_transform_set = {
-                "liq_state",
-                "sin_hod",
-                "cos_hod",
-                "sin_dow",
-                "cos_dow",
-                "range_24h_pct",
-                "range_12h_pct",
-                "volatility_zscore",
-                "breakout_24h",
-                "draw_sym_10h",
-                "draw_extreme_10h",
-                "G_VOL_LIQ_GT1",
-                "G_VOL_LIQ_GT2",
-                "G_VOL_LIQ_GT3",
-                "G_LIQ_GOOD",
-                "G_LIQ_GREAT",
-                "G_LIQ_EXCEL",
-                "mtf_divergence",
-                "meta_alignment",
-                "rsi_z",
-                "dist_ema_fast_z",
-                "dist_vwap_norm_z",
-                "flow_persistence_z",
-                "excess_6h_z",
-                "vol_z_z",
-                "atr_expansion_z",
-                "coherence_24_z",
-                "overext_surprise",
-                "blowoff_risk_surprise",
-                "exh_qual_surprise",
-                "dist_vwap_resid",
-                "dist_ema_fast_resid",
-                "trend_pct_resid",
-            }
-
-            # Add gated feature patterns
-            gate_windows = [6, 12, 24, 48, 72, 120]
-            for w in gate_windows:
-                for prefix in [
-                    "s",
-                    "reject",
-                    "tf_qual",
-                    "mr_qual",
-                    "vol_z",
-                    "liquidity",
-                ]:
-                    for suffix in [
-                        "mean",
-                        "std",
-                        "z",
-                        "pct",
-                        "bin3",
-                        "gt25",
-                        "gt50",
-                        "gt66",
-                        "gt75",
-                    ]:
-                        skip_transform_set.add(f"{prefix}_{suffix}_{w}")
-
-            def _is_boolean_like_feature(arr_like) -> bool:
-                arr = np.asarray(arr_like, dtype=np.float32)
-                if arr.size == 0:
-                    return False
-                finite = arr[np.isfinite(arr)]
-                if finite.size == 0:
-                    return False
-                if finite.min() < 0.0 or finite.max() > 1.0:
-                    return False
-                rounded = np.round(finite)
-                return bool(np.all(np.abs(finite - rounded) <= 1e-6))
-
-            feat_keys_list = list(feats.keys())
-            for k in feat_keys_list:
-                if (
-                    k.startswith("cs_rank_")
-                    or k.startswith("cs_rz_")
-                    or k.startswith("ts_pct_")
-                ):
-                    skip_transform_set.add(k)
-                else:
-                    arr = np.asarray(feats[k], dtype=np.float32)
-                    if _is_boolean_like_feature(arr):
-                        skip_transform_set.add(k)
-
-            tprint(
-                f"CausalTransform workset: {len(feats) - len(skip_transform_set)} transform, {len(skip_transform_set)} skipped"
-            )
-
-            feats = transformer.transform_batch(
-                feats, skip_keys=skip_transform_set, chunk_size=50
-            )
-            del transformer
-            gc.collect()
-
-            # Final check for Inf/NaN. Keep non-finite values visible to the
-            # strict model-contract gate; do not neutral-fill trained inputs.
-            for k in list(feats.keys()):
-                arr = np.asarray(feats[k], dtype=np.float32)
-                if not np.isfinite(arr).all():
-                    n_bad = (~np.isfinite(arr)).sum()
-                    tprint(
-                        f"  WARNING: {k} has {n_bad} non-finite values; preserving "
-                        "NaN for strict model-contract gating"
-                    )
-                    arr = np.where(np.isfinite(arr), arr, np.nan).astype(
-                        np.float32,
-                        copy=False,
-                    )
-
-                # Ensure feats[k] is a dataframe if it was originally
-                if isinstance(feats[k], pd.DataFrame):
-                    feats[k] = pd.DataFrame(
-                        arr, index=feats[k].index, columns=feats[k].columns
-                    )
-                elif isinstance(feats[k], pd.Series):
-                    feats[k] = pd.Series(arr, index=feats[k].index, name=feats[k].name)
-                elif isinstance(feats[k], np.ndarray) and not isinstance(
-                    feats.get(k), (pd.DataFrame, pd.Series)
-                ):
-                    # If transform_batch returned raw numpy array, convert back to DataFrame if possible
-                    # We need index and columns from somewhere. Let's use close index/cols
-                    panel_close = panel["close"]
-                    try:
-                        feats[k] = pd.DataFrame(
-                            arr,
-                            index=panel_close.index[-arr.shape[0] :],
-                            columns=panel_close.columns,
-                        )
-                    except Exception as e:
-                        tprint(f"Warning: could not cast {k} back to DataFrame: {e}")
-                        feats[k] = arr
-                else:
-                    feats[k] = arr
 
             # Run inference step
             results = run_inference_step(
@@ -21049,7 +24742,7 @@ def run_inference_loop(
                 portfolio_policy=portfolio_policy,
                 live_policy_archetype_classifier=live_policy_archetype_classifier,
                 live_ae_gmm_state_payload={},
-                required_feature_keys=[],
+                required_feature_keys=shared_required_feature_keys,
             )
 
             tprint(f"Executed {len(results['trades'])} trades")
@@ -21158,6 +24851,7 @@ def _log_closed_trade_event(
     if trade_logger is None:
         return
     try:
+        closed_trade.update(restore_entry_provenance(closed_trade))
         side = str(closed_trade.get("side") or "")
         scalar_context = {
             key: value
@@ -21202,6 +24896,60 @@ def _log_closed_trade_event(
         )
 
 
+def _load_live_policy_bars(
+    *,
+    cfg: Mapping[str, Any],
+    exchange: Optional[Any],
+    symbol: str,
+    timeframe: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Load policy bars, persisting 1m observations in the canonical store."""
+    if timeframe != "1m":
+        if exchange is None:
+            return pd.DataFrame()
+        return pd.DataFrame(
+            hf_data_loader.fetch_specific_period(
+                exchange,
+                symbol,
+                timeframe,
+                start,
+                end,
+                use_cache=True,
+            )
+        )
+
+    data_root = str(cfg.get("data_root") or "data_perp")
+    cached = read_kraken_execution_1m(
+        data_root,
+        symbol,
+        start=start.floor("min"),
+        end=end.floor("min"),
+    )
+    fetch_start = start.floor("min")
+    if not cached.empty:
+        fetch_start = max(fetch_start, pd.Timestamp(cached.index.max()) + pd.Timedelta(minutes=1))
+    if exchange is not None and fetch_start <= end.floor("min"):
+        fetched = hf_data_loader.fetch_specific_period(
+            exchange,
+            symbol,
+            "1m",
+            fetch_start,
+            end.floor("min"),
+            use_cache=False,
+        )
+        if isinstance(fetched, pd.DataFrame) and not fetched.empty:
+            append_missing_kraken_execution_1m(data_root, symbol, fetched)
+            cached = read_kraken_execution_1m(
+                data_root,
+                symbol,
+                start=start.floor("min"),
+                end=end.floor("min"),
+            )
+    return cached
+
+
 def _monitor_active_position_price_action(
     executor: TradeExecutor,
     *,
@@ -21211,9 +24959,14 @@ def _monitor_active_position_price_action(
     portfolio_mgr: Optional[PortfolioManager] = None,
     trade_logger: Optional[TradeLogger] = None,
     sheets_exporter: Optional[GoogleSheetsTradeExporter] = None,
-    include_executable_sentinel: bool = True,
+    include_executable_sentinel: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
-    """Monitor active positions and apply closed-5m trailing/stop updates."""
+    """Monitor positions and advance policy state on completed policy bars.
+
+    The policy decision path is OHLCV-driven by default. The optional executable
+    sentinel is retained only for explicit diagnostics; native exchange
+    protective orders remain the live fail-safe between completed bars.
+    """
     statuses: Dict[str, Dict[str, Any]] = {}
     active_positions = (
         executor.get_active_positions()
@@ -21339,32 +25092,20 @@ def _monitor_active_position_price_action(
     else:
         now_ts = now_ts.tz_convert("UTC")
 
-    monitor_delay = float(
-        cfg.get(
-            "five_minute_ohlcv_delay_seconds",
-            cfg.get("fifteen_minute_ohlcv_delay_seconds", 5.0),
-        )
-    )
-    latest_closed_5m = _latest_closed_candle_start(
-        now_ts,
-        timeframe_minutes=5,
-        delay_seconds=monitor_delay,
-    )
-    cached_5m: Dict[str, pd.DataFrame] = {}
     price_action_checks = 0
     stop_replacements = 0
     closed_positions = int(executable_sentinel_closed)
     errors = 0
+    cached_shadow_bars: Dict[str, pd.DataFrame] = {}
     if exchange is None and hasattr(executor, "fetch_5m_ohlcv_for_positions"):
         try:
-            cached_5m = executor.fetch_5m_ohlcv_for_positions()
+            cached_shadow_bars = executor.fetch_5m_ohlcv_for_positions()
         except Exception as exc:
             errors += 1
             tprint(
-                f"  Error reading cached shadow 5m data: "
+                "  Error reading cached shadow bars: "
                 f"{classify_api_error(exc)}: {exc}"
             )
-
     tprint(f"Monitoring {len(active_positions)} active positions for price action...")
     for symbol, position_state in active_positions.items():
         try:
@@ -21397,55 +25138,113 @@ def _monitor_active_position_price_action(
                 start_time = start_time.tz_localize("UTC")
             else:
                 start_time = start_time.tz_convert("UTC")
-            last_eval_ts = position_state.get("last_5m_eval_ts")
+            bucket_key = str(
+                position_state.get("strategy_id")
+                or position_state.get("bucket_key")
+                or ""
+            )
+            policy_params = (
+                dict(executor.get_simple_policy_stop_params(bucket_key) or {})
+                if hasattr(executor, "get_simple_policy_stop_params")
+                else {}
+            )
+            policy_timeframe = str(policy_params.get("replay_timeframe") or "15m").lower()
+            if policy_timeframe not in {"1m", "15m"}:
+                raise ValueError(f"unsupported live policy timeframe: {policy_timeframe}")
+            policy_minutes = int(policy_timeframe[:-1])
+            monitor_delay = float(
+                cfg.get(
+                    "one_minute_ohlcv_delay_seconds"
+                    if policy_minutes == 1
+                    else "fifteen_minute_ohlcv_delay_seconds",
+                    5.0,
+                )
+            )
+            latest_closed_policy = _latest_closed_candle_start(
+                now_ts,
+                timeframe_minutes=policy_minutes,
+                delay_seconds=monitor_delay,
+            )
+            last_eval_ts = position_state.get("last_policy_eval_ts")
+            if last_eval_ts is None:
+                last_eval_ts = position_state.get(
+                    "last_15m_eval_ts" if policy_minutes == 15 else "last_5m_eval_ts"
+                )
             if last_eval_ts is not None:
                 last_eval = pd.Timestamp(last_eval_ts)
                 if last_eval.tzinfo is None:
                     last_eval = last_eval.tz_localize("UTC")
                 else:
                     last_eval = last_eval.tz_convert("UTC")
-                if latest_closed_5m <= last_eval:
+                if latest_closed_policy <= last_eval:
                     status["price_action"] = {
-                        "status": "skipped_no_new_closed_5m_bar",
-                        "last_5m_eval_ts": last_eval,
-                        "latest_closed_5m": latest_closed_5m,
+                        "status": "skipped_no_new_closed_policy_bar",
+                        "policy_timeframe": policy_timeframe,
+                        "last_policy_eval_ts": last_eval,
+                        "latest_closed_policy_bar": latest_closed_policy,
                     }
                     continue
                 start_time = max(
                     start_time,
-                    last_eval - pd.Timedelta(minutes=15),
+                    last_eval - pd.Timedelta(minutes=policy_minutes),
                 )
-            start_time = max(start_time, now_ts - pd.Timedelta(hours=8))
-            end_time = latest_closed_5m
-            if start_time >= end_time:
+            horizon_minutes = int(policy_params.get("forward_bars", 1440) or 1440)
+            start_time = max(
+                start_time,
+                now_ts - pd.Timedelta(minutes=max(horizon_minutes + policy_minutes, 60)),
+            )
+            end_time = latest_closed_policy
+            # ``end_time`` is the start timestamp of the latest completed bar,
+            # so equality still denotes one eligible policy-bar observation.
+            if start_time > end_time:
                 continue
 
-            ohlcv_5m: Any = None
-            if exchange is not None:
-                ohlcv_5m = hf_data_loader.fetch_specific_period(
-                    exchange,
-                    symbol,
-                    "5m",
-                    start_time,
-                    end_time,
-                    use_cache=True,
+            policy_bars: Any = (
+                cached_shadow_bars.get(symbol)
+                if exchange is None and policy_timeframe != "1m"
+                else _load_live_policy_bars(
+                    cfg=cfg,
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=policy_timeframe,
+                    start=start_time,
+                    end=end_time,
                 )
-            else:
-                ohlcv_5m = cached_5m.get(symbol)
+            )
 
             if (
-                ohlcv_5m is None
-                or not isinstance(ohlcv_5m, (pd.DataFrame, pd.Series))
-                or (hasattr(ohlcv_5m, "empty") and ohlcv_5m.empty)
+                policy_bars is None
+                or not isinstance(policy_bars, (pd.DataFrame, pd.Series))
+                or (hasattr(policy_bars, "empty") and policy_bars.empty)
             ):
                 continue
 
-            bars = pd.DataFrame(ohlcv_5m)
-            bars = bars[bars.index <= latest_closed_5m]
+            bars = pd.DataFrame(policy_bars).sort_index()
+            if policy_minutes == 15 and len(bars.index) >= 2:
+                diffs = bars.index.to_series().diff().dropna()
+                median_step = diffs.median() if not diffs.empty else pd.NaT
+                if pd.notna(median_step) and median_step < pd.Timedelta(minutes=15):
+                    bars = (
+                        bars.resample("15min", origin="epoch", label="left", closed="left")
+                        .agg(
+                            {
+                                "open": "first",
+                                "high": "max",
+                                "low": "min",
+                                "close": "last",
+                                **({"volume": "sum"} if "volume" in bars.columns else {}),
+                            }
+                        )
+                        .dropna(subset=["open", "high", "low", "close"])
+                    )
+            bars = bars[bars.index <= latest_closed_policy]
+            first_post_entry_bar = start_time.ceil(f"{policy_minutes}min")
+            bars = bars[bars.index >= first_post_entry_bar]
             if bars.empty:
                 continue
             before_stop = float(position_state.get("stop_price", np.nan))
-            position_state["ohlcv_5m_latest"] = bars
+            position_state["policy_bar_minutes"] = policy_minutes
+            position_state[f"ohlcv_{policy_timeframe}_latest"] = bars
             eval_result = _evaluate_oco_policy(symbol, position_state, bars, executor)
             after_position = (
                 executor.get_position(symbol)
@@ -21505,7 +25304,8 @@ def _monitor_active_position_price_action(
                     "policy_entry_price_source"
                 ),
                 "realized_entry_price": after_position.get("entry_price"),
-                "last_5m_eval_ts": after_position.get("last_5m_eval_ts"),
+                "policy_timeframe": policy_timeframe,
+                "last_policy_eval_ts": after_position.get("last_policy_eval_ts"),
             }
             if np.isfinite(before_stop) and np.isfinite(after_stop):
                 if abs(after_stop - before_stop) > 1e-12:
@@ -21530,7 +25330,7 @@ def _monitor_active_position_price_action(
         except Exception as exc:
             errors += 1
             tprint(
-                f"  Error evaluating 5m price action for {symbol}: "
+                f"  Error evaluating policy price action for {symbol}: "
                 f"{classify_api_error(exc)}: {exc}"
             )
             statuses.setdefault(symbol, {})["price_action_error"] = str(exc)
@@ -21754,6 +25554,10 @@ def _emit_inference_heartbeat(
         },
         "side_metrics": results.get("side_metrics", {}),
         "score_distributions": results.get("score_distributions", {}),
+        "global_auction_completeness": results.get(
+            "global_auction_completeness", {}
+        ),
+        "persistent_entry_budget": results.get("persistent_entry_budget", {}),
         "trades": int(len(results.get("trades", []) or [])),
         "order_error_summary": results.get("order_error_summary", {}),
         "data_fetch_errors": dict(getattr(data_fetcher, "api_error_counts", {}) or {}),
@@ -21798,8 +25602,8 @@ def main():
     parser.add_argument(
         "--challenger-interval",
         type=int,
-        default=30,
-        help="Position monitor interval in seconds (default: 30s)",
+        default=60,
+        help="Position monitor interval in seconds (default: 60s = 1 minute)",
     )
     parser.add_argument(
         "--lookback-hours",
@@ -21897,6 +25701,26 @@ def main():
         help="Run one inference batch and exit after optional daily reporting.",
     )
     parser.add_argument(
+        "--historical-decision-hour",
+        default=None,
+        help=(
+            "Shadow-only parity audit: run the normal inference path at this "
+            "closed UTC candle start instead of the latest hour. Requires "
+            "--run-once and cannot be combined with --live/--live-test."
+        ),
+    )
+    parser.add_argument(
+        "--historical-decision-hours",
+        nargs="+",
+        default=None,
+        help=(
+            "Shadow-only multi-bar parity audit: run the normal inference path "
+            "for each listed closed UTC candle start in ascending order. Requires "
+            "--run-once and cannot be combined with --live/--live-test or "
+            "--historical-decision-hour."
+        ),
+    )
+    parser.add_argument(
         "--allow-late-entries",
         action="store_true",
         help=(
@@ -21905,6 +25729,39 @@ def main():
         ),
     )
     args = parser.parse_args()
+    historical_decision_hours: list[pd.Timestamp] = []
+    historical_decision_hour = None
+    if args.historical_decision_hour is not None and args.historical_decision_hours:
+        parser.error(
+            "--historical-decision-hour and --historical-decision-hours are mutually exclusive"
+        )
+    if args.historical_decision_hour is not None:
+        if args.live or args.live_test or not args.run_once:
+            parser.error(
+                "--historical-decision-hour requires --run-once shadow mode"
+            )
+        historical_decision_hour = pd.Timestamp(args.historical_decision_hour)
+        if historical_decision_hour.tzinfo is None:
+            historical_decision_hour = historical_decision_hour.tz_localize("UTC")
+        else:
+            historical_decision_hour = historical_decision_hour.tz_convert("UTC")
+        historical_decision_hour = historical_decision_hour.floor("h")
+        historical_decision_hours = [historical_decision_hour]
+    elif args.historical_decision_hours:
+        if args.live or args.live_test or not args.run_once:
+            parser.error(
+                "--historical-decision-hours requires --run-once shadow mode"
+            )
+        for value in args.historical_decision_hours:
+            ts = pd.Timestamp(value)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize("UTC")
+            else:
+                ts = ts.tz_convert("UTC")
+            historical_decision_hours.append(ts.floor("h"))
+        historical_decision_hours = sorted(set(historical_decision_hours))
+        historical_decision_hour = historical_decision_hours[0]
+    historical_decision_hour_index = 0
 
     # Initialize components
     market_mode = "perps" if args.perps else _normalise_market_mode(args.market_mode)
@@ -21983,10 +25840,22 @@ def main():
         explicit_live_data_root=args.live_data_root,
     )
     Path(config["live_data_root"]).mkdir(parents=True, exist_ok=True)
+    live_hf_15m_dir, live_hf_5m_dir = hf_data_loader.configure_hf_data_dirs(
+        market_data_root=config["live_data_root"],
+        exchange_id=str(getattr(exchange, "id", "") or ""),
+        market_mode=config["market_mode"],
+        force_canonical=True,
+    )
+    config["hf_data_dir"] = str(live_hf_15m_dir)
+    config["hf_data_dir_5m"] = str(live_hf_5m_dir)
     tprint(
         "Live data root resolved: "
         f"artifact_data_root={config['artifact_data_root']} "
         f"live_data_root={config['live_data_root']}"
+    )
+    tprint(
+        "Live precise OHLCV store resolved: "
+        f"15m={config['hf_data_dir']} 5m={config['hf_data_dir_5m']}"
     )
     config["prediction_ledger_path"] = args.prediction_ledger_path
     config["run_scoped_prediction_ledger"] = bool(
@@ -22037,6 +25906,10 @@ def main():
         run_id=model_artifact_run_id,
         require=_is_live_test_mode(config["mode"])
         or str(config["mode"]).lower() == "live",
+        require_feature_source=(
+            _is_live_test_mode(config["mode"])
+            or str(config["mode"]).lower() == "live"
+        ),
     )
     config["training_live_parity_contract"] = parity_contract
     runtime_cfg["training_live_parity_contract"] = parity_contract
@@ -22118,9 +25991,20 @@ def main():
     )
     live_ae_gmm_input_columns = live_ae_gmm_input_feature_columns(live_ae_gmm_payload)
     if live_ae_gmm_input_columns:
+        config["live_ae_gmm_input_feature_columns"] = list(
+            live_ae_gmm_input_columns
+        )
         before_required = len(raw_required_feature_keys(required_feature_keys))
         expanded_required = set(raw_required_feature_keys(required_feature_keys))
         expanded_required.update(live_ae_gmm_input_columns)
+        # Frozen AE/GMM source-regime inputs have indirect observable
+        # dependencies that are not named by the serialized transform itself.
+        # Historical scoring included both columns before source-state
+        # materialization. Load them explicitly and let strict row guards reject
+        # only symbols where their values are non-finite.
+        expanded_required.update(
+            {"abs_ret_per_oi_z_24h", "quote_volume_z_30d"}
+        )
         required_feature_keys = expanded_required
         tprint(
             "Frozen AE/GMM state loaded for live inference: "
@@ -22133,6 +26017,153 @@ def main():
             "No frozen AE/GMM state packaged for live inference; AE/GMM-selected "
             "base features will fail closed if present in the deployed contract."
         )
+    live_residual_event_state_payload = load_live_residual_event_state_payload(
+        str(config["data_root"]),
+        policy_artifact_run_id,
+    )
+    residual_event_input_columns = residual_event_state_input_feature_columns(
+        live_residual_event_state_payload
+    )
+    live_side_residual_input_columns: set[str] = set()
+    if bool(getattr(portfolio_policy, "side_residual_expert_enabled", False)):
+        side_residual_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "side_residual_expert_artifact_path", ""
+            ),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        if side_residual_path is None:
+            raise FileNotFoundError(
+                "side-residual expert is enabled but its artifact is unavailable"
+            )
+        startup_side_residual_expert = SideResidualExpertBundle.load(
+            side_residual_path
+        )
+        for expert_side in ("long", "short"):
+            live_side_residual_input_columns.update(
+                startup_side_residual_expert.required_input_features(expert_side)
+            )
+    live_postprocessor_input_columns: list[str] = []
+    if (
+        bool(getattr(portfolio_policy, "regime_ev_calibration_enabled", False))
+        and str(
+            getattr(portfolio_policy, "regime_ev_calibration_policy_id", "") or ""
+        )
+        == MLP_HIER_EV_POLICY_ID
+    ):
+        regime_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "regime_ev_calibration_artifact_path", ""
+            ),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        predecessor_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "regime_ev_predecessor_bundle_path", ""
+            ),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        residual_state_path = _resolve_policy_sidecar_path(
+            path_value=getattr(
+                portfolio_policy, "regime_ev_residual_event_state_path", ""
+            ),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        try:
+            if regime_path is None or predecessor_path is None or residual_state_path is None:
+                raise FileNotFoundError(
+                    "canonical postprocessor policy paths are incomplete"
+                )
+            if bool(getattr(portfolio_policy, "mlp_postprocessor_enabled", False)):
+                startup_postprocessor = CanonicalMetaPostprocessor.load(
+                    predecessor_bundle_path=predecessor_path,
+                    residual_event_state_path=residual_state_path,
+                    regime_ev_artifact_path=regime_path,
+                )
+                startup_contract_name = "V9/MLP/hierarchical-EV"
+            else:
+                startup_postprocessor = V9TailPostprocessor.load(
+                    predecessor_bundle_path=predecessor_path,
+                    residual_event_state_path=residual_state_path,
+                    hierarchical_ev_artifact_path=regime_path,
+                )
+                startup_contract_name = "V9/hierarchical-EV (MLP disabled)"
+            live_postprocessor_input_columns = (
+                startup_postprocessor.required_input_features()
+            )
+            config["live_postprocessor_input_feature_columns"] = list(
+                live_postprocessor_input_columns
+            )
+            runtime_cfg["live_postprocessor_input_feature_columns"] = list(
+                live_postprocessor_input_columns
+            )
+            tprint(
+                f"Frozen {startup_contract_name} postprocessor observable contract loaded for "
+                "incremental prewarm: "
+                f"input_features={len(live_postprocessor_input_columns)}"
+            )
+        except Exception as exc:
+            # Do not silently score a partial chain. The per-row strict guard in
+            # run_inference_step remains the final fail-closed boundary.
+            tprint(
+                "Frozen V9/MLP postprocessor prewarm contract failed to load: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    elif bool(getattr(portfolio_policy, "v9_tail_postprocessor_enabled", False)):
+        predecessor_path = _resolve_policy_sidecar_path(
+            path_value=getattr(portfolio_policy, "regime_ev_predecessor_bundle_path", ""),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        residual_state_path = _resolve_policy_sidecar_path(
+            path_value=getattr(portfolio_policy, "regime_ev_residual_event_state_path", ""),
+            data_root=str(config["data_root"]),
+            run_id=policy_artifact_run_id,
+        )
+        if predecessor_path is None or residual_state_path is None:
+            raise FileNotFoundError("V9-only postprocessor paths are incomplete")
+        startup_postprocessor = V9TailPostprocessor.load(
+            predecessor_bundle_path=predecessor_path,
+            residual_event_state_path=residual_state_path,
+        )
+        live_postprocessor_input_columns = startup_postprocessor.required_input_features()
+        config["live_postprocessor_input_feature_columns"] = list(live_postprocessor_input_columns)
+        runtime_cfg["live_postprocessor_input_feature_columns"] = list(live_postprocessor_input_columns)
+        tprint(
+            "Frozen V9-only postprocessor observable contract loaded for incremental prewarm: "
+            f"input_features={len(live_postprocessor_input_columns)}"
+        )
+    if residual_event_input_columns:
+        tprint(
+            "Frozen residual-event state loaded for post-meta live inference: "
+            f"state={live_residual_event_state_payload.get('state_path', '')} "
+            f"input_features={len(residual_event_input_columns)}. "
+            "Its observable inputs are loaded lazily after the base top30 handoff "
+            "to avoid widening the full-universe base/meta feature matrix."
+        )
+    elif bool(getattr(portfolio_policy, "regime_ev_calibration_enabled", False)):
+        tprint(
+            "No frozen residual-event state packaged for live inference; strict "
+            "V9 regime calibration will fail closed."
+        )
+    before_postprocessor_required = len(required_feature_keys)
+    required_feature_keys = _incremental_generation_feature_contract(
+        required_feature_keys,
+        ae_gmm_inputs=live_ae_gmm_input_columns,
+        residual_state_inputs=residual_event_input_columns,
+        side_residual_inputs=live_side_residual_input_columns,
+        postprocessor_inputs=live_postprocessor_input_columns,
+    )
+    tprint(
+        "Incremental static-generation contract includes frozen downstream "
+        "observable inputs while model scoring remains lazy: "
+        f"required_features={before_postprocessor_required}"
+        f"->{len(required_feature_keys)}"
+    )
     use_legacy_sizer_calibration = str(
         os.getenv("EPM_INFERENCE_USE_SIMPLE_POSITION_SIZER_CALIBRATION", "0") or ""
     ).strip().lower() in {"1", "true", "yes", "on"}
@@ -22159,6 +26190,16 @@ def main():
     lgbm_strategy_mask_rows = _load_lgbm_strategy_mask_rows(
         config["data_root"], policy_artifact_run_id, market_mode=config["market_mode"]
     )
+    if not bool(policy_selection_rules.get("requires_lgbm_regime_mask_contract", True)):
+        # The global S52 path uses base/meta ranking plus its side/archetype
+        # policy layer. Legacy per-strategy candidate masks are neither part of
+        # its training contract nor valid pre-base gates at inference.
+        if lgbm_strategy_mask_rows:
+            tprint(
+                "Ignoring legacy LGBM strategy mask rows for deployed global "
+                "policy (requires_lgbm_regime_mask_contract=false)."
+            )
+        lgbm_strategy_mask_rows = {}
     deployment_mask_coverage_error: str | None = None
     try:
         _validate_lgbm_strategy_mask_coverage(
@@ -22258,6 +26299,15 @@ def main():
                 "Model scoring uses selected-feature caches; raw panel history is "
                 "bounded for latest masks, market checks, and deterministic repairs."
             )
+    # Residual/V9 inputs use a separate cache namespace. Keep its horizon fixed
+    # across live and independent replay instead of deriving it from whichever
+    # symbols happen to have the earliest available row in a given process.
+    config["live_decision_panel_lookback_hours"] = int(
+        live_decision_panel_lookback_hours
+    )
+    config["live_residual_feature_lookback_hours"] = int(
+        live_decision_panel_lookback_hours
+    )
 
     # Step 9 universe split:
     # - download_symbols: full live exchange quote/margin universe, refreshed daily
@@ -22344,6 +26394,7 @@ def main():
     reconciliation_report = executor.reconcile_cross_margin_account()
     _write_margin_reconciliation_report(config, reconciliation_report)
     unimported_external_positions: list[dict[str, Any]] = []
+    unresolved_absent_entries: list[dict[str, Any]] = []
     try:
         unimported_external_positions = [
             item
@@ -22358,6 +26409,9 @@ def main():
                 "were not imported for monitoring."
             )
         else:
+            unresolved_absent_entries = logger.find_unresolved_entries_absent(
+                executor.get_active_positions().keys()
+            )
             logger.reconcile_pending_entries_absent(
                 executor.get_active_positions().keys(),
                 reason="absent_after_cross_margin_startup_reconciliation",
@@ -22500,8 +26554,10 @@ def main():
         portfolio_policy.max_concurrent_positions,
     )
     tprint(
-        "Deployment concurrency policy: "
-        f"max_positions={portfolio_policy.max_concurrent_positions} "
+        "Deployment wallet-capacity policy: "
+        f"capacity_mode={portfolio_policy.capacity_mode} "
+        f"emergency_max_positions={portfolio_policy.max_concurrent_positions} "
+        f"count_cap_enforced={portfolio_policy.enforce_position_count_cap} "
         f"max_per_strategy={max_concurrent_per_strategy} "
         f"max_per_side={max_concurrent_per_side} "
         f"max_wallet_allocation={portfolio_policy.max_total_wallet_allocation_pct:.2f} "
@@ -22525,6 +26581,50 @@ def main():
         config=config,
     )
     _sync_reconciled_positions_to_portfolio_manager(executor, portfolio_mgr)
+    for entry_context in unresolved_absent_entries:
+        try:
+            closed_trade = executor.reconcile_absent_logged_entry(entry_context)
+            if not closed_trade:
+                continue
+            fill_resolution = str(
+                closed_trade.get("reconciliation_fill_resolution") or ""
+            )
+            if fill_resolution not in {
+                "private_fill_exact_stop_order",
+                "private_fill_side_amount_match",
+            }:
+                tprint(
+                    "Deferred startup close notification pending a private fill: "
+                    f"symbol={closed_trade.get('symbol')} "
+                    f"fill_resolution={fill_resolution or 'missing'}"
+                )
+                continue
+            _record_portfolio_close_from_trade(
+                portfolio_mgr,
+                closed_trade=closed_trade,
+                config=config,
+            )
+            _log_closed_trade_event(
+                logger,
+                closed_trade=closed_trade,
+                config=config,
+            )
+            email_result = _send_trade_close_email(
+                closed_trade=closed_trade,
+                config=config,
+            )
+            tprint(
+                "Recovered startup close notification: "
+                f"symbol={closed_trade.get('symbol')} "
+                f"fill_resolution={closed_trade.get('reconciliation_fill_resolution')} "
+                f"email_sent={email_result.get('sent')}"
+            )
+        except Exception as exc:
+            tprint(
+                "Startup absent-position close recovery failed: "
+                f"symbol={entry_context.get('symbol')} "
+                f"{classify_api_error(exc)}: {exc}"
+            )
     if unimported_external_positions:
         _apply_reconciliation_entry_gate(
             reconciliation_report=reconciliation_report,
@@ -22588,6 +26688,8 @@ def main():
                 timeframe_minutes=60,
                 delay_seconds=hourly_delay,
             )
+            if historical_decision_hour is not None:
+                latest_closed_hour = historical_decision_hour
             current_time = latest_closed_hour
             latest_closed_hour_close = latest_closed_hour + pd.Timedelta(hours=1)
             current_close = latest_closed_hour_close
@@ -22684,6 +26786,17 @@ def main():
                     force=bool(args.run_once),
                 )
                 if args.run_once:
+                    if (
+                        historical_decision_hours
+                        and historical_decision_hour_index + 1
+                        < len(historical_decision_hours)
+                    ):
+                        historical_decision_hour_index += 1
+                        historical_decision_hour = historical_decision_hours[
+                            historical_decision_hour_index
+                        ]
+                        last_hourly_sync = None
+                        continue
                     executor.shutdown()
                     break
                 _sleep_until_next_candle_close(
@@ -22719,7 +26832,9 @@ def main():
             scoring_entries_allowed = bool(
                 entry_context_fresh or late_entries_override or stale_entry_gap_allowed
             )
-            if hard_signal_close_gate_exceeded:
+            if hard_signal_close_gate_exceeded and not (
+                historical_decision_hour is not None and late_entries_override
+            ):
                 scoring_entries_allowed = False
             hourly_refresh_updates = 0
             if hourly_sync_due:
@@ -22767,33 +26882,25 @@ def main():
                         f"hour_age={hourly_age_seconds:.0f}s, "
                         f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
                     )
+                # Historical parity audits must be read-only with respect to
+                # decision-time microdata. The persisted point-in-time panels
+                # are the source of truth for these runs.
                 refresh_microdata = bool(config.get("hourly_refresh_microdata", True))
                 hourly_gap_backfill_days = int(
-                    config.get("hourly_refresh_recent_gap_backfill_days", 0) or 0
+                    config.get("hourly_refresh_recent_gap_backfill_days", 7) or 0
                 )
-                if (
-                    hourly_gap_backfill_days <= 0
-                    and _allow_model_feature_tail_recompute_for_reconciliation(config)
-                ):
-                    shadow_gap_days = int(
-                        config.get("shadow_hourly_refresh_recent_gap_backfill_days", 2)
-                        or 0
-                    )
-                    if shadow_gap_days > 0:
-                        tprint(
-                            "Skipping pre-scoring hourly recent-gap repair despite "
-                            "shadow reconciliation setting "
-                            f"days={shadow_gap_days}; target-hour decisions should "
-                            "not wait for stale-symbol repair. Active-position and "
-                            "post-candidate targeted gap backfills remain enabled."
-                        )
+                microdata_allow_live_snapshot = historical_decision_hour is None
+                if historical_decision_hour is not None:
+                    # Historical parity/replay must consume the persisted
+                    # point-in-time panel as-is. Refreshing old decision hours
+                    # is both expensive and risks changing the audited source.
+                    refresh_microdata = False
                     hourly_gap_backfill_days = 0
                 if hourly_gap_backfill_days > 0:
                     tprint(
-                        "Hourly refresh recent-gap 1h backfill is enabled: "
-                        f"days={hourly_gap_backfill_days}. This can be slow for "
-                        "large universes and should normally be reserved for "
-                        "targeted repair jobs, not pre-scoring live refresh."
+                        "Hourly refresh recent-gap repair is enabled before scoring: "
+                        f"days={hourly_gap_backfill_days}. Only symbols with missing "
+                        "hourly rows are fetched from Kraken 15m data and resampled."
                     )
                 try:
                     active_position_symbols_for_refresh = sorted(
@@ -22820,18 +26927,19 @@ def main():
                     )
                 else:
                     hourly_fetch_symbols = list(download_symbols)
-                hourly_refresh_result = data_fetcher.fetch_hourly_universe_once(
-                    hourly_fetch_symbols,
+                hourly_refresh_result = refresh_raw_market_rows(
+                    fetcher=data_fetcher,
+                    symbols=hourly_fetch_symbols,
                     max_workers=int(
                         os.environ.get(
                             "EPM_HOURLY_OHLCV_WORKERS",
-                            config.get("hourly_ohlcv_workers", 32),
+                            config.get("hourly_ohlcv_workers", 48),
                         )
                     ),
                     microdata_max_workers=int(
                         os.environ.get(
                             "EPM_HOURLY_MICRODATA_WORKERS",
-                            config.get("hourly_microdata_workers", 24),
+                            config.get("hourly_microdata_workers", 32),
                         )
                     ),
                     no_progress_timeout_seconds=float(
@@ -22839,13 +26947,18 @@ def main():
                     ),
                     check_recent_gaps_days=hourly_gap_backfill_days,
                     refresh_microdata=refresh_microdata,
+                    microdata_lookback_hours=int(
+                        config.get("hourly_microdata_lookback_hours", 48) or 48
+                    ),
+                    microdata_allow_live_snapshot=microdata_allow_live_snapshot,
                     target_hour=latest_closed_hour,
+                    # Historical inference is a normal materialization path:
+                    # it may repair and persist missing raw rows, but only via
+                    # the same bounded shared refresh endpoint used live.  The
+                    # standalone parity replay remains the read-only auditor.
+                    read_only=False,
                 )
-                hourly_refresh_updates = (
-                    len(hourly_refresh_result)
-                    if isinstance(hourly_refresh_result, dict)
-                    else 0
-                )
+                hourly_refresh_updates = len(hourly_refresh_result.updated_symbols)
                 loop_timer.mark("hourly_fetch")
                 tprint(
                     "Hourly data refresh complete: "
@@ -22860,6 +26973,8 @@ def main():
                 active_gap_days = int(
                     config.get("active_position_recent_gap_backfill_days", 1) or 0
                 )
+                if historical_decision_hour is not None:
+                    active_gap_days = 0
                 if active_gap_days > 0:
                     try:
                         active_gap_symbols = sorted(
@@ -22914,6 +27029,17 @@ def main():
                     force=bool(args.run_once),
                 )
                 if args.run_once:
+                    if (
+                        historical_decision_hours
+                        and historical_decision_hour_index + 1
+                        < len(historical_decision_hours)
+                    ):
+                        historical_decision_hour_index += 1
+                        historical_decision_hour = historical_decision_hours[
+                            historical_decision_hour_index
+                        ]
+                        last_hourly_sync = None
+                        continue
                     executor.shutdown()
                     break
                 _sleep_until_next_candle_close(
@@ -22971,6 +27097,8 @@ def main():
             panel = data_fetcher.get_panel(
                 panel_symbols, lookback_hours=live_decision_panel_lookback_hours
             )
+            if historical_decision_hour is not None:
+                panel = _truncate_panel_through(panel, latest_closed_hour)
             loop_timer.mark("panel_load")
             prewarm_result: Dict[str, Any] = {}
             if _model_feature_offline_cache_enabled(
@@ -22982,6 +27110,17 @@ def main():
                 prewarm_keys = set(raw_required_feature_keys(required_feature_keys))
                 prewarm_keys.update(
                     _lgbm_mask_required_feature_keys(lgbm_strategy_mask_rows)
+                )
+                # Base/meta features alone are insufficient for the deployed
+                # V9 -> residual-state -> MLP chain. Materialize its observable
+                # inputs in the same exact-hour sidecar before any scoring so a
+                # row is either complete throughout or rejected before ranking.
+                prewarm_keys.update(
+                    str(key)
+                    for key in config.get(
+                        "live_postprocessor_input_feature_columns", []
+                    )
+                    if str(key)
                 )
                 try:
                     prewarm_result = prewarm_selected_model_feature_cache_for_live(
@@ -23149,6 +27288,8 @@ def main():
                         panel_symbols,
                         lookback_hours=live_decision_panel_lookback_hours,
                     )
+                    if historical_decision_hour is not None:
+                        panel = _truncate_panel_through(panel, latest_closed_hour)
                     tradable_panel = _subset_panel(panel, scoring_panel_symbols)
                     (
                         thresholds,
@@ -23251,11 +27392,22 @@ def main():
                 _selected_model_feature_store_gap_report(
                     feats=features,
                     panel=panel,
-                    symbols=panel_symbols,
+                    # The feature frame is intentionally loaded for the
+                    # source-eligible scoring cohort, while panel_symbols also
+                    # contains context-only symbols. Audit the rows that can
+                    # actually reach model scoring; candidate-level checks
+                    # remain strict below.
+                    symbols=scoring_panel_symbols,
                     required_feature_keys=feature_store_gap_required_keys,
                     signal_bar_ts=latest_closed_hour,
                     min_finite_fraction=feature_store_gap_min_fraction,
                     min_full_rows=feature_store_gap_min_full_rows,
+                    allow_training_neutral_fill=bool(
+                        config.get(
+                            "strict_feature_parity_neutral_fill_nonfinite",
+                            False,
+                        )
+                    ),
                 )
                 if feature_store_gap_guard
                 else {"ok": True, "reason": "disabled"}
@@ -23322,6 +27474,17 @@ def main():
                     force=bool(args.run_once),
                 )
                 if args.run_once:
+                    if (
+                        historical_decision_hours
+                        and historical_decision_hour_index + 1
+                        < len(historical_decision_hours)
+                    ):
+                        historical_decision_hour_index += 1
+                        historical_decision_hour = historical_decision_hours[
+                            historical_decision_hour_index
+                        ]
+                        last_hourly_sync = None
+                        continue
                     executor.shutdown()
                     break
                 _sleep_until_next_candle_close(
@@ -23392,9 +27555,16 @@ def main():
             env_max_entries_total = _env_optional_int("EPM_LIVE_MAX_ENTRIES_TOTAL")
             if env_max_entries_total is not None:
                 configured_max_entries_total = env_max_entries_total
-            if _env_flag("EPM_LIVE_DISABLE_NEW_ENTRIES", False) or _env_flag(
-                "EPM_DISABLE_NEW_ENTRIES", False
-            ):
+            historical_shadow_replay_override = bool(
+                historical_decision_hour is not None
+                and late_entries_override
+                and not bool(args.live)
+                and not bool(args.live_test)
+            )
+            if (
+                _env_flag("EPM_LIVE_DISABLE_NEW_ENTRIES", False)
+                or _env_flag("EPM_DISABLE_NEW_ENTRIES", False)
+            ) and not historical_shadow_replay_override:
                 configured_max_entries_total = 0
                 scoring_entries_allowed = False
                 tprint(
@@ -23402,10 +27572,10 @@ def main():
                     "management continue, but new orders are blocked with "
                     "max_entries_total=0."
                 )
-            effective_max_entries_total = (
-                max(0, int(configured_max_entries_total))
-                if scoring_entries_allowed
-                else 0
+            effective_max_entries_total = _effective_live_entry_cap(
+                configured_max_entries_total,
+                portfolio_policy.max_new_entries_per_bar,
+                entries_allowed=scoring_entries_allowed,
             )
 
             results = run_inference_step(
@@ -23436,7 +27606,9 @@ def main():
                 strategy_kill_switch=strategy_kill_switch,
                 strategy_feature_contracts=strategy_feature_contracts,
                 live_ae_gmm_state_payload=live_ae_gmm_payload,
+                live_residual_event_state_payload=live_residual_event_state_payload,
                 required_feature_keys=required_feature_keys,
+                ae_gmm_context_symbols=feature_context_symbols_for_scoring,
                 max_entries_total=effective_max_entries_total,
                 stale_entry_context=bool(
                     stale_entry_gap_allowed and not late_entries_override
@@ -23444,6 +27616,12 @@ def main():
                 stale_entry_max_abs_signal_gap_bps=(stale_entry_max_abs_signal_gap_bps),
             )
             loop_timer.mark("model_scoring_and_orders")
+            persistence_result = flush_deferred_static_feature_appends(wait=False)
+            if persistence_result.get("launched") or persistence_result.get("failed"):
+                tprint(
+                    "Post-scoring static feature persistence: "
+                    f"{persistence_result}"
+                )
             tprint(
                 f"Inference batch complete: download_symbols={len(download_symbols)} "
                 f"panel_symbols={len(panel_symbols)} "
@@ -23465,22 +27643,35 @@ def main():
                 portfolio_mgr=portfolio_mgr,
                 executor=executor,
             )
-            _maybe_send_daily_deployment_report(
-                daily_reporter=daily_reporter,
-                exchange=exchange,
-                portfolio_mgr=portfolio_mgr,
-                trade_logger=logger,
-                config=config,
-            )
-            _maybe_export_google_sheets(
-                sheets_exporter=sheets_exporter,
-                trade_logger=logger,
-                executor=executor,
-                force=bool(args.run_once),
-            )
+            if historical_decision_hour is None:
+                _maybe_send_daily_deployment_report(
+                    daily_reporter=daily_reporter,
+                    exchange=exchange,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    config=config,
+                )
+                _maybe_export_google_sheets(
+                    sheets_exporter=sheets_exporter,
+                    trade_logger=logger,
+                    executor=executor,
+                    force=bool(args.run_once),
+                )
 
             if args.run_once:
+                if (
+                    historical_decision_hours
+                    and historical_decision_hour_index + 1
+                    < len(historical_decision_hours)
+                ):
+                    historical_decision_hour_index += 1
+                    historical_decision_hour = historical_decision_hours[
+                        historical_decision_hour_index
+                    ]
+                    last_hourly_sync = None
+                    continue
                 executor.shutdown()
+                flush_deferred_static_feature_appends(wait=True)
                 break
 
             _sleep_until_next_candle_close(
@@ -23491,6 +27682,7 @@ def main():
         except KeyboardInterrupt:
             tprint("Shutting down...")
             executor.shutdown()
+            flush_deferred_static_feature_appends(wait=True)
             break
         except Exception as e:
             tprint(f"Error in inference loop: {e}")
@@ -23521,11 +27713,12 @@ def run_challenger_monitor(
 ):
     """
     calibration_data = calibration_data or {}
-    Run position monitoring every 30 seconds by default.
+    Run completed-policy-bar position monitoring every minute by default.
 
     New entries are intentionally not evaluated here. The loop only monitors
-    existing positions with a lightweight bid/ask sentinel, and applies the
-    heavier stop policy only when new closed 5m bars are available.
+    existing positions and applies policy state transitions when a new completed
+    policy bar is available. For the promoted 1m policy, missing Kraken OHLCV is
+    appended to the canonical replay store before evaluation.
 
     Args:
         symbols: List of trading symbols
@@ -23534,25 +27727,14 @@ def run_challenger_monitor(
         executor: TradeExecutor instance
         logger: TradeLogger instance
         config: Configuration dictionary
-        interval: Check interval in seconds (default 30s)
+        interval: Check interval in seconds (default 60s)
     """
-    interval = max(float(interval or 30.0), 1.0)
+    interval = max(float(interval or 60.0), 1.0)
     next_run_monotonic = time.monotonic()
     while True:
         try:
             current_time = pd.Timestamp.now(tz="UTC")
-            tprint(f"\n=== Executable stop sentinel at {current_time} ===")
-            _monitor_executable_stop_sentinel_only(
-                executor,
-                now=current_time,
-                config=config,
-                portfolio_mgr=portfolio_mgr,
-                trade_logger=logger,
-                sheets_exporter=sheets_exporter,
-            )
-
-            current_time = pd.Timestamp.now(tz="UTC")
-            tprint(f"\n=== Challenger monitor at {current_time} ===")
+            tprint(f"\n=== Completed policy-bar monitor at {current_time} ===")
 
             # The challenger loop is intentionally position-management only.
             # New entries are evaluated by the hourly data/feature/model path.
@@ -23594,29 +27776,72 @@ def run_challenger_monitor(
 def _evaluate_oco_policy(
     symbol: str,
     position_state: Dict[str, Any],
-    ohlcv_5m: pd.DataFrame,
+    policy_ohlcv: pd.DataFrame,
     executor: TradeExecutor,
 ):
     """Evaluate stop touches and delegate replacement to simple-policy decision."""
     if (
-        ohlcv_5m is None
-        or not isinstance(ohlcv_5m, (pd.DataFrame, pd.Series))
-        or (hasattr(ohlcv_5m, "empty") and ohlcv_5m.empty)
+        policy_ohlcv is None
+        or not isinstance(policy_ohlcv, (pd.DataFrame, pd.Series))
+        or (hasattr(policy_ohlcv, "empty") and policy_ohlcv.empty)
     ):
         return
 
     try:
-        bars = pd.DataFrame(ohlcv_5m).sort_index()
+        bars = pd.DataFrame(policy_ohlcv).sort_index()
         required_cols = {"open", "high", "low", "close"}
         if not required_cols.issubset(bars.columns):
             return
 
-        last_eval_ts = position_state.get("last_5m_eval_ts")
+        policy_bar_minutes = int(max(1, position_state.get("policy_bar_minutes", 1) or 1))
+        last_eval_ts = position_state.get("last_policy_eval_ts")
+        if last_eval_ts is None:
+            last_eval_ts = position_state.get(
+                "last_15m_eval_ts" if policy_bar_minutes == 15 else "last_5m_eval_ts"
+            )
         if last_eval_ts is not None:
             last_eval_ts = pd.Timestamp(last_eval_ts)
             bars = bars[bars.index > last_eval_ts]
         if bars.empty:
             return
+
+        # A process restart can reconstruct an exchange position without the
+        # prior in-memory cadence state.  Account for completed policy bars
+        # before the first available replay bar so fast-entry exits cannot be
+        # re-armed on an old position.  Bars present in this batch are still
+        # evaluated normally and added below.
+        if last_eval_ts is None:
+            entry_ts_raw = position_state.get("entry_time") or position_state.get(
+                "timestamp"
+            )
+            try:
+                entry_ts = pd.Timestamp(entry_ts_raw)
+                if entry_ts.tzinfo is None:
+                    entry_ts = entry_ts.tz_localize("UTC")
+                else:
+                    entry_ts = entry_ts.tz_convert("UTC")
+                first_bar_ts = pd.Timestamp(bars.index[0])
+                if first_bar_ts.tzinfo is None:
+                    first_bar_ts = first_bar_ts.tz_localize("UTC")
+                else:
+                    first_bar_ts = first_bar_ts.tz_convert("UTC")
+                elapsed_before_batch = int(
+                    max(
+                        0.0,
+                        np.floor(
+                            (first_bar_ts - entry_ts).total_seconds()
+                            / (60.0 * float(policy_bar_minutes))
+                        ),
+                    )
+                )
+                position_state["bars_in_trade"] = max(
+                    int(position_state.get("bars_in_trade", 0) or 0),
+                    elapsed_before_batch,
+                )
+                if elapsed_before_batch > 0:
+                    position_state["bars_in_trade_reconstructed_from_entry"] = True
+            except (TypeError, ValueError, OverflowError):
+                pass
 
         side = str(position_state.get("side", "long")).lower()
         realized_entry_price = float(position_state.get("entry_price", 0.0) or 0.0)
@@ -23709,7 +27934,7 @@ def _evaluate_oco_policy(
             position_state.setdefault("trade_recap_events", []).append(
                 {
                     "ts": pd.Timestamp(bar_ts).isoformat(),
-                    "event": "price_bar_5m",
+                    "event": f"price_bar_{policy_bar_minutes}m",
                     "open": bar_open,
                     "high": bar_high,
                     "low": bar_low,
@@ -23809,150 +28034,9 @@ def _evaluate_oco_policy(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
 
-        live_closeable_snapshot: Dict[str, Any] = {}
-        live_closeable_price = float("nan")
-        if live_mode:
-            live_closeable_snapshot = _fetch_live_closeable_price(
-                symbol, side, executor
-            )
-            live_closeable_price = _finite_positive_float(
-                live_closeable_snapshot.get("price")
-            )
-            if np.isfinite(live_closeable_price):
-                if side == "long":
-                    peak_price = max(peak_price, live_closeable_price)
-                    mfe = max(
-                        mfe,
-                        (live_closeable_price - entry_price)
-                        / max(abs(entry_price), 1e-12),
-                    )
-                    mae = max(
-                        mae,
-                        (entry_price - live_closeable_price)
-                        / max(abs(entry_price), 1e-12),
-                    )
-                else:
-                    peak_price = min(peak_price, live_closeable_price)
-                    mfe = max(
-                        mfe,
-                        (entry_price - live_closeable_price)
-                        / max(abs(entry_price), 1e-12),
-                    )
-                    mae = max(
-                        mae,
-                        (live_closeable_price - entry_price)
-                        / max(abs(entry_price), 1e-12),
-                    )
-                position_state["current_price"] = float(live_closeable_price)
-                position_state["last_price"] = float(live_closeable_price)
-                position_state["current_price_source"] = str(
-                    live_closeable_snapshot.get("source") or "live_closeable_touch"
-                )
-                position_state["current_price_ts"] = pd.Timestamp.now(tz="UTC")
-                position_state.setdefault("trade_recap_events", []).append(
-                    {
-                        "ts": position_state["current_price_ts"].isoformat(),
-                        "event": "live_closeable_price_sample",
-                        "side": side,
-                        "price": float(live_closeable_price),
-                        "source": position_state["current_price_source"],
-                        "policy_entry_price": float(entry_price),
-                        "policy_entry_price_source": entry_price_source,
-                        "realized_entry_price": (
-                            float(realized_entry_price)
-                            if np.isfinite(realized_entry_price)
-                            else None
-                        ),
-                        "bid": (
-                            float(live_closeable_snapshot.get("bid"))
-                            if np.isfinite(
-                                _finite_positive_float(
-                                    live_closeable_snapshot.get("bid")
-                                )
-                            )
-                            else None
-                        ),
-                        "ask": (
-                            float(live_closeable_snapshot.get("ask"))
-                            if np.isfinite(
-                                _finite_positive_float(
-                                    live_closeable_snapshot.get("ask")
-                                )
-                            )
-                            else None
-                        ),
-                        "last": (
-                            float(live_closeable_snapshot.get("last"))
-                            if np.isfinite(
-                                _finite_positive_float(
-                                    live_closeable_snapshot.get("last")
-                                )
-                            )
-                            else None
-                        ),
-                        "mfe": float(mfe),
-                        "mae": float(mae),
-                        "peak_price": float(peak_price),
-                    }
-                )
-                if len(position_state.get("trade_recap_events", [])) > 500:
-                    del position_state["trade_recap_events"][:-500]
-                if _executable_stop_breached(
-                    side, float(stop_price), float(live_closeable_price)
-                ):
-                    exit_reason = f"software_executable_stop_breach:{stop_reason}"
-                    if (
-                        isinstance(shadow_state, dict)
-                        and str(shadow_state.get("status") or "open") == "open"
-                    ):
-                        shadow_state.update(
-                            {
-                                "status": "shadow_exit_triggered",
-                                "shadow_exit_time": position_state[
-                                    "current_price_ts"
-                                ].isoformat(),
-                                "shadow_exit_price": float(live_closeable_price),
-                                "shadow_exit_reason": exit_reason,
-                                "shadow_exit_return": _shadow_side_return(
-                                    side, float(live_closeable_price), entry_price
-                                ),
-                                "shadow_exit_vs_live_stop_bps": _shadow_bps_delta(
-                                    side, float(live_closeable_price), stop_price
-                                ),
-                            }
-                        )
-                        _append_simple_policy_shadow_event(
-                            shadow_state,
-                            "shadow_executable_stop_breach",
-                            exit_price=float(live_closeable_price),
-                            live_stop_price=float(stop_price),
-                            stop_reason=stop_reason,
-                            source=position_state["current_price_source"],
-                        )
-                    position_state["shadow_simple_policy_state"] = shadow_state
-                    position_state.setdefault("trade_recap_events", []).append(
-                        {
-                            "ts": position_state["current_price_ts"].isoformat(),
-                            "event": "software_executable_stop_breach",
-                            "side": side,
-                            "price": float(live_closeable_price),
-                            "source": position_state["current_price_source"],
-                            "stop_price": float(stop_price),
-                            "stop_reason": stop_reason,
-                            "exchange_stop_order_id": position_state.get(
-                                "stop_order_id"
-                            ),
-                            "exchange_stop_trigger_signal": position_state.get(
-                                "stop_trigger_signal"
-                            ),
-                        }
-                    )
-                    return executor.close_position(
-                        symbol,
-                        price=float(live_closeable_price),
-                        reason=exit_reason,
-                    )
-
+        # Policy state and trigger decisions use only completed canonical OHLCV
+        # bars, matching the 1m optimiser/replay contract. Actual entry/exit
+        # execution still records the exchange fill and contemporaneous spread.
         require_metadata = True
         decision = None
         try:
@@ -23964,6 +28048,10 @@ def _evaluate_oco_policy(
                     "peak_price": peak_price,
                     "mfe": mfe,
                     "mae": mae,
+                    # The promoted policy disables capital protection. Keep it
+                    # disabled for this completed-bar observation so no legacy
+                    # intrabar timer can alter the replay-aligned exit path.
+                    "capital_protection_disabled_for_observation": True,
                 },
                 latest_market_state=bars,
                 policy_params=params,
@@ -23972,22 +28060,9 @@ def _evaluate_oco_policy(
             )
             if getattr(decision, "should_exit", False):
                 policy_bar_exit_price = float(bars.iloc[-1]["close"])
-                exit_price = (
-                    float(live_closeable_price)
-                    if np.isfinite(live_closeable_price)
-                    else policy_bar_exit_price
-                )
-                exit_ts = (
-                    pd.Timestamp(position_state.get("current_price_ts"))
-                    if np.isfinite(live_closeable_price)
-                    and position_state.get("current_price_ts") is not None
-                    else pd.Timestamp(last_bar_ts)
-                )
-                exit_price_source = (
-                    str(live_closeable_snapshot.get("source") or "live_closeable_touch")
-                    if np.isfinite(live_closeable_price)
-                    else "trade_5m_close"
-                )
+                exit_price = policy_bar_exit_price
+                exit_ts = pd.Timestamp(last_bar_ts)
+                exit_price_source = f"trade_{policy_bar_minutes}m_close"
                 if (
                     isinstance(shadow_state, dict)
                     and str(shadow_state.get("status") or "open") == "open"
@@ -24119,22 +28194,9 @@ def _evaluate_oco_policy(
                     mfe=decision_mfe,
                     mae=decision_mae,
                 )
-        final_current_price = (
-            float(live_closeable_price)
-            if np.isfinite(live_closeable_price)
-            else float(bars.iloc[-1]["close"])
-        )
-        final_current_price_ts = (
-            pd.Timestamp(position_state.get("current_price_ts"))
-            if np.isfinite(live_closeable_price)
-            and position_state.get("current_price_ts") is not None
-            else last_bar_ts
-        )
-        final_current_price_source = (
-            str(live_closeable_snapshot.get("source") or "live_closeable_touch")
-            if np.isfinite(live_closeable_price)
-            else "trade_5m_close"
-        )
+        final_current_price = float(bars.iloc[-1]["close"])
+        final_current_price_ts = last_bar_ts
+        final_current_price_source = f"trade_{policy_bar_minutes}m_close"
         update_result = executor.update_position_policy_state(
             symbol,
             policy_stop_decision=decision,
@@ -24143,7 +28205,9 @@ def _evaluate_oco_policy(
             mae=decision_mae,
             bars_in_trade=int(position_state.get("bars_in_trade", 0) or 0)
             + int(len(bars)),
-            last_5m_eval_ts=last_bar_ts,
+            last_policy_eval_ts=last_bar_ts,
+            policy_bar_minutes=policy_bar_minutes,
+            last_15m_eval_ts=(last_bar_ts if policy_bar_minutes == 15 else None),
             current_price=final_current_price,
             current_price_source=final_current_price_source,
             policy_entry_price=float(entry_price),

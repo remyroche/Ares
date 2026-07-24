@@ -30,6 +30,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
+
+from extreme_price_movements.timestamp_contract import (
+    assert_first_path_timestamp,
+    causal_decision_timestamps,
+)
 from scipy.optimize import minimize
 from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesRegressor
@@ -202,7 +207,7 @@ def _aggregate_daily_values(values: np.ndarray, timestamps: np.ndarray | None = 
     if timestamps is None:
         return arr
     try:
-        ts = pd.to_datetime(np.asarray(timestamps))
+        ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
         mask = ~pd.isna(ts)
         if not np.any(mask):
             return arr
@@ -1452,6 +1457,7 @@ def compute_policy_aware_labels(
     max_hold_hours: int = 24,
     cost_pct: float = 0.0005,
     bars_per_hour: int = 4,
+    signal_timeframe: str = "1h",
 ) -> pd.DataFrame:
     """Compute policy-aware per-trade labels using exact TP/SL/trailing simulator.
     
@@ -1516,14 +1522,17 @@ def compute_policy_aware_labels(
     # Ensure timestamps are datetime
     candidates_df = candidates_df.copy()
     if not pd.api.types.is_datetime64_any_dtype(candidates_df['timestamp']):
-        candidates_df['timestamp'] = pd.to_datetime(candidates_df['timestamp'])
+        candidates_df['timestamp'] = pd.to_datetime(candidates_df['timestamp'], utc=True, errors="coerce")
     
     # Results storage
     results = []
     
     # Process each candidate trade
     for idx, row in candidates_df.iterrows():
-        ts = row['timestamp']
+        signal_ts = pd.Timestamp(row['timestamp'])
+        ts = causal_decision_timestamps(
+            [signal_ts], timeframe=signal_timeframe
+        )[0]
         symbol = row['symbol']
         is_long = bool(row['is_long'])
         entry_price = row['entry_price']
@@ -1562,6 +1571,11 @@ def compute_policy_aware_labels(
             
             if entry_idx >= end_idx:
                 continue
+            assert_first_path_timestamp(
+                first_path_ts=[opens.index[entry_idx]],
+                signal_ts=[signal_ts],
+                timeframe=signal_timeframe,
+            )
             
             # Get arrays for this trade
             future_opens = opens[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
@@ -1607,7 +1621,8 @@ def compute_policy_aware_labels(
                 label = 0.0
             
             results.append({
-                'timestamp': ts,
+                'timestamp': signal_ts,
+                'decision_ts': ts,
                 'symbol': symbol,
                 'is_long': is_long,
                 'entry_price': entry_price,
@@ -1634,6 +1649,7 @@ def compute_policy_aware_labels_batch(
     max_hold_hours: int = 24,
     cost_pct: float = 0.0005,
     bars_per_hour: int = 4,
+    signal_timeframe: str = "1h",
 ) -> pd.DataFrame:
     """Batch version of compute_policy_aware_labels for better performance.
 
@@ -1657,13 +1673,18 @@ def compute_policy_aware_labels_batch(
 
     candidates_df = candidates_df.copy()
     if not pd.api.types.is_datetime64_any_dtype(candidates_df['timestamp']):
-        candidates_df['timestamp'] = pd.to_datetime(candidates_df['timestamp'])
+        candidates_df['timestamp'] = pd.to_datetime(candidates_df['timestamp'], utc=True, errors="coerce")
 
     n_candidates = len(candidates_df)
     if n_candidates == 0:
         return pd.DataFrame()
 
-    ts_values = pd.to_datetime(candidates_df['timestamp'])
+    signal_ts_values = pd.to_datetime(
+        candidates_df['timestamp'], utc=True, errors="coerce"
+    )
+    ts_values = causal_decision_timestamps(
+        signal_ts_values, timeframe=signal_timeframe
+    )
     symbol_values = candidates_df['symbol'].to_numpy()
     is_long_values = candidates_df['is_long'].to_numpy(dtype=bool)
     entry_price_values = np.asarray(candidates_df['entry_price'].to_numpy(), dtype=np.float64)
@@ -1715,6 +1736,11 @@ def compute_policy_aware_labels_batch(
         entry_idx = int(left_idx[i])
         if entry_idx >= len(price_index):
             continue
+        assert_first_path_timestamp(
+            first_path_ts=[price_index[entry_idx]],
+            signal_ts=[signal_ts_values.iloc[i]],
+            timeframe=signal_timeframe,
+        )
 
         try:
             if symbol not in symbol_cache:
@@ -1747,7 +1773,7 @@ def compute_policy_aware_labels_batch(
             lows_arr[slot, :actual_bars] = low_vec[entry_idx:end_idx]
             closes_arr[slot, :actual_bars] = close_vec[entry_idx:end_idx]
 
-            timestamps.append(ts)
+            timestamps.append(signal_ts_values.iloc[i])
             symbols.append(symbol)
             valid_count += 1
 
@@ -1806,6 +1832,9 @@ def compute_policy_aware_labels_batch(
 
         results.append({
             'timestamp': timestamps[i],
+            'decision_ts': causal_decision_timestamps(
+                [timestamps[i]], timeframe=signal_timeframe
+            )[0],
             'symbol': symbols[i],
             'is_long': is_long,
             'entry_price': entry_price,
@@ -3803,10 +3832,10 @@ class RidgePositionSizer:
 
         if ts_final is not None and len(ts_final) > 0:
             daily_returns = _aggregate_daily_values(pnl, ts_final)
-            all_days = np.unique(pd.to_datetime(ts_eval).floor("D")) if ts_eval is not None else np.unique(pd.to_datetime(ts_final).floor("D"))
+            all_days = np.unique(pd.to_datetime(ts_eval, utc=True).floor("D")) if ts_eval is not None else np.unique(pd.to_datetime(ts_final, utc=True).floor("D"))
             if len(all_days) > len(daily_returns):
                 day_map = pd.Series(0.0, index=pd.Index(all_days))
-                ts_final_days = pd.to_datetime(ts_final).floor("D")
+                ts_final_days = pd.to_datetime(ts_final, utc=True).floor("D")
                 actual_daily = pd.Series(np.asarray(pnl, dtype=np.float64)).groupby(ts_final_days).sum()
                 day_map.update(actual_daily)
                 daily_returns = day_map.to_numpy(dtype=np.float64)
@@ -8696,7 +8725,7 @@ def run_ridge_position_sizer_step(
                 ),
             }
             if sizer.oof_timestamps_ is not None and len(sizer.oof_timestamps_) == n_oof:
-                oof_payload["ts"] = pd.to_datetime(sizer.oof_timestamps_)
+                oof_payload["ts"] = pd.to_datetime(sizer.oof_timestamps_, utc=True, errors="coerce")
             else:
                 oof_payload["ts"] = pd.RangeIndex(n_oof)
             if sizer.oof_symbols_ is not None and len(sizer.oof_symbols_) == n_oof:

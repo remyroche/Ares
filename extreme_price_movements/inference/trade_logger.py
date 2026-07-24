@@ -15,7 +15,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,112 @@ from extreme_price_movements.utils import tprint
 
 # Default log directory
 DEFAULT_LOG_DIR = "extreme_price_movements/logs"
+
+# This is the durable, entry-time close-email contract, not a general payload
+# dump. Keep the allow-list deliberate so a later close cannot recompute it.
+ENTRY_PROVENANCE_SCHEMA_VERSION = "entry_provenance_v1"
+_ENTRY_PROVENANCE_ADMISSION_KEYS = (
+    "threshold_basis_policy_id",
+    "threshold_basis_family",
+    "threshold_basis_window_days",
+    "threshold_basis_recalibration_frequency",
+    "threshold_basis_reference_asof",
+    "threshold_basis_rank_score",
+    "threshold_basis_apply_cutoff",
+    "threshold_basis_dynamic_ev_target",
+    "threshold_basis_dynamic_score_threshold",
+    "threshold_basis_ev_target_local_support",
+    "threshold_basis_ev_target_global_fallback",
+    "threshold_basis_mapped_expected_ev_side_archetype",
+    "threshold_basis_side_archetype_recent_ev_correction",
+    "threshold_basis_corrected_expected_ev",
+    "threshold_basis_corrected_expected_ev_rank",
+    "threshold_basis_parent_rank",
+    "threshold_basis_blended_rank",
+    "threshold_basis_ev_rank_blend_weight",
+    "threshold_basis_expected_ev_correction_scope",
+    "archetype_hit_surprise_actual_hit_rate",
+    "archetype_hit_surprise_expected_hit_rate",
+    "archetype_hit_surprise_hit_rate_delta",
+    "archetype_hit_surprise_hit_rate_surprise_z",
+    "archetype_hit_surprise_n_eff",
+    "archetype_hit_surprise_support_confidence",
+)
+
+_ENTRY_PROVENANCE_ARCHETYPE_BASELINE_KEYS = (
+    "threshold_basis_archetype_baseline_window_days",
+    "threshold_basis_archetype_baseline_scope",
+    "threshold_basis_archetype_baseline_trim_fraction",
+    "threshold_basis_archetype_baseline_robust_method",
+    "threshold_basis_archetype_baseline_support",
+    "threshold_basis_archetype_baseline_retained_days",
+    "threshold_basis_archetype_baseline_trimmed_days",
+    "threshold_basis_archetype_baseline_daily_residual_iqr",
+    "threshold_basis_archetype_baseline_ev_mean",
+    "threshold_basis_archetype_baseline_ev_median",
+    "threshold_basis_archetype_baseline_ev_iqr",
+    "threshold_basis_archetype_baseline_positive_ev_rate",
+    "threshold_basis_archetype_baseline_take_profit_rate",
+    "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean",
+    "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_support",
+    "threshold_basis_archetype_baseline_clean_rate",
+    "threshold_basis_archetype_baseline_dirty_positive_rate",
+    "threshold_basis_archetype_baseline_bad_mae_rate",
+    "threshold_basis_archetype_baseline_timeout_rate",
+    "threshold_basis_archetype_baseline_stop_rate",
+    "threshold_basis_archetype_baseline_mapped_ev_decile",
+    "threshold_basis_archetype_baseline_mapped_ev_decile_support",
+    "threshold_basis_archetype_baseline_mapped_ev_decile_calibration_residual",
+    "threshold_basis_archetype_baseline_historical_scope",
+    "threshold_basis_archetype_baseline_historical_support",
+    "threshold_basis_archetype_baseline_historical_positive_ev_rate",
+    "threshold_basis_archetype_baseline_recent_vs_historical_positive_ev_rate",
+    "threshold_basis_archetype_baseline_gmm_cluster_id",
+    "threshold_basis_archetype_baseline_gmm_state_ev_mean",
+    "threshold_basis_archetype_baseline_gmm_state_support",
+)
+
+_ENTRY_PROVENANCE_PRECOMPUTED_CONTEXT_KEYS = (
+    "email_env_volatility",
+    "email_env_vol_of_vol",
+    "email_env_entropy",
+    "email_env_signed_trend",
+    "email_env_volume_z",
+    "email_env_atr_percentile",
+    "email_env_amihud_z",
+    "email_env_vwap_distance_atr",
+    "email_precomputed_feature_sources_json",
+)
+
+
+ENTRY_PROVENANCE_FIELD_KEYS = (
+    "symbol", "side", "strategy_id", "model_artifact_run_id",
+    "policy_artifact_run_id", "policy_pathway_id", "sizing_policy_id",
+    "v9_tail95_predecessor_rank", "market_state_mlp_score_correction",
+    "market_state_mlp_expected_net_ev_after_1pct",
+    "market_state_mlp_expected_ev_rank_score",
+    "policy_archetype", "policy_archetype_source", "local_side_archetype",
+    "source_archetype", "archetype_label_family",
+    *_ENTRY_PROVENANCE_ADMISSION_KEYS,
+    *_ENTRY_PROVENANCE_ARCHETYPE_BASELINE_KEYS,
+    "ood_score", "gmm_ood_score", "meta_sel_ood_abs_z_max",
+    "meta_sel_ood_abs_z_mean", "meta_sel_ood_abs_z_p95",
+    "meta_sel_ood_iqr_exceed_frac", "meta_sel_ood_missing_frac",
+    "meta_sel_ood_centroid_l2", "uncertainty_score",
+    "base_lgbm_uncertainty_score", "meta_lgbm_uncertainty_score",
+    "prob_uncertainty", "prediction_entropy", "inference_drift_score",
+    "base_lgbm_inference_drift_score", "meta_lgbm_inference_drift_score",
+    "feature_drift_psi_core", "feature_drift_ks_bin_mean", "support_drift_score",
+    "leaf_drift_score", "aegmm_regime_drift_score", "aegmm_cluster",
+    "side_aegmm_cluster", "gmm_cluster_id", "gmm_posterior_max",
+    "gmm_posterior_margin", "gmm_entropy", "mahalanobis_distance",
+    "ae_reconstruction_error", "AE_reconstruction_error", "cluster_speed",
+    "cluster_acceleration", "meta_lgbm_leaf_count_p10", "meta_lgbm_leaf_count_min",
+    "meta_lgbm_rare_leaf_fraction", "rare_leaf_low_support_score",
+    "meta_lgbm_leaf_model_space_distance_mean",
+    "meta_lgbm_leaf_model_space_distance_p10",
+    *_ENTRY_PROVENANCE_PRECOMPUTED_CONTEXT_KEYS,
+)
 
 
 def _safe_finite_float(value: Any) -> float:
@@ -87,6 +193,84 @@ def _is_missing_log_value(value: Any) -> bool:
         return bool(pd.isna(value))
     except Exception:
         return False
+
+
+def _entry_provenance_value(value: Any) -> Any:
+    if _is_missing_log_value(value):
+        return None
+    if isinstance(value, (np.integer, int)) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        numeric = float(value)
+        return numeric if np.isfinite(numeric) else None
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return pd.Timestamp(value).isoformat()
+    if isinstance(value, (str, bool)):
+        return value
+    return None
+
+
+def _parse_entry_provenance(value: Any) -> Dict[str, Any]:
+    if isinstance(value, Mapping):
+        parsed = dict(value)
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    else:
+        return {}
+    if (
+        str(parsed.get("schema_version") or "") != ENTRY_PROVENANCE_SCHEMA_VERSION
+        or not isinstance(parsed.get("fields"), Mapping)
+    ):
+        return {}
+    return {
+        str(key): normalized
+        for key, value in dict(parsed["fields"]).items()
+        if str(key) in ENTRY_PROVENANCE_FIELD_KEYS
+        and (normalized := _entry_provenance_value(value)) is not None
+    }
+
+
+def serialize_entry_provenance(source: Mapping[str, Any]) -> str:
+    """Serialize the allow-listed entry-time close-email provenance."""
+    fields = _parse_entry_provenance(source.get("entry_provenance_json"))
+    for key in ENTRY_PROVENANCE_FIELD_KEYS:
+        value = _entry_provenance_value(source.get(key))
+        if value is not None:
+            fields[key] = value
+    return json.dumps(
+        {"schema_version": ENTRY_PROVENANCE_SCHEMA_VERSION, "fields": fields},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def restore_entry_provenance(source: Mapping[str, Any]) -> Dict[str, Any]:
+    """Fill missing close fields from provenance and the legacy audit payload."""
+    out = dict(source)
+    for key, value in _parse_entry_provenance(out.get("entry_provenance_json")).items():
+        if _is_missing_log_value(out.get(key)):
+            out[key] = value
+    if _is_missing_log_value(out.get("policy_archetype")):
+        audit = out.get("model_prediction_audit")
+        if isinstance(audit, str) and audit.strip():
+            try:
+                audit = json.loads(audit)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                audit = {}
+        thresholds = audit.get("thresholds") if isinstance(audit, Mapping) else None
+        legacy_archetype = (
+            thresholds.get("policy_archetype") if isinstance(thresholds, Mapping) else None
+        )
+        if not _is_missing_log_value(legacy_archetype):
+            out["policy_archetype"] = legacy_archetype
+            if _is_missing_log_value(out.get("policy_archetype_source")):
+                out["policy_archetype_source"] = (
+                    "model_prediction_audit.thresholds.policy_archetype"
+                )
+    return out
 
 
 def _fill_best_available_net_fields(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -377,6 +561,7 @@ TRADE_LOG_COLUMNS = [
     "effective_threshold",
     "decision_audit_schema",
     "model_prediction_audit",
+    "entry_provenance_json",
     "raw_data_audit",
     "model_feature_audit",
     # Model predictions - Ridge position sizer
@@ -428,6 +613,10 @@ TRADE_LOG_COLUMNS = [
     "stop_policy_params_hash",
     "stop_policy_schema",
     "decision_module",
+    "barrier_frac",
+    "barrier_pct",
+    "barrier_frac_is_effective",
+    "sl_mult",
     "shadow_policy_schema",
     "shadow_policy_params_source",
     "shadow_policy_params_hash",
@@ -435,6 +624,9 @@ TRADE_LOG_COLUMNS = [
     "shadow_realized_entry_price",
     "shadow_entry_gap_bps",
     "shadow_initial_stop_price",
+    "shadow_barrier_frac",
+    "shadow_barrier_frac_is_effective",
+    "shadow_sl_mult",
     "shadow_latest_stop_price",
     "shadow_live_stop_price",
     "shadow_stop_gap_bps",
@@ -569,7 +761,9 @@ class TradeLogger:
 
     def __post_init__(self):
         """Initialize the logger after dataclass initialization."""
-        self.run_id = self.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.run_id = self.run_id or pd.Timestamp.now(tz="UTC").strftime(
+            "%Y%m%d_%H%M%S"
+        )
 
         # Ensure directory exists
         log_dir = os.path.dirname(self.output_path)
@@ -805,6 +999,9 @@ class TradeLogger:
 
     def _normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         enriched = _fill_best_available_net_fields(dict(record))
+        if str(enriched.get("action") or "").lower() == "enter":
+            enriched["entry_provenance_json"] = serialize_entry_provenance(enriched)
+        enriched = restore_entry_provenance(enriched)
         enriched["lifecycle_event"] = self._default_lifecycle_event(enriched)
         enriched["position_id"] = self._derive_position_id(enriched)
         enriched["trade_id"] = self._derive_trade_id(enriched)
@@ -1112,6 +1309,12 @@ class TradeLogger:
             "stop_policy_params_hash": decision.get("stop_policy_params_hash"),
             "stop_policy_schema": decision.get("stop_policy_schema"),
             "decision_module": decision.get("decision_module"),
+            "barrier_frac": decision.get("barrier_frac"),
+            "barrier_pct": decision.get("barrier_pct"),
+            "barrier_frac_is_effective": decision.get(
+                "barrier_frac_is_effective"
+            ),
+            "sl_mult": decision.get("sl_mult"),
             "stop_price_updated": decision.get("stop_price_updated"),
             "limit_price": decision.get("limit_price"),
             "exit_reason": decision.get("exit_reason"),
@@ -1210,6 +1413,13 @@ class TradeLogger:
             "error": decision.get("error", ""),
         }
 
+        if str(record.get("action") or "").lower() == "enter":
+            provenance_source = dict(decision)
+            provenance_source.update(model_results)
+            provenance_source.update(record)
+            record["entry_provenance_json"] = serialize_entry_provenance(
+                provenance_source
+            )
         record = self._persist_record(record)
 
         # Generate and print explanation
@@ -1569,6 +1779,90 @@ class TradeLogger:
             )
         return updated
 
+    def find_unresolved_entries_absent(
+        self,
+        active_symbols: Iterable[str],
+        *,
+        reconciled_lookback_hours: float = 6.0,
+    ) -> List[Dict[str, Any]]:
+        """Return durable entries with no matching exit and no live position.
+
+        This is used during live-process startup.  A protective stop may fill
+        while the worker is restarting; in that case the entry remains durable
+        but there is no in-memory position available to emit the close event.
+        Matching by ``position_id`` keeps repeated trades in one symbol
+        independent and makes the recovery idempotent once ``exit_filled`` is
+        written.
+        """
+        active: Set[str] = {str(sym) for sym in active_symbols if str(sym)}
+        logs = self.read_logs()
+        if logs.empty or "symbol" not in logs.columns:
+            return []
+
+        work = logs.copy()
+        if "run_id" in work.columns and str(self.run_id or "").strip():
+            work = work.loc[work["run_id"].astype(str).eq(str(self.run_id))].copy()
+        # This recovery belongs to the Kraken-perps deployment.  Historical
+        # spot rows share the same legacy CSV but must never be interpreted as
+        # missing live futures positions.
+        work = work.loc[work["symbol"].astype(str).str.endswith(":USD")].copy()
+        if work.empty:
+            return []
+        work["__ts"] = pd.to_datetime(
+            work.get("timestamp"), utc=True, errors="coerce", format="mixed"
+        )
+        action = work.get("action", pd.Series("", index=work.index)).astype(str).str.lower()
+        lifecycle = work.get(
+            "lifecycle_event", pd.Series("", index=work.index)
+        ).astype(str).str.lower()
+        status = work.get("status", pd.Series("", index=work.index)).astype(str).str.lower()
+        entries = work.loc[
+            action.eq("enter")
+            & lifecycle.isin({"entry_placed", "entry_recorded"})
+            & ~status.isin({"failed", "rejected", "error"})
+            & ~work["symbol"].astype(str).isin(active)
+        ].copy()
+        reconciled_at = pd.to_datetime(
+            entries.get("stop_price_updated"),
+            utc=True,
+            errors="coerce",
+            format="mixed",
+        )
+        recent_cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
+            hours=max(float(reconciled_lookback_hours), 0.0)
+        )
+        entries = entries.loc[
+            status.loc[entries.index].eq("pending")
+            | reconciled_at.ge(recent_cutoff)
+        ].copy()
+        if entries.empty:
+            return []
+
+        exits = work.loc[
+            action.eq("exit")
+            | lifecycle.isin({"exit_filled", "closed", "position_closed"})
+        ].copy()
+        # Exchange entry and exit order IDs historically produced different
+        # position IDs in this ledger.  Pair the latest lifecycle events per
+        # symbol chronologically instead: a symbol is unresolved only when its
+        # latest valid entry is newer than its latest recorded exit.
+        unresolved: List[Dict[str, Any]] = []
+        for symbol, symbol_entries in entries.groupby("symbol", sort=False):
+            symbol_entries = symbol_entries.sort_values("__ts")
+            row = symbol_entries.iloc[-1]
+            later_exit = exits.loc[
+                exits["symbol"].astype(str).eq(str(symbol))
+                & exits["__ts"].ge(row["__ts"])
+            ]
+            if not later_exit.empty:
+                continue
+            record = {
+                str(key): (None if pd.isna(value) else value)
+                for key, value in row.drop(labels=["__ts"], errors="ignore").items()
+            }
+            unresolved.append(restore_entry_provenance(record))
+        return unresolved
+
     # =========================================================================
     # Legacy methods for backward compatibility
     # =========================================================================
@@ -1599,7 +1893,9 @@ class TradeLogger:
             error: Error message if any
         """
         row = {
-            "timestamp": datetime.now().isoformat(),
+            # Storage and joins use UTC. Local time belongs only in display/email
+            # formatting, never in the persisted audit contract.
+            "timestamp": pd.Timestamp.now(tz="UTC").isoformat(),
             "run_id": self.run_id,
             "symbol": symbol,
             "side": side,
@@ -1833,6 +2129,7 @@ class TradeLogger:
         context = dict(predictions or {})
         context.update(features or {})
         context.update(extra or {})
+        context["entry_provenance_json"] = serialize_entry_provenance(context)
         status = str(
             extra.get("status") or ("completed" if mode == "shadow" else "pending")
         )

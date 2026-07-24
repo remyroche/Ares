@@ -2,7 +2,9 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
+from extreme_price_movements import hf_data_loader
 from extreme_price_movements import universe as universe_mod
 from extreme_price_movements.inference import config as inference_config
 from extreme_price_movements.inference.data_fetcher import DataFetcher
@@ -334,9 +336,81 @@ def test_fetch_incremental_universe_triggers_backfill_on_recent_gaps(monkeypatch
         lambda symbol, **kwargs: backfill_calls.append(symbol),
     )
 
-    out = fetcher.fetch_incremental_universe(["A/USDT", "B/USDT"], max_workers=2)
+    out = fetcher.fetch_incremental_universe(
+        ["A/USDT", "B/USDT"],
+        max_workers=2,
+        refresh_microdata=False,
+    )
     assert set(out.keys()) == {"A/USDT", "B/USDT"}
     assert backfill_calls == ["B/USDT"]
+
+
+def test_missing_15m_ranges_detects_internal_and_single_candle_gaps():
+    expected = pd.date_range("2026-01-01", periods=12, freq="15min", tz="UTC")
+    present = expected.delete([3, 7, 8])
+
+    ranges = hf_data_loader._missing_15m_ranges(
+        present, expected.min(), expected.max()
+    )
+
+    assert ranges == [
+        (expected[3], expected[3]),
+        (expected[7], expected[8]),
+    ]
+
+
+def test_hourly_gap_backfill_uses_only_complete_15m_hours(tmp_path, monkeypatch):
+    fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
+    end_hour = pd.Timestamp.now(tz="UTC").floor("1h") - pd.Timedelta(hours=1)
+    start_hour = end_hour - pd.Timedelta(hours=23)
+    missing_complete = end_hour - pd.Timedelta(hours=8)
+    missing_partial = end_hour - pd.Timedelta(hours=4)
+    existing_index = pd.date_range(start_hour, end_hour, freq="1h", tz="UTC").difference(
+        pd.DatetimeIndex([missing_complete, missing_partial])
+    )
+    existing = pd.DataFrame(
+        {
+            "open": 1.0,
+            "high": 1.1,
+            "low": 0.9,
+            "close": 1.0,
+            "volume": 10.0,
+        },
+        index=existing_index,
+    )
+    fetcher.ohlcv_store.save_partitioned(symbol="A/USDT", df=existing)
+
+    complete_quarters = pd.date_range(
+        missing_complete, periods=4, freq="15min", tz="UTC"
+    )
+    partial_quarters = pd.date_range(
+        missing_partial, periods=3, freq="15min", tz="UTC"
+    )
+    quarter_index = complete_quarters.append(partial_quarters)
+    fifteen_minute = pd.DataFrame(
+        {
+            "open": np.arange(len(quarter_index), dtype=np.float32) + 1.0,
+            "high": np.arange(len(quarter_index), dtype=np.float32) + 1.5,
+            "low": np.arange(len(quarter_index), dtype=np.float32) + 0.5,
+            "close": np.arange(len(quarter_index), dtype=np.float32) + 1.25,
+            "volume": np.ones(len(quarter_index), dtype=np.float32),
+        },
+        index=quarter_index,
+    )
+    monkeypatch.setattr(
+        fetcher,
+        "trigger_gap_backfill",
+        lambda *args, **kwargs: fifteen_minute,
+    )
+
+    repaired = fetcher.trigger_hourly_gap_backfill("A/USDT", days=1)
+
+    assert repaired.index.tolist() == [missing_complete]
+    stored = fetcher.ohlcv_store.load(
+        "A/USDT", start_ts=start_hour, end_ts=end_hour
+    )
+    assert missing_complete in stored.index
+    assert missing_partial not in stored.index
 
 
 def test_data_fetcher_does_not_rescope_exchange_scoped_live_root(tmp_path):
@@ -444,7 +518,12 @@ def test_fetch_hourly_universe_refreshes_microdata_for_existing_target_bar(
         fetcher,
         "update_microdata_symbol",
         lambda symbol, **kwargs: micro_calls.append(
-            (symbol, kwargs.get("start_ts"), kwargs.get("end_ts"))
+            (
+                symbol,
+                kwargs.get("start_ts"),
+                kwargs.get("end_ts"),
+                kwargs.get("allow_live_snapshot"),
+            )
         ),
     )
 
@@ -458,8 +537,8 @@ def test_fetch_hourly_universe_refreshes_microdata_for_existing_target_bar(
 
     assert out == {}
     assert micro_calls == [
-        ("A/USDT", target_hour, target_hour),
-        ("B/USDT", target_hour, target_hour),
+        ("A/USDT", target_hour - pd.Timedelta(hours=48), target_hour, True),
+        ("B/USDT", target_hour - pd.Timedelta(hours=48), target_hour, True),
     ]
 
 
@@ -534,6 +613,56 @@ def test_fetch_hourly_universe_once_saves_latest_closed_candle(tmp_path, monkeyp
     assert pd.Timestamp(stored.index.max()) == target_hour
     assert "B/USDT" in fetcher.dead_letter_symbols
     assert fetcher.api_error_counts["timeout"] == 1
+
+
+def test_get_panel_retains_warmed_panel_and_patches_latest_row(tmp_path, monkeypatch):
+    fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
+    first_ts = pd.Timestamp.now(tz="UTC").floor("1h") - pd.Timedelta(hours=2)
+    calls = {"count": 0}
+
+    def _load_panel(**kwargs):
+        calls["count"] += 1
+        return {
+            field: pd.DataFrame(
+                {"A/USDT": [value]},
+                index=pd.DatetimeIndex([first_ts]),
+                dtype="float32",
+            )
+            for field, value in {
+                "open": 1.0,
+                "high": 1.1,
+                "low": 0.9,
+                "close": 1.0,
+                "volume": 10.0,
+            }.items()
+        }
+
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher.load_raw_market_panel",
+        _load_panel,
+    )
+    panel = fetcher.get_panel(["A/USDT"], lookback_hours=48)
+    assert calls["count"] == 1
+    assert fetcher.get_panel(["A/USDT"], lookback_hours=48) is panel
+    assert calls["count"] == 1
+
+    latest_ts = first_ts + pd.Timedelta(hours=1)
+    fetcher._merge_symbol_cache(
+        "A/USDT",
+        pd.DataFrame(
+            {
+                "open": [1.0],
+                "high": [1.2],
+                "low": [0.95],
+                "close": [1.1],
+                "volume": [11.0],
+            },
+            index=pd.DatetimeIndex([latest_ts]),
+        ),
+    )
+    warmed = fetcher.get_panel(["A/USDT"], lookback_hours=48)
+    assert calls["count"] == 1
+    assert float(warmed["close"].loc[latest_ts, "A/USDT"]) == pytest.approx(1.1)
 
 
 def test_fetch_hourly_universe_once_rejects_stale_closed_candle(tmp_path, monkeypatch):

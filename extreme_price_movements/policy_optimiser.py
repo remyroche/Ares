@@ -31,6 +31,10 @@ from extreme_price_movements.simple_offset_generator import (
 )
 from extreme_price_movements.path_utils import mode_suffixed_path, resolve_market_mode
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.timestamp_contract import (
+    assert_first_path_timestamp,
+    causal_decision_timestamps,
+)
 
 EPS = 1e-9
 MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE = 0.002
@@ -105,6 +109,7 @@ def _enrich_future_paths_from_15m_cache(
     *,
     selected_idx: np.ndarray,
     max_bars: Optional[int] = None,
+    signal_timeframe: str = "1h",
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Attach selected-row 15m OHLC paths without changing policy barriers.
 
@@ -118,10 +123,34 @@ def _enrich_future_paths_from_15m_cache(
     idx = idx[(idx >= 0) & (idx < len(outcomes))]
     max_bars_int = max(2, int(max_bars or _default_policy_path_max_bars(outcomes)))
     before = _future_path_coverage(outcomes, idx)
+    provenance_valid = False
     if before["coverage"] >= 1.0 and before["max_bars"] > 0:
-        before["source"] = "oof_future_paths"
-        before["max_requested_bars"] = int(max_bars_int)
-        return outcomes, before
+        first_col = next(
+            (
+                col
+                for col in ("first_path_timestamp", "__first_path_ts__")
+                if col in outcomes.columns
+            ),
+            None,
+        )
+        if first_col is not None and "timestamp" in outcomes.columns:
+            try:
+                assert_first_path_timestamp(
+                    first_path_ts=outcomes.iloc[idx][first_col],
+                    signal_ts=outcomes.iloc[idx]["timestamp"],
+                    timeframe=signal_timeframe,
+                )
+                provenance_valid = bool(
+                    pd.to_datetime(
+                        outcomes.iloc[idx][first_col], utc=True, errors="coerce"
+                    ).notna().all()
+                )
+            except (AssertionError, ValueError):
+                provenance_valid = False
+        if provenance_valid:
+            before["source"] = "oof_future_paths_causal_verified"
+            before["max_requested_bars"] = int(max_bars_int)
+            return outcomes, before
 
     if len(idx) == 0 or not {"timestamp", "symbol"}.issubset(outcomes.columns):
         stats = dict(before)
@@ -144,9 +173,16 @@ def _enrich_future_paths_from_15m_cache(
             out[col] = pd.Series([None] * len(out), dtype=object)
     if "entry_price" not in out.columns:
         out["entry_price"] = np.nan
+    if "first_path_timestamp" not in out.columns:
+        out["first_path_timestamp"] = pd.NaT
     col_pos = {str(col): int(i) for i, col in enumerate(out.columns)}
 
-    ts_all = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+    signal_ts_all = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+    ts_all = pd.Series(
+        causal_decision_timestamps(signal_ts_all, timeframe=signal_timeframe),
+        index=out.index,
+    )
+    out["decision_ts"] = ts_all
     sym_all = out["symbol"].astype(str)
     loaded_symbols = 0
     missing_symbols = 0
@@ -186,6 +222,11 @@ def _enrich_future_paths_from_15m_cache(
                 continue
             sl = slice(int(start), int(end))
             row_i = int(row_pos)
+            assert_first_path_timestamp(
+                first_path_ts=[bar_idx[int(start)]],
+                signal_ts=[signal_ts_all.iloc[row_i]],
+                timeframe=signal_timeframe,
+            )
             out.iat[row_i, col_pos["future_opens"]] = opens[sl].astype(
                 np.float32, copy=True
             )
@@ -198,6 +239,7 @@ def _enrich_future_paths_from_15m_cache(
             out.iat[row_i, col_pos["future_closes"]] = closes[sl].astype(
                 np.float32, copy=True
             )
+            out.iat[row_i, col_pos["first_path_timestamp"]] = bar_idx[int(start)]
             entry_raw = pd.to_numeric(
                 pd.Series([out["entry_price"].iloc[row_i]]), errors="coerce"
             ).iloc[0]

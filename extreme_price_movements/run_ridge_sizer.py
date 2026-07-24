@@ -37,6 +37,10 @@ from extreme_price_movements.ridge_position_sizer import (
     run_ridge_position_sizer_step,
 )
 from extreme_price_movements.training_utils import build_wide_tight_pair_features
+from extreme_price_movements.timestamp_contract import (
+    assert_first_path_timestamp,
+    causal_decision_timestamps,
+)
 
 
 def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
@@ -1285,6 +1289,9 @@ def load_trade_outcomes(
         all_future_lows = np.empty(len(outcomes), dtype=object)
         all_future_closes = np.empty(len(outcomes), dtype=object)
         all_atr_15m = np.empty(len(outcomes), dtype=float)
+        all_first_path_ts = np.full(len(outcomes), np.datetime64("NaT"), dtype="datetime64[ns]")
+
+        signal_timeframe = str(os.environ.get("EPM_SIGNAL_TIMEFRAME", "1h"))
 
         grouped = outcomes_with_index.groupby("symbol")
         for symbol, group in grouped:
@@ -1303,7 +1310,14 @@ def load_trade_outcomes(
                     )
                     continue
 
-                ts_series = pd.to_datetime(group["timestamp"])
+                signal_ts_series = pd.to_datetime(group["timestamp"], utc=True, errors="coerce")
+                ts_series = pd.Series(
+                    causal_decision_timestamps(
+                        signal_ts_series,
+                        timeframe=signal_timeframe,
+                    ),
+                    index=group.index,
+                )
                 ts_values = (
                     ts_series.dt.tz_localize(None)
                     if ts_series.dt.tz is not None
@@ -1353,6 +1367,13 @@ def load_trade_outcomes(
                         np.asarray(close_arr[s:e], dtype=np.float64)
                         for s, e in zip(valid_left, valid_end)
                     ]
+                    first_ts = pd.DatetimeIndex(df_15m.index)[valid_left]
+                    assert_first_path_timestamp(
+                        first_path_ts=first_ts,
+                        signal_ts=signal_ts_series.iloc[np.flatnonzero(valid)],
+                        timeframe=signal_timeframe,
+                    )
+                    all_first_path_ts[valid_orig] = pd.DatetimeIndex(first_ts).tz_localize(None).values
 
                     tr_full = np.full(len(close_arr), np.nan, dtype=np.float64)
                     if len(close_arr) > 1:
@@ -1398,6 +1419,15 @@ def load_trade_outcomes(
         outcomes["future_lows"] = all_future_lows.tolist()
         outcomes["future_closes"] = all_future_closes.tolist()
         outcomes["atr_12_15m"] = all_atr_15m.tolist()
+        outcomes["decision_ts"] = causal_decision_timestamps(
+            pd.to_datetime(outcomes["timestamp"], utc=True, errors="coerce"),
+            timeframe=signal_timeframe,
+        )
+        outcomes["first_path_timestamp"] = pd.to_datetime(
+            all_first_path_ts,
+            utc=True,
+            errors="coerce",
+        )
 
         if "entry_price" not in outcomes.columns:
             # We don't have entry_price, use closes at `ts` as fallback if available

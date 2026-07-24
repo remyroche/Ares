@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import pandas as pd
 
@@ -6,6 +8,7 @@ from extreme_price_movements.inference.run_inference import (
 )
 from extreme_price_movements.inference.training_live_parity_contract import (
     build_training_live_parity_contract,
+    load_training_live_parity_contract,
     parity_contract_output_paths,
     validate_training_live_parity_contract,
 )
@@ -244,6 +247,64 @@ def test_training_live_parity_contract_records_feature_source_run_id(
         )
         == "feature_run_a"
     )
+
+
+def test_live_feature_source_contract_precedes_stale_runtime_default(monkeypatch):
+    monkeypatch.setenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID", "stale_env_run")
+    config = {
+        "live_feature_source_run_id": "stale_runtime_run",
+        "training_live_parity_contract": {
+            "feature_source": {"run_id": "frozen_training_run"}
+        },
+    }
+
+    assert _resolve_live_feature_source_run_id(config) == "frozen_training_run"
+
+
+def test_training_live_parity_contract_explicit_feature_source_beats_environment(
+    tmp_path,
+    monkeypatch,
+):
+    run_root = tmp_path / "artifacts" / "run_a"
+    run_root.mkdir(parents=True)
+    _write_runtime_artifacts(run_root)
+    monkeypatch.setenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID", "stale_feature_run")
+
+    contract = build_training_live_parity_contract(
+        data_root=str(tmp_path),
+        run_id="run_a",
+        market_mode="perps",
+        model_bundle={"bundle": {}},
+        strategy_ids=["long_demo"],
+        feature_source_run_id="training_feature_run",
+        feature_source_data_root="training_data_root",
+    )
+
+    assert contract["feature_source"] == {
+        "run_id": "training_feature_run",
+        "data_root": "training_data_root",
+    }
+
+
+def test_required_live_parity_contract_rejects_missing_feature_source(tmp_path):
+    path = tmp_path / "artifacts" / "run_a" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "training_live_parity_contract.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "training_live_parity_contract_v1",
+                "feature_source": {"run_id": None, "data_root": str(tmp_path)},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="feature_source.run_id"):
+        load_training_live_parity_contract(
+            data_root=str(tmp_path),
+            run_id="run_a",
+            require=True,
+            require_feature_source=True,
+        )
 
 
 def test_training_live_parity_contract_rejects_rank_reference_without_policy_oos_contract(

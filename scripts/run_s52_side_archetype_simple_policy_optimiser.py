@@ -29,6 +29,10 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("EPM_SIMPLE_POLICY_PER_ARCHETYPE_OPTIMISATION", "1")
 os.environ.setdefault("EPM_SIMPLE_POLICY_PER_ARCHETYPE_FULL_OPTIMISATION", "1")
 os.environ.setdefault("EPM_SIMPLE_POLICY_PER_ARCHETYPE_MAX_TRIALS", "96")
+# This production runner is Kraken-perps specific.  An unset exchange used to
+# resolve the local replay cache through the legacy Binance default even though
+# missing 15m bars were fetched from Kraken Futures.
+os.environ.setdefault("EPM_EXCHANGE", "krakenfutures")
 
 from scripts.ablate_simple_policy_exit_geometry import (  # noqa: E402
     _load_bundles,
@@ -40,6 +44,7 @@ from extreme_price_movements.regime_ev_calibration import (  # noqa: E402
 )
 from extreme_price_movements.simple_policy_optimiser import (  # noqa: E402
     DEFAULT_CV_FOLDS,
+    _attach_policy_archetype_column,
     _evaluate_policy_subsets,
     _json_safe,
     _optimise_policy_by_archetype,
@@ -358,7 +363,13 @@ def _evaluate_holdout_policies(
             }
         )
 
-        work = bundle.rows.copy()
+        # Use the same canonical side/archetype key contract used during local
+        # policy fitting.  Raw handoff values are intentionally prefixed by
+        # their source column, so grouping the unnormalised holdout values
+        # would silently fall back to the side-parent geometry.
+        work = _attach_policy_archetype_column(
+            bundle.rows.copy(), strategy_id=strategy_id
+        )
         if "policy_archetype" not in work.columns:
             continue
         for archetype, idx in work.groupby("policy_archetype", sort=True).groups.items():
@@ -434,10 +445,18 @@ def main() -> None:
         default=default_regime_ev_feature_handoff(),
         help="Optional handoff parquet used to join missing regime feature columns.",
     )
+    parser.add_argument(
+        "--disable-regime-ev-calibration",
+        action="store_true",
+        help=(
+            "Do not apply the legacy regime-EV calibrator before geometry fitting. "
+            "Use this when candidates already contain the canonical V9/MLP/EV-admission chain."
+        ),
+    )
     parser.add_argument("--path-len", type=int, default=96)
     parser.add_argument("--min-rows-per-strategy", type=int, default=100)
     parser.add_argument("--n-trials", type=int, default=24)
-    parser.add_argument("--round-trip-cost-pct", type=float, default=0.01)
+    parser.add_argument("--round-trip-cost-pct", type=float, default=0.003)
     parser.add_argument(
         "--holdout-start",
         default=None,
@@ -467,7 +486,9 @@ def main() -> None:
     os.environ.setdefault("EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE", "1")
     os.environ.setdefault("EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE_STD_WEIGHT", "0.5")
     os.environ.setdefault("EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE_WORST_WEIGHT", "0.25")
-    os.environ.setdefault("EPM_SIMPLE_POLICY_1M_DOWNLOAD", "1")
+    # Policy replay and production inference use 15-minute paths. Do not
+    # trigger the legacy minute-bar backfill from this standalone runner.
+    os.environ.setdefault("EPM_SIMPLE_POLICY_1M_DOWNLOAD", "0")
     os.environ.setdefault("EPM_SIMPLE_POLICY_15M_DOWNLOAD", "1")
 
     cost_pct = float(args.round_trip_cost_pct) / 2.0
@@ -478,6 +499,7 @@ def main() -> None:
         rank_scope=str(args.rank_scope),
         regime_ev_calibration_artifact=args.regime_ev_calibration_artifact,
         regime_ev_feature_handoff=args.regime_ev_feature_handoff,
+        apply_regime_ev_calibration_artifact=not bool(args.disable_regime_ev_calibration),
     )
     optimisation_rows, holdout_rows, holdout_diag = _split_optimisation_holdout_rows(
         rows,
@@ -674,6 +696,9 @@ def main() -> None:
         "path_len": int(args.path_len),
         "n_trials": int(args.n_trials),
         "round_trip_cost_pct": float(args.round_trip_cost_pct),
+        "legacy_regime_ev_calibration_applied": not bool(
+            args.disable_regime_ev_calibration
+        ),
         "cost_accounting_audit": cost_audit,
         "holdout": holdout_diag,
         "fold_objective": "mean_score - 0.5 * std_score + 0.25 * worst_score",

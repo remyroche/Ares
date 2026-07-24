@@ -14,7 +14,9 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
     _fetch_kraken_futures_open_interest_analytics,
+    _kraken_oi_to_quote_notional,
     make_perp_exchange,
 )
 from extreme_price_movements.kraken_actual_data import (
@@ -174,6 +176,7 @@ def _run_report(args: argparse.Namespace, rows: list[dict[str, Any]]) -> pd.Data
 def _run_oi_backfill(args: argparse.Namespace, rows: list[dict[str, Any]]) -> dict[str, Any]:
     perp_root = Path(args.perp_root)
     out_dir = perp_root / "open_interest_hourly"
+    price_store = PartitionedOHLCVStore(root_dir=str(perp_root), timeframe="1h")
     exchange = None
     stats = {"symbols": len(rows), "updated": 0, "no_gaps": 0, "fetched_rows": 0, "failed": []}
     for i, row in enumerate(rows, start=1):
@@ -196,6 +199,11 @@ def _run_oi_backfill(args: argparse.Namespace, rows: list[dict[str, Any]]) -> di
                 exchange.rateLimit = max(int(getattr(exchange, "rateLimit", 0) or 0), int(args.rate_limit_ms))
             parts = []
             for start, end in oi_ranges:
+                price_frame = price_store.load(
+                    symbol,
+                    start_ts=start - pd.Timedelta(hours=1),
+                    end_ts=end + pd.Timedelta(hours=1),
+                )
                 series = _fetch_kraken_futures_open_interest_analytics(
                     exchange,
                     symbol,
@@ -204,7 +212,9 @@ def _run_oi_backfill(args: argparse.Namespace, rows: list[dict[str, Any]]) -> di
                     timeframe="1h",
                 )
                 if not series.empty:
-                    parts.append(series)
+                    quote_oi = _kraken_oi_to_quote_notional(series, price_frame)
+                    if not quote_oi.empty:
+                        parts.append(quote_oi)
                 time.sleep(max(0.0, float(args.sleep)))
             if not parts:
                 continue

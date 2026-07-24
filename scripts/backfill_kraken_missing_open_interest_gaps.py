@@ -10,7 +10,9 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
     _fetch_kraken_futures_open_interest_analytics,
+    _kraken_oi_to_quote_notional,
     make_perp_exchange,
 )
 from extreme_price_movements.utils import tprint
@@ -152,6 +154,9 @@ def main() -> int:
     )
     out_dir = Path(args.out_dir)
     seed_dir = Path(args.seed_dir)
+    price_store = PartitionedOHLCVStore(
+        root_dir=str(out_dir.parent), timeframe="1h"
+    )
     exchange = None
     stats = {
         "symbols": len(symbols),
@@ -163,6 +168,11 @@ def main() -> int:
     }
     for i, symbol in enumerate(symbols, start=1):
         try:
+            price_frame = price_store.load(
+                symbol,
+                start_ts=start_ts - pd.Timedelta(days=1) if start_ts is not None else None,
+                end_ts=end_ts + pd.Timedelta(hours=1),
+            )
             filename = f"{_safe_symbol(symbol)}.parquet"
             out_path = out_dir / filename
             existing = _load_oi(out_path)
@@ -209,7 +219,9 @@ def main() -> int:
                     timeframe="1h",
                 )
                 if not oi.empty:
-                    fetched_parts.append(oi)
+                    quote_oi = _kraken_oi_to_quote_notional(oi, price_frame)
+                    if not quote_oi.empty:
+                        fetched_parts.append(quote_oi)
                 time.sleep(max(0.0, float(args.sleep)))
             if not fetched_parts:
                 if not args.dry_run and not out_path.exists():

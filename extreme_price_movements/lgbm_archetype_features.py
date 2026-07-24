@@ -286,6 +286,7 @@ def fit_raw_state_archetype_state(
     *,
     timestamps: Any = None,
     assets: Any = None,
+    sides: Any = None,
     n_components: int = RAW_STATE_SVD_COMPONENTS,
     random_state: int = 42,
 ) -> RawStateArchetypeState:
@@ -304,7 +305,12 @@ def fit_raw_state_archetype_state(
     raw_ref = _reference_rows(scaled, random_state=random_state + 17)
     ref = _reference_rows(z, random_state=random_state)
     mean, inv_cov, logdet = _fit_gaussian(ref)
-    deltas = _transition_vectors(z, timestamps=timestamps, assets=assets)
+    deltas = _transition_vectors(
+        z,
+        timestamps=timestamps,
+        assets=assets,
+        sides=sides,
+    )
     transition_mean, transition_inv_cov, _ = _fit_gaussian(deltas)
     raw_edges, raw_probs = _fit_distribution_bins(raw_ref)
     svd_edges, svd_probs = _fit_distribution_bins(ref)
@@ -337,6 +343,7 @@ def transform_raw_state_archetype_features(
     *,
     timestamps: Any = None,
     assets: Any = None,
+    sides: Any = None,
     index: Any = None,
 ) -> pd.DataFrame:
     n = int(len(X))
@@ -350,7 +357,12 @@ def transform_raw_state_archetype_features(
         np.mean(np.square(scaled - reconstructed), axis=1)
     )
     mahal = _mahalanobis(z, state.mean, state.inv_cov)
-    deltas = _transition_vectors(z, timestamps=timestamps, assets=assets)
+    deltas = _transition_vectors(
+        z,
+        timestamps=timestamps,
+        assets=assets,
+        sides=sides,
+    )
     trans_mahal = _mahalanobis(deltas, state.transition_mean, state.transition_inv_cov)
     trans_norm = np.linalg.norm(deltas, axis=1)
     knn_distance = _knn_distance(z, state.knn)
@@ -933,29 +945,54 @@ def _min_cluster_distance(z: np.ndarray, centroids: np.ndarray) -> np.ndarray:
     return np.min(np.linalg.norm(diff, axis=2), axis=1).astype(np.float32)
 
 
-def _transition_vectors(z: np.ndarray, *, timestamps: Any = None, assets: Any = None) -> np.ndarray:
+def _transition_vectors(
+    z: np.ndarray,
+    *,
+    timestamps: Any = None,
+    assets: Any = None,
+    sides: Any = None,
+) -> np.ndarray:
     arr = _as_2d_float(z)
     out = np.zeros_like(arr, dtype=np.float32)
     if arr.shape[0] <= 1:
         return out
     ts = _timestamp_order_values(timestamps, len(arr))
     asset_values = _asset_values(assets, len(arr))
-    if ts is None and asset_values is None:
+    side_values = _asset_values(sides, len(arr))
+    if ts is None and asset_values is None and side_values is None:
         out[1:] = arr[1:] - arr[:-1]
         return out
     if asset_values is None:
         asset_values = np.repeat("", len(arr)).astype(object)
+    if side_values is None:
+        side_values = np.repeat("", len(arr)).astype(object)
     if ts is not None:
-        order = np.lexsort((np.arange(len(arr)), ts))
+        # A long and a short row for the same symbol/timestamp are separate
+        # sequences, not consecutive market states. Canonical tie-breaking
+        # also makes full-universe transforms independent of source row order.
+        order = np.lexsort(
+            (
+                np.arange(len(arr)),
+                side_values.astype(str),
+                asset_values.astype(str),
+                ts,
+            )
+        )
     else:
-        order = np.arange(len(arr))
-    last_by_asset: dict[str, int] = {}
+        order = np.lexsort(
+            (
+                np.arange(len(arr)),
+                side_values.astype(str),
+                asset_values.astype(str),
+            )
+        )
+    last_by_sequence: dict[tuple[str, str], int] = {}
     for pos in order:
-        asset = str(asset_values[pos])
-        prev = last_by_asset.get(asset)
+        sequence = (str(asset_values[pos]), str(side_values[pos]))
+        prev = last_by_sequence.get(sequence)
         if prev is not None:
             out[pos] = arr[pos] - arr[prev]
-        last_by_asset[asset] = int(pos)
+        last_by_sequence[sequence] = int(pos)
     return out
 
 

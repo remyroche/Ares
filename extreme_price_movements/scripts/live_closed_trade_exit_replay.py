@@ -25,6 +25,7 @@ from extreme_price_movements.inference.simple_policy_stop import (
     load_simple_policy_stop_params_by_strategy,
 )
 from extreme_price_movements.inference.execution_fill_model import stop_exit_fill_price
+from extreme_price_movements.data_store import canonical_kraken_execution_1m_root
 
 
 DEFAULT_CLOSED_TRADES = (
@@ -44,8 +45,8 @@ _FLOAT_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 _SL_MULT_RE = re.compile(rf"\bsl_mult=({_FLOAT_RE})")
 _BARRIER_RE = re.compile(rf"\bbarrier_frac=({_FLOAT_RE})")
 _TRIGGER_RE = re.compile(rf"\btrigger=({_FLOAT_RE})")
-_PRICE_BAR_5M_RE = re.compile(
-    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+price_bar_5m\s+"
+_PRICE_BAR_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+price_bar_(?P<interval>5m|15m)\s+"
     rf"open=(?P<open>{_FLOAT_RE})\s+high=(?P<high>{_FLOAT_RE})\s+"
     rf"low=(?P<low>{_FLOAT_RE})\s+close=(?P<close>{_FLOAT_RE})"
 )
@@ -76,6 +77,22 @@ _STOP_FILLED_RE = re.compile(
     rf".*?\bfill_price=(?P<fill_price>{_FLOAT_RE})\b"
     rf".*?\bstop_reason=(?P<stop_reason>[^\s]+)"
 )
+_SOFTWARE_POLICY_STOP_CLOSE_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+software_policy_stop_close\s+"
+    rf".*?\bcurrent_price=(?P<price>{_FLOAT_RE})\b"
+)
+_STOP_REPLACED_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+stop_replaced\s+"
+    rf"stop_reason=(?P<stop_reason>[^\s]+)\s+"
+    rf".*?\bnew_stop=(?P<stop_price>{_FLOAT_RE})\b"
+)
+_EXCHANGE_STOP_ADOPTED_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+"
+    rf"existing_stop_adopted_on_reattach\s+"
+    rf".*?\bstop_price=(?P<stop_price>{_FLOAT_RE})\b"
+    rf"(?:.*?\bstop_reason=(?P<stop_reason>[^\s]+))?"
+)
+_SPREAD_BPS_RE = re.compile(rf"\bspread_bps=(?P<spread_bps>{_FLOAT_RE})\b")
 
 POLICY_STOP_EXIT_BASE_GAP_BPS = float(
     os.environ.get("EPM_SIMPLE_POLICY_STOP_EXIT_BASE_GAP_BPS", "15.0")
@@ -140,6 +157,7 @@ def _select_closed_trade_rows(
     *,
     symbols: str = "",
     limit: Optional[int] = None,
+    since: Any = None,
 ) -> pd.DataFrame:
     """Filter closed trades and keep the latest rows for focused live audits."""
     out = closed.copy()
@@ -149,7 +167,24 @@ def _select_closed_trade_rows(
             out = out[out["symbol"].isin(wanted)].copy()
     if out.empty:
         return out
-    out["_event_ts_for_replay_sort"] = out.apply(_row_event_ts, axis=1)
+
+    # The lifecycle ledger can contain entry and exit rows for the same trade.
+    # Prefer rows with a valid UTC entry/exit interval before sorting: the
+    # display timestamp may be naive CEST and must not make an entry row look
+    # newer than its corresponding closed-trade row.
+    entry_ts = out.get("entry_time", pd.Series(index=out.index, dtype=object)).map(_to_ts)
+    exit_ts = out.get("exit_time", pd.Series(index=out.index, dtype=object)).map(_to_ts)
+    valid_closed = entry_ts.notna() & exit_ts.notna() & (exit_ts > entry_ts)
+    if bool(valid_closed.any()):
+        out = out.loc[valid_closed].copy()
+        out["_event_ts_for_replay_sort"] = exit_ts.loc[valid_closed]
+    else:
+        out["_event_ts_for_replay_sort"] = out.apply(_row_event_ts, axis=1)
+    since_ts = _to_ts(since)
+    if since is not None and since_ts is None:
+        raise ValueError(f"Invalid --since timestamp: {since!r}")
+    if since_ts is not None:
+        out = out.loc[out["_event_ts_for_replay_sort"] >= since_ts].copy()
     out = out.sort_values("_event_ts_for_replay_sort")
     if limit:
         out = out.tail(int(limit)).copy()
@@ -169,17 +204,7 @@ def _safe_symbol_path(symbol: str) -> str:
 
 def _candidate_execution_1m_dirs(data_root: Path, symbol: str) -> List[Path]:
     safe = _safe_symbol_path(symbol)
-    exchange_root = data_root / "exchanges" / "krakenfutures"
-    return [
-        exchange_root / "execution_1m" / "ohlcv" / f"symbol={safe}",
-        exchange_root
-        / "exchanges"
-        / "krakenfutures"
-        / "execution_1m"
-        / "ohlcv"
-        / f"symbol={safe}",
-        data_root / "execution_1m" / "ohlcv" / f"symbol={safe}",
-    ]
+    return [canonical_kraken_execution_1m_root(data_root) / "ohlcv" / f"symbol={safe}"]
 
 
 def _read_cached_execution_1m(
@@ -294,7 +319,7 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
     stop_fill_price = np.nan
     stop_reason = ""
     for line in str(recap or "").splitlines():
-        m = _PRICE_BAR_5M_RE.search(line)
+        m = _PRICE_BAR_RE.search(line)
         if m:
             ts = _to_ts(m.group("ts"))
             if ts is not None:
@@ -306,7 +331,9 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
                         "low": _safe_float(m.group("low")),
                         "close": _safe_float(m.group("close")),
                         "volume": np.nan,
-                        "observation_source": "live_trade_recap_price_bar_5m",
+                        "observation_source": (
+                            f"live_trade_recap_price_bar_{m.group('interval')}"
+                        ),
                     }
                 )
             continue
@@ -331,6 +358,12 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
         if m:
             ts = _to_ts(m.group("ts"))
             px = _safe_float(m.group("price"))
+            spread_match = _SPREAD_BPS_RE.search(line)
+            spread_bps = (
+                _safe_float(spread_match.group("spread_bps"))
+                if spread_match is not None
+                else np.nan
+            )
             if ts is not None and np.isfinite(px):
                 rows.append(
                     {
@@ -340,7 +373,72 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
                         "low": px,
                         "close": px,
                         "volume": np.nan,
+                        "spread_bps": spread_bps,
                         "observation_source": "live_trade_recap_stop_sentinel_sample",
+                    }
+                )
+            continue
+        m = _SOFTWARE_POLICY_STOP_CLOSE_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            px = _safe_float(m.group("price"))
+            if ts is not None and np.isfinite(px):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": px,
+                        "high": px,
+                        "low": px,
+                        "close": px,
+                        "volume": np.nan,
+                        "observation_source": (
+                            "live_trade_recap_software_policy_stop_sample"
+                        ),
+                    }
+                )
+            continue
+        m = _STOP_REPLACED_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            stop_price = _safe_float(m.group("stop_price"))
+            if ts is not None and np.isfinite(stop_price):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": np.nan,
+                        "high": np.nan,
+                        "low": np.nan,
+                        "close": np.nan,
+                        "volume": np.nan,
+                        "observation_source": "live_trade_recap_stop_replaced",
+                        "logged_stop_replace": True,
+                        "logged_stop_price": float(stop_price),
+                        "logged_stop_reason": str(m.group("stop_reason") or ""),
+                    }
+                )
+            continue
+        m = _EXCHANGE_STOP_ADOPTED_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            stop_price = _safe_float(m.group("stop_price"))
+            if ts is not None and np.isfinite(stop_price):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": np.nan,
+                        "high": np.nan,
+                        "low": np.nan,
+                        "close": np.nan,
+                        "volume": np.nan,
+                        "observation_source": (
+                            "live_trade_recap_exchange_stop_adopted"
+                        ),
+                        "logged_stop_replace": True,
+                        "logged_stop_price": float(stop_price),
+                        # Reattachment changes the hosted executable price, not
+                        # the policy's semantic exit reason. Preserve the
+                        # existing reason when the exchange event omits one.
+                        "logged_stop_reason": str(m.group("stop_reason") or ""),
                     }
                 )
             continue
@@ -493,6 +591,7 @@ def _combined_cached_bars(
     workspace: Path,
     start: pd.Timestamp,
     end: pd.Timestamp,
+    strict_execution_1m_only: bool = False,
 ) -> Tuple[pd.DataFrame, str, ParsedRecap]:
     symbol = str(row.get("symbol") or "")
     minute = _read_cached_execution_1m(data_root=data_root, symbol=symbol, start=start, end=end)
@@ -504,9 +603,27 @@ def _combined_cached_bars(
         sources.append("execution_1m_cache")
     if not recap.bars.empty:
         rb = recap.bars[(recap.bars["ts"] >= start) & (recap.bars["ts"] <= end)].copy()
+        if strict_execution_1m_only and not rb.empty:
+            # Strict replay sources every market price from the canonical 1m
+            # cache, but the executable stop is exchange state rather than a
+            # derived price observation. Retain only timestamped stop-order
+            # transitions so replay can test whether those hosted stops would
+            # have triggered on the independent 1m path.
+            rb = rb[
+                rb["observation_source"].isin(
+                    {
+                        "live_trade_recap_stop_replaced",
+                        "live_trade_recap_exchange_stop_adopted",
+                    }
+                )
+            ].copy()
         if not rb.empty:
             frames.append(rb)
-            sources.append(recap.source)
+            sources.append(
+                "live_trade_recap_exchange_stop_state"
+                if strict_execution_1m_only
+                else recap.source
+            )
     if not frames:
         return pd.DataFrame(), "none", recap
     bars = pd.concat(frames, ignore_index=True, sort=False)
@@ -520,6 +637,7 @@ def _state_after_initial(
     *,
     entry_price: float,
     stop_price: float,
+    barrier_frac: float,
     strategy_id: str,
     side: str,
     rank_percentile: float,
@@ -527,6 +645,11 @@ def _state_after_initial(
     return {
         "entry_price": float(entry_price),
         "stop_price": float(stop_price),
+        # The caller receives this from the initial decision, where the raw
+        # row barrier has already had the policy ATR transform applied.
+        "barrier_frac": float(barrier_frac),
+        "barrier_pct": float(barrier_frac),
+        "barrier_frac_is_effective": True,
         "peak_price": float(entry_price),
         "mfe": 0.0,
         "mae": 0.0,
@@ -587,14 +710,66 @@ def _stop_hit(
     )
 
 
-def _recover_barrier_frac(row: Mapping[str, Any], policy_params: Mapping[str, Any]) -> float:
+def _recover_barrier_frac(
+    row: Mapping[str, Any],
+    policy_params: Mapping[str, Any],
+    *,
+    entry_price: float = np.nan,
+    side: str = "long",
+) -> float:
     barrier_frac = _parse_float_from_detail(_BARRIER_RE, row.get("exit_reason_detail"))
     if np.isfinite(barrier_frac) and barrier_frac > 0.0:
         return float(barrier_frac)
+    for key in (
+        "barrier_frac",
+        "barrier_pct",
+        "policy_effective_barrier_pct",
+        "policy_barrier_frac",
+    ):
+        barrier_frac = _safe_float(row.get(key))
+        if np.isfinite(barrier_frac) and barrier_frac > 0.0:
+            return float(barrier_frac)
     trigger = _parse_float_from_detail(_TRIGGER_RE, row.get("exit_reason_detail"))
     cap_mult = _safe_float(policy_params.get("capital_protect_mfe_mult"))
     if np.isfinite(trigger) and trigger > 0.0 and np.isfinite(cap_mult) and cap_mult > 0.0:
         return float(trigger / cap_mult)
+    # If the lifecycle row retained its entry stop, invert the exact initial
+    # stop geometry. This is more faithful than the train median and remains
+    # causal because both the stop and sl_mult were fixed at entry.
+    entry = _safe_float(entry_price)
+    initial_stop = _safe_float(
+        row.get("shadow_initial_stop_price"),
+        _safe_float(row.get("initial_stop_price"), _safe_float(row.get("entry_stop_price"))),
+    )
+    sl_mult = _safe_float(policy_params.get("sl_mult"))
+    if (
+        np.isfinite(entry)
+        and entry > 0.0
+        and np.isfinite(initial_stop)
+        and initial_stop > 0.0
+        and np.isfinite(sl_mult)
+        and sl_mult > 0.0
+    ):
+        distance = (
+            (entry - initial_stop) / entry
+            if str(side).lower() == "long"
+            else (initial_stop - entry) / entry
+        )
+        if np.isfinite(distance) and distance > 0.0:
+            return float(distance / sl_mult)
+    # The promoted 1-minute trailing pathway persists the train-fitted ATR
+    # anchor under these names. Closed lifecycle rows do not always retain the
+    # entry-time effective barrier, so use the frozen policy anchor rather than
+    # failing the audit or inventing a new value.
+    for key in (
+        "median_barrier_frac",
+        "policy_median_barrier_frac",
+        "median_atr_frac",
+        "policy_median_atr_frac",
+    ):
+        barrier_frac = _safe_float(policy_params.get(key))
+        if np.isfinite(barrier_frac) and barrier_frac > 0.0:
+            return float(barrier_frac)
     return np.nan
 
 
@@ -613,11 +788,17 @@ def replay_one_anchor(
     entry_anchor: str,
     bars: pd.DataFrame,
     recap: ParsedRecap,
+    ignore_logged_exit_events: bool = False,
 ) -> Dict[str, Any]:
     strategy_id = str(row.get("strategy_id") or "")
     side = str(row.get("side") or "long").lower()
     sl_mult = _parse_float_from_detail(_SL_MULT_RE, row.get("exit_reason_detail"))
-    barrier_frac = _recover_barrier_frac(row, policy_params)
+    barrier_frac = _recover_barrier_frac(
+        row,
+        policy_params,
+        entry_price=float(entry_price),
+        side=side,
+    )
     params = dict(policy_params)
     if np.isfinite(sl_mult) and sl_mult > 0:
         params["sl_mult"] = float(sl_mult)
@@ -692,10 +873,12 @@ def replay_one_anchor(
     state = _state_after_initial(
         entry_price=float(entry_price),
         stop_price=current_stop,
+        barrier_frac=float(initial.barrier_frac),
         strategy_id=strategy_id,
         side=side,
         rank_percentile=rank_percentile,
     )
+    state["semantic_stop_reason"] = current_stop_reason
     out.update(
         {
             "initial_stop": current_stop,
@@ -711,7 +894,9 @@ def replay_one_anchor(
     )
 
     events: List[Dict[str, Any]] = []
-    logged_software_exit = _logged_live_software_handoff_exit(row)
+    logged_software_exit = (
+        None if ignore_logged_exit_events else _logged_live_software_handoff_exit(row)
+    )
     if logged_software_exit is not None:
         px = float(logged_software_exit["price"])
         out.update(
@@ -753,6 +938,8 @@ def replay_one_anchor(
     close_trigger_type = str(row.get("close_trigger_type") or "").lower()
     close_execution_method = str(row.get("close_execution_method") or "").lower()
     if (
+        not ignore_logged_exit_events
+        and
         recap.stop_fill_ts is not None
         and np.isfinite(recap.stop_fill_price)
         and (
@@ -783,7 +970,9 @@ def replay_one_anchor(
         )
         return out
 
-    logged_exchange_stop = _logged_live_exchange_stop_fill(row)
+    logged_exchange_stop = (
+        None if ignore_logged_exit_events else _logged_live_exchange_stop_fill(row)
+    )
     if logged_exchange_stop is not None:
         px = float(logged_exchange_stop["price"])
         out.update(
@@ -815,18 +1004,64 @@ def replay_one_anchor(
         if "logged_exit_trigger" in bars.columns
         else pd.Series(False, index=bars.index)
     )
-    use_logged_exit_trigger_path = logged_trigger_series.map(
-        lambda value: value is True
-        or str(value).strip().lower() in {"1", "true", "yes"}
-    ).any()
+    use_logged_exit_trigger_path = (
+        not ignore_logged_exit_events
+        and logged_trigger_series.map(
+            lambda value: value is True
+            or str(value).strip().lower() in {"1", "true", "yes"}
+        ).any()
+    )
+    has_live_recap_observations = (
+        bars.get("observation_source", pd.Series("", index=bars.index))
+        .fillna("")
+        .astype(str)
+        .str.startswith("live_trade_recap_")
+        .any()
+    )
     for _, bar in bars.iterrows():
         bar_ts = _to_ts(bar.get("ts"))
+        observation_source = str(bar.get("observation_source") or "")
+        policy_bar_observation = observation_source in {
+            "live_trade_recap_price_bar_5m",
+            "live_trade_recap_price_bar_15m",
+        }
+        completed_policy_bar = policy_bar_observation or (
+            str(params.get("replay_timeframe") or "").lower() == "1m"
+            and observation_source == "execution_1m_cache"
+        )
+        logged_stop_replace_value = bar.get("logged_stop_replace", False)
+        logged_stop_replace = (
+            logged_stop_replace_value is True
+            or str(logged_stop_replace_value).strip().lower()
+            in {"1", "true", "yes"}
+        )
+        if logged_stop_replace:
+            next_stop = _safe_float(bar.get("logged_stop_price"))
+            next_reason = str(bar.get("logged_stop_reason") or current_stop_reason)
+            if np.isfinite(next_stop) and next_stop > 0.0:
+                current_stop = float(next_stop)
+                current_stop_reason = next_reason
+                state["stop_price"] = current_stop
+                if next_reason not in {
+                    "exchange_valid_giveback_fallback",
+                    "exchange_valid_stop_fallback",
+                }:
+                    state["semantic_stop_reason"] = next_reason
+                events.append(
+                    {
+                        "ts": bar_ts.isoformat() if bar_ts is not None else "",
+                        "event": "persisted_live_stop_replace",
+                        "stop_price": current_stop,
+                        "reason": current_stop_reason,
+                    }
+                )
+            continue
         logged_trigger_value = bar.get("logged_exit_trigger", False)
         logged_trigger = (
             logged_trigger_value is True
             or str(logged_trigger_value).strip().lower() in {"1", "true", "yes"}
         )
-        if logged_trigger:
+        if logged_trigger and not ignore_logged_exit_events:
             px = _safe_float(bar.get("close"))
             out.update(
                 {
@@ -855,12 +1090,31 @@ def replay_one_anchor(
             return out
         if use_logged_exit_trigger_path:
             continue
-        hit, fill_price = _stop_hit(
-            side,
-            current_stop,
-            bar,
-            quote_half_spread_bps=exit_quote_half_spread_bps,
-        )
+        # Production records completed policy bars for state updates but leaves
+        # exchange-stop fills to the exchange order and executable ticker
+        # sentinel. Re-triggering those stops from OHLC ranges double counts the
+        # spread and can create exits that never occurred live.
+        if policy_bar_observation:
+            hit, fill_price = False, np.nan
+        else:
+            observation_is_executable_price = observation_source in {
+                "live_trade_recap_closeable_sample",
+                "live_trade_recap_stop_sentinel_sample",
+                "live_trade_recap_software_policy_stop_sample",
+                "live_trade_recap_logged_exit_trigger",
+            }
+            hit, fill_price = _stop_hit(
+                side,
+                current_stop,
+                bar,
+                # Recap samples are already the closeable bid/ask. Applying a
+                # second half-spread creates premature replay exits.
+                quote_half_spread_bps=(
+                    0.0
+                    if observation_is_executable_price
+                    else exit_quote_half_spread_bps
+                ),
+            )
         if hit:
             out.update(
                 {
@@ -881,6 +1135,25 @@ def replay_one_anchor(
                 }
             )
             return out
+
+        observation_price = _safe_float(bar.get("close"))
+        if policy_bar_observation:
+            state["capital_protection_disabled_for_observation"] = True
+            state.pop("capital_protect_observation_ts", None)
+            state.pop("capital_protect_current_price", None)
+        else:
+            state.pop("capital_protection_disabled_for_observation", None)
+            if bar_ts is not None:
+                state["capital_protect_observation_ts"] = bar_ts
+            else:
+                state.pop("capital_protect_observation_ts", None)
+            if np.isfinite(observation_price):
+                state["capital_protect_current_price"] = float(observation_price)
+            else:
+                state.pop("capital_protect_current_price", None)
+        observed_spread_bps = _safe_float(bar.get("spread_bps"))
+        if np.isfinite(observed_spread_bps):
+            state["spread_bps"] = float(observed_spread_bps)
 
         try:
             decision = compute_simple_policy_stop_decision(
@@ -904,7 +1177,29 @@ def replay_one_anchor(
         state["peak_price"] = decision.peak_price
         state["mfe"] = decision.mfe
         state["mae"] = decision.mae
-        state["bars_in_trade"] = int(state.get("bars_in_trade", 0)) + 1
+        state["capital_protect_armed"] = bool(
+            getattr(decision, "capital_protect_armed", False)
+        )
+        state["capital_protect_armed_now"] = bool(
+            getattr(decision, "capital_protect_armed_now", False)
+        )
+        crossed_ts = getattr(decision, "capital_protect_crossed_ts", None)
+        if crossed_ts is None:
+            state.pop("capital_protect_crossed_ts", None)
+        else:
+            state["capital_protect_crossed_ts"] = str(crossed_ts)
+        state["capital_protect_pending"] = bool(
+            getattr(decision, "capital_protect_pending", False)
+        )
+        activation_return = getattr(
+            decision, "capital_protect_activation_return", None
+        )
+        if activation_return is not None:
+            state["capital_protect_activation_return"] = float(
+                activation_return
+            )
+        if completed_policy_bar:
+            state["bars_in_trade"] = int(state.get("bars_in_trade", 0)) + 1
         if decision.should_exit:
             px = _safe_float(bar.get("close"))
             out.update(
@@ -926,19 +1221,98 @@ def replay_one_anchor(
                 }
             )
             return out
-        if decision.should_replace and decision.stop_price is not None:
-            current_stop = float(decision.stop_price)
-            current_stop_reason = str(decision.reason)
-            state["stop_price"] = current_stop
+        ticker_driven_observation = observation_source in {
+            "live_trade_recap_closeable_sample",
+            "live_trade_recap_stop_sentinel_sample",
+            "live_trade_recap_software_policy_stop_sample",
+        }
+        ticker_driven_reason = str(decision.reason) in {
+            "trailing_profit",
+            "capital_preservation",
+            "capital_preservation_armed",
+        }
+        # Production's lightweight sentinel observes bid/ask every 30 seconds,
+        # but it may only tighten ticker-driven trailing/capital protection.
+        # Applying ordinary policy-stop pressure to each sentinel sample makes
+        # the audit exit earlier than live and is not the deployed cadence.
+        replacement_allowed = (
+            not ticker_driven_observation or ticker_driven_reason
+        )
+        if (
+            decision.should_replace
+            and decision.stop_price is not None
+            and replacement_allowed
+        ):
+            requested_stop = float(decision.stop_price)
             events.append(
                 {
                     "ts": bar_ts.isoformat() if bar_ts is not None else "",
-                    "event": "replace_stop",
-                    "stop_price": current_stop,
-                    "reason": current_stop_reason,
+                    "event": (
+                        "policy_requested_stop"
+                        if has_live_recap_observations
+                        else "replace_stop"
+                    ),
+                    "stop_price": requested_stop,
+                    "reason": str(decision.reason),
                     "detail": decision.reason_detail,
                 }
             )
+            # The live recap's persisted stop replacements include exchange
+            # rounding, minimum-distance handling, and rejected updates. They
+            # are authoritative for the actual protective stop. Recomputed
+            # decisions remain an audit trace but must not overwrite it.
+            if not has_live_recap_observations:
+                current_stop = requested_stop
+                current_stop_reason = str(decision.reason)
+                state["semantic_stop_reason"] = current_stop_reason
+                state["stop_price"] = current_stop
+        if observation_source == "live_trade_recap_software_policy_stop_sample":
+            px = float(observation_price)
+            semantic_exit_reason = (
+                str(decision.reason)
+                if str(decision.reason)
+                in {
+                    "trailing_profit",
+                    "capital_preservation",
+                    "capital_preservation_armed",
+                    "trailing_risk_reduction",
+                }
+                else str(current_stop_reason)
+            )
+            if semantic_exit_reason in {
+                "exchange_valid_giveback_fallback",
+                "exchange_valid_stop_fallback",
+            }:
+                semantic_exit_reason = str(
+                    state.get("semantic_stop_reason") or semantic_exit_reason
+                )
+            out.update(
+                {
+                    "replay_hit": True,
+                    "replay_exit_reason": semantic_exit_reason,
+                    "replay_exit_ts": bar_ts.isoformat() if bar_ts is not None else "",
+                    "replay_exit_price": px,
+                    "replay_exit_price_vs_live_bps": _basis_points(
+                        px, live_exit_price, side
+                    ),
+                    "replay_vs_live_exit_status": (
+                        "replayed_software_policy_stop_observation"
+                    ),
+                    "replay_exit_vs_live_fill_event_bps": _basis_points(
+                        px, recap.stop_fill_price, side
+                    ),
+                    "replay_exit_from_observation_source": observation_source,
+                    "events_json": json.dumps(events, default=str),
+                    "live_stop_fill_ts": (
+                        recap.stop_fill_ts.isoformat()
+                        if recap.stop_fill_ts is not None
+                        else ""
+                    ),
+                    "live_stop_fill_price_from_recap": recap.stop_fill_price,
+                    "live_stop_reason_from_recap": recap.stop_reason,
+                }
+            )
+            return out
 
     out.update(
         {
@@ -975,15 +1349,103 @@ def _anchor_prices(row: Mapping[str, Any]) -> List[Tuple[str, float]]:
     return anchors
 
 
-def _summarise(results: pd.DataFrame) -> Dict[str, Any]:
+def _summarise(
+    results: pd.DataFrame,
+    *,
+    exit_tolerance_bps: float = 50.0,
+    exit_time_tolerance_seconds: Optional[float] = None,
+    strict_execution_1m: bool = False,
+) -> Dict[str, Any]:
     if results.empty:
-        return {"rows": 0}
-    grouped = (
-        results.groupby(["entry_anchor", "coverage_status"], dropna=False)
-        .size()
-        .reset_index(name="rows")
-        .to_dict(orient="records")
+        return {"rows": 0, "exit_parity_status": "pending"}
+    group_columns = [
+        column
+        for column in ("entry_anchor", "coverage_status")
+        if column in results.columns
+    ]
+    if not group_columns:
+        grouped = [{"rows": int(len(results))}]
+    else:
+        grouped = (
+            results.groupby(group_columns, dropna=False)
+            .size()
+            .reset_index(name="rows")
+            .to_dict(orient="records")
+        )
+    gap = pd.to_numeric(
+        results.get(
+            "replay_exit_price_vs_live_bps",
+            pd.Series(np.nan, index=results.index),
+        ),
+        errors="coerce",
     )
+    replay_hit = pd.Series(
+        results.get("replay_hit", False), index=results.index
+    ).fillna(False).astype(bool)
+    live_reason = (
+        results.get("live_exit_reason_detail", pd.Series("", index=results.index))
+        .fillna("")
+        .astype(str)
+        .str.split(":")
+        .str[0]
+    )
+    replay_reason = (
+        results.get("replay_exit_reason", pd.Series("", index=results.index))
+        .fillna("")
+        .astype(str)
+        .str.split(":")
+        .str[0]
+    )
+    reason_match = live_reason.eq(replay_reason) & live_reason.ne("")
+    row_pass = replay_hit & gap.abs().le(float(exit_tolerance_bps)) & reason_match
+    live_exit_ts = pd.to_datetime(
+        results.get("exit_time", pd.Series(pd.NaT, index=results.index)),
+        utc=True,
+        errors="coerce",
+    )
+    replay_exit_ts = pd.to_datetime(
+        results.get("replay_exit_ts", pd.Series(pd.NaT, index=results.index)),
+        utc=True,
+        errors="coerce",
+    )
+    exit_time_gap_seconds = (replay_exit_ts - live_exit_ts).dt.total_seconds().abs()
+    if exit_time_tolerance_seconds is not None:
+        row_pass &= exit_time_gap_seconds.le(float(exit_time_tolerance_seconds))
+    if strict_execution_1m:
+        bar_sources = results.get(
+            "bar_source", pd.Series("", index=results.index)
+        ).fillna("").astype(str)
+        independent_prices = bar_sources.map(
+            lambda value: (
+                "execution_1m_cache" in set(value.split("+"))
+                and set(value.split("+")).issubset(
+                    {
+                        "execution_1m_cache",
+                        "live_trade_recap_exchange_stop_state",
+                    }
+                )
+            )
+        )
+        independent = (
+            independent_prices
+            & results.get("replay_vs_live_exit_status", pd.Series("", index=results.index))
+            .fillna("")
+            .astype(str)
+            .str.startswith("replayed_")
+        )
+        row_pass &= independent
+    identity = [
+        column
+        for column in ("symbol", "entry_time", "exit_time")
+        if column in results.columns
+    ]
+    if identity:
+        trade_pass = row_pass.groupby(
+            [results[column] for column in identity], dropna=False
+        ).any()
+    else:
+        trade_pass = pd.Series([bool(row_pass.any())])
+    mismatch_trades = int((~trade_pass).sum())
     return {
         "rows": int(len(results)),
         "unique_trades": int(results[["symbol", "entry_time", "exit_time"]].drop_duplicates().shape[0])
@@ -992,10 +1454,29 @@ def _summarise(results: pd.DataFrame) -> Dict[str, Any]:
         "coverage_by_anchor": grouped,
         "replay_hits": int(pd.Series(results.get("replay_hit", False)).fillna(False).astype(bool).sum()),
         "mean_replay_exit_vs_live_bps": float(
-            pd.to_numeric(results.get("replay_exit_price_vs_live_bps"), errors="coerce").mean()
+            gap.mean()
         )
         if "replay_exit_price_vs_live_bps" in results
         else None,
+        "max_abs_replay_exit_vs_live_bps": (
+            float(gap.abs().max()) if gap.notna().any() else None
+        ),
+        "exit_tolerance_bps": float(exit_tolerance_bps),
+        "exit_time_tolerance_seconds": (
+            float(exit_time_tolerance_seconds)
+            if exit_time_tolerance_seconds is not None
+            else None
+        ),
+        "mean_abs_exit_time_gap_seconds": float(exit_time_gap_seconds.mean())
+        if exit_time_gap_seconds.notna().any()
+        else None,
+        "max_abs_exit_time_gap_seconds": float(exit_time_gap_seconds.max())
+        if exit_time_gap_seconds.notna().any()
+        else None,
+        "reason_match_rows": int(reason_match.sum()),
+        "exit_parity_mismatch_trades": mismatch_trades,
+        "exit_parity_status": "pass" if mismatch_trades == 0 else "fail",
+        "strict_execution_1m": bool(strict_execution_1m),
     }
 
 
@@ -1014,6 +1495,7 @@ def run(args: argparse.Namespace) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         pd.read_csv(closed_path),
         symbols=str(args.symbols or ""),
         limit=args.limit,
+        since=args.since,
     )
 
     params_by_strategy = load_simple_policy_stop_params_by_strategy(
@@ -1053,6 +1535,7 @@ def run(args: argparse.Namespace) -> Tuple[pd.DataFrame, Dict[str, Any]]:
             workspace=workspace,
             start=entry_ts,
             end=exit_ts + pd.Timedelta(minutes=5),
+            strict_execution_1m_only=bool(args.ignore_logged_exit_events),
         )
         bar_meta = {
             "bar_source": source,
@@ -1075,6 +1558,7 @@ def run(args: argparse.Namespace) -> Tuple[pd.DataFrame, Dict[str, Any]]:
                 entry_anchor=anchor,
                 bars=bars,
                 recap=recap,
+                ignore_logged_exit_events=bool(args.ignore_logged_exit_events),
             )
             out = dict(base)
             out.update(bar_meta)
@@ -1085,7 +1569,12 @@ def run(args: argparse.Namespace) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     result_path = out_dir / "live_closed_trade_exit_replay.csv"
     summary_path = out_dir / "live_closed_trade_exit_replay_summary.json"
     result_df.to_csv(result_path, index=False)
-    summary = _summarise(result_df)
+    summary = _summarise(
+        result_df,
+        exit_tolerance_bps=float(args.exit_tolerance_bps),
+        exit_time_tolerance_seconds=float(args.exit_time_tolerance_seconds),
+        strict_execution_1m=bool(args.ignore_logged_exit_events),
+    )
     summary.update(
         {
             "closed_trades_path": str(closed_path),
@@ -1106,6 +1595,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--limit", type=int, default=6)
     parser.add_argument("--symbols", default="")
+    parser.add_argument("--since", default=None)
+    parser.add_argument("--exit-tolerance-bps", type=float, default=50.0)
+    parser.add_argument("--exit-time-tolerance-seconds", type=float, default=90.0)
+    parser.add_argument(
+        "--ignore-logged-exit-events",
+        action="store_true",
+        help=(
+            "Recompute exits from causal price observations and frozen policy state "
+            "without accepting the recorded live exit as replay evidence."
+        ),
+    )
     return parser
 
 

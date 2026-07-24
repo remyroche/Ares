@@ -52,6 +52,45 @@ def test_global_topk_surprise_targets_use_global_denominator() -> None:
     assert frame.loc[frame["url_demote_top10_population"].eq(1), "url_global_score_rank_pct"].min() >= 0.90
 
 
+def test_global_topk_can_disable_monthwise_rank_normalization() -> None:
+    frame = _panel()
+    frame.loc[:299, "month"] = "2026-01"
+    frame.loc[300:, "month"] = "2026-02"
+    # The second month contains all of the globally highest scores.  A global
+    # overlay population must therefore admit no January rows at top 10%.
+    frame.loc[:299, "score_meta_base_soft_label"] = np.linspace(
+        0.0, 0.4, 300, dtype=np.float32
+    )
+    frame.loc[300:, "score_meta_base_soft_label"] = np.linspace(
+        0.6, 1.0, 300, dtype=np.float32
+    )
+    global_rank = add_global_topk_surprise_targets(
+        frame,
+        config=EconomicRegimeRelevanceConfig(month_col=""),
+    )
+    assert int(global_rank.loc[:299, "url_trade_top10_population"].sum()) == 0
+    assert 0.09 <= float(global_rank["url_trade_top10_population"].mean()) <= 0.11
+
+
+def test_global_topk_preserves_frozen_parent_percentile_after_filtering() -> None:
+    frame = _panel().iloc[:100].copy()
+    # This mirrors a parent-score top-20 prefilter.  The score must remain its
+    # original global percentile: re-ranking these rows would turn 0.80 into
+    # the bottom of the local sample and manufacture a different top-10 set.
+    frame["parent_rank_v9"] = np.linspace(0.80, 0.99, len(frame), dtype=np.float32)
+    scored = add_global_topk_surprise_targets(
+        frame,
+        config=EconomicRegimeRelevanceConfig(
+            score_col="parent_rank_v9",
+            score_is_percentile=True,
+            month_col="",
+        ),
+    )
+    expected = frame["parent_rank_v9"].ge(0.90).to_numpy()
+    actual = scored["url_trade_top10_population"].astype(bool).to_numpy()
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_side_archetype_relevance_finds_negative_and_positive_states() -> None:
     frame = _panel()
     cfg = EconomicRegimeRelevanceConfig(

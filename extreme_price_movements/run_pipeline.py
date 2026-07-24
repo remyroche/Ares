@@ -168,6 +168,7 @@ import numpy as np
 import pandas as pd
 
 import extreme_price_movements.mask_optimiser as mask_opt
+from extreme_price_movements import hf_data_loader
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
     _compute_missing_funding_ranges,
@@ -1022,11 +1023,15 @@ def _find_latest_feature_ts(data_root):
 
 
 def run_download(cfg):
-    """Download OHLCV data from Binance for the full training universe."""
+    """Incrementally download configured-exchange OHLCV into the shared store."""
     cfg.setdefault("allow_15m_download", False)
     import time as _time
 
     from extreme_price_movements.hf_data_loader import sync_15m_ohlcv_range
+    from extreme_price_movements.raw_market_data_contract import (
+        repair_hourly_from_complete_15m,
+        refresh_raw_market_history,
+    )
 
     tprint("STEP: DOWNLOAD START")
     store = make_ohlcv_store(cfg)
@@ -1428,6 +1433,19 @@ def run_download(cfg):
             pass
         return max(since_15m, floor)
 
+    def _repair_missing_hourly_from_15m(
+        symbol: str,
+        df_15m: pd.DataFrame,
+    ) -> int:
+        """Fill only absent completed hourly bars from four Kraken 15m candles."""
+        repaired = repair_hourly_from_complete_15m(
+            store=store,
+            symbol=symbol,
+            frame_15m=df_15m,
+            persist=True,
+        )
+        return int(len(repaired))
+
     market_data_root = Path(scoped_data_root(cfg))
     ob_dir = market_data_root / "orderbook_hourly"
     fr_dir = market_data_root / "funding_hourly"
@@ -1679,9 +1697,50 @@ def run_download(cfg):
     success_15m, fail_15m = 0, 0
     skip_1h, skip_15m = 0, 0
     skip_small_1h, skip_small_15m = 0, 0
+    # Resolve local completeness first, then perform the network-bound hourly
+    # refresh through the same bounded-concurrency contract used by inference.
+    # The later loop still owns 15m gap repair and progress reporting.
+    precomputed_1h_status: dict[str, tuple[bool, float]] = {}
+    hourly_refresh_symbols: list[str] = []
+    for sym in fetch_syms:
+        if _check_complete:
+            status = _symbol_status_1h(sym)
+        else:
+            status = (False, 1e9)
+        precomputed_1h_status[str(sym)] = status
+        complete, missing_days = status
+        if not complete and missing_days >= _missing_lt_days:
+            hourly_refresh_symbols.append(str(sym))
+    try:
+        raw_workers = int(
+            os.environ.get(
+                "EPM_RAW_MARKET_DATA_WORKERS",
+                cfg.get("raw_market_data_workers", 8),
+            )
+            or 8
+        )
+    except (TypeError, ValueError):
+        raw_workers = 8
+    hourly_refresh = refresh_raw_market_history(
+        store=store,
+        exchange=ex,
+        symbols=hourly_refresh_symbols,
+        since_ts=since,
+        market_mode="perps" if use_perps else "spot",
+        spot_exchange=spot_aux_ex,
+        max_workers=raw_workers,
+        read_only=False,
+    )
+    hourly_updated = set(hourly_refresh.updated_symbols)
+    hourly_failed = dict(hourly_refresh.failed_symbols)
+    tprint(
+        "Canonical raw-market hourly refresh: "
+        f"requested={len(hourly_refresh_symbols)} updated={len(hourly_updated)} "
+        f"failed={len(hourly_failed)} workers={hourly_refresh.max_workers}"
+    )
     for i, sym in enumerate(fetch_syms):
         if _check_complete:
-            complete_1h, missing_1h_days = _symbol_status_1h(sym)
+            complete_1h, missing_1h_days = precomputed_1h_status[str(sym)]
             if _download_15m_enabled:
                 complete_15m, missing_15m_days = _symbol_status_15m(sym)
             else:
@@ -1699,22 +1758,31 @@ def run_download(cfg):
             skip_small_1h += 1
             symbol_1h_status = f"skip:recent_missing<{_missing_lt_days:g}d"
         else:
-            try:
-                if use_perps:
-                    store.update_symbol_perp(ex, sym, since_ms, spot_exchange=spot_aux_ex)
-                else:
-                    store.update_symbol(ex, sym, since_ms)
+            if str(sym) in hourly_updated:
                 success_1h += 1
                 symbol_1h_status = "write:ok"
-            except Exception as e:
+            else:
                 fail_1h += 1
-                symbol_1h_status = f"fail:{e.__class__.__name__}"
-                tprint(f"  FAIL 1h {sym}: {e}")
+                error = hourly_failed.get(str(sym), "missing_refresh_result")
+                symbol_1h_status = f"fail:{error.split(':', 1)[0]}"
+                tprint(f"  FAIL 1h {sym}: {error}")
 
         if not _download_15m_enabled:
             skip_15m += 1
             symbol_15m_status = "skip:disabled"
         elif complete_15m:
+            try:
+                from extreme_price_movements.hf_data_loader import _load_existing_data
+
+                cached_15m = _load_existing_data(sym, allow_quote_fallback=False)
+                repaired_hours = _repair_missing_hourly_from_15m(sym, cached_15m)
+                if repaired_hours:
+                    tprint(
+                        f"  REPAIR 1h {sym}: restored {repaired_hours} "
+                        "completed hour(s) from cached Kraken 15m candles"
+                    )
+            except Exception as exc:
+                tprint(f"  FAIL cached 15m hourly repair {sym}: {exc}")
             skip_15m += 1
         elif missing_15m_days < _missing_lt_days:
             skip_15m += 1
@@ -1743,6 +1811,12 @@ def run_download(cfg):
                     symbol_15m_status = "fail:empty"
                     tprint(f"  FAIL 15m {sym}: empty range")
                 else:
+                    repaired_hours = _repair_missing_hourly_from_15m(sym, df_15m)
+                    if repaired_hours:
+                        tprint(
+                            f"  REPAIR 1h {sym}: restored {repaired_hours} "
+                            "completed hour(s) from Kraken 15m candles"
+                        )
                     success_15m += 1
                     symbol_15m_status = "write:ok"
             except Exception as e:
@@ -3184,6 +3258,23 @@ def run_train_meta(cfg, ts_override=None, store=None):
             meta_state_path=meta_state_path,
         )
 
+        from extreme_price_movements.meta_postprocessor_pipeline import (
+            meta_postprocessor_enabled,
+            train_meta_postprocessors,
+        )
+
+        if meta_postprocessor_enabled(cfg):
+            tprint(
+                "TRAIN_META POSTPROCESSORS START: v9 tail95 -> market-state MLP "
+                "-> hierarchical expected EV"
+            )
+            postprocessor = train_meta_postprocessors(cfg, run_id=run_id)
+            tprint(
+                "TRAIN_META POSTPROCESSORS COMPLETE: "
+                f"policy={postprocessor['policy_id']} "
+                f"artifact={postprocessor['artifact_path']}"
+            )
+
         # Free memory before moving on
         del result
         gc.collect()
@@ -4136,6 +4227,7 @@ def _run_final_model_fit(
         run_train_meta(fit_cfg, ts_override=feature_run_id)
         _require_final_fit_artifacts(
             "train_meta",
+            "train_meta_postprocessors",
             ["models/model_state_meta.pkl"],
         )
 
@@ -4651,6 +4743,15 @@ def main():
         help="Optional horizon override. If omitted, use per-strategy runtime horizons.",
     )
     parser.add_argument(
+        "--policy-label-max-hold-hours",
+        type=int,
+        default=None,
+        help=(
+            "Labels mode only: override the policy-rollout target horizon. This "
+            "is distinct from --horizons, which controls source/candidate cells."
+        ),
+    )
+    parser.add_argument(
         "--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)"
     )
     parser.add_argument(
@@ -4825,10 +4926,22 @@ def main():
     os.environ["EPM_EXCHANGE"] = exchange_id
     _apply_market_mode_paths(cfg, market_mode)
     cfg["exchange_data_component"] = exchange_data_component(exchange_id, market_mode)
+    hf_15m_dir, hf_5m_dir = hf_data_loader.configure_hf_data_dirs(
+        cfg=cfg,
+        exchange_id=exchange_id,
+        market_mode=market_mode,
+        force_canonical=True,
+    )
+    cfg["hf_data_dir"] = str(hf_15m_dir)
+    cfg["hf_data_dir_5m"] = str(hf_5m_dir)
     tprint(
         f"Market mode: {cfg['market_mode']} "
         f"exchange={exchange_id} scope={cfg['exchange_data_component']} "
         f"(data_root={cfg['data_root']}, reports_root={cfg['reports_root']})"
+    )
+    tprint(
+        "Precise OHLCV store resolved: "
+        f"15m={cfg['hf_data_dir']} 5m={cfg['hf_data_dir_5m']}"
     )
     if market_mode == "perps":
         cfg = enable_perp_feature_keys(cfg)
@@ -4994,6 +5107,17 @@ def main():
     }:
         cfg["regime_adaptor.enabled"] = False
         tprint("Regime adaptors disabled by EPM_DISABLE_REGIME_ADAPTORS.")
+    if args.policy_label_max_hold_hours is not None:
+        if args.mode != "labels":
+            parser.error("--policy-label-max-hold-hours is valid only in labels mode")
+        if int(args.policy_label_max_hold_hours) < 1:
+            parser.error("--policy-label-max-hold-hours must be positive")
+        cfg["policy_label_max_hold_hours"] = int(args.policy_label_max_hold_hours)
+        tprint(
+            "Policy label rollout horizon override: "
+            f"{cfg['policy_label_max_hold_hours']}h"
+        )
+
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":
@@ -5050,6 +5174,23 @@ def main():
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "train_meta":
         run_train_meta(cfg, ts_override=args.ts_override)
+    elif args.mode == "train_meta_postprocessors":
+        ts_sig = _resolve_ts_sig(cfg, args.ts_override)
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+        else:
+            from extreme_price_movements.meta_postprocessor_pipeline import (
+                train_meta_postprocessors,
+            )
+
+            run_id = str(
+                cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")
+            ).strip()
+            result = train_meta_postprocessors(cfg, run_id=run_id)
+            tprint(
+                "TRAIN_META POSTPROCESSORS COMPLETE: "
+                f"policy={result['policy_id']} artifact={result['artifact_path']}"
+            )
     elif args.mode == "base_hpo":
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:

@@ -28,6 +28,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from extreme_price_movements import simple_policy_optimiser as spo  # noqa: E402
+from extreme_price_movements.timestamp_contract import (
+    causal_signal_times,
+    timeframe_delta,
+)  # noqa: E402
 from scripts.run_label_feature_store_model_smoke import _fit_predict, _month_model_frame  # noqa: E402
 from scripts.run_label_quality_proxy_diagnostics import (  # noqa: E402
     DEFAULT_FEATURE_DIR,
@@ -221,11 +225,31 @@ def _infer_side(labels_path: Path, explicit_side: str | None) -> str:
     return "long"
 
 
-def _policy_rows(frame: pd.DataFrame, *, side: str) -> pd.DataFrame:
+def _policy_rows(
+    frame: pd.DataFrame,
+    *,
+    side: str,
+    timeframe: str = "1h",
+) -> pd.DataFrame:
+    """Build replay rows while preserving the source feature timestamp externally.
+
+    The returned timestamp is only the executable path anchor.  Label callers
+    retain ``frame['__ts__']`` as the model row timestamp, so an hourly signal
+    observed over [t, t+1h) can be labelled from the first executable bar at
+    t+1h without leaking that candle's OHLC path into its outcome.
+    """
     side_val = -1.0 if str(side).lower() == "short" else 1.0
+    source_ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
+    _, decision_ts = causal_signal_times(
+        pd.DataFrame({"signal_bar_ts": source_ts}),
+        timeframe=timeframe,
+    )
     return pd.DataFrame(
         {
-            "timestamp": pd.to_datetime(frame["__ts__"], utc=True, errors="coerce"),
+            "timestamp": source_ts,
+            "signal_bar_ts": source_ts,
+            "signal_bar_close_ts": decision_ts,
+            "decision_ts": decision_ts,
             "symbol": frame["__symbol__"].astype(str),
             "side": np.full(len(frame), side_val, dtype=np.float32),
             "rank_pct": np.ones(len(frame), dtype=np.float32),
@@ -248,17 +272,40 @@ def _fetch_policy_paths(
     exchange: str,
     path_len: int,
     apply_delayed_entry: bool,
+    entry_delay_hours: int | None = None,
+    timeframe: str = "1h",
 ) -> tuple[pd.DataFrame, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], dict[str, Any]]:
-    rows = _policy_rows(frame, side=side)
+    mandatory_delay = timeframe_delta(timeframe)
+    if entry_delay_hours is not None and pd.Timedelta(hours=int(entry_delay_hours)) != mandatory_delay:
+        raise ValueError(
+            "entry_delay_hours is deprecated and must equal the signal timeframe; "
+            "the causal signal-close offset cannot be disabled or changed"
+        )
+    rows = _policy_rows(
+        frame,
+        side=side,
+        timeframe=timeframe,
+    )
     with _temporary_exchange(exchange):
-        ds = spo._make_policy_replay_store(str(data_root), str(market_mode))
-        paths = spo._fetch_policy_paths(rows, ds, path_len=int(path_len))
+        ds = spo._make_policy_replay_store(
+            str(data_root),
+            str(market_mode),
+            replay_timeframe="15m",
+        )
+        paths = spo._fetch_policy_paths(
+            rows,
+            ds,
+            path_len=int(path_len),
+            signal_timeframe=timeframe,
+        )
         if apply_delayed_entry:
             rows, paths = spo._apply_delayed_entry_execution_model(
                 rows,
                 paths,
                 data_root=str(data_root),
                 market_mode=str(market_mode),
+                signal_timeframe=timeframe,
+                path_timeframe=str(getattr(ds, "timeframe", "15m")),
             )
     finite_mask = spo._policy_path_finite_mask(paths)
     ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
@@ -276,6 +323,11 @@ def _fetch_policy_paths(
         "exchange": str(exchange),
         "side": str(side),
         "path_len": int(path_len),
+        "path_timeframe": str(getattr(ds, "timeframe", "15m")),
+        "mandatory_signal_close_offset": str(mandatory_delay),
+        "path_start_contract": (
+            "signal_timestamp_plus_timeframe_then_optional_delayed_execution"
+        ),
         "apply_delayed_entry": bool(apply_delayed_entry),
         "rows": int(len(frame)),
         "finite_path_rows": int(finite_mask.sum()),
@@ -697,6 +749,7 @@ def _first_touch_capture_outcome(
     round_trip_cost: float = ROUND_TRIP_COST,
     target_mode: str = "path_ordered",
     executable_cost_floor: float = EXECUTABLE_MARGIN_COST_FLOOR,
+    first_outcome_bar: int = 0,
 ) -> pd.DataFrame:
     if str(outcome_mode).strip().lower() in {"trailing_profit", "trailing", "trail"}:
         return _trailing_profit_capture_outcome(
@@ -707,6 +760,7 @@ def _first_touch_capture_outcome(
             round_trip_cost=round_trip_cost,
             target_mode=target_mode,
             executable_cost_floor=executable_cost_floor,
+            first_outcome_bar=first_outcome_bar,
         )
     f_opens, f_highs, f_lows, f_closes = paths
     n = len(frame)
@@ -733,6 +787,7 @@ def _first_touch_capture_outcome(
     cost_floor = max(float(round_trip_cost), float(executable_cost_floor))
     capture_net = np.full(n, -cost, dtype=np.float64)
 
+    first_outcome_bar = int(np.clip(first_outcome_bar, 0, max(f_opens.shape[1] - 1, 0)))
     fav = np.where(
         side[:, None] >= 0.0,
         (f_highs.astype(np.float64) - entry[:, None]) / np.maximum(entry[:, None], 1e-12),
@@ -745,14 +800,16 @@ def _first_touch_capture_outcome(
     )
     fav = np.where(np.isfinite(fav), np.maximum(fav, 0.0), np.nan)
     adv = np.where(np.isfinite(adv), np.maximum(adv, 0.0), np.nan)
-    full_path_max_fav = np.nanmax(fav, axis=1)
-    full_path_max_adv = np.nanmax(adv, axis=1)
+    outcome_fav = fav[:, first_outcome_bar:]
+    outcome_adv = adv[:, first_outcome_bar:]
+    full_path_max_fav = np.nanmax(outcome_fav, axis=1)
+    full_path_max_adv = np.nanmax(outcome_adv, axis=1)
     max_fav_to_decision = np.full(n, np.nan, dtype=np.float64)
     max_adv_to_decision = np.full(n, np.nan, dtype=np.float64)
 
     active = eligible.copy()
     max_tp_bar = max(0, int(math.floor(float(arm.max_bars_to_mfe))))
-    for j in range(f_opens.shape[1]):
+    for j in range(first_outcome_bar, f_opens.shape[1]):
         active_idx = np.flatnonzero(active)
         if len(active_idx) == 0:
             break
@@ -786,8 +843,12 @@ def _first_touch_capture_outcome(
             stop[stop_decided] = True
             capture_net[stop_decided] = -sl_ret[stop_decided] - cost
             first_bar[stop_decided] = float(j + 1)
-        max_fav_to_decision[decided] = np.nanmax(fav[decided, : j + 1], axis=1)
-        max_adv_to_decision[decided] = np.nanmax(adv[decided, : j + 1], axis=1)
+        max_fav_to_decision[decided] = np.nanmax(
+            fav[decided, first_outcome_bar : j + 1], axis=1
+        )
+        max_adv_to_decision[decided] = np.nanmax(
+            adv[decided, first_outcome_bar : j + 1], axis=1
+        )
         if np.any(both):
             same_bar_both[active_idx[both]] = True
         active[decided] = False
@@ -807,7 +868,7 @@ def _first_touch_capture_outcome(
         max_adv_to_decision[active_idx] = full_path_max_adv[active_idx]
 
     denom = np.maximum(tp_ret + sl_ret + cost, 1e-4)
-    path_order = _path_order_columns(fav, adv, barrier)
+    path_order = _path_order_columns(outcome_fav, outcome_adv, barrier)
     first_touch_mae_norm = max_adv_to_decision / np.maximum(barrier, 1e-8)
     target_soft = _path_ordered_capture_soft_target(
         capture_net=capture_net,
@@ -887,6 +948,7 @@ def _trailing_profit_capture_outcome(
     round_trip_cost: float = ROUND_TRIP_COST,
     target_mode: str = "path_ordered",
     executable_cost_floor: float = EXECUTABLE_MARGIN_COST_FLOOR,
+    first_outcome_bar: int = 0,
 ) -> pd.DataFrame:
     f_opens, f_highs, f_lows, f_closes = paths
     n = len(frame)
@@ -916,6 +978,7 @@ def _trailing_profit_capture_outcome(
     cost_floor = max(float(round_trip_cost), float(executable_cost_floor))
     capture_net = np.full(n, -cost, dtype=np.float64)
 
+    first_outcome_bar = int(np.clip(first_outcome_bar, 0, max(f_opens.shape[1] - 1, 0)))
     fav = np.where(
         side[:, None] >= 0.0,
         (f_highs.astype(np.float64) - entry[:, None]) / np.maximum(entry[:, None], 1e-12),
@@ -928,15 +991,17 @@ def _trailing_profit_capture_outcome(
     )
     fav = np.where(np.isfinite(fav), np.maximum(fav, 0.0), np.nan)
     adv = np.where(np.isfinite(adv), np.maximum(adv, 0.0), np.nan)
-    full_path_max_fav = np.nanmax(fav, axis=1)
-    full_path_max_adv = np.nanmax(adv, axis=1)
+    outcome_fav = fav[:, first_outcome_bar:]
+    outcome_adv = adv[:, first_outcome_bar:]
+    full_path_max_fav = np.nanmax(outcome_fav, axis=1)
+    full_path_max_adv = np.nanmax(outcome_adv, axis=1)
     max_fav_to_decision = np.full(n, np.nan, dtype=np.float64)
     max_adv_to_decision = np.full(n, np.nan, dtype=np.float64)
     best_fav = np.zeros(n, dtype=np.float64)
 
     active = eligible.copy()
     max_activation_bar = max(0, int(math.floor(float(arm.max_bars_to_mfe))))
-    for j in range(f_opens.shape[1]):
+    for j in range(first_outcome_bar, f_opens.shape[1]):
         active_idx = np.flatnonzero(active)
         if len(active_idx) == 0:
             break
@@ -978,8 +1043,12 @@ def _trailing_profit_capture_outcome(
                 stop[stop_decided] = True
                 capture_net[stop_decided] = -sl_ret[stop_decided] - cost
                 first_bar[stop_decided] = float(j + 1)
-            max_fav_to_decision[decided] = np.nanmax(fav[decided, : j + 1], axis=1)
-            max_adv_to_decision[decided] = np.nanmax(adv[decided, : j + 1], axis=1)
+            max_fav_to_decision[decided] = np.nanmax(
+                fav[decided, first_outcome_bar : j + 1], axis=1
+            )
+            max_adv_to_decision[decided] = np.nanmax(
+                adv[decided, first_outcome_bar : j + 1], axis=1
+            )
             active[decided] = False
 
         active_idx = np.flatnonzero(active)
@@ -1007,8 +1076,12 @@ def _trailing_profit_capture_outcome(
                 stop[stop_now] = True
                 capture_net[stop_now] = -sl_ret[stop_now] - cost
                 first_bar[stop_now] = float(j + 1)
-                max_fav_to_decision[stop_now] = np.nanmax(fav[stop_now, : j + 1], axis=1)
-                max_adv_to_decision[stop_now] = np.nanmax(adv[stop_now, : j + 1], axis=1)
+                max_fav_to_decision[stop_now] = np.nanmax(
+                    fav[stop_now, first_outcome_bar : j + 1], axis=1
+                )
+                max_adv_to_decision[stop_now] = np.nanmax(
+                    adv[stop_now, first_outcome_bar : j + 1], axis=1
+                )
                 active[stop_now] = False
             if len(activate_now):
                 activated[activate_now] = True
@@ -1048,7 +1121,7 @@ def _trailing_profit_capture_outcome(
         max_adv_to_decision[active_idx] = full_path_max_adv[active_idx]
 
     denom = np.maximum(activation_ret + sl_ret + trail_ret + cost, 1e-4)
-    path_order = _path_order_columns(fav, adv, barrier)
+    path_order = _path_order_columns(outcome_fav, outcome_adv, barrier)
     first_touch_mae_norm = max_adv_to_decision / np.maximum(barrier, 1e-8)
     target_soft = _path_ordered_capture_soft_target(
         capture_net=capture_net,

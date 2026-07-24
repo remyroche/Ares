@@ -11,8 +11,10 @@ import re
 import shutil
 import tempfile
 import time
+import uuid
 import zipfile
 from datetime import timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import ccxt
@@ -23,6 +25,7 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from extreme_price_movements.utils import retry_with_backoff, tprint
+from extreme_price_movements.timestamp_contract import to_utc_index, to_utc_timestamp
 
 SPOT_QUOTE_SUFFIXES = (
     "USDT",
@@ -183,8 +186,7 @@ def _normalize_feature_index(
 ):
     idx = pd.Index(idx_vals)
     if isinstance(idx, pd.DatetimeIndex):
-        normalized = idx.tz_localize(None) if idx.tz is not None else idx
-        return normalized, val_array, None
+        return to_utc_index(idx, errors="coerce"), val_array, None
 
     if np.issubdtype(idx.dtype, np.number):
         return None, None, "numeric_index"
@@ -206,7 +208,7 @@ def _normalize_feature_index(
     if valid_count == 0:
         return None, None, "unparseable_index"
 
-    normalized = pd.DatetimeIndex(converted[valid_mask]).tz_localize(None)
+    normalized = pd.DatetimeIndex(converted[valid_mask])
     if val_array is None:
         filtered_values = None
     else:
@@ -242,7 +244,7 @@ def _normalize_allowed_periods(
         end_ts = pd.to_datetime(end, utc=True, errors="coerce")
         if pd.isna(start_ts) or pd.isna(end_ts) or end_ts <= start_ts:
             continue
-        normalized.append((start_ts.tz_localize(None), end_ts.tz_localize(None)))
+        normalized.append((start_ts, end_ts))
     return normalized
 
 
@@ -253,7 +255,7 @@ def _apply_allowed_periods_mask(
     periods = _normalize_allowed_periods(allowed_periods)
     if not periods or df.empty:
         return df
-    idx = pd.to_datetime(df.index, utc=True, errors="coerce").tz_localize(None)
+    idx = to_utc_index(df.index, errors="coerce")
     mask = np.zeros(len(df), dtype=bool)
     for start_ts, end_ts in periods:
         mask |= (idx >= start_ts) & (idx < end_ts)
@@ -273,12 +275,7 @@ def _build_parquet_ts_filters(
     def _to_utc_filter_ts(ts: Optional[pd.Timestamp]) -> Optional[pd.Timestamp]:
         if ts is None:
             return None
-        out = pd.Timestamp(ts)
-        if out.tzinfo is None:
-            out = out.tz_localize("UTC")
-        else:
-            out = out.tz_convert("UTC")
-        return out
+        return to_utc_timestamp(ts)
 
     periods = _normalize_allowed_periods(allowed_periods)
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
@@ -481,6 +478,292 @@ def make_ohlcv_store(cfg: Dict[str, Any], *, timeframe: Optional[str] = None):
         root_dir=scoped_data_root(cfg),
         timeframe=timeframe or cfg.get("timeframe", "1h"),
     )
+
+
+RAW_MARKET_DATA_STORE_VERSION = 1
+
+
+def canonical_market_data_root(cfg: Dict[str, Any]) -> Path:
+    """Return the one exchange-scoped root for historical and live market data.
+
+    This deliberately shares the same root as :func:`make_ohlcv_store`.  The
+    input can be either an artifact root (``data_perp``) or an already scoped
+    exchange root (``data_perp/exchanges/krakenfutures``); ``scoped_data_root``
+    is idempotent for the latter.
+    """
+    return Path(scoped_data_root(dict(cfg or {})))
+
+
+EXECUTION_1M_OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
+
+
+def canonical_kraken_execution_1m_root(data_root: Union[str, Path]) -> Path:
+    """Resolve the sole Kraken Futures one-minute execution-data root.
+
+    ``data_root`` may be the artifact root, the already scoped Kraken Futures
+    root, or this execution root itself.  No legacy/nested cache location is
+    considered by this resolver.
+    """
+    root = Path(data_root)
+    if (
+        root.name == "execution_1m"
+        and root.parent.name == "krakenfutures"
+        and root.parent.parent.name == "exchanges"
+    ):
+        return root
+    if root.name == "krakenfutures" and root.parent.name == "exchanges":
+        return root / "execution_1m"
+    return root / "exchanges" / "krakenfutures" / "execution_1m"
+
+
+def _normalise_execution_1m_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate canonical one-minute candles without changing their values."""
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("execution_1m candles must be a DataFrame")
+    if frame.empty:
+        return pd.DataFrame(columns=["ts", *EXECUTION_1M_OHLCV_COLUMNS])
+    out = frame.copy()
+    if "ts" not in out.columns:
+        if not isinstance(out.index, pd.DatetimeIndex):
+            raise ValueError("execution_1m candles require a ts column or DatetimeIndex")
+        index_name = out.index.name or "index"
+        out = out.reset_index().rename(columns={index_name: "ts"})
+    missing = [column for column in EXECUTION_1M_OHLCV_COLUMNS if column not in out.columns]
+    if missing:
+        raise ValueError(f"execution_1m candles missing required columns: {missing}")
+    out = out[["ts", *EXECUTION_1M_OHLCV_COLUMNS]].copy()
+    out["ts"] = pd.to_datetime(out["ts"], utc=True, errors="raise")
+    if out["ts"].isna().any():
+        raise ValueError("execution_1m candles contain invalid timestamps")
+    minute_ns = int(pd.Timedelta(minutes=1).value)
+    if bool(np.any(out["ts"].astype("int64").to_numpy() % minute_ns)):
+        raise ValueError("execution_1m candles must be aligned to the UTC minute grid")
+    for column in EXECUTION_1M_OHLCV_COLUMNS:
+        out[column] = pd.to_numeric(out[column], errors="raise")
+        values = out[column].to_numpy(dtype=np.float64, copy=False)
+        if not np.isfinite(values).all():
+            raise ValueError(f"execution_1m candles contain non-finite {column} values")
+    return out.sort_values("ts", kind="mergesort").reset_index(drop=True)
+
+
+def _execution_1m_rows_equal(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    return all(left[column] == right[column] for column in EXECUTION_1M_OHLCV_COLUMNS)
+
+
+def _execution_1m_existing_rows(
+    root: Path,
+    symbol: str,
+    requested: set[int],
+) -> Dict[int, Dict[str, Any]]:
+    symbol_dir = root / "ohlcv" / f"symbol={str(symbol).replace('/', '_')}"
+    if not symbol_dir.exists() or not requested:
+        return {}
+    existing: Dict[int, Dict[str, Any]] = {}
+    for path in sorted(symbol_dir.glob("year=*/*.parquet")):
+        try:
+            part = _normalise_execution_1m_frame(pd.read_parquet(path))
+        except Exception as exc:
+            raise ValueError(f"invalid execution_1m part {path}: {exc}") from exc
+        part = part.loc[part["ts"].astype("int64").isin(requested)]
+        for row in part.to_dict(orient="records"):
+            key = int(pd.Timestamp(row["ts"]).value)
+            prior = existing.get(key)
+            if prior is not None and not _execution_1m_rows_equal(prior, row):
+                raise ValueError(
+                    f"conflicting immutable execution_1m rows for {symbol} at "
+                    f"{pd.Timestamp(key, tz='UTC').isoformat()}"
+                )
+            existing[key] = row
+    return existing
+
+
+def append_missing_kraken_execution_1m(
+    data_root: Union[str, Path],
+    symbol: str,
+    candles: pd.DataFrame,
+) -> Dict[str, Any]:
+    """Append only missing canonical Kraken Futures 1m candles.
+
+    The store never compacts or rewrites historical parts.  Duplicate candles
+    must be byte-for-byte equivalent in the OHLCV contract; otherwise a source
+    conflict is surfaced instead of selecting a winner.
+    """
+    incoming = _normalise_execution_1m_frame(candles)
+    root = canonical_kraken_execution_1m_root(data_root)
+    if incoming.empty:
+        return {"root": str(root), "input_rows": 0, "appended_rows": 0, "duplicate_rows": 0}
+
+    by_ts: Dict[int, Dict[str, Any]] = {}
+    for row in incoming.to_dict(orient="records"):
+        key = int(pd.Timestamp(row["ts"]).value)
+        prior = by_ts.get(key)
+        if prior is not None and not _execution_1m_rows_equal(prior, row):
+            raise ValueError(
+                f"conflicting execution_1m input rows for {symbol} at "
+                f"{pd.Timestamp(key, tz='UTC').isoformat()}"
+            )
+        by_ts[key] = row
+
+    symbol_dir = root / "ohlcv" / f"symbol={str(symbol).replace('/', '_')}"
+    symbol_dir.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(symbol_dir / ".append.lock")):
+        existing = _execution_1m_existing_rows(root, symbol, set(by_ts))
+        missing_rows: list[Dict[str, Any]] = []
+        duplicates = 0
+        for key, row in by_ts.items():
+            prior = existing.get(key)
+            if prior is None:
+                missing_rows.append(row)
+            elif _execution_1m_rows_equal(prior, row):
+                duplicates += 1
+            else:
+                raise ValueError(
+                    f"conflicting execution_1m append for {symbol} at "
+                    f"{pd.Timestamp(key, tz='UTC').isoformat()}"
+                )
+        for year, group in pd.DataFrame(missing_rows).groupby(
+            pd.to_datetime([row["ts"] for row in missing_rows], utc=True).year
+        ) if missing_rows else []:
+            part_dir = symbol_dir / f"year={int(year)}"
+            part_dir.mkdir(parents=True, exist_ok=True)
+            write_df = group.sort_values("ts", kind="mergesort").reset_index(drop=True)
+            ts_min = int(write_df["ts"].min().value // 10**9)
+            ts_max = int(write_df["ts"].max().value // 10**9)
+            filename = f"part-{uuid.uuid4().hex}-{ts_min}-{ts_max}.parquet"
+            target = part_dir / filename
+            tmp = part_dir / f".{filename}.tmp.{os.getpid()}"
+            try:
+                write_df.to_parquet(tmp, index=False, engine="pyarrow", compression="zstd")
+                os.replace(tmp, target)
+            finally:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    return {
+        "root": str(root),
+        "input_rows": int(len(incoming)),
+        "appended_rows": int(len(missing_rows)),
+        "duplicate_rows": int(duplicates),
+    }
+
+
+def read_kraken_execution_1m(
+    data_root: Union[str, Path],
+    symbol: str,
+    *,
+    start: Optional[pd.Timestamp] = None,
+    end: Optional[pd.Timestamp] = None,
+) -> pd.DataFrame:
+    """Read one symbol from the canonical immutable execution store."""
+    root = canonical_kraken_execution_1m_root(data_root)
+    symbol_dir = root / "ohlcv" / f"symbol={str(symbol).replace('/', '_')}"
+    if not symbol_dir.exists():
+        return pd.DataFrame(columns=EXECUTION_1M_OHLCV_COLUMNS)
+    start_ts = to_utc_timestamp(start) if start is not None else None
+    end_ts = to_utc_timestamp(end) if end is not None else None
+    years: Optional[set[int]] = None
+    if start_ts is not None and end_ts is not None:
+        years = set(range(int(start_ts.year), int(end_ts.year) + 1))
+    parts: list[pd.DataFrame] = []
+    for path in sorted(symbol_dir.glob("year=*/*.parquet")):
+        if years is not None:
+            try:
+                year = int(path.parent.name.split("=", 1)[1])
+            except (IndexError, ValueError):
+                year = None
+            if year is not None and year not in years:
+                continue
+        part = _normalise_execution_1m_frame(pd.read_parquet(path))
+        if start_ts is not None:
+            part = part.loc[part["ts"] >= start_ts]
+        if end_ts is not None:
+            part = part.loc[part["ts"] <= end_ts]
+        if not part.empty:
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame(columns=EXECUTION_1M_OHLCV_COLUMNS)
+    out = pd.concat(parts, ignore_index=True)
+    out = out.sort_values("ts", kind="mergesort")
+    duplicated = out.duplicated("ts", keep=False)
+    if duplicated.any():
+        for _, group in out.loc[duplicated].groupby("ts", sort=False):
+            reference = group.iloc[0]
+            if any(
+                not _execution_1m_rows_equal(reference, row)
+                for _, row in group.iloc[1:].iterrows()
+            ):
+                raise ValueError(
+                    f"conflicting immutable execution_1m rows for {symbol} at "
+                    f"{pd.Timestamp(group.iloc[0]['ts']).isoformat()}"
+                )
+        out = out.drop_duplicates("ts", keep="first")
+    return out.set_index("ts")[list(EXECUTION_1M_OHLCV_COLUMNS)]
+
+
+def canonical_hf_ohlcv_dir(
+    cfg: Dict[str, Any],
+    *,
+    timeframe: str = "15m",
+) -> Path:
+    """Resolve the exchange-scoped cache for precise OHLCV data.
+
+    Hourly OHLCV, 15-minute label/replay paths, and live gap repairs must have
+    a common exchange/source contract.  Keeping precise data below ``raw``
+    makes its provenance explicit while avoiding a second unscoped cache.
+    """
+    normalized = str(timeframe).strip().lower()
+    if normalized not in {"15m", "5m"}:
+        raise ValueError(f"Unsupported high-frequency timeframe: {timeframe!r}")
+    return canonical_market_data_root(cfg) / "raw" / f"ohlcv_{normalized}"
+
+
+def ensure_hf_ohlcv_store_contract(
+    cfg: Dict[str, Any],
+    *,
+    timeframe: str = "15m",
+) -> Path:
+    """Create and document the canonical high-frequency cache when it is used.
+
+    The tiny manifest is intentionally metadata-only: it never records a
+    mutable data watermark, so concurrent incremental downloaders can safely
+    share the cache without racing on a global progress file.
+    """
+    root = canonical_hf_ohlcv_dir(cfg, timeframe=timeframe)
+    root.mkdir(parents=True, exist_ok=True)
+    market_mode = str(
+        cfg.get("market_mode") or ("perps" if cfg.get("use_perps") else "spot")
+    ).strip().lower()
+    exchange_id = str(
+        cfg.get("exchange_id") or cfg.get("exchange") or _configured_exchange_id()
+    ).strip().lower()
+    payload = {
+        "version": RAW_MARKET_DATA_STORE_VERSION,
+        "kind": "exchange_scoped_precise_ohlcv",
+        "timeframe": str(timeframe).strip().lower(),
+        "market_mode": market_mode,
+        "exchange_data_component": exchange_data_component(exchange_id, market_mode),
+        "root": str(root),
+        "timestamp_timezone": "UTC",
+    }
+    manifest = root / "_store_contract.json"
+    existing: Dict[str, Any] = {}
+    if manifest.exists():
+        try:
+            existing = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+    if existing != payload:
+        tmp = manifest.with_name(f".{manifest.name}.tmp.{os.getpid()}")
+        try:
+            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+            os.replace(tmp, manifest)
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return root
 
 
 def _env_first(*names: str) -> str:
@@ -706,6 +989,11 @@ def _fetch_kraken_futures_historical_funding_rates(
     export_funding = _fetch_kraken_futures_exported_funding_rates(
         product_id, since_ms, until_ms
     )
+    native_enabled = str(
+        os.getenv("EPM_KRAKEN_NATIVE_FUNDING_ENABLED", "1")
+    ).strip().lower() not in {"0", "false", "no", "n", "off"}
+    if not native_enabled:
+        return export_funding
     url = "https://futures.kraken.com/derivatives/api/v3/historical-funding-rates"
     headers = {"User-Agent": _ARCHIVE_USER_AGENT}
     try:
@@ -1119,6 +1407,37 @@ def _fetch_kraken_futures_open_interest_analytics(
     df = pd.DataFrame(rows, columns=["ts", "value"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.floor("h")
     return df.groupby("ts")["value"].last().sort_index().astype(np.float32)
+
+
+def _kraken_oi_to_quote_notional(
+    oi_native: pd.Series,
+    price_frame: pd.DataFrame,
+) -> pd.Series:
+    """Convert Kraken analytics OI amounts to the canonical quote notional.
+
+    Kraken's chart analytics endpoint returns contract/base amounts, whereas
+    live ticker snapshots expose quote-notional OI. Persisting both unchanged
+    creates unit discontinuities in the shared sidecar. Kraken perpetual
+    contract amounts use a unit multiplier here, so contemporaneous perp close
+    is the required conversion factor.
+    """
+    if oi_native is None or oi_native.empty or price_frame is None or price_frame.empty:
+        return pd.Series(dtype=np.float32)
+    price: Optional[pd.Series] = None
+    if "mark_close" in price_frame.columns:
+        price = pd.to_numeric(price_frame["mark_close"], errors="coerce")
+    if "close" in price_frame.columns:
+        # Analytics OI can be present when the corresponding mark candle is
+        # absent. Use the regular perp close as a row-level fallback.
+        close = pd.to_numeric(price_frame["close"], errors="coerce")
+        price = close if price is None else price.where(price.notna(), close)
+    if price is None or not bool(price.notna().any()):
+        return pd.Series(dtype=np.float32)
+    price = price.reindex(oi_native.index)
+    native = pd.to_numeric(oi_native, errors="coerce")
+    quote = native * price
+    quote = quote.where(np.isfinite(quote) & (quote > 0.0))
+    return quote.astype(np.float32)
 
 
 def _coerce_trade_side_sign(item: dict) -> float:
@@ -2587,6 +2906,7 @@ def _enrich_perp_auxiliary_chunk(
         )
 
     oi = pd.Series(dtype=np.float32)
+    oi_from_kraken_analytics = False
     oi_floor_ms = _recent_history_floor_ms(
         "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
     )
@@ -2598,6 +2918,7 @@ def _enrich_perp_auxiliary_chunk(
             chunk_end_ms,
             timeframe=timeframe,
         )
+        oi_from_kraken_analytics = not oi.empty
     if (
         oi.empty
         and side_data_enabled
@@ -2711,6 +3032,8 @@ def _enrich_perp_auxiliary_chunk(
         except Exception as exc:
             tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
 
+    if oi_from_kraken_analytics:
+        oi = _kraken_oi_to_quote_notional(oi, chunk)
     chunk["funding_rate"] = funding.reindex(chunk.index).ffill().astype(np.float32)
     chunk["open_interest"] = oi.reindex(chunk.index).ffill().astype(np.float32)
     if "mark_close" in chunk.columns:
@@ -3558,6 +3881,7 @@ class PartitionedOHLCVStore:
                     )
 
                 oi = pd.Series(dtype=np.float32)
+                oi_from_kraken_analytics = False
                 oi_floor_ms = _recent_history_floor_ms(
                     "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
                 )
@@ -3569,6 +3893,7 @@ class PartitionedOHLCVStore:
                         chunk_end_ms,
                         timeframe=self.timeframe,
                     )
+                    oi_from_kraken_analytics = not oi.empty
                 if (
                     oi.empty
                     and
@@ -3694,6 +4019,8 @@ class PartitionedOHLCVStore:
                     except Exception as exc:
                         tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
 
+                if oi_from_kraken_analytics:
+                    oi = _kraken_oi_to_quote_notional(oi, chunk)
                 chunk["funding_rate"] = (
                     funding.reindex(chunk.index).ffill().astype(np.float32)
                 )
@@ -3753,9 +4080,13 @@ def _feature_delta_append_enabled() -> bool:
 
 def _feature_delta_compact_rows() -> int:
     try:
-        return max(1, int(os.getenv("EPM_FEATURE_DELTA_COMPACT_ROWS", "200")))
+        # DuckDB is the hot incremental layer.  Keeping a moderately sized
+        # buffer avoids rewriting the wide per-symbol parquet file on every
+        # hourly update while keeping filtered reads and eventual compaction
+        # bounded.  The environment override remains useful for repair jobs.
+        return max(1, int(os.getenv("EPM_FEATURE_DELTA_COMPACT_ROWS", "10_000")))
     except Exception:
-        return 200
+        return 10_000
 
 
 _DUCKDB_IMPORT_CACHE: Any | None = None
@@ -4239,6 +4570,66 @@ def get_feature_bounds(
     return _infer_feature_bounds_from_file(parquet_path)
 
 
+def _feature_part_may_match_ts_filters(parquet_path: str, filters) -> bool:
+    """Return whether a Parquet part can overlap the requested timestamp filters.
+
+    Feature delta parts retain their own timestamp index, but do not carry the
+    aggregate symbol metadata sidecar.  Reading the first and last row group is
+    much cheaper than materializing a wide part into pandas, and is sufficient
+    to skip a part only when it is provably outside every timestamp predicate.
+    Unknown bounds remain readable to preserve correctness for legacy files.
+    """
+    if not filters:
+        return True
+    first_ts, last_ts = _infer_feature_bounds_from_file(parquet_path)
+    if first_ts is None or last_ts is None:
+        return True
+
+    def _as_utc(value):
+        try:
+            ts = pd.Timestamp(value)
+            if ts.tzinfo is None:
+                return ts.tz_localize("UTC")
+            return ts.tz_convert("UTC")
+        except Exception:
+            return None
+
+    first_ts = _as_utc(first_ts)
+    last_ts = _as_utc(last_ts)
+    if first_ts is None or last_ts is None:
+        return True
+    filter_groups = [filters] if filters and isinstance(filters[0], tuple) else filters
+    for group in filter_groups or []:
+        group_may_match = True
+        saw_ts_filter = False
+        for item in group or []:
+            if not isinstance(item, tuple) or len(item) != 3:
+                continue
+            column, operator, value = item
+            if str(column) != "ts":
+                continue
+            value_ts = _as_utc(value)
+            if value_ts is None:
+                continue
+            saw_ts_filter = True
+            op = "==" if str(operator) == "=" else str(operator)
+            if op == ">=" and last_ts < value_ts:
+                group_may_match = False
+            elif op == ">" and last_ts <= value_ts:
+                group_may_match = False
+            elif op == "<=" and first_ts > value_ts:
+                group_may_match = False
+            elif op == "<" and first_ts >= value_ts:
+                group_may_match = False
+            elif op == "==" and (value_ts < first_ts or value_ts > last_ts):
+                group_may_match = False
+            if not group_may_match:
+                break
+        if not saw_ts_filter or group_may_match:
+            return True
+    return False
+
+
 def _read_feature_part(
     parquet_path: str,
     columns: list[str] | None = None,
@@ -4253,6 +4644,8 @@ def _read_feature_part(
     requested = list(columns) if columns is not None else None
 
     for part_path in part_paths:
+        if not _feature_part_may_match_ts_filters(part_path, filters):
+            continue
         try:
             part_schema = set(pq.ParquetFile(part_path).schema.names)
         except Exception:
@@ -4277,11 +4670,13 @@ def _read_feature_part(
             else:
                 raise
         if requested is not None:
-            missing = [c for c in requested if c not in frame.columns and c in schema_names]
-            for col in missing:
-                frame[col] = np.nan
-            ordered = [c for c in requested if c in frame.columns]
-            frame = frame[ordered]
+            # Materialize sparse legacy columns in one allocation. Repeated
+            # column insertion fragments these very wide feature frames and
+            # makes narrow historical parity reads needlessly expensive.
+            ordered = [
+                c for c in requested if c in frame.columns or c in schema_names
+            ]
+            frame = frame.reindex(columns=ordered)
         frames.append(frame)
 
     duckdb_frame = _read_feature_delta_duckdb(
@@ -4415,7 +4810,8 @@ def _write_feature_delta_part(parquet_path: str, symbol: str, new_data: pd.DataF
 
 def compact_symbol_feature_deltas(parquet_path: str, symbol: str) -> int:
     parts = _list_feature_delta_parts(parquet_path)
-    if not parts:
+    duckdb_rows = _feature_delta_duckdb_row_count(parquet_path)
+    if not parts and duckdb_rows <= 0:
         return 0
     combined = read_symbol_features(parquet_path)
     if combined.empty:
@@ -4518,10 +4914,13 @@ def append_symbol_features(
                         f"symbol={symbol} rows={len(delta_data)} cols={len(delta_data.columns)} "
                         f"elapsed={append_elapsed:.1f}s path={os.path.basename(parquet_path)}"
                     )
-                if (
-                    not _feature_delta_duckdb_enabled()
-                    and _feature_delta_row_count(parquet_path) >= _feature_delta_compact_rows()
-                ):
+                # Both parquet delta parts and the DuckDB append buffer are
+                # transient representations of the same per-symbol feature
+                # stream.  Compact either representation once their combined
+                # row count crosses the configured budget.  Previously this
+                # was disabled when DuckDB was enabled, leaving its buffer to
+                # grow forever and making storage/read behavior diverge.
+                if _feature_delta_row_count(parquet_path) > _feature_delta_compact_rows():
                     compact_symbol_feature_deltas(parquet_path, symbol)
                 return written_rows
             return 0
@@ -5009,7 +5408,6 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     start_load = time.time()
     total_files = len(files)
     progress_every = 25 if total_files >= 100 else 10
-
     for i, fpath in enumerate(files, start=1):
         try:
             fname = os.path.basename(fpath)
@@ -5064,6 +5462,16 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     return feats_out
 
 
+def _static_feature_store_verbose() -> bool:
+    """Keep per-column static-store diagnostics opt-in for wide replay reads."""
+    return str(os.getenv("EPM_STATIC_FEATURE_STORE_VERBOSE", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 class LazyFeatureDict:
     def __init__(self, raw_data_buffers, symbol_indices=None):
         self._raw = raw_data_buffers
@@ -5074,7 +5482,7 @@ class LazyFeatureDict:
         if k in self._assembled:
             return self._assembled[k]
         if k in self._raw:
-            if log:
+            if log and _static_feature_store_verbose():
                 from extreme_price_movements.utils import tprint
 
                 tprint(f"Lazy-assembling DataFrame for '{k}'...")
@@ -5108,12 +5516,12 @@ class LazyFeatureDict:
                 if not series.index.is_unique:
                     series = series[~series.index.duplicated(keep="last")]
                 clean_data[sym] = series
-            if skipped_symbols:
+            if skipped_symbols and _static_feature_store_verbose():
                 tprint(
                     f"Lazy feature assembly skipped {len(skipped_symbols)} symbols for '{k}' "
                     f"due to invalid indices. Sample: {skipped_symbols[:5]}"
                 )
-            if normalized_symbols:
+            if normalized_symbols and _static_feature_store_verbose():
                 tprint(
                     f"Lazy feature assembly normalized {len(normalized_symbols)} symbols for '{k}'. "
                     f"Sample: {normalized_symbols[:5]}"
@@ -5131,7 +5539,8 @@ class LazyFeatureDict:
         if total == 0:
             return
 
-        tprint(f"Pre-materializing {total} feature matrices in grouped mode...")
+        if _static_feature_store_verbose():
+            tprint(f"Pre-materializing {total} feature matrices in grouped mode...")
         clean_data_by_key: dict[str, dict[str, pd.Series]] = {
             k: {} for k in target_keys
         }
@@ -5184,17 +5593,17 @@ class LazyFeatureDict:
             )
             self._assembled[k] = df
             self._raw.pop(k, None)
-            if skipped_by_key[k]:
+            if skipped_by_key[k] and _static_feature_store_verbose():
                 tprint(
                     f"Lazy feature assembly skipped {len(skipped_by_key[k])} symbols for '{k}' "
                     f"due to invalid indices. Sample: {skipped_by_key[k][:5]}"
                 )
-            if normalized_by_key[k]:
+            if normalized_by_key[k] and _static_feature_store_verbose():
                 tprint(
                     f"Lazy feature assembly normalized {len(normalized_by_key[k])} symbols for '{k}'. "
                     f"Sample: {normalized_by_key[k][:5]}"
                 )
-            if i % progress_every == 0 or i == total:
+            if _static_feature_store_verbose() and (i % progress_every == 0 or i == total):
                 tprint(
                     f"  Grouped feature materialization progress: {i}/{total} "
                     f"({(100.0 * i / max(1, total)):.1f}%)"
@@ -5237,6 +5646,105 @@ class LazyFeatureDict:
         if isinstance(payload, dict):
             return set(str(sym) for sym in payload.keys())
         return set()
+
+    def symbol_frame(self, symbol, keys=None):
+        """Materialize many features for one symbol without wide panels.
+
+        The normal lazy API returns one timestamp x symbol DataFrame per
+        feature. Training handoffs commonly need the inverse layout: one
+        timestamp x feature frame for one symbol. Building it directly from
+        the same normalized raw buffers avoids thousands of temporary
+        one-column DataFrames while preserving the logical store view.
+        """
+
+        symbol = str(symbol)
+        target_keys = (
+            list(self.keys()) if keys is None else [key for key in keys if key in self]
+        )
+        shared_raw_index = self._symbol_indices.get(symbol)
+        shared_normalized_index = None
+        if shared_raw_index is not None:
+            shared_normalized_index, _, _ = _normalize_feature_index(
+                shared_raw_index,
+            )
+        common_raw_index = None
+        direct_columns: dict[str, np.ndarray] = {}
+        irregular_columns: list[tuple[str, object, np.ndarray]] = []
+        for key in target_keys:
+            if key in self._assembled:
+                panel = self._assembled.get(key)
+                if isinstance(panel, pd.DataFrame) and symbol in panel.columns:
+                    normalized_idx = panel.index
+                    normalized_vals = panel[symbol].to_numpy(copy=False)
+                else:
+                    continue
+            else:
+                payload_by_symbol = self._raw.get(key)
+                if not isinstance(payload_by_symbol, dict):
+                    continue
+                payload = payload_by_symbol.get(symbol)
+                if payload is None:
+                    continue
+                if isinstance(payload, tuple) and len(payload) == 2:
+                    idx_vals, val_array = payload
+                    normalized_idx, normalized_vals, _ = _normalize_feature_index(
+                        idx_vals,
+                        val_array,
+                    )
+                else:
+                    idx_vals = shared_raw_index
+                    val_array = payload
+                    normalized_idx = shared_normalized_index
+                    normalized_vals = val_array
+                if idx_vals is None:
+                    continue
+                if normalized_idx is None or normalized_vals is None:
+                    continue
+            values = np.asarray(normalized_vals)
+            if common_raw_index is None:
+                common_raw_index = normalized_idx
+                direct_columns[str(key)] = values
+                continue
+            same_index = normalized_idx is common_raw_index
+            if not same_index and len(normalized_idx) == len(common_raw_index):
+                same_index = bool(
+                    np.array_equal(
+                        np.asarray(normalized_idx),
+                        np.asarray(common_raw_index),
+                    )
+                )
+            if same_index:
+                direct_columns[str(key)] = values
+            else:
+                irregular_columns.append((str(key), normalized_idx, values))
+        if common_raw_index is None:
+            return pd.DataFrame()
+        common_index = pd.DatetimeIndex(
+            pd.to_datetime(common_raw_index, utc=True, errors="coerce"),
+            tz="UTC",
+        )
+        keep = ~common_index.duplicated(keep="last")
+        if bool(np.all(keep)):
+            frame = pd.DataFrame(direct_columns, index=common_index, copy=False)
+        else:
+            frame = pd.DataFrame(
+                {key: values[keep] for key, values in direct_columns.items()},
+                index=common_index[keep],
+                copy=False,
+            )
+        if irregular_columns:
+            aligned: dict[str, pd.Series] = {}
+            for key, raw_index, values in irregular_columns:
+                index = pd.DatetimeIndex(
+                    pd.to_datetime(raw_index, utc=True, errors="coerce"),
+                    tz="UTC",
+                )
+                series = pd.Series(values, index=index, copy=False)
+                if not series.index.is_unique:
+                    series = series[~series.index.duplicated(keep="last")]
+                aligned[key] = series
+            frame = pd.concat([frame, pd.DataFrame(aligned)], axis=1, copy=False)
+        return frame.sort_index()
 
     def latest_values_at(self, k, symbols, ts, *, stale_sensitive=False):
         """Return feature values for symbols at or before ts without wide assembly."""
@@ -5410,6 +5918,24 @@ def load_features_selected(
     start_load = time.time()
     total_files = len(files)
     progress_every = 25 if total_files >= 100 else 10
+    try:
+        release_every = max(
+            0, int(os.getenv("EPM_FEATURE_SELECTED_RELEASE_MEMORY_EVERY", "0") or "0")
+        )
+    except ValueError:
+        release_every = 0
+
+    def _release_selected_read_memory(completed: int) -> None:
+        """Return transient Arrow scan buffers during large bounded reads."""
+        if release_every <= 0 or completed % release_every:
+            return
+        _gc.collect()
+        try:
+            import pyarrow as pa
+
+            pa.default_memory_pool().release_unused()
+        except Exception:
+            pass
 
     def _read_one_selected_feature_file(fpath: str):
         try:
@@ -5549,6 +6075,7 @@ def load_features_selected(
                         f"Error loading {future_to_path.get(future, '<unknown>')}: {exc}"
                     )
                 completed += 1
+                _release_selected_read_memory(completed)
                 if completed % progress_every == 0 or completed == total_files:
                     elapsed = time.time() - start_load
                     tprint(
@@ -5558,6 +6085,7 @@ def load_features_selected(
     else:
         for i, fpath in enumerate(files, start=1):
             _ingest_selected_feature_result(_read_one_selected_feature_file(fpath))
+            _release_selected_read_memory(i)
             if i % progress_every == 0 or i == total_files:
                 elapsed = time.time() - start_load
                 tprint(
@@ -5703,6 +6231,7 @@ def write_live_latest_feature_matrix(
     feat_index: pd.Index | None = None,
     feat_columns: list | None = None,
     merge_existing: bool = True,
+    overwrite_existing: bool = False,
 ) -> None:
     """Persist one live-hour feature matrix for fast inference loading.
 
@@ -5735,7 +6264,17 @@ def write_live_latest_feature_matrix(
                 for col in matrix.columns:
                     incoming = matrix[col].reindex(merged_index)
                     if col in merged.columns:
-                        merged[col] = incoming.combine_first(merged[col])
+                        # Exact-hour model features are immutable by default.
+                        # Missing-key/dependency repairs often recompute a
+                        # broader workset; allowing those incidental columns
+                        # to replace finite cached values makes predictions
+                        # depend on request order. Explicit data repairs may
+                        # opt into replacement below.
+                        merged[col] = (
+                            incoming.combine_first(merged[col])
+                            if overwrite_existing
+                            else merged[col].combine_first(incoming)
+                        )
                     else:
                         merged[col] = incoming
                 matrix = merged
@@ -5758,6 +6297,8 @@ def write_live_latest_feature_matrix(
                     separators=(",", ":"),
                 ).encode("utf-8")
             ).hexdigest(),
+            "merge_existing": bool(merge_existing),
+            "overwrite_existing": bool(overwrite_existing),
         }
         with open(tmp_meta, "w") as f:
             json.dump(meta, f, sort_keys=True)

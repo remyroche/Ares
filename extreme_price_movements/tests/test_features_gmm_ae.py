@@ -132,6 +132,24 @@ def test_ae_gmm_max_train_rows_zero_means_unbounded():
     assert state.get("gmm_n_components", 0) >= 2
 
 
+def test_outcome_free_cycle_fit_rejects_realized_targets():
+    rng = np.random.default_rng(125)
+    x = pd.DataFrame(
+        rng.normal(size=(220, 4)).astype("float32"),
+        columns=[f"f{i}" for i in range(4)],
+    )
+
+    with pytest.raises(ValueError, match="forbidden outcome keys"):
+        fit_ae_gmm_state(
+            x,
+            economic_targets={"returns": rng.normal(size=len(x))},
+            outcome_free=True,
+            temporal_feature_contract="row_independent_v1",
+            max_train_rows=220,
+            ae_max_iter=2,
+        )
+
+
 def test_ae_gmm_model_features_default_to_continuous_not_hard_cluster_ids():
     import extreme_price_movements.lgbm_pipeline as lp
 

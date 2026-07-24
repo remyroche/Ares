@@ -11,11 +11,18 @@ Apply an embargo based on the maximum target/execution horizon.
 
 ## 2. Fitted Transform Leakage
 
-Fit scalers, imputers, encoders, AE/GMM, calibration maps, cluster priors, and
-drift references on training rows only. OOS rows receive frozen transforms.
+Fit imputers, encoders, calibration maps, cluster priors, and drift references
+on the rows permitted by their training contract. OOS rows receive frozen
+transforms.
 
-Do not refit AE/GMM on each growing OOS window when posterior semantics are
-expected to remain comparable.
+The production AE/GMM representation is fitted exactly once per model cycle,
+at feature-selection/HPO time, from sampled beginning/middle/end rows of the
+designated cycle reference period. The exact scaler/AE/GMM state and input order
+are reused for all growing base/meta windows, final refits, replay, and
+inference. This may expose the unsupervised representation to later covariate
+distributions, so it is representation-selection leakage and must be disclosed.
+It may not use outcomes, labels, or future-derived weights. Do not describe
+those rows as an untouched final test of representation discovery.
 
 ## 3. Feature Selection And HPO Leakage
 

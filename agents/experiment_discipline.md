@@ -46,12 +46,16 @@ For the current LGBM path:
 
 ## 4. AE/GMM State
 
-Fit AE/GMM once on authorized pre-OOS data and freeze it across subsequent folds.
-Sample across multiple training subperiods. The current intended scale is about
-15k AE rows and up to 100k GMM rows when available. Record actual support.
+Fit AE/GMM once per cycle at the feature-selection/HPO reference stage and
+freeze that exact state across subsequent growing folds and final refits.
+Sample beginning/middle/end subperiods rather than the full period. The current
+intended scale is about 15k AE rows and up to 100k GMM rows when available.
+Record actual support, dates, input order, state hash, and the fact that later
+covariates may have informed this unsupervised representation.
 
-Do not select cluster count or semantics using the OOS months later reported as
-evidence.
+Do not use outcomes to select cluster count or semantics. Months used in the
+cycle reference are not an untouched test of representation discovery, even
+when supervised model predictions for those months remain walk-forward OOS.
 
 Base and meta experiments must preserve archetype identity. Meta experiments
 must compare archetype-aware arms against a matched baseline meta model on the

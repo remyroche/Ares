@@ -56,6 +56,27 @@ def _safe_numeric(values: Any) -> pd.Series:
 
 def _target_from_frame(frame: pd.DataFrame, metrics: pd.DataFrame, *, target_mode: str) -> pd.DataFrame:
     mode = str(target_mode)
+    if mode == "p90_trailing_blend":
+        required = ("__p90_trailing_target_soft__", "__p90_trailing_target_hard__")
+        missing = [column for column in required if column not in frame.columns]
+        if missing:
+            raise ValueError(
+                "p90_trailing_blend requires the keyed target sidecar; "
+                f"missing={missing}"
+            )
+        return pd.DataFrame(
+            {
+                "target_soft": _safe_numeric(frame[required[0]]).fillna(0.0).clip(0.0, 1.0).astype(np.float32),
+                "target_hard": _safe_numeric(frame[required[1]]).fillna(0.0).clip(0.0, 1.0).astype(np.float32),
+            },
+            index=frame.index,
+        )
+    if mode == "side_continuous_geometry_v1":
+        from extreme_price_movements.base_side_target_contract import (
+            build_promoted_side_target,
+        )
+
+        return build_promoted_side_target(frame)
     if mode.startswith("column:"):
         parts = mode.split(":", 2)
         if len(parts) != 3 or not parts[1] or not parts[2]:

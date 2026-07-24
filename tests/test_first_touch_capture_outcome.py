@@ -10,12 +10,31 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.run_label_first_touch_capture_proxy import _first_touch_capture_outcome
+from scripts.run_label_first_touch_capture_proxy import (
+    _first_touch_capture_outcome,
+    _policy_rows,
+)
 from scripts.run_label_widestop_capture_proxy import CaptureArm, _selection_metrics
 
 
 def _frame() -> pd.DataFrame:
     return pd.DataFrame({"__barrier_pct__": [0.01]})
+
+
+def test_candle_close_policy_path_starts_one_hour_after_signal_timestamp() -> None:
+    frame = pd.DataFrame(
+        {
+            "__ts__": [pd.Timestamp("2026-01-01 12:00:00", tz="UTC")],
+            "__symbol__": ["BTC/USD:USD"],
+            "__barrier_pct__": [0.01],
+        }
+    )
+
+    rows = _policy_rows(frame, side="long", timeframe="1h")
+
+    assert frame.loc[0, "__ts__"] == pd.Timestamp("2026-01-01 12:00:00", tz="UTC")
+    assert rows.loc[0, "timestamp"] == pd.Timestamp("2026-01-01 12:00:00", tz="UTC")
+    assert rows.loc[0, "decision_ts"] == pd.Timestamp("2026-01-01 13:00:00", tz="UTC")
 
 
 def test_first_touch_mae_is_truncated_at_tp_decision_bar() -> None:
@@ -73,6 +92,40 @@ def test_first_touch_short_uses_mirrored_path_geometry() -> None:
     assert out.loc[0, "mae_to_sl"] == pytest.approx(0.2)
     assert out.loc[0, "mfe_to_tp"] == pytest.approx(1.2)
     assert out.loc[0, "full_path_mae_to_sl"] == pytest.approx(6.0)
+
+
+@pytest.mark.parametrize("outcome_mode", ["fixed_tp", "trailing_profit"])
+def test_delayed_execution_skips_fill_minute_outcome_extremes(outcome_mode: str) -> None:
+    arm = CaptureArm(
+        "test",
+        tp_r=1.0,
+        sl_r=1.0,
+        max_bars_to_mfe=10.0,
+        max_barrier=0.03,
+        trail_r=0.50,
+    )
+    paths = (
+        np.array([[100.0, 100.0, 100.0]], dtype=float),
+        np.array([[120.0, 100.4, 100.5]], dtype=float),
+        np.array([[80.0, 99.7, 99.8]], dtype=float),
+        np.array([[100.0, 100.1, 100.2]], dtype=float),
+    )
+
+    out = _first_touch_capture_outcome(
+        _frame(),
+        paths,
+        arm,
+        side_name="long",
+        outcome_mode=outcome_mode,
+        round_trip_cost=0.0,
+        first_outcome_bar=1,
+    )
+
+    assert out.loc[0, "capture_hit"] == 0.0
+    assert out.loc[0, "capture_stop"] == 0.0
+    assert out.loc[0, "capture_timeout"] == 1.0
+    assert out.loc[0, "full_path_mfe_norm"] == pytest.approx(0.5)
+    assert out.loc[0, "full_path_mae_norm"] == pytest.approx(0.3)
 
 
 def test_path_ordered_soft_target_demotes_adverse_first_hit() -> None:

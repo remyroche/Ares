@@ -180,6 +180,104 @@ def test_lgbm_penalties_default_to_current_winner_setup():
     assert lp.LGBM_IMPORTANCE_INSTABILITY_ENABLE is False
 
 
+def test_side_mda_across_archetypes_uses_economic_weights_only(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_PER_SIDE_FEATURE_SELECTION", True)
+    monkeypatch.setattr(lp, "LGBM_PER_SIDE_MIN_ROWS", 1)
+    calls = []
+
+    def fake_redundancy(
+        X,
+        features,
+        score_map,
+        *,
+        random_state,
+        archetype_labels=None,
+    ):
+        assert archetype_labels is None
+        return list(features)
+
+    def fake_prune(
+        X,
+        y,
+        sample_weight,
+        features,
+        **kwargs,
+    ):
+        calls.append(
+            {
+                "weights": np.asarray(sample_weight, dtype=np.float32),
+                "archetypes": kwargs.get("archetype_labels"),
+                "mda_config": dict(kwargs.get("mda_config") or {}),
+            }
+        )
+        return (
+            list(features),
+            [],
+            pd.DataFrame({"feature": list(features)}),
+            np.zeros(len(y), dtype=np.float32),
+            {"J_final": 0.0, "J_base": 0.0, "J_meta": 0.0},
+        )
+
+    monkeypatch.setattr(lp, "_redundancy_cluster_filter", fake_redundancy)
+    monkeypatch.setattr(lp, "_iterative_feature_prune", fake_prune)
+    monkeypatch.setattr(
+        lp,
+        "_ensure_feature_family_coverage",
+        lambda selected, *_args, **_kwargs: list(selected),
+    )
+
+    X = pd.DataFrame(
+        {
+            "f1": np.arange(8, dtype=np.float32),
+            "side_name": ["long"] * 4 + ["short"] * 4,
+        }
+    )
+    economic_weights = np.asarray(
+        [0.5, 1.0, 1.5, 2.0, 0.5, 1.0, 1.5, 2.0],
+        dtype=np.float32,
+    )
+    archetype_balanced_weights = np.asarray(
+        [50.0, 1.0, 50.0, 1.0, 1.0, 50.0, 1.0, 50.0],
+        dtype=np.float32,
+    )
+    _, _, _, _, _, metrics = lp._run_lgbm_side_aware_feature_selection_tail(
+        X,
+        np.linspace(-1.0, 1.0, len(X), dtype=np.float32),
+        archetype_balanced_weights,
+        ["f1"],
+        {"f1": 1.0},
+        classifier=False,
+        random_state=7,
+        objective_mode="train_meta",
+        mda_config={
+            "archetype_conditioned_enabled": True,
+            "side_tail_across_archetypes_unweighted": True,
+        },
+        label_context={
+            "side_name": X["side_name"].to_numpy(),
+            "feature_selection_archetype": np.asarray(
+                ["a", "a", "b", "b", "a", "a", "b", "b"],
+                dtype=object,
+            ),
+            "side_mda_sample_weight": economic_weights,
+        },
+    )
+
+    assert len(calls) == 2
+    np.testing.assert_allclose(calls[0]["weights"], [0.4, 0.8, 1.2, 1.6])
+    np.testing.assert_allclose(calls[1]["weights"], [0.4, 0.8, 1.2, 1.6])
+    assert all(call["archetypes"] is None for call in calls)
+    assert all(
+        call["mda_config"]["archetype_conditioned_enabled"] is False
+        for call in calls
+    )
+    assert metrics["per_side_mda_across_archetypes_unweighted"] is True
+    assert all(
+        side_metrics["weight_source"] == "economic_tail_only"
+        for side_metrics in metrics["per_side_feature_selection_side_metrics"].values()
+    )
+
+
 def test_tail_control_metric_math_and_week_asset_tails(monkeypatch):
     monkeypatch.setattr(lp, "LGBM_TAIL_WEEK_MIN_ROWS", 8)
     monkeypatch.setattr(lp, "LGBM_TAIL_ASSET_MIN_ROWS", 8)
@@ -380,6 +478,41 @@ def test_train_meta_recent_coverage_exempts_model_derived_features(monkeypatch):
     assert "pred_demo_H10_vote_entropy" in survivors
     assert diagnostics["feature_recent_exempt_model_derived_count"] == 6
     assert diagnostics["feature_recent_joint_coverage"] == pytest.approx(1.0)
+
+
+def test_joint_feature_coverage_excludes_warmup_and_removes_minimum_blocker():
+    n = 1_000
+    timestamps = pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC")
+    first_missing = np.ones(n, dtype=np.float32)
+    second_missing = np.ones(n, dtype=np.float32)
+    first_missing[24:84] = np.nan
+    second_missing[84:144] = np.nan
+    warmup_missing = np.ones(n, dtype=np.float32)
+    warmup_missing[:24] = np.nan
+    X = pd.DataFrame(
+        {
+            "always": np.ones(n, dtype=np.float32),
+            "warmup_missing": warmup_missing,
+            "first_missing": first_missing,
+            "second_missing": second_missing,
+        }
+    )
+
+    survivors, diagnostics = lp._recent_feature_coverage_survivors(
+        X,
+        timestamps,
+        require_joint_complete_case=True,
+        min_feature_coverage=0.90,
+        coverage_scope="all_post_warmup",
+        warmup_days=1,
+    )
+
+    assert "always" in survivors
+    assert "warmup_missing" in survivors
+    assert len({"first_missing", "second_missing"} & set(survivors)) == 1
+    assert diagnostics["feature_recent_window_start"].startswith("2026-01-02")
+    assert diagnostics["feature_recent_joint_coverage"] >= 0.90
+    assert diagnostics["feature_recent_removed_count"] == 1
 
 
 def test_bounded_importance_instability_properties():

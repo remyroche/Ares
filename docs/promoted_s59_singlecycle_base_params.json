@@ -1,0 +1,61 @@
+{
+  "recipe_name": "s59_singlecycle_global_mda_cum99_base_process",
+  "contract_kind": "process_and_model_params_not_frozen_feature_names",
+  "base_feature_selection_contract": "base_single_cycle_global_economic_mda_cumulative_positive_99pct_v1",
+  "source_output_dir": "data_perp/reports/s59_h5_singlecycle_aegmm_bme_fs_fixedparams_wf30_20260716_v1",
+  "source_labels_path": "data_perp/artifacts/20260713_s59_h5_fullthroughjul10_trailing_cost100bps_labels/labels",
+  "default_selected_features_path": "data_perp/reports/s59_h5_singlecycle_aegmm_bme_fs_fixedparams_wf30_20260716_v1/topk_lgbm_feature_selection_by_fold.csv",
+  "default_ae_gmm_state_path": "data_perp/reports/s59_h5_singlecycle_aegmm_bme_fs_fixedparams_wf30_20260716_v1/ae_gmm_states/cycle__global_state.pkl",
+  "default_ae_gmm_learned_transform_hash": "39be07d864a637f3a68293c166f70945b55d713dcf98a6bf1eec4885c8fc815e",
+  "default_ae_gmm_reuse_policy": "reuse_promoted_state_unless_rerun_ae_gmm_hpo",
+  "production_refit": {
+    "model_name": "s59_h5_benchmark66_matchedaegmm_refit_wf30_20260716_v1",
+    "artifact_path": "data_perp/reports/s59_h5_benchmark66_matchedaegmm_refit_wf30_20260716_v1/models/final_all_rows",
+    "model_path": "data_perp/reports/s59_h5_benchmark66_matchedaegmm_refit_wf30_20260716_v1/models/final_all_rows/base_model.joblib",
+    "model_sha256": "8921d27d1dfe8c4a4ed0ede8b7a3657721d07ad2010c79ec3138ee198b80e50f",
+    "feature_contract_hash": "deb62d34504b61563a1f524b09b31c1c87977306d7b36645eb96047aeeab4f8b",
+    "columns_sha256": "a283a65d6ab2b7c60359b2f3db1a220c5ae66a86ffdcc44c66fd43d12a4b8692",
+    "ae_gmm_state_sha256": "f25216010efe456c2953f1ad9703904554bef9d21db01ffd5cbdfc8cf369e19a",
+    "ae_gmm_learned_transform_hash": "39be07d864a637f3a68293c166f70945b55d713dcf98a6bf1eec4885c8fc815e",
+    "train_end_utc": "2026-07-10T21:00:00+00:00",
+    "excluded_from_oos_metrics": true
+  },
+  "selected_at_utc": "2026-07-16T21:00:00Z",
+  "selection_metric": "full_oos_top10_net_ev_with_top20_top30_and_stability_diagnostics",
+  "feature_selection": {
+    "method": "mda_topk_permutation",
+    "scope": "single_global_largest_train_window",
+    "reference_candidate_features_after_availability": 207,
+    "reference_selected_features": 66,
+    "selected_feature_count_is_dynamic": true,
+    "stopping_rule": "auto_mda_cumulative_positive_99pct",
+    "explicit_top_n": 0,
+    "mda_train_rows": 60000,
+    "mda_eval_rows": 20000,
+    "sampling": "beginning_middle_end_time_spread"
+  },
+  "trial_number": 135,
+  "params": {
+    "n_estimators": 147,
+    "learning_rate": 0.023186706725487574,
+    "num_leaves": 15,
+    "max_depth": 4,
+    "min_child_samples": 98,
+    "subsample": 0.7858416187773574,
+    "colsample_bytree": 0.9119108731134247,
+    "reg_alpha": 0.027300426078104418,
+    "reg_lambda": 0.34080226291305005,
+    "loss_function": "regression",
+    "min_split_gain": 0.0,
+    "target_mode": "target_soft",
+    "weight_arm": "W7_timestamp_balanced"
+  },
+  "full_oos_metrics": {
+    "rows": 4277929,
+    "top10_net_ev_per_trade": 0.0130625,
+    "top20_net_ev_per_trade": 0.0095042,
+    "top30_net_ev_per_trade": 0.0071162,
+    "top10_worst_week_ev": 0.0013854,
+    "top10_worst_month_ev": 0.0068871
+  }
+}

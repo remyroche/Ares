@@ -3,7 +3,154 @@ import sqlite3
 
 import pandas as pd
 
-from extreme_price_movements.inference.trade_logger import TradeLogger
+from extreme_price_movements.inference.trade_logger import (
+    ENTRY_PROVENANCE_SCHEMA_VERSION,
+    TradeLogger,
+    restore_entry_provenance,
+)
+
+
+def test_trade_logger_persists_versioned_entry_provenance_allowlist(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+    logger.log_entry(
+        symbol="BTC/USDT",
+        side="long",
+        size=10.0,
+        price=100.0,
+        predictions={},
+        features={
+            "policy_archetype": "long__compression_release",
+            "model_artifact_run_id": "model_20260718_v1",
+            "policy_artifact_run_id": "policy_20260718_v1",
+            "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+            "sizing_policy_id": "raw_bayesian_sizing_v1",
+            "v9_tail95_predecessor_rank": 0.97,
+            "market_state_mlp_expected_net_ev_after_1pct": 0.012,
+            "archetype_hit_surprise_actual_hit_rate": 0.61,
+            "archetype_hit_surprise_expected_hit_rate": 0.55,
+            "threshold_basis_dynamic_ev_target": 0.007,
+            "threshold_basis_archetype_baseline_window_days": 28,
+            "threshold_basis_archetype_baseline_ev_mean": 0.011,
+            "threshold_basis_archetype_baseline_take_profit_rate": 0.73,
+            "threshold_basis_archetype_baseline_stop_rate": 0.09,
+            "threshold_basis_archetype_baseline_timeout_rate": 0.04,
+            "threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean": 0.21,
+            "meta_sel_ood_abs_z_p95": 2.4,
+            "meta_lgbm_uncertainty_score": 0.19,
+            "inference_drift_score": 0.07,
+            "gmm_cluster_id": 3,
+            "ae_reconstruction_error": 0.031,
+            "meta_lgbm_leaf_count_p10": 14,
+            "email_env_volatility": 1.25,
+            "email_env_vwap_distance_atr": -0.38,
+            "unrelated_payload": "must_not_persist",
+        },
+        mode="live",
+    )
+
+    row = pd.read_csv(path, dtype=str).iloc[0]
+    provenance = json.loads(row["entry_provenance_json"])
+    assert provenance["schema_version"] == ENTRY_PROVENANCE_SCHEMA_VERSION
+    assert provenance["fields"]["policy_archetype"] == "long__compression_release"
+    assert provenance["fields"]["policy_pathway_id"] == (
+        "joint_trailing_total_mfe_raw_bayesian_v1"
+    )
+    assert provenance["fields"]["v9_tail95_predecessor_rank"] == 0.97
+    assert provenance["fields"]["meta_lgbm_leaf_count_p10"] == 14
+    assert "unrelated_payload" not in provenance["fields"]
+
+    restored = restore_entry_provenance({"entry_provenance_json": row["entry_provenance_json"]})
+    assert restored["archetype_hit_surprise_actual_hit_rate"] == 0.61
+    assert restored["policy_artifact_run_id"] == "policy_20260718_v1"
+    assert restored["market_state_mlp_expected_net_ev_after_1pct"] == 0.012
+    assert restored["meta_sel_ood_abs_z_p95"] == 2.4
+    assert restored["ae_reconstruction_error"] == 0.031
+    assert restored["threshold_basis_dynamic_ev_target"] == 0.007
+    assert restored["threshold_basis_archetype_baseline_window_days"] == 28
+    assert restored["threshold_basis_archetype_baseline_ev_mean"] == 0.011
+    assert restored["threshold_basis_archetype_baseline_take_profit_rate"] == 0.73
+    assert restored["threshold_basis_archetype_baseline_successful_trade_mae_to_sl_mean"] == 0.21
+    assert restored["email_env_volatility"] == 1.25
+    assert restored["email_env_vwap_distance_atr"] == -0.38
+
+
+def test_entry_provenance_legacy_audit_archetype_fallback():
+    restored = restore_entry_provenance(
+        {
+            "model_prediction_audit": json.dumps(
+                {"thresholds": {"policy_archetype": "short__late_run"}}
+            )
+        }
+    )
+    assert restored["policy_archetype"] == "short__late_run"
+    assert (
+        restored["policy_archetype_source"]
+        == "model_prediction_audit.thresholds.policy_archetype"
+    )
+
+
+def test_trade_logger_finds_restart_absent_entry_once(tmp_path):
+    logger = TradeLogger(output_path=str(tmp_path / "trades.csv"), run_id="r1")
+    logger.log_trade_legacy(
+        symbol="FARTCOIN/USD:USD",
+        side="short",
+        action="enter",
+        size=10.0,
+        price=0.1286,
+        mode="live",
+        status="pending",
+        context={
+            "position_id": "position-1",
+            "lifecycle_event": "entry_placed",
+            "stop_order_id": "stop-1",
+            "entry_notional_quote": 10.0,
+        },
+    )
+
+    unresolved = logger.find_unresolved_entries_absent(active_symbols=[])
+    assert [row["symbol"] for row in unresolved] == ["FARTCOIN/USD:USD"]
+
+    logger.log_trade_legacy(
+        symbol="FARTCOIN/USD:USD",
+        side="short",
+        action="exit",
+        size=77.0,
+        price=0.13,
+        mode="live",
+        status="closed",
+        context={
+            "position_id": "position-1",
+            "lifecycle_event": "exit_filled",
+        },
+    )
+    assert logger.find_unresolved_entries_absent(active_symbols=[]) == []
+
+
+def test_trade_logger_restart_recovery_ignores_other_runs_and_spot(tmp_path):
+    logger = TradeLogger(output_path=str(tmp_path / "trades.csv"), run_id="current")
+    for symbol, run_id in (("LDO/USDC", "current"), ("OLD/USD:USD", "old")):
+        logger.log_trade_legacy(
+            symbol=symbol,
+            side="long",
+            action="enter",
+            size=10.0,
+            price=1.0,
+            mode="live",
+            status="pending",
+            context={
+                "run_id": run_id,
+                "lifecycle_event": "entry_placed",
+                "position_id": f"{run_id}:{symbol}",
+            },
+        )
+    with sqlite3.connect(logger.db_path) as conn:
+        conn.execute(
+            "UPDATE trades SET run_id = 'old' WHERE symbol = 'OLD/USD:USD'"
+        )
+        conn.commit()
+    logger._sync_csv_from_db()
+    assert logger.find_unresolved_entries_absent(active_symbols=[]) == []
 
 
 def test_trade_logger_includes_required_parity_fields(tmp_path):
@@ -235,6 +382,25 @@ def test_trade_logger_persists_holding_time_to_csv_and_sqlite(tmp_path):
             'SELECT holding_time_hours FROM trades WHERE symbol = "ETH/USDT"'
         ).fetchall()
     assert rows == [("2.5",)]
+
+
+def test_trade_logger_legacy_persists_utc_aware_timestamp(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    logger.log_trade_legacy(
+        symbol="ETH/USDT",
+        side="long",
+        action="enter",
+        size=2.0,
+        price=2000.0,
+        status="filled",
+    )
+
+    timestamp = str(pd.read_csv(path).loc[0, "timestamp"])
+    parsed = pd.Timestamp(timestamp)
+    assert parsed.tzinfo is not None
+    assert parsed.tz_convert("UTC").isoformat() == timestamp
 
 
 def test_trade_logger_promotes_estimated_net_fields_for_exit_rows(tmp_path):

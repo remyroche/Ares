@@ -21,6 +21,9 @@ from extreme_price_movements.inference.symbol_mapping import (
     normalise_symbol,
     symbol_bases,
 )
+from extreme_price_movements.inference.training_live_parity_contract import (
+    load_training_live_parity_contract,
+)
 from extreme_price_movements.model_loader import (
     find_latest_run_id,
     load_full_state,
@@ -174,6 +177,34 @@ def load_inference_config(
     # Load full state
     full_state = load_full_state(model_run_id, data_root)
 
+    # Pin every inference consumer to the model's persisted feature source as
+    # soon as configuration is loaded.  The live loop validates this contract
+    # again before trading, but replay and diagnostic callers may request
+    # features before entering that loop.  Leaving the contract unattached at
+    # this boundary allowed descriptive model IDs to resolve to the newest
+    # timestamped store instead of the store used by training.
+    training_live_parity_contract = load_training_live_parity_contract(
+        data_root=data_root,
+        run_id=model_run_id,
+        require=False,
+        require_feature_source=False,
+    )
+    if training_live_parity_contract:
+        runtime_cfg["training_live_parity_contract"] = (
+            training_live_parity_contract
+        )
+        feature_source = training_live_parity_contract.get("feature_source")
+        if isinstance(feature_source, dict):
+            feature_source_run_id = str(feature_source.get("run_id") or "").strip()
+            feature_source_data_root = str(
+                feature_source.get("data_root") or ""
+            ).strip()
+            if feature_source_run_id:
+                runtime_cfg["live_feature_source_run_id"] = feature_source_run_id
+                runtime_cfg["feature_source_run_id"] = feature_source_run_id
+            if feature_source_data_root:
+                runtime_cfg["offline_feature_data_root"] = feature_source_data_root
+
     config = {
         "run_id": run_id,
         "model_artifact_run_id": model_run_id,
@@ -183,6 +214,7 @@ def load_inference_config(
         "runtime_cfg": runtime_cfg,
         "model_bundle": model_bundle,
         "full_state": full_state,
+        "training_live_parity_contract": training_live_parity_contract,
         "data_root": data_root,
         "market_mode": market_mode_norm,
         "execution_account": "perps" if market_mode_norm == "perps" else DEFAULT_EXECUTION_ACCOUNT,

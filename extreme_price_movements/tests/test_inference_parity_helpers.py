@@ -559,6 +559,14 @@ def test_raw_required_feature_keys_exclude_drift_meta_features():
     assert "archetype_contrib_svd_00" not in required
 
 
+def test_raw_required_feature_keys_resolve_meta_raw_alias_sources():
+    required = raw_required_feature_keys(
+        {"ret24h", "__meta_raw__chop_score", "__meta_raw__volatility_zscore"}
+    )
+
+    assert required == {"ret24h", "chop_score", "volatility_zscore"}
+
+
 def test_live_contract_rejects_target_derived_active_alpha_features():
     bundle = {
         "bundle": {

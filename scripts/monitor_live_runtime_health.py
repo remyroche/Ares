@@ -47,6 +47,19 @@ PREDICTION_LEDGER_COLUMNS = [
     "was_traded",
     "threshold_rank_score",
     "threshold_rank_score_source",
+    "threshold_basis_mapped_expected_ev_side_archetype",
+    "threshold_basis_side_archetype_recent_ev_correction",
+    "threshold_basis_corrected_expected_ev",
+    "threshold_basis_corrected_expected_ev_rank",
+    "threshold_basis_parent_rank",
+    "threshold_basis_blended_rank",
+    "threshold_basis_ev_rank_blend_weight",
+    "threshold_basis_expected_ev_correction_scope",
+    "threshold_basis_recalibration_frequency",
+    "threshold_basis_reference_asof",
+    "threshold_basis_robust_daily_residual_trim_fraction",
+    "threshold_basis_robust_daily_residual_normalization",
+    "threshold_basis_global_days_retained",
     "policy_rank_pct",
     "normalized_rank_score",
     "final_gate_rank_score",
@@ -1005,6 +1018,10 @@ def main() -> int:
     parser.add_argument("--duration-seconds", type=int, default=1800)
     parser.add_argument("--interval-seconds", type=int, default=300)
     parser.add_argument("--local-timezone", default="Europe/Paris")
+    parser.add_argument(
+        "--since",
+        help="Use this UTC session boundary instead of the monitor process start.",
+    )
     parser.add_argument("--rss-warn-mb", type=float, default=8000.0)
     parser.add_argument("--feature-stage-warn-seconds", type=float, default=30.0)
     parser.add_argument("--model-stage-warn-seconds", type=float, default=10.0)
@@ -1013,6 +1030,11 @@ def main() -> int:
     args = parser.parse_args()
 
     started_at = pd.Timestamp(_utc_now())
+    if args.since:
+        parsed_since = pd.to_datetime(args.since, utc=True, errors="coerce")
+        if pd.isna(parsed_since):
+            parser.error(f"invalid --since timestamp: {args.since!r}")
+        started_at = parsed_since
     deadline = time.monotonic() + max(1, int(args.duration_seconds))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     samples: list[dict[str, Any]] = []

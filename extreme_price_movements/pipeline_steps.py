@@ -28,19 +28,19 @@ from extreme_price_movements.data_store import (
     _ensure_feature_frame_index,
     _feature_schema_names,
     _write_feature_metadata,
+    build_hourly_orderbook_proxy_from_ohlcv,
     exchange_data_component,
     get_feature_bounds,
     load_artifact_df,
     load_features,
-    load_features_selected,
     read_symbol_features,
     save_artifact_df,
-    save_features,
     scoped_data_root,
     use_exchange_scoped_data,
     write_live_latest_feature_matrix,
     to_panel,
 )
+from extreme_price_movements.timestamp_contract import to_utc_timestamp
 from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.engine import (
     _build_side_score_df,
@@ -53,7 +53,6 @@ from extreme_price_movements.entry_policy import (
 )
 from extreme_price_movements.features import (
     add_regime_gates,
-    compute_features_hourly,
     compute_market_features,
 )
 from extreme_price_movements.features_residual import add_residual_features
@@ -72,6 +71,13 @@ from extreme_price_movements.offline_optimisers.params_store import (
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
 from extreme_price_movements.position_sizer.runtime import load_ev_decomposition_bundle
+from extreme_price_movements.static_feature_store import (
+    append_static_features,
+    compute_static_features,
+    compute_static_market_context,
+    read_static_features,
+    resolve_static_feature_save_workers,
+)
 
 
 def _truthy_env(name: str, default: str = "") -> bool:
@@ -85,7 +91,16 @@ def _truthy_env(name: str, default: str = "") -> bool:
 
 
 def _feature_backfill_keys_from_env() -> list[str]:
-    """Return explicit feature backfill keys from env string and optional file."""
+    """Return explicit feature backfill keys from env, report, or model contract.
+
+    A strict postprocessor report is a safer repair source than a manually
+    maintained key list: it records precisely which persisted raw columns made
+    otherwise valid rows fail the current deployed contract.  It can become
+    stale when a newly promoted bundle adds a selected raw feature, so an
+    optional artifact root contributes the deployed base and residual-expert
+    input contracts as well.  Model-derived keys are harmless here: static
+    generation omits them and the frozen model transform supplies them later.
+    """
 
     raw_values: list[str] = []
     raw_inline = os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip()
@@ -99,6 +114,73 @@ def _feature_backfill_keys_from_env() -> list[str]:
             tprint(
                 "WARNING: could not read EPM_FEATURE_BACKFILL_KEYS_FILE="
                 f"{raw_file!r}: {exc}"
+            )
+    report_path = os.environ.get(
+        "EPM_FEATURE_BACKFILL_KEYS_FROM_COMPLETE_CASE_REPORT", ""
+    ).strip()
+    if report_path:
+        try:
+            path = Path(report_path)
+            if path.suffix.lower() in {".parquet", ".pq"}:
+                report = pd.read_parquet(path, columns=["missing_features"])
+            else:
+                report = pd.read_csv(path, usecols=["missing_features"])
+            missing = report.get("missing_features", pd.Series(dtype=object))
+            report_keys = sorted(
+                {
+                    key.strip()
+                    for value in missing.dropna().astype(str)
+                    for key in value.split(",")
+                    if key.strip()
+                }
+            )
+            if report_keys:
+                raw_values.append(",".join(report_keys)
+                )
+                tprint(
+                    "Loaded feature backfill keys from strict complete-case report: "
+                    f"path={path} keys={len(report_keys)}"
+                )
+        except Exception as exc:
+            tprint(
+                "WARNING: could not read "
+                "EPM_FEATURE_BACKFILL_KEYS_FROM_COMPLETE_CASE_REPORT="
+                f"{report_path!r}: {exc}"
+            )
+    artifact_root = os.environ.get("EPM_FEATURE_BACKFILL_KEYS_FROM_ARTIFACT", "").strip()
+    if artifact_root:
+        try:
+            import joblib
+
+            root = Path(artifact_root)
+            trained_state = joblib.load(root / "models" / "trained_state.pkl")
+            bundle = trained_state.get("bundle", {}) if isinstance(trained_state, dict) else {}
+            source_contract = bundle.get("feature_source_contract", {})
+            base_keys = source_contract.get("feature_names", [])
+            residual_state = joblib.load(
+                root / "policy_params" / "side_residual_expert.joblib"
+            )
+            residual_contract = (
+                residual_state.get("feature_contract", {})
+                if isinstance(residual_state, dict)
+                else {}
+            )
+            residual_keys = [
+                key
+                for values in residual_contract.values()
+                if isinstance(values, (list, tuple, set))
+                for key in values
+            ]
+            contract_keys = [str(key) for key in [*base_keys, *residual_keys]]
+            raw_values.append(",".join(contract_keys))
+            tprint(
+                "Loaded feature backfill keys from deployed artifact contracts: "
+                f"path={root} base={len(base_keys)} residual={len(residual_keys)}"
+            )
+        except Exception as exc:
+            tprint(
+                "WARNING: could not read EPM_FEATURE_BACKFILL_KEYS_FROM_ARTIFACT="
+                f"{artifact_root!r}: {exc}"
             )
     if not raw_values:
         return []
@@ -843,10 +925,46 @@ def _inject_orderbook_summary_features(
             out = out.fillna(fill_value)
         return out
 
+    open_panel = panel.get("open")
+    high_panel = panel.get("high")
+    low_panel = panel.get("low")
+    quote_volume_panel = panel.get("quote_volume")
+
     for symbol in cols:
-        ob = orderbook_by_symbol.get(symbol)
         sym_close = pd.to_numeric(close_panel[symbol], errors="coerce").reindex(idx)
         sym_volume = pd.to_numeric(volume_panel[symbol], errors="coerce").reindex(idx)
+        # Always derive model-facing microstructure proxies from the canonical
+        # causal OHLCV panel.  ``orderbook_by_symbol`` may contain actual live
+        # L2 snapshots at the tail; using those here would make inference more
+        # informed than training/replay.  L2 remains available to execution
+        # slippage and capacity controls outside this model feature path.
+        bars = pd.DataFrame(
+            {
+                "open": (
+                    pd.to_numeric(open_panel[symbol], errors="coerce").reindex(idx)
+                    if isinstance(open_panel, pd.DataFrame) and symbol in open_panel
+                    else sym_close
+                ),
+                "high": (
+                    pd.to_numeric(high_panel[symbol], errors="coerce").reindex(idx)
+                    if isinstance(high_panel, pd.DataFrame) and symbol in high_panel
+                    else sym_close
+                ),
+                "low": (
+                    pd.to_numeric(low_panel[symbol], errors="coerce").reindex(idx)
+                    if isinstance(low_panel, pd.DataFrame) and symbol in low_panel
+                    else sym_close
+                ),
+                "close": sym_close,
+                "volume": sym_volume,
+            },
+            index=idx,
+        )
+        if isinstance(quote_volume_panel, pd.DataFrame) and symbol in quote_volume_panel:
+            bars["quote_volume"] = pd.to_numeric(
+                quote_volume_panel[symbol], errors="coerce"
+            ).reindex(idx)
+        ob = build_hourly_orderbook_proxy_from_ohlcv(bars)
         if ob is None or ob.empty:
             zero = pd.Series(0.0, index=idx, dtype=np.float32)
             one = pd.Series(1.0, index=idx, dtype=np.float32)
@@ -1275,6 +1393,10 @@ def _compute_features_hourly_runtime(
     cfg: dict,
     orderbook_by_symbol: dict[str, pd.DataFrame],
     requested_feature_keys: list[str] | None = None,
+    *,
+    incremental: bool = False,
+    min_required_ts: pd.Timestamp | None = None,
+    feature_store_id: str | None = None,
 ):
     _ensure_feature_runtime_support()
     runtime_cfg = dict(cfg)
@@ -1295,11 +1417,20 @@ def _compute_features_hourly_runtime(
         for k in effective_requested_feature_keys
         if "orderbook" not in epm_features._feature_source_requirements(str(k))
     ]
-    feats, feat_index, feat_columns = compute_features_hourly(
+    static_result = compute_static_features(
         panel,
         mkt_gates,
         runtime_cfg,
         requested_feature_keys=compute_requested_feature_keys,
+        data_root=runtime_cfg.get("data_root"),
+        feature_store_id=str(feature_store_id or "pipeline"),
+        incremental=bool(incremental),
+        min_required_ts=min_required_ts,
+    )
+    feats, feat_index, feat_columns = (
+        static_result.features,
+        static_result.index,
+        static_result.columns,
     )
     feats = _inject_orderbook_summary_features(
         feats,
@@ -1677,6 +1808,10 @@ def load_features_for_stage_or_all(
     """Load features with optional active-stage restrictions."""
     stage_view = cfg.get("_active_stage_view")
     if stage_view:
+        if start_ts is not None:
+            start_ts = to_utc_timestamp(start_ts)
+        if end_ts is not None:
+            end_ts = to_utc_timestamp(end_ts)
         allowed_symbols = stage_view.get("symbols") or None
         if allowed_symbols is not None and symbols is not None:
             allowed_set = {str(sym) for sym in allowed_symbols}
@@ -1695,12 +1830,12 @@ def load_features_for_stage_or_all(
             view_start = stage_view.get("allowed_start_ts")
             view_end = stage_view.get("allowed_end_ts")
             if view_start:
-                view_start_ts = pd.to_datetime(view_start)
+                view_start_ts = to_utc_timestamp(view_start)
                 start_ts = (
                     view_start_ts if start_ts is None else max(start_ts, view_start_ts)
                 )
             if view_end:
-                view_end_ts = pd.to_datetime(view_end)
+                view_end_ts = to_utc_timestamp(view_end)
                 end_ts = view_end_ts if end_ts is None else min(end_ts, view_end_ts)
 
         tprint(
@@ -1710,9 +1845,9 @@ def load_features_for_stage_or_all(
             f"{'' if respect_stage_time_bounds else ' (stage time bounds disabled)'}"
         )
 
-    return load_features_selected(
-        ts=ts_sig,
-        root_dir=root_dir,
+    return read_static_features(
+        feature_store_ts=ts_sig,
+        data_root=root_dir,
         feature_keys=feature_keys,
         symbols=symbols,
         start_ts=start_ts,
@@ -3388,15 +3523,21 @@ def _build_tail_only_backfill_cutoffs(
                         fpath,
                         columns=[sample_col],
                         start_ts=recent_start,
-                        end_ts=req_last,
+                        # Store reads use an exclusive upper bound. Include the
+                        # target hour so a present final row is not mistaken
+                        # for an interior timestamp gap.
+                        end_ts=req_last + pd.Timedelta(microseconds=1),
                     )
                 except Exception:
                     recent_ts_df = pd.DataFrame()
                 if not recent_ts_df.empty and isinstance(
                     recent_ts_df.index, pd.DatetimeIndex
                 ):
+                    recent_index = pd.DatetimeIndex(
+                        pd.to_datetime(recent_ts_df.index, utc=True)
+                    ).tz_localize(None)
                     present_hours = set(
-                        pd.DatetimeIndex(recent_ts_df.index)
+                        recent_index
                         .dropna()
                         .floor("h")
                         .unique()
@@ -3981,6 +4122,52 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             )
             return
 
+    # Establish the incremental tail before loading the raw panel.  The old
+    # implementation discovered this only after constructing a full multi-year
+    # panel, which defeats incremental label materialization and can exhaust
+    # memory even when just a few completed tail days are missing.
+    _incremental_label_raw_start: pd.Timestamp | None = None
+    _incremental_label_generation_start: pd.Timestamp | None = None
+    if bool(cfg.get("label_persist_incremental", False)) and bool(
+        cfg.get("label_incremental_only_missing", False)
+    ):
+        _existing_label_maxima_preload: list[pd.Timestamp] = []
+        for _existing_label_path in glob.glob(
+            os.path.join(_labels_dir, "train_*.parquet")
+        ):
+            try:
+                _existing_ts = pd.read_parquet(_existing_label_path, columns=["__ts__"])
+            except Exception:
+                continue
+            if _existing_ts.empty:
+                continue
+            _max_ts = pd.to_datetime(
+                _existing_ts["__ts__"], utc=True, errors="coerce"
+            ).max()
+            if pd.notna(_max_ts):
+                _existing_label_maxima_preload.append(pd.Timestamp(_max_ts))
+        if _existing_label_maxima_preload:
+            _existing_label_tail = max(_existing_label_maxima_preload)
+            _raw_warmup_hours = max(
+                24 * 90,
+                int(os.environ.get("EPM_LABEL_INCREMENTAL_RAW_WARMUP_HOURS", 24 * 120)),
+            )
+            _incremental_label_raw_start = (
+                _existing_label_tail - pd.Timedelta(hours=_raw_warmup_hours)
+            )
+            # Keep a small overlap for stable tail coalescing. Market rolling
+            # context is still computed on the full bounded raw warm-up below;
+            # only label candidates are restricted to the unresolved tail.
+            _incremental_label_generation_start = (
+                _existing_label_tail - pd.Timedelta(hours=2)
+            )
+            tprint(
+                "Incremental labels: raw panel bounded before load from "
+                f"{_incremental_label_raw_start} "
+                f"(warmup_h={_raw_warmup_hours}, existing_tail="
+                f"{_existing_label_tail})"
+            )
+
     # Load Data & Features
     dfs = {}
 
@@ -3991,12 +4178,23 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     with Timer("Data Load"):
 
         def load_sym(s):
-            df = store.load(s)
+            # The label path consumes market OHLCV from `panel`; funding/OI and
+            # all derived context are loaded through their own causal sidecars
+            # and the static feature store below.  Reading every auxiliary raw
+            # column here multiplies the incremental tail's memory footprint
+            # without changing labels.
+            df = store.load(
+                s,
+                columns=["open", "high", "low", "close", "volume"],
+                start_ts=_incremental_label_raw_start,
+            )
             if not df.empty:
                 # `ts_sig` identifies the artifact/run folder; it must not cap
                 # the historical label window. Use all locally available data
                 # and let the label builder cap by the latest aligned panel row.
                 df = df.tail(24 * lookback_days)
+                if _incremental_label_raw_start is not None:
+                    df = df.loc[df.index >= _incremental_label_raw_start]
                 # Downcast to float32 immediately to save memory
                 for c in df.columns:
                     if pd.api.types.is_float_dtype(df[c]):
@@ -4062,6 +4260,22 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"]
     )
 
+    if _incremental_label_generation_start is not None:
+        panel = {
+            key: value.loc[value.index >= _incremental_label_generation_start]
+            if isinstance(value, pd.DataFrame)
+            else value
+            for key, value in panel.items()
+        }
+        mkt_gates = mkt_gates.loc[
+            mkt_gates.index >= _incremental_label_generation_start
+        ]
+        tprint(
+            "Incremental labels: candidate generation restricted to unresolved tail "
+            f"from {_incremental_label_generation_start}; market context retained "
+            f"the bounded raw warm-up through computation."
+        )
+
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
     label_feature_start_ts = None
@@ -4082,16 +4296,24 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             if pd.notna(_max_ts):
                 existing_label_maxima.append(pd.Timestamp(_max_ts))
         if existing_label_maxima:
-            # Incremental label generation only appends rows beyond the oldest
-            # existing dataset tail.  Load a small overlap so duplicate-tail
-            # rows can be safely coalesced while avoiding full-history feature
-            # reads from parquet/delta stores.
-            label_feature_start_ts = min(existing_label_maxima) - pd.Timedelta(hours=2)
+            # The label builder still constructs candidate masks over the
+            # bounded raw panel before it removes pre-existing label rows.
+            # Therefore feature coverage must match that raw window, not just
+            # the two-hour append overlap. `_incremental_label_raw_start` is
+            # bounded to the latest tail plus warm-up and remains far smaller
+            # than the old full-history load.
+            _existing_label_tail = max(existing_label_maxima)
+            label_feature_start_ts = (
+                _incremental_label_generation_start
+                if _incremental_label_generation_start is not None
+                else _existing_label_tail - pd.Timedelta(hours=2)
+            )
             tprint(
                 "Incremental labels: bounded feature load from "
                 f"{label_feature_start_ts} based on "
                 f"{len(existing_label_maxima)} existing label artifacts "
-                f"(oldest max={min(existing_label_maxima)})"
+                f"(latest max={_existing_label_tail}; raw_start="
+                f"{_incremental_label_raw_start})"
             )
     feats = load_features_for_stage_or_all(
         cfg,
@@ -8235,8 +8457,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 )
 
         # Compute hold duration for all trades
-        df_t["_entry"] = pd.to_datetime(df_t["entry_ts"])
-        df_t["_exit"] = pd.to_datetime(df_t["exit_ts"])
+        df_t["_entry"] = pd.to_datetime(df_t["entry_ts"], utc=True, errors="coerce")
+        df_t["_exit"] = pd.to_datetime(df_t["exit_ts"], utc=True, errors="coerce")
         df_t["_hold_h"] = (df_t["_exit"] - df_t["_entry"]).dt.total_seconds() / 3600.0
 
         # --- Per-bucket deep diagnostics ---
@@ -9198,6 +9420,44 @@ def run_feature_generation_step(
             else:
                 precomputed_tail_cutoffs = {}
                 tail_cutoff_stats = None
+
+        explicit_backfill_start_raw = os.environ.get(
+            "EPM_FEATURE_BACKFILL_START_TS", ""
+        ).strip()
+        if explicit_backfill_start_raw:
+            explicit_backfill_start = pd.to_datetime(
+                explicit_backfill_start_raw, utc=True, errors="raise"
+            )
+            # save_features retains rows through the cutoff and replaces rows
+            # after it. Subtract one microsecond so the requested start hour is
+            # recomputed as well.
+            explicit_cutoff = explicit_backfill_start - pd.Timedelta(
+                microseconds=1
+            )
+            symbols_for_cutoff = (
+                [str(symbol) for symbol in close_panel_light.columns]
+                if close_panel_light is not None and not close_panel_light.empty
+                else [str(symbol) for symbol in train_syms]
+            )
+            precomputed_tail_cutoffs = {
+                symbol: explicit_cutoff for symbol in symbols_for_cutoff
+            }
+            tail_cutoff_stats = {
+                "eligible_tail_only": len(precomputed_tail_cutoffs),
+                "missing_symbol_file": 0,
+                "missing_backfill_columns": 0,
+                "structural_or_interior": 0,
+                "already_covered": 0,
+                "explicit_start_override": len(precomputed_tail_cutoffs),
+            }
+            full_rewrite_symbols_for_backfill = set(
+                full_rewrite_symbols_for_backfill
+            ).difference(precomputed_tail_cutoffs)
+            tprint(
+                "Explicit feature backfill start override: "
+                f"start={explicit_backfill_start.isoformat()} "
+                f"symbols={len(precomputed_tail_cutoffs)}"
+            )
         tprint(
             "Explicit feature backfill key override: "
             f"{len(backfill_keys)} keys"
@@ -9412,10 +9672,18 @@ def run_feature_generation_step(
     )
 
     tprint("Computing Market Features...")
-    mkt_df = compute_market_features(panel, cfg["market_basket"])
-    mkt_gates = add_regime_gates(
-        mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"]
+    static_market_context = compute_static_market_context(
+        panel,
+        cfg["market_basket"],
+        trend_sma_hours=int(cfg.get("trend_sma_hours", 24 * 14)),
+        gate_vol_lookback_hours=int(cfg["gate_vol_lookback_hours"]),
+        gate_trend_thr=float(cfg["gate_trend_thr"]),
+        cfg=cfg,
+        data_root=cfg.get("data_root"),
+        feature_store_id=ts_sig.strftime("%Y%m%d_%H%M%S"),
+        incremental=bool(backfill_keys and not force_full_recompute),
     )
+    mkt_gates = static_market_context.regime_gates
 
     # Memory guard: backfill mode can still be very heavy (full graph on full symbol set).
     # Run in symbol chunks and stream-save to cap peak RSS.
@@ -9645,72 +9913,9 @@ def run_feature_generation_step(
                         tprint(f"{batch_label} empty requested key batch; skipping.")
                         continue
                 panel_chunk = dict(panel_chunk_source)
-                compute_cfg = cfg
+                compute_cfg = dict(cfg)
+                min_required_ts = None
                 if backfill_keys and not force_full_recompute:
-                    compute_cfg = dict(cfg)
-                    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-                    state_root = cfg.get("feature_causal_transform_state_path") or os.path.join(
-                        cfg["data_root"],
-                        "artifacts",
-                        run_id,
-                        "feature_transform_state",
-                        "causal_transform_state.npz",
-                    )
-                    raw_state_root = cfg.get("feature_raw_rolling_state_path") or os.path.join(
-                        cfg["data_root"],
-                        "artifacts",
-                        run_id,
-                        "feature_transform_state",
-                        "raw_rolling_state.npz",
-                    )
-                    requested_hash_src = "\n".join(
-                        [str(k) for k in (key_batch or [])]
-                    )
-                    compute_cfg["feature_causal_transform_state_enabled"] = (
-                        os.getenv("EPM_FEATURE_CAUSAL_STATE", "1").lower()
-                        not in {"0", "false", "no", "off"}
-                    )
-                    compute_cfg["feature_causal_transform_state_path"] = state_root
-                    compute_cfg["feature_causal_transform_state_scope"] = (
-                        f"run_id={run_id}|training_path_selected_features"
-                    )
-                    compute_cfg["feature_raw_rolling_state_enabled"] = bool(
-                        cfg.get("feature_raw_rolling_state_enabled", False)
-                    ) or (
-                        os.getenv("EPM_FEATURE_RAW_ROLLING_STATE", "0").lower()
-                        not in {"0", "false", "no", "off"}
-                    )
-                    compute_cfg["feature_raw_rolling_state_path"] = raw_state_root
-                    compute_cfg["feature_raw_rolling_state_scope"] = (
-                        f"run_id={run_id}|training_path_selected_features"
-                    )
-                    compute_cfg["feature_raw_rolling_state_sparse_prefix_enabled"] = bool(
-                        cfg.get(
-                            "feature_raw_rolling_state_sparse_prefix_enabled",
-                            os.getenv(
-                                "EPM_FEATURE_RAW_ROLLING_STATE_SPARSE_PREFIX",
-                                "1",
-                            ).lower()
-                            not in {"0", "false", "no", "off"},
-                        )
-                    )
-                    compute_cfg[
-                        "feature_causal_transform_state_ignore_stale_min_required"
-                    ] = bool(
-                        cfg.get(
-                            "feature_causal_transform_state_ignore_stale_min_required",
-                            os.getenv(
-                                "EPM_FEATURE_CAUSAL_STATE_IGNORE_STALE_MIN_REQUIRED",
-                                "1",
-                            ).lower()
-                            not in {"0", "false", "no", "off"},
-                        )
-                    )
-                    compute_cfg["feature_causal_transform_requested_hash"] = (
-                        hashlib.sha1(requested_hash_src.encode("utf-8")).hexdigest()
-                        if requested_hash_src
-                        else "all"
-                    )
                     if chunk_cutoffs:
                         cutoff_values = [
                             pd.Timestamp(v)
@@ -9719,9 +9924,6 @@ def run_feature_generation_step(
                         ]
                         if cutoff_values:
                             min_required_ts = min(cutoff_values)
-                            compute_cfg[
-                                "feature_causal_transform_min_required_ts"
-                            ] = min_required_ts.isoformat()
                 compute_t0 = time.perf_counter()
                 (
                     feats_chunk,
@@ -9733,6 +9935,9 @@ def run_feature_generation_step(
                     compute_cfg,
                     orderbook_chunk,
                     requested_feature_keys=key_batch,
+                    incremental=bool(backfill_keys and not force_full_recompute),
+                    min_required_ts=min_required_ts,
+                    feature_store_id=ts_sig.strftime("%Y%m%d_%H%M%S"),
                 )
                 compute_dt = time.perf_counter() - compute_t0
 
@@ -9866,19 +10071,40 @@ def run_feature_generation_step(
                             "replacing base feature files instead of appending "
                             "full-history deltas."
                         )
-                    save_features(
+                    append_static_features(
                         feats_chunk,
-                        ts_sig,
-                        cfg["data_root"],
+                        feature_store_ts=ts_sig,
+                        data_root=cfg["data_root"],
+                        feature_store_id=ts_sig.strftime("%Y%m%d_%H%M%S"),
                         min_timestamp_by_symbol=(
                             None
                             if replace_existing_batch
                             else (chunk_cutoffs if chunk_cutoffs else None)
                         ),
-                        feat_index=feat_index,
-                        feat_columns=feat_columns,
-                        save_workers=int(cfg.get("feature_save_workers", 2)),
+                        index=feat_index,
+                        columns=feat_columns,
+                        save_workers=resolve_static_feature_save_workers(cfg),
                         replace_existing=replace_existing_batch,
+                        # Explicit backfills repair the requested contract, including
+                        # cells that already exist as NaN. Fill-only merge semantics
+                        # leave those stale cells in place and make a successful
+                        # recomputation invisible to training/replay/inference.
+                        overwrite_columns=(
+                            set(batch_backfill_keys)
+                            if batch_backfill_keys and not replace_existing_batch
+                            else None
+                        ),
+                        source="pipeline_incremental",
+                        block_max_timestamps=(
+                            int(cfg.get("static_feature_block_max_timestamps", 1))
+                            if bool(
+                                cfg.get(
+                                    "static_feature_block_materialization_enabled",
+                                    True,
+                                )
+                            )
+                            else 0
+                        ),
                     )
                     write_live_latest_feature_matrix(
                         feats_chunk,
@@ -9889,6 +10115,7 @@ def run_feature_generation_step(
                         feat_index=feat_index,
                         feat_columns=feat_columns,
                         merge_existing=True,
+                        overwrite_existing=bool(batch_backfill_keys),
                     )
                     save_dt = time.perf_counter() - save_t0
                     tprint(
@@ -9948,6 +10175,20 @@ def run_feature_generation_step(
             cfg,
             orderbook_by_symbol,
             requested_feature_keys=requested_feature_keys,
+            incremental=bool(backfill_keys and not force_full_recompute),
+            min_required_ts=(
+                min(
+                    (
+                        pd.Timestamp(value)
+                        for value in (min_ts_by_symbol or {}).values()
+                        if value is not None
+                    ),
+                    default=None,
+                )
+                if min_ts_by_symbol
+                else None
+            ),
+            feature_store_id=ts_sig.strftime("%Y%m%d_%H%M%S"),
         )
         compute_dt = time.perf_counter() - compute_t0
         min_ts_by_symbol = None
@@ -10040,15 +10281,24 @@ def run_feature_generation_step(
         # 4. Save
         if feats:
             save_t0 = time.perf_counter()
-            save_features(
+            append_static_features(
                 feats,
-                ts_sig,
-                cfg["data_root"],
+                feature_store_ts=ts_sig,
+                data_root=cfg["data_root"],
+                feature_store_id=ts_sig.strftime("%Y%m%d_%H%M%S"),
                 min_timestamp_by_symbol=min_ts_by_symbol,
-                feat_index=feat_index,
-                feat_columns=feat_columns,
-                save_workers=int(cfg.get("feature_save_workers", 2)),
+                index=feat_index,
+                columns=feat_columns,
+                save_workers=resolve_static_feature_save_workers(cfg),
                 replace_existing=bool(force_full_recompute),
+                source="pipeline",
+                block_max_timestamps=(
+                    int(cfg.get("static_feature_block_max_timestamps", 1))
+                    if bool(
+                        cfg.get("static_feature_block_materialization_enabled", True)
+                    )
+                    else 0
+                ),
             )
             write_live_latest_feature_matrix(
                 feats,
@@ -10058,6 +10308,7 @@ def run_feature_generation_step(
                 feat_index=feat_index,
                 feat_columns=feat_columns,
                 merge_existing=bool(backfill_keys and not force_full_recompute),
+                overwrite_existing=bool(backfill_keys and not force_full_recompute),
             )
             tprint(
                 f"Feature save timing: compute={compute_dt:.1f}s save={time.perf_counter() - save_t0:.1f}s"
@@ -10985,10 +11236,10 @@ def _filter_artifact_by_stage_view(df, cfg):
         if ts_col:
             df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_start_ts"):
-                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"])]
+                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"], utc=True)]
                 df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_end_ts"):
-                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
+                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"], utc=True)]
 
     new_len = len(df)
     if orig_len != new_len:
@@ -11022,10 +11273,10 @@ def _filter_artifact_by_stage_view(df, cfg):
         if ts_col:
             df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_start_ts"):
-                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"])]
+                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"], utc=True)]
                 df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_end_ts"):
-                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
+                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"], utc=True)]
     return df
 
 

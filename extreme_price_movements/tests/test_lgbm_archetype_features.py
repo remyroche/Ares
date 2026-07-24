@@ -9,6 +9,7 @@ from extreme_price_movements.lgbm_archetype_features import (
     RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
     RAW_STATE_DISTRIBUTION_FEATURE_NAMES,
     RAW_STATE_SVD_FEATURE_NAMES,
+    _transition_vectors,
     contrib_summary_frame,
     fit_raw_state_archetype_state,
     fit_residual_error_archetype_state,
@@ -19,6 +20,44 @@ from extreme_price_movements.lgbm_archetype_features import (
     transform_raw_state_archetype_features,
     transform_residual_error_archetype_features,
 )
+
+
+def test_transition_vectors_are_side_aware_and_source_order_invariant():
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-01-01 00:00:00+00:00",
+                    "2026-01-01 00:00:00+00:00",
+                    "2026-01-01 01:00:00+00:00",
+                    "2026-01-01 01:00:00+00:00",
+                ],
+                utc=True,
+            ),
+            "asset": ["BTC", "BTC", "BTC", "BTC"],
+            "side": ["long", "short", "long", "short"],
+            "z": [1.0, 10.0, 3.0, 14.0],
+        }
+    )
+    expected = np.asarray([[0.0], [0.0], [2.0], [4.0]], dtype=np.float32)
+    direct = _transition_vectors(
+        frame[["z"]].to_numpy(dtype=np.float32),
+        timestamps=frame["timestamp"],
+        assets=frame["asset"],
+        sides=frame["side"],
+    )
+    np.testing.assert_array_equal(direct, expected)
+
+    order = np.asarray([3, 0, 2, 1], dtype=np.int64)
+    inverse = np.argsort(order)
+    shuffled = frame.iloc[order].reset_index(drop=True)
+    replayed = _transition_vectors(
+        shuffled[["z"]].to_numpy(dtype=np.float32),
+        timestamps=shuffled["timestamp"],
+        assets=shuffled["asset"],
+        sides=shuffled["side"],
+    )[inverse]
+    np.testing.assert_array_equal(replayed, expected)
 
 
 def test_predict_contrib_matrix_drops_lightgbm_bias_term():

@@ -34,8 +34,9 @@ DEFAULT_CANDIDATES = ROOT / (
     "threshold_basis_ablation_july0108_top3_kraken/"
     "combined_history_july_replay_candidates.parquet"
 )
-DEFAULT_FEATURES_DIR = ROOT / "data_perp/features/20260708_180000"
+DEFAULT_FEATURES_DIR = ROOT / "data_perp/features/20260711_070000"
 DEFAULT_AE_GMM_STATE = ROOT / "data_perp/artifacts/s59_s52_frozen_native_shadow_20260709/ae_gmm_state/ae_gmm_state.pkl"
+DEFAULT_MIN_SOURCE_REGIME_SYMBOLS = 32
 
 
 def _symbol_feature_path(features_dir: Path, symbol: str) -> Path:
@@ -53,6 +54,29 @@ def _side_code(value: Any) -> float:
     if text in {"short", "sell", "-1"} or text.startswith("short"):
         return -1.0
     return 1.0
+
+
+def _normalize_candidate_schema(candidates: pd.DataFrame) -> pd.DataFrame:
+    """Accept canonical ``__ts__/__symbol__`` ledgers and replay aliases."""
+
+    out = candidates.copy()
+    timestamp_col = "timestamp" if "timestamp" in out.columns else "__ts__"
+    symbol_col = "symbol" if "symbol" in out.columns else "__symbol__"
+    if timestamp_col not in out.columns or symbol_col not in out.columns:
+        raise ValueError(
+            "Candidate ledger requires timestamp/symbol or canonical __ts__/__symbol__ columns"
+        )
+    out["timestamp"] = pd.to_datetime(out[timestamp_col], utc=True, errors="coerce")
+    out["symbol"] = out[symbol_col].astype(str)
+    if "side_name" not in out.columns:
+        if "side" not in out.columns:
+            raise ValueError("Candidate ledger requires side_name or side")
+        out["side_name"] = np.where(
+            out["side"].map(_side_code).to_numpy(dtype=np.float32) < 0.0,
+            "short",
+            "long",
+        )
+    return out
 
 
 def _available_columns(path: Path) -> set[str]:
@@ -96,6 +120,19 @@ def _build_group_features(
     x = aligned.reindex(columns=feature_columns, fill_value=0.0).copy()
     if "side" in feature_columns:
         x["side"] = group.get("side", group.get("side_name", 1.0)).map(_side_code).astype(np.float32)
+    # Full-universe source-regime scores are computed before this candidate
+    # transform.  They cannot be reconstructed from sparse candidate rows
+    # because their formulas include cross-sectional ranks.  Accept only these
+    # frozen-contract overlays from the candidate ledger; all ordinary model
+    # features still come from the canonical static feature store.
+    for col in feature_columns:
+        if not (str(col).startswith("__regime_source_") and str(col).endswith("__")):
+            continue
+        if col not in group.columns:
+            continue
+        values = pd.to_numeric(group[col], errors="coerce").to_numpy(dtype=np.float32, copy=False)
+        if np.isfinite(values).any():
+            x[col] = values
     x = x.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return x.astype(np.float32, copy=False)
 
@@ -104,6 +141,7 @@ def _append_live_source_regime_inputs(
     raw: pd.DataFrame,
     *,
     required_columns: list[str],
+    min_timestamp_symbols: int = DEFAULT_MIN_SOURCE_REGIME_SYMBOLS,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     required_source = [
         col
@@ -125,6 +163,30 @@ def _append_live_source_regime_inputs(
     added_source: list[str] = []
     missing_source: list[str] = []
     if required_source:
+        # ``build_*_scores`` includes cross-sectional ranks.  Scoring only the
+        # candidate rows turns those ranks into degenerate 0.5 values and is
+        # neither historical nor live equivalent.  Require a sufficiently wide
+        # timestamp cross-section before emitting any source-regime feature.
+        timestamp = pd.to_datetime(out.get("__ts__"), utc=True, errors="coerce")
+        symbols = out.get("__symbol__", pd.Series("", index=out.index)).astype(str)
+        support = (
+            pd.DataFrame({"__ts__": timestamp, "__symbol__": symbols})
+            .dropna(subset=["__ts__"])
+            .groupby("__ts__", observed=True)["__symbol__"]
+            .nunique()
+        )
+        insufficient = support.loc[support.lt(int(min_timestamp_symbols))]
+        if len(insufficient):
+            sample = [
+                f"{ts.isoformat()}:{count}"
+                for ts, count in insufficient.head(8).items()
+            ]
+            raise ValueError(
+                "live source-regime materialization requires a full cross-sectional "
+                f"panel of at least {int(min_timestamp_symbols)} symbols per timestamp; "
+                f"found {len(insufficient)}/{len(support)} undersupported timestamps "
+                f"({', '.join(sample)})"
+            )
         try:
             from scripts.materialize_candidate_source_tags import (
                 DEFAULT_CONFIG,
@@ -252,11 +314,9 @@ def materialize(
     ae_gmm_state_path: Path,
     out_path: Path,
     materialize_live_source_regime: bool = False,
+    min_source_regime_symbols: int = DEFAULT_MIN_SOURCE_REGIME_SYMBOLS,
 ) -> dict[str, Any]:
-    candidates = pd.read_parquet(candidates_path)
-    candidates = candidates.copy()
-    candidates["timestamp"] = pd.to_datetime(candidates["timestamp"], utc=True, errors="coerce")
-    candidates["symbol"] = candidates["symbol"].astype(str)
+    candidates = _normalize_candidate_schema(pd.read_parquet(candidates_path))
     state = load_ae_gmm_state_artifact(ae_gmm_state_path)
     feature_columns = [str(col) for col in state.get("feature_columns", [])]
     non_side_feature_cols = [col for col in feature_columns if col != "side"]
@@ -303,6 +363,7 @@ def materialize(
             raw_all, parity_report = _append_live_source_regime_inputs(
                 raw_all,
                 required_columns=feature_columns,
+                min_timestamp_symbols=int(min_source_regime_symbols),
             )
             x_all = raw_all.reindex(columns=feature_columns, fill_value=0.0).replace(
                 [np.inf, -np.inf],
@@ -370,6 +431,7 @@ def materialize(
         "posterior_columns": [col for col in posterior_cols if str(col).startswith("gmm_cluster_posterior_")],
         "posterior_source": "frozen_train_fitted_ae_gmm_state",
         "materialize_live_source_regime": bool(materialize_live_source_regime),
+        "min_source_regime_symbols": int(min_source_regime_symbols),
         "source_regime_parity": parity_report,
         "feature_columns_count": int(len(feature_columns)),
         "median_missing_input_features_per_symbol": float(np.median(list(missing_feature_counts.values()))) if missing_feature_counts else None,
@@ -393,6 +455,12 @@ def main() -> None:
         action="store_true",
         help="Compute live-equivalent __regime_source_* and __meta_raw__ inputs before frozen AE/GMM transform.",
     )
+    parser.add_argument(
+        "--min-source-regime-symbols",
+        type=int,
+        default=DEFAULT_MIN_SOURCE_REGIME_SYMBOLS,
+        help="Minimum symbol coverage per timestamp required for source-regime scores.",
+    )
     args = parser.parse_args()
     summary = materialize(
         candidates_path=args.candidates,
@@ -400,6 +468,7 @@ def main() -> None:
         ae_gmm_state_path=args.ae_gmm_state,
         out_path=args.out,
         materialize_live_source_regime=bool(args.materialize_live_source_regime),
+        min_source_regime_symbols=int(args.min_source_regime_symbols),
     )
     print(json.dumps(summary, sort_keys=True))
 

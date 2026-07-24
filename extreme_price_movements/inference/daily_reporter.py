@@ -1193,8 +1193,21 @@ class DailyDeploymentReporter:
             with self.smtp_factory(smtp_host, smtp_port, timeout=timeout) as smtp:
                 smtp.starttls()
                 smtp.login(gmail_user, gmail_password)
-                smtp.send_message(message)
-            return {"success": True, "recipient": recipient}
+                refused = smtp.send_message(message) or {}
+            if refused:
+                refused_recipients = sorted(str(address) for address in refused)
+                return {
+                    "success": False,
+                    "error_category": "smtp_recipient_refused",
+                    "error": "SMTP server refused one or more recipients",
+                    "recipient": recipient,
+                    "refused_recipients": refused_recipients,
+                }
+            return {
+                "success": True,
+                "recipient": recipient,
+                "accepted_recipients": [recipient],
+            }
         except Exception as exc:
             return {
                 "success": False,

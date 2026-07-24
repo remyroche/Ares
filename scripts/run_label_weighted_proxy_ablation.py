@@ -71,6 +71,7 @@ WEIGHT_ARMS = (
     "W16_severe_adverse_contrast",
     "W_execres_clean_dirty",
     "W_execres_hpo_topk_v1",
+    "W_side_target_strength_v1",
 )
 FIXED_ARTIFACT_LABEL_ARMS = (
     "S10_policy_net_replay",
@@ -330,6 +331,12 @@ def _weight_series(
             + 0.8979877262955549 * timeout_positive
             + 0.23402796066365478 * high_spread_dirty
         ) * hpo_tail * month_side_balance_hpo_topk_v1 * side_balance_hpo_topk_v1
+    elif arm == "W_side_target_strength_v1":
+        from extreme_price_movements.base_side_target_contract import (
+            build_promoted_side_weights,
+        )
+
+        return build_promoted_side_weights(frame, target)
     else:
         raise ValueError(f"Unknown weight arm: {arm}")
     max_weight = 5.124217733388137 if arm == "W_execres_hpo_topk_v1" else 5.0

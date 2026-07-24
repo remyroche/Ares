@@ -45,6 +45,12 @@ from scripts.run_label_quality_proxy_diagnostics import (  # noqa: E402
     _sigmoid,  # noqa: E402
 )
 from scripts.run_label_widestop_capture_proxy import CaptureArm  # noqa: E402
+from extreme_price_movements.timestamp_contract import (  # noqa: E402
+    assert_first_path_timestamp,
+)
+from extreme_price_movements.simple_policy_optimiser import (  # noqa: E402
+    _policy_path_finite_mask,
+)
 
 DEFAULT_SOURCE_LABELS_DIR = Path(
     "data_perp/artifacts/"
@@ -437,6 +443,41 @@ def _copy_capture_columns(
         .fillna(0.0)
         .to_numpy(dtype=np.float32)
     )
+
+    # Keep the repository's legacy support aliases aligned with the same
+    # causal path as the promoted first-touch target.  These names are still
+    # accepted by diagnostic and auxiliary-label code, so carrying them from
+    # the source artifact would reintroduce the pre-signal-close path.
+    barrier = (
+        pd.to_numeric(out["__barrier_pct__"], errors="coerce")
+        .abs()
+        .to_numpy(dtype=np.float32)
+    )
+    full_mfe_norm = pd.to_numeric(
+        capture.get("full_path_mfe_norm"), errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    full_mae_norm = pd.to_numeric(
+        capture.get("full_path_mae_norm"), errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    corrected_mfe = (full_mfe_norm * barrier).astype(np.float32, copy=False)
+    corrected_mae = (full_mae_norm * barrier).astype(np.float32, copy=False)
+    out["__mfe__"] = corrected_mfe
+    out["__mae__"] = corrected_mae
+    out["__mfe_ret__"] = corrected_mfe
+    out["__mae_ret__"] = corrected_mae
+    out["__bars_to_mfe__"] = pd.to_numeric(
+        capture.get("bars_to_mfe_1r"), errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    out["__bars_to_mae__"] = pd.to_numeric(
+        capture.get("bars_to_mae_1r"), errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    out["__quality__"] = pd.to_numeric(
+        capture["target_soft"], errors="coerce"
+    ).to_numpy(dtype=np.float32)
+    # Current training constructs its explicit target-strength weights from
+    # permitted train rows.  A neutral alias is safer than retaining weights
+    # fitted to the superseded source target.
+    out["__w__"] = np.ones(len(out), dtype=np.float32)
     out["__first_touch_effective_tp_abs__"] = out["__tp__"]
     out["__first_touch_effective_sl_abs__"] = out["__sl__"]
     if "effective_trail_abs" in capture.columns:
@@ -515,6 +556,7 @@ def _conditioned_capture(
     policy_manifest: dict[str, Any],
     outcome_mode: str,
     round_trip_cost: float,
+    first_outcome_bar: int = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     assignment_rows: list[dict[str, Any]] = []
     assignments: list[dict[str, Any]] = []
@@ -553,6 +595,7 @@ def _conditioned_capture(
             side_name=side,
             outcome_mode=outcome_mode,
             round_trip_cost=float(round_trip_cost),
+            first_outcome_bar=int(first_outcome_bar),
         )
         for key, policy in policy_by_key.items()
     }
@@ -652,6 +695,7 @@ def _materialize_dataset(
     timeframe: str,
     path_len: int,
     apply_delayed_entry: bool,
+    entry_delay_hours: int,
     policy_label_center: float,
     policy_label_temperature: float,
     outcome_mode: str,
@@ -680,14 +724,24 @@ def _materialize_dataset(
                 f"{source_path}: no rows after timestamp filter start_ts={start_ts!r} end_ts={end_ts!r}"
             )
 
-    selected_features = _read_feature_list(
-        feature_list_csv, max_features=max_feature_store_features
-    )
-    feature_matrix, feature_report = _load_feature_store_columns(
-        df,
-        feature_dir=feature_dir,
-        selected_features=selected_features,
-    )
+    if feature_list_csv.exists():
+        selected_features = _read_feature_list(
+            feature_list_csv, max_features=max_feature_store_features
+        )
+        feature_matrix, feature_report = _load_feature_store_columns(
+            df,
+            feature_dir=feature_dir,
+            selected_features=selected_features,
+        )
+    else:
+        selected_features = []
+        feature_matrix = pd.DataFrame(index=df.index)
+        feature_report = {
+            "source": "embedded_pre_entry_columns",
+            "reason": "feature_list_csv_missing",
+            "feature_list_csv": str(feature_list_csv),
+            "embedded_columns": int(len(df.columns)),
+        }
     if not feature_matrix.empty:
         new_cols = [col for col in feature_matrix.columns if col not in df.columns]
         if new_cols:
@@ -709,7 +763,7 @@ def _materialize_dataset(
         legacy_min_score=float(regime_family_min_score),
     )
     families = df["__regime_family__"].fillna("mixed").astype(str)
-    _rows_exec, paths, path_stats = _fetch_policy_paths(
+    rows_exec, paths, path_stats = _fetch_policy_paths(
         df,
         labels_path=source_path,
         side=side,
@@ -718,7 +772,35 @@ def _materialize_dataset(
         exchange=exchange,
         path_len=path_len,
         apply_delayed_entry=apply_delayed_entry,
+        entry_delay_hours=int(entry_delay_hours),
+        timeframe=timeframe,
     )
+    minimum_path_coverage = float(
+        os.environ.get("EPM_LABEL_MIN_PATH_COVERAGE", "0.95")
+    )
+    finite_path_coverage = float(path_stats.get("finite_path_coverage", 0.0) or 0.0)
+    if finite_path_coverage < minimum_path_coverage:
+        raise RuntimeError(
+            f"{source_path}: causal execution path coverage "
+            f"{finite_path_coverage:.4%} is below required "
+            f"{minimum_path_coverage:.4%}; labels were not written"
+        )
+    finite_path_mask = _policy_path_finite_mask(paths)
+    dropped_unresolved_paths = int((~finite_path_mask).sum())
+    if dropped_unresolved_paths:
+        # Rows without a complete causal path do not have an observable label.
+        # Keep the shard-level coverage audit above, then exclude those rows
+        # instead of persisting NaT path provenance or synthetic outcomes.
+        keep = np.flatnonzero(finite_path_mask)
+        df = df.iloc[keep].reset_index(drop=True)
+        rows_exec = rows_exec.iloc[keep].reset_index(drop=True)
+        families = families.iloc[keep].reset_index(drop=True)
+        paths = tuple(
+            np.asarray(path)[keep]
+            for path in paths
+        )
+        path_stats["dropped_unresolved_path_rows"] = dropped_unresolved_paths
+        path_stats["materialized_rows"] = int(len(df))
     capture, assignment = _conditioned_capture(
         df=df,
         paths=paths,
@@ -727,6 +809,7 @@ def _materialize_dataset(
         policy_manifest=policy_manifest,
         outcome_mode=outcome_mode,
         round_trip_cost=float(round_trip_cost),
+        first_outcome_bar=1 if apply_delayed_entry else 0,
     )
 
     out = df.copy()
@@ -753,6 +836,34 @@ def _materialize_dataset(
         policy_label_center=float(policy_label_center),
         policy_label_temperature=float(policy_label_temperature),
     )
+    out["__signal_ts__"] = pd.to_datetime(df["__ts__"], utc=True, errors="coerce")
+    out["__decision_ts__"] = pd.to_datetime(
+        rows_exec["decision_ts"], utc=True, errors="coerce"
+    )
+    if "delayed_entry_effective_ts" in rows_exec.columns:
+        effective_entry = pd.to_datetime(
+            rows_exec["delayed_entry_effective_ts"], utc=True, errors="coerce"
+        )
+    else:
+        effective_entry = pd.Series(
+            pd.NaT, index=rows_exec.index, dtype="datetime64[ns, UTC]"
+        )
+    out["__entry_ts__"] = effective_entry.fillna(out["__decision_ts__"])
+    out["__first_path_ts__"] = pd.to_datetime(
+        rows_exec.get("first_path_timestamp", out["__entry_ts__"]),
+        utc=True,
+        errors="coerce",
+    )
+    assert_first_path_timestamp(
+        first_path_ts=out["__first_path_ts__"],
+        signal_ts=out["__signal_ts__"],
+        timeframe=timeframe,
+    )
+    resolved_path = out["__first_path_ts__"].notna() & out["__entry_ts__"].notna()
+    if bool((out.loc[resolved_path, "__first_path_ts__"] < out.loc[resolved_path, "__entry_ts__"]).any()):
+        raise AssertionError(
+            "first_path_timestamp must be at or after the executable entry timestamp"
+        )
     out = _add_long_path_label_columns(out, capture, side)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(output_path, index=False)
@@ -920,6 +1031,7 @@ def run_materialization(
     timeframe: str,
     path_len: int,
     apply_delayed_entry: bool,
+    entry_delay_hours: int,
     policy_label_center: float,
     policy_label_temperature: float,
     outcome_mode: str,
@@ -968,6 +1080,23 @@ def run_materialization(
             "timeframe": str(timeframe),
             "path_len": int(path_len),
             "apply_delayed_entry": bool(apply_delayed_entry),
+            "entry_delay_hours": int(entry_delay_hours),
+            "path_start_contract": (
+                "signal_timestamp_plus_timeframe_then_optional_delayed_execution"
+            ),
+            "label_entry_contract": (
+                "mandatory_signal_close_plus_one_signal_timeframe"
+                if not apply_delayed_entry
+                else "mandatory_offset_plus_optional_delayed_execution_diagnostic"
+            ),
+            "delayed_slippage_contract_owner": (
+                "simple_policy_optimiser_and_live_inference"
+                if not apply_delayed_entry
+                else "label_diagnostic_and_simple_policy_optimiser"
+            ),
+            "minimum_path_coverage": float(
+                os.environ.get("EPM_LABEL_MIN_PATH_COVERAGE", "0.95")
+            ),
             "native_15m_chart_only": str(
                 os.environ.get("EPM_SIMPLE_POLICY_15M_CHART_ONLY", "")
             )
@@ -1052,6 +1181,7 @@ def run_materialization(
                 timeframe=timeframe,
                 path_len=path_len,
                 apply_delayed_entry=apply_delayed_entry,
+                entry_delay_hours=int(entry_delay_hours),
                 policy_label_center=policy_label_center,
                 policy_label_temperature=policy_label_temperature,
                 outcome_mode=outcome_mode,
@@ -1151,19 +1281,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeframe", default="1h")
     parser.add_argument("--path-len", type=int, default=96)
     parser.add_argument(
+        "--entry-delay-hours",
+        type=int,
+        default=1,
+        help=(
+            "Deprecated compatibility check. It must equal the signal timeframe; "
+            "the signal-close offset is always enforced."
+        ),
+    )
+    parser.add_argument(
         "--apply-delayed-entry",
         dest="apply_delayed_entry",
         action="store_true",
         help=(
-            "Opt into the delayed-entry execution proxy. This may use the "
-            "execution_1m store and is off by default for label materialization."
+            "Apply the additional 1m delayed/slipped fill model after the mandatory "
+            "signal-close offset."
         ),
     )
     parser.add_argument(
         "--no-delayed-entry",
         dest="apply_delayed_entry",
         action="store_false",
-        help="Keep delayed-entry execution disabled. This is the default.",
+        help=(
+            "Keep the base label on the mandatory next-bar decision anchor. "
+            "The additional delayed/slipped fill remains a downstream policy "
+            "execution adjustment."
+        ),
     )
     parser.add_argument("--policy-label-center", type=float, default=0.0)
     parser.add_argument("--policy-label-temperature", type=float, default=0.004)
@@ -1216,6 +1359,7 @@ def main() -> int:
         timeframe=str(args.timeframe),
         path_len=int(args.path_len),
         apply_delayed_entry=bool(args.apply_delayed_entry),
+        entry_delay_hours=int(args.entry_delay_hours),
         policy_label_center=float(args.policy_label_center),
         policy_label_temperature=float(args.policy_label_temperature),
         outcome_mode=str(args.outcome_mode),

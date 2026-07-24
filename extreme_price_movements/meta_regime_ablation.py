@@ -10,15 +10,26 @@ assignment.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.mixture import GaussianMixture
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
+
+from .residual_event_archetypes import (
+    OUTCOME_COLUMNS as RESIDUAL_STATE_OUTCOME_COLUMNS,
+    ResidualEventArchetypeConfig,
+    ResidualEventArchetypeState,
+    residual_event_feature_names,
+    residual_event_market_feature_names,
+)
 
 OUTCOME_COLUMNS = {
     "__first_touch_target_soft__",
@@ -88,6 +99,34 @@ CURRENT_ARCHETYPE_REGIME_COLUMNS = (
     "regime_timeout_score_bin",
     "regime_dirty_positive_score_bin",
     "regime_clean_exec_score_bin",
+)
+
+FAILURE_SHOCK_CLASSES: tuple[str, ...] = (
+    "neutral_low_relevance",
+    "negative_bad_mae_shock",
+    "negative_timeout_shock",
+    "negative_dirty_positive_shock",
+    "negative_ev_calibration_shock",
+    "positive_clean_opportunity_shock",
+    "positive_dirty_but_ev_shock",
+    "high_variance_mixed_shock",
+)
+
+# The residual-state experiments deliberately exclude realized and rolling
+# performance feedback. Their job is to discover observable market/context
+# states that precede residual shocks, not to react to the last few days.
+RESIDUAL_EVENT_FORBIDDEN_TOKENS: tuple[str, ...] = (
+    "hit_surprise",
+    "ev_surprise",
+    "recent_hit",
+    "recent_ev",
+    "threshold_basis",
+    "historical_rank",
+    "selected_for_monitor",
+    "outcomes_available",
+    "meta_resid_",
+    "meta_residual_",
+    "resid_event_",
 )
 
 
@@ -475,6 +514,297 @@ def _target_frame(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _score_series(frame: pd.DataFrame) -> pd.Series:
+    for col in (
+        "score_meta_base_soft_label",
+        "score_regime_calibrated",
+        "score",
+        "hit_probability",
+        "score_meta",
+        "score_base",
+    ):
+        if col in frame.columns:
+            values = _num(frame, col, np.nan)
+            if values.notna().any():
+                return values.clip(0.0, 1.0)
+    return pd.Series(0.5, index=frame.index, dtype=np.float32)
+
+
+def _side_archetype_key(frame: pd.DataFrame) -> pd.Series:
+    side = (
+        frame.get("side_name", pd.Series("missing", index=frame.index))
+        .astype(str)
+        .str.lower()
+    )
+    return side + "|" + archetype_series(frame).astype(str)
+
+
+def _threshold_for_ev_target(
+    score: np.ndarray,
+    ev: np.ndarray,
+    *,
+    target: float,
+    min_rows: int,
+) -> float:
+    valid = np.isfinite(score) & np.isfinite(ev)
+    if int(valid.sum()) < int(min_rows) or not np.isfinite(target):
+        return float("nan")
+    x = score[valid].astype(np.float64, copy=False)
+    y = ev[valid].astype(np.float64, copy=False)
+    best_threshold, best_gap = float("nan"), float("inf")
+    for threshold in np.unique(np.quantile(x, np.linspace(0.50, 0.995, 72))):
+        selected = y[x >= threshold]
+        if len(selected) < int(min_rows):
+            continue
+        value = float(np.mean(selected))
+        if value >= float(target) and abs(value - float(target)) < best_gap:
+            best_threshold, best_gap = float(threshold), abs(value - float(target))
+    return best_threshold
+
+
+def _global_ev_tail_masks(
+    frame: pd.DataFrame,
+    score: pd.Series,
+    ev: pd.Series,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Fit the failure-label tail on global EV, not monthly percentiles.
+
+    A global train top-10/top-20 score tail sets two EV targets. Each side x
+    base-archetype stream then receives a train-only score cutoff which reaches
+    the respective target when support allows. This is deliberately the same
+    threshold concept used in residual-event state discovery, without recent
+    hit-rate smoothing or policy calibration.
+    """
+
+    x = pd.to_numeric(score, errors="coerce").to_numpy(dtype=np.float32)
+    y = pd.to_numeric(ev, errors="coerce").to_numpy(dtype=np.float32)
+    valid = np.isfinite(x) & np.isfinite(y)
+    if int(valid.sum()) < 2_000:
+        empty = np.zeros(len(frame), dtype=bool)
+        return empty, empty, {"status": "insufficient_rows", "rows": int(valid.sum())}
+    thresholds: dict[str, float] = {}
+    targets: dict[str, float] = {}
+    for name, fraction in (("top10", 0.10), ("top20", 0.20)):
+        threshold = float(np.quantile(x[valid], 1.0 - fraction))
+        thresholds[name] = threshold
+        targets[name] = float(np.mean(y[valid & (x >= threshold)]))
+    local = _side_archetype_key(frame)
+    local_thresholds = {
+        name: np.full(len(frame), thresholds[name], dtype=np.float32)
+        for name in ("top10", "top20")
+    }
+    local_fit_count = 0
+    for _key, idx in local.groupby(local, sort=True).groups.items():
+        pos = frame.index.get_indexer(pd.Index(list(idx)))
+        for name in ("top10", "top20"):
+            threshold = _threshold_for_ev_target(
+                x[pos], y[pos], target=targets[name], min_rows=600
+            )
+            if np.isfinite(threshold):
+                local_thresholds[name][pos] = np.float32(threshold)
+                local_fit_count += 1
+    # The local top-20 population must include local top-10.
+    local_thresholds["top20"] = np.minimum(
+        local_thresholds["top20"], local_thresholds["top10"]
+    )
+    return (
+        valid & (x >= local_thresholds["top10"]),
+        valid & (x >= local_thresholds["top20"]),
+        {
+            "status": "ok",
+            "rows": int(valid.sum()),
+            "global_thresholds": thresholds,
+            "global_ev_targets": targets,
+            "local_threshold_sources": int(local_fit_count),
+            "contract": "global_topk_ev_target_with_side_x_archetype_train_thresholds",
+        },
+    )
+
+
+def _timestamp_neutral_surprise(
+    frame: pd.DataFrame, surprise: pd.Series
+) -> pd.Series:
+    """Remove leave-one-out same-timestamp model drift from residual labels."""
+
+    if "__ts__" not in frame.columns:
+        return surprise.astype(np.float32)
+    timestamp = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
+    work = pd.DataFrame({"ts": timestamp, "surprise": surprise}, index=frame.index)
+    valid = work["ts"].notna() & work["surprise"].notna()
+    sums = work.loc[valid].groupby("ts", sort=False)["surprise"].transform("sum")
+    counts = work.loc[valid].groupby("ts", sort=False)["surprise"].transform("count")
+    neutral = surprise.astype(np.float32).copy()
+    enough = counts.ge(8)
+    if enough.any():
+        labels = enough.index[enough]
+        peer = (sums.loc[labels] - surprise.loc[labels]) / (counts.loc[labels] - 1.0)
+        neutral.loc[labels] = (surprise.loc[labels] - peer).astype(np.float32)
+    return neutral
+
+
+def _failure_shock_labels(frame: pd.DataFrame) -> tuple[np.ndarray, dict[str, Any]]:
+    """Create train-only high-surprise failure classes for meta residual rows.
+
+    The label is deliberately event-level: first identify day x side x archetype
+    cells where the top-tail model is materially over- or under-performing,
+    then describe the dominant failure/opportunity mode inside that cell. OOS
+    rows never receive this label directly; builders learn to predict it from
+    pre-entry columns only.
+    """
+
+    target = _target_frame(frame)
+    score = _score_series(frame).fillna(0.5).clip(0.0, 1.0)
+    clean = target["clean"].fillna(0.0).clip(0.0, 1.0)
+    ev = target["exec"].fillna(0.0)
+    surprise = _timestamp_neutral_surprise(frame, clean - score)
+    bad = target["bad_mae"].fillna(0.0).clip(0.0, 1.0)
+    dirty = target["dirty"].fillna(0.0).clip(0.0, 1.0)
+    timeout = target["timeout"].fillna(0.0).clip(0.0, 1.0)
+    top10, top20, tail_meta = _global_ev_tail_masks(frame, score, ev)
+    if "__ts__" in frame.columns:
+        day = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce").dt.floor("D")
+    else:
+        day = pd.Series(pd.NaT, index=frame.index)
+    side = (
+        frame.get("side_name", pd.Series("missing", index=frame.index))
+        .astype(str)
+        .str.lower()
+    )
+    arch = archetype_series(frame).astype(str)
+    work = pd.DataFrame(
+        {
+            "day": day,
+            "side": side,
+            "arch": arch,
+            "top10": top10,
+            "top20": top20,
+            "surprise": surprise.astype(np.float32),
+            "ev": ev.astype(np.float32),
+            "clean": clean.astype(np.float32),
+            "bad": bad.astype(np.float32),
+            "dirty": dirty.astype(np.float32),
+            "timeout": timeout.astype(np.float32),
+        },
+        index=frame.index,
+    )
+    top_work = work.loc[work["top20"] & work["day"].notna()].copy()
+    labels = np.zeros(len(frame), dtype=np.int32)
+    if len(top_work) < 100:
+        return labels, {
+            "status": "insufficient_top20_rows",
+            "top10_rows": int(top10.sum()),
+            "top20_rows": int(len(top_work)),
+            "class_names": list(FAILURE_SHOCK_CLASSES),
+            "tail_contract": tail_meta,
+        }
+    top_work["zone"] = np.where(top_work["top10"], "top10", "near_miss")
+    cells = top_work.groupby(["day", "side", "arch", "zone"], sort=True).agg(
+        rows=("surprise", "size"),
+        mean_surprise=("surprise", "mean"),
+        mean_ev=("ev", "mean"),
+        clean_rate=("clean", "mean"),
+        bad_rate=("bad", "mean"),
+        dirty_rate=("dirty", "mean"),
+        timeout_rate=("timeout", "mean"),
+    )
+    cells = cells.loc[cells["rows"].ge(3)].copy()
+    if len(cells) < 20:
+        return labels, {
+            "status": "insufficient_event_cells",
+            "top10_rows": int(top10.sum()),
+            "top20_rows": int(len(top_work)),
+            "event_cells": int(len(cells)),
+            "class_names": list(FAILURE_SHOCK_CLASSES),
+            "tail_contract": tail_meta,
+        }
+    global_center = float(cells["mean_surprise"].median())
+    global_scale = max(
+        float(
+            (cells["mean_surprise"].quantile(0.75)
+             - cells["mean_surprise"].quantile(0.25))
+            / 1.349
+        ),
+        1e-4,
+    )
+    global_bad = float(cells["bad_rate"].mean())
+    global_dirty = float(cells["dirty_rate"].mean())
+    global_timeout = float(cells["timeout_rate"].mean())
+    cell_class: dict[tuple[Any, str, str, str], int] = {}
+    local_thresholds: dict[tuple[str, str, str], tuple[float, float]] = {}
+    for (side_key, arch_key, zone), group in cells.groupby(
+        level=["side", "arch", "zone"], sort=True
+    ):
+        if len(group) >= 12:
+            center = float(group["mean_surprise"].median())
+            scale = max(
+                float(
+                    (group["mean_surprise"].quantile(0.75)
+                     - group["mean_surprise"].quantile(0.25))
+                    / 1.349
+                ),
+                1e-4,
+            )
+        else:
+            center, scale = global_center, global_scale
+        neg_cut, pos_cut = center - 1.75 * scale, center + 1.75 * scale
+        local_thresholds[(str(side_key), str(arch_key), str(zone))] = (
+            neg_cut,
+            pos_cut,
+        )
+        for key, row in group.iterrows():
+            cls = 0
+            value = float(row["mean_surprise"])
+            if value <= neg_cut and str(key[3]) == "top10":
+                if float(row["bad_rate"]) >= max(0.55, global_bad + 0.05):
+                    cls = 1
+                elif float(row["timeout_rate"]) >= max(0.08, global_timeout + 0.03):
+                    cls = 2
+                elif float(row["dirty_rate"]) >= max(0.45, global_dirty + 0.05):
+                    cls = 3
+                else:
+                    cls = 4
+            elif value >= pos_cut:
+                if float(row["clean_rate"]) >= 0.70 and float(row["mean_ev"]) > 0.0:
+                    cls = 5
+                elif float(row["dirty_rate"]) >= max(0.45, global_dirty + 0.05):
+                    cls = 6
+                else:
+                    cls = 7
+            elif abs(value - center) >= 1.75 * scale:
+                cls = 7
+            cell_class[(key[0], str(key[1]), str(key[2]), str(key[3]))] = cls
+    work["zone"] = np.where(
+        work["top10"], "top10", np.where(work["top20"], "near_miss", "outside")
+    )
+    class_lookup = pd.MultiIndex.from_frame(work[["day", "side", "arch", "zone"]])
+    class_series = pd.Series(cell_class, dtype=object)
+    if not class_series.empty:
+        class_series.index = pd.MultiIndex.from_tuples(
+            list(class_series.index), names=["day", "side", "arch", "zone"]
+        )
+    if not class_series.empty:
+        assigned = class_series.reindex(class_lookup).fillna(0).astype(np.int32)
+        labels = assigned.to_numpy(dtype=np.int32)
+        labels[~top20] = 0
+    counts = {
+        FAILURE_SHOCK_CLASSES[idx]: int(np.sum(labels == idx))
+        for idx in range(len(FAILURE_SHOCK_CLASSES))
+    }
+    return labels, {
+        "status": "ok",
+        "top10_rows": int(top10.sum()),
+        "top20_rows": int(top20.sum()),
+        "event_cells": int(len(cells)),
+        "global_surprise_center": global_center,
+        "global_surprise_scale": global_scale,
+        "class_counts": counts,
+        "class_names": list(FAILURE_SHOCK_CLASSES),
+        "local_threshold_count": int(len(local_thresholds)),
+        "tail_contract": tail_meta,
+        "surprise_contract": "clean_hit_minus_score_then_leave_one_out_timestamp_peer",
+    }
+
+
 def _candidate_pre_entry_columns(
     frame: pd.DataFrame, *, temporal_only: bool = False
 ) -> tuple[list[str], list[str]]:
@@ -510,6 +840,27 @@ def _candidate_pre_entry_columns(
         elif frame[col].nunique(dropna=True) <= 128:
             categorical.append(name)
     return sorted(set(numeric)), sorted(set(categorical))
+
+
+def _residual_state_pre_entry_columns(
+    frame: pd.DataFrame,
+) -> tuple[list[str], list[str]]:
+    """Observable state basket for residual-event discovery only.
+
+    Other ablation arms may intentionally test drift or hit-rate context. This
+    stricter basket is for residual-event labels: it excludes every rolling
+    outcome/surprise proxy so the classifier can only learn market, cross-asset,
+    base-score, AE/GMM, leaf, order-book, OI, funding and residualized state.
+    """
+
+    numeric, categorical = _candidate_pre_entry_columns(frame)
+    blocked = lambda name: any(
+        token in str(name).lower() for token in RESIDUAL_EVENT_FORBIDDEN_TOKENS
+    )
+    return (
+        [name for name in numeric if not blocked(name)],
+        [name for name in categorical if not blocked(name)],
+    )
 
 
 class MatrixEncoder:
@@ -1180,6 +1531,335 @@ class ErrorSignatureRegimeBuilder(RegimeFeatureBuilder):
         return self._transform(oos_without_outcomes, train_mode=False)
 
 
+class FailureShockRegimeBuilder(RegimeFeatureBuilder):
+    """Predict train-discovered high-surprise failure/opportunity archetypes.
+
+    This builder is deliberately supervised only on the training side. Realized
+    outcomes define side x archetype x day shock classes inside train-fitted
+    global-EV top10/top20 populations. OOS rows receive only frozen classifier
+    probabilities from observable pre-entry features plus train-derived priors.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str = "hit_surprise_failure_shock_regimes",
+        prefix: str = "ab_failshock",
+        seed: int = 52,
+        backend: str = "extratrees",
+    ) -> None:
+        super().__init__(
+            name=name,
+            prefix=prefix,
+            n_clusters=len(FAILURE_SHOCK_CLASSES),
+            seed=seed,
+        )
+        self.backend = str(backend)
+        self.encoder = MatrixEncoder(
+            max_categories_per_col=20,
+            max_numeric_cols=160,
+            max_categorical_cols=32,
+            max_profile_rows=60_000,
+        )
+        self.scaler = StandardScaler()
+        self.classifier: Any = None
+        self.train_labels: np.ndarray = np.zeros(0, dtype=np.int32)
+        self.train_oof_proba: np.ndarray | None = None
+        self.target: pd.DataFrame = pd.DataFrame()
+
+    def feature_names(self) -> list[str]:
+        names = [f"{self.prefix}_class_id"]
+        names += [f"{self.prefix}_posterior_{idx}" for idx in range(self.n_clusters)]
+        names += [
+            f"{self.prefix}_prob__{name}" for name in FAILURE_SHOCK_CLASSES
+        ]
+        names += [
+            f"{self.prefix}_negative_shock_prob",
+            f"{self.prefix}_positive_shock_prob",
+            f"{self.prefix}_bad_mae_shock_prob",
+            f"{self.prefix}_timeout_shock_prob",
+            f"{self.prefix}_dirty_shock_prob",
+            f"{self.prefix}_calibration_shock_prob",
+            f"{self.prefix}_opportunity_shock_prob",
+            f"{self.prefix}_mixed_shock_prob",
+            f"{self.prefix}_entropy",
+            f"{self.prefix}_distance",
+        ]
+        names += [
+            f"{self.prefix}_prior_{name}"
+            for name in ("clean", "bad_mae", "dirty", "timeout", "exec")
+        ]
+        names += [f"{self.prefix}_support_log1p"]
+        return names
+
+    def fit(self, train: pd.DataFrame) -> "FailureShockRegimeBuilder":
+        labels, label_meta = _failure_shock_labels(train)
+        self.train_labels = labels.astype(np.int32, copy=False)
+        self.target = _target_frame(train).reset_index(drop=True)
+        num, cat = _residual_state_pre_entry_columns(train)
+        self.encoder.fit(train, num, cat)
+        x_pre = self.encoder.transform(train)
+        x = (
+            self.scaler.fit_transform(x_pre)
+            if x_pre.shape[1]
+            else np.zeros((len(train), 0), dtype=np.float32)
+        )
+        if self.backend == "mlp":
+            self.train_oof_proba = _time_oof_mlp_classifier_proba(
+                x, self.train_labels, self.n_clusters, seed=self.seed
+            )
+            self.classifier = _fit_mlp_classifier_final(
+                x, self.train_labels, seed=self.seed
+            )
+        else:
+            self.train_oof_proba = _time_oof_classifier_proba(
+                x,
+                self.train_labels,
+                self.n_clusters,
+                seed=self.seed,
+                max_fit_rows=60_000,
+                n_estimators=40,
+                min_samples_leaf=60,
+            )
+            self.classifier = _fit_classifier_final(
+                x,
+                self.train_labels,
+                seed=self.seed,
+                max_fit_rows=60_000,
+                n_estimators=40,
+                min_samples_leaf=60,
+            )
+        self.metadata_ = {
+            "status": "ok" if self.classifier is not None else "fallback",
+            "backend": self.backend,
+            "pre_entry_feature_count": int(x_pre.shape[1]),
+            "label_metadata": label_meta,
+            "leakage_contract": (
+                "Failure/shock classes are outcome-derived on train rows only. "
+                "OOS transform rejects outcome columns and emits only frozen "
+                "pre-entry classifier probabilities plus train-derived priors. "
+                "Rolling hit-rate/EV surprise features are excluded from this arm."
+            ),
+        }
+        return self
+
+    def _proba(self, frame: pd.DataFrame, *, train_mode: bool) -> np.ndarray:
+        if (
+            train_mode
+            and self.train_oof_proba is not None
+            and len(self.train_oof_proba) == len(frame)
+        ):
+            return self.train_oof_proba
+        x_pre = self.encoder.transform(frame)
+        x = (
+            self.scaler.transform(x_pre)
+            if x_pre.shape[1]
+            else np.zeros((len(frame), 0), dtype=np.float32)
+        )
+        if self.classifier is None or x.shape[1] == 0:
+            out = np.zeros((len(frame), self.n_clusters), dtype=np.float32)
+            out[:, 0] = 1.0
+            return out
+        raw = self.classifier.predict_proba(x)
+        out = np.zeros((len(frame), self.n_clusters), dtype=np.float32)
+        for idx, klass in enumerate(self.classifier.classes_):
+            if int(klass) < self.n_clusters:
+                out[:, int(klass)] = raw[:, idx]
+        rowsum = out.sum(axis=1, keepdims=True)
+        return np.divide(out, np.where(rowsum <= 0.0, 1.0, rowsum)).astype(
+            np.float32
+        )
+
+    def _transform(self, frame: pd.DataFrame, *, train_mode: bool) -> pd.DataFrame:
+        proba = self._proba(frame, train_mode=train_mode)
+        classes = np.asarray(np.argmax(proba, axis=1), dtype=np.int32)
+        out = pd.DataFrame(index=frame.index)
+        out[f"{self.prefix}_class_id"] = classes.astype(np.float32)
+        for idx, name in enumerate(FAILURE_SHOCK_CLASSES):
+            out[f"{self.prefix}_posterior_{idx}"] = proba[:, idx]
+            out[f"{self.prefix}_prob__{name}"] = proba[:, idx]
+        out[f"{self.prefix}_negative_shock_prob"] = proba[:, 1:5].sum(axis=1)
+        out[f"{self.prefix}_positive_shock_prob"] = proba[:, 5:7].sum(axis=1)
+        out[f"{self.prefix}_bad_mae_shock_prob"] = proba[:, 1]
+        out[f"{self.prefix}_timeout_shock_prob"] = proba[:, 2]
+        out[f"{self.prefix}_dirty_shock_prob"] = proba[:, 3]
+        out[f"{self.prefix}_calibration_shock_prob"] = proba[:, 4]
+        out[f"{self.prefix}_opportunity_shock_prob"] = proba[:, 5]
+        out[f"{self.prefix}_mixed_shock_prob"] = proba[:, 7]
+        out[f"{self.prefix}_entropy"] = _entropy(proba)
+        out[f"{self.prefix}_distance"] = (1.0 - np.max(proba, axis=1)).astype(
+            np.float32
+        )
+        priors = _prior_features(
+            prefix=self.prefix,
+            train_clusters=self.train_labels,
+            target=self.target,
+            out_clusters=classes,
+            train_mode=train_mode,
+        )
+        priors.index = frame.index
+        return pd.concat([out, priors], axis=1).astype(np.float32)
+
+    def transform_train(self, train: pd.DataFrame) -> pd.DataFrame:
+        return self._transform(train, train_mode=True)
+
+    def transform_oos(self, oos_without_outcomes: pd.DataFrame) -> pd.DataFrame:
+        leaked = sorted(set(oos_without_outcomes.columns).intersection(OUTCOME_COLUMNS))
+        if leaked:
+            raise ValueError(
+                f"OOS frame still contains target/outcome columns: {leaked[:10]}"
+            )
+        return self._transform(oos_without_outcomes, train_mode=False)
+
+
+class ResidualEventAEGMMRegimeBuilder(RegimeFeatureBuilder):
+    """Fold-local observable residual states for the meta ablation.
+
+    The state is learned separately inside each existing side x base-archetype
+    stream. Train rows receive expanding internal OOF state features; the final
+    state fitted on the entire outer-train slice assigns the outer OOS month.
+    That prevents outcome-derived state priors from leaking into the meta
+    learner's training matrix.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        seed: int = 52,
+        include_market_secondary: bool = False,
+    ) -> None:
+        super().__init__(name=name, prefix="resid_event_aegmm", seed=seed)
+        self.include_market_secondary = bool(include_market_secondary)
+        self.final_state: ResidualEventArchetypeState | None = None
+        self.train_features_: pd.DataFrame = pd.DataFrame()
+
+    def feature_names(self) -> list[str]:
+        names = list(residual_event_feature_names())
+        if self.include_market_secondary:
+            names.extend(residual_event_market_feature_names())
+        return list(dict.fromkeys(names))
+
+    @staticmethod
+    def _safe_oos(frame: pd.DataFrame) -> pd.DataFrame:
+        forbidden = set(OUTCOME_COLUMNS).union(RESIDUAL_STATE_OUTCOME_COLUMNS)
+        return frame.drop(columns=[name for name in forbidden if name in frame.columns])
+
+    def _config_for(self, frame: pd.DataFrame) -> ResidualEventArchetypeConfig:
+        # Some frozen ledgers retain a compatibility score column with no
+        # populated values. Prefer it only when it is actually usable; the
+        # canonical ``score`` remains the safe fallback for state discovery.
+        soft_score = pd.to_numeric(
+            frame.get("score_meta_base_soft_label", pd.Series(np.nan, index=frame.index)),
+            errors="coerce",
+        )
+        score_col = (
+            "score_meta_base_soft_label"
+            if int(soft_score.notna().sum()) >= max(30, int(len(frame) * 0.50))
+            else "score"
+        )
+        probability_col = (
+            "hit_probability" if "hit_probability" in frame.columns else "__missing__"
+        )
+        small = len(frame) < 10_000
+        return ResidualEventArchetypeConfig(
+            score_col=score_col,
+            probability_col=probability_col,
+            feature_scope="meta_full",
+            min_global_threshold_rows=60 if small else 2_000,
+            min_local_threshold_rows=30 if small else 600,
+            min_local_state_rows=300 if small else 1_500,
+            min_side_state_rows=600 if small else 3_000,
+            min_event_class_rows=10 if small else 30,
+            mi_sample_rows=5_000 if small else 45_000,
+            ae_gmm_max_train_rows=600 if small else 4_500,
+            # Keep the ablation's state fitter aligned with the residual-state
+            # discovery contract. A shallower AE would make this comparison a
+            # capacity ablation as well as a regime-feature ablation.
+            ae_gmm_max_iter=12 if small else 160,
+            enable_market_secondary=self.include_market_secondary,
+            random_state=int(self.seed),
+        )
+
+    def _empty_features(self, index: pd.Index) -> pd.DataFrame:
+        return pd.DataFrame(
+            0.0, index=index, columns=self.feature_names(), dtype=np.float32
+        )
+
+    def _fit_oof_features(self, train: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        ordered = train.sort_values("__ts__", kind="stable")
+        out = self._empty_features(train.index)
+        assigned_rows = 0
+        blocks = np.array_split(np.arange(len(ordered), dtype=np.int64), 3)
+        for block_no, valid_pos in enumerate(blocks[1:], start=1):
+            if len(valid_pos) == 0:
+                continue
+            valid = ordered.iloc[valid_pos]
+            boundary = pd.to_datetime(valid["__ts__"], utc=True, errors="coerce").min()
+            history = ordered.iloc[: int(valid_pos[0])]
+            if pd.notna(boundary):
+                history = history.loc[
+                    pd.to_datetime(history["__ts__"], utc=True, errors="coerce")
+                    .lt(boundary - pd.Timedelta(hours=12))
+                ]
+            config = self._config_for(history)
+            if len(history) < int(config.min_global_threshold_rows):
+                continue
+            state = ResidualEventArchetypeState(config).fit(history)
+            generated = state.transform_oos(self._safe_oos(valid)).reindex(
+                columns=self.feature_names(), fill_value=0.0
+            )
+            out.loc[valid.index, generated.columns] = generated.to_numpy(
+                dtype=np.float32, copy=False
+            )
+            assigned_rows += int(len(valid))
+            del state
+        return out.reindex(columns=self.feature_names(), fill_value=0.0), assigned_rows
+
+    def fit(self, train: pd.DataFrame) -> "ResidualEventAEGMMRegimeBuilder":
+        if "__ts__" not in train.columns:
+            raise ValueError("Residual-event state requires __ts__ for expanding OOF fits")
+        self.train_features_, assigned_rows = self._fit_oof_features(train)
+        config = self._config_for(train)
+        self.final_state = ResidualEventArchetypeState(config).fit(train)
+        self.metadata_ = {
+            "status": "ok",
+            "include_market_secondary": self.include_market_secondary,
+            "internal_oof_assigned_rows": int(assigned_rows),
+            "internal_oof_unavailable_rows": int(len(train) - assigned_rows),
+            "final_state_manifest": self.final_state.manifest(),
+            "leakage_contract": (
+                "Internal train features use only earlier chronological blocks with a "
+                "12-hour embargo; outer OOS receives the final outer-train frozen state. "
+                "All AE/GMM transforms receive outcome-stripped rows."
+            ),
+        }
+        return self
+
+    def transform_train(self, train: pd.DataFrame) -> pd.DataFrame:
+        if self.train_features_.empty:
+            return self._empty_features(train.index)
+        return self.train_features_.reindex(
+            index=train.index, columns=self.feature_names(), fill_value=0.0
+        ).astype(np.float32)
+
+    def transform_oos(self, oos_without_outcomes: pd.DataFrame) -> pd.DataFrame:
+        leaked = sorted(
+            set(oos_without_outcomes.columns).intersection(
+                set(OUTCOME_COLUMNS).union(RESIDUAL_STATE_OUTCOME_COLUMNS)
+            )
+        )
+        if leaked:
+            raise ValueError(
+                f"OOS frame still contains target/outcome columns: {leaked[:10]}"
+            )
+        if self.final_state is None:
+            raise RuntimeError("Residual-event state was not fitted")
+        return self.final_state.transform_oos(oos_without_outcomes).reindex(
+            columns=self.feature_names(), fill_value=0.0
+        ).astype(np.float32)
+
+
 class SideArchetypeLocalRegimeBuilder(RegimeFeatureBuilder):
     def __init__(
         self, *, seed: int = 52, n_clusters: int = 4, min_rows: int = 400
@@ -1418,7 +2098,13 @@ class SupervisedEmbeddingRegimeBuilder(RegimeFeatureBuilder):
 
 
 def _fit_classifier_final(
-    x: np.ndarray, y: np.ndarray, *, seed: int, max_fit_rows: int = 120_000
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    seed: int,
+    max_fit_rows: int = 120_000,
+    n_estimators: int = 80,
+    min_samples_leaf: int = 30,
 ) -> ExtraTreesClassifier | None:
     if x.shape[1] == 0 or len(np.unique(y)) < 2:
         return None
@@ -1429,8 +2115,8 @@ def _fit_classifier_final(
         if len(np.unique(y)) < 2:
             return None
     return ExtraTreesClassifier(
-        n_estimators=80,
-        min_samples_leaf=30,
+        n_estimators=int(n_estimators),
+        min_samples_leaf=int(min_samples_leaf),
         max_features="sqrt",
         random_state=int(seed),
         n_jobs=1,
@@ -1455,6 +2141,34 @@ def _fit_regressor_final(
     ).fit(x, y)
 
 
+def _fit_mlp_classifier_final(
+    x: np.ndarray, y: np.ndarray, *, seed: int, max_fit_rows: int = 80_000
+) -> MLPClassifier | None:
+    if x.shape[1] == 0 or len(np.unique(y)) < 2:
+        return None
+    if len(x) > int(max_fit_rows):
+        idx = _time_spread_indices(len(x), int(max_fit_rows))
+        x = x[idx]
+        y = np.asarray(y)[idx]
+        if len(np.unique(y)) < 2:
+            return None
+    model = MLPClassifier(
+        hidden_layer_sizes=(32, 12),
+        activation="relu",
+        alpha=1e-4,
+        batch_size=512,
+        learning_rate_init=1e-3,
+        max_iter=80,
+        early_stopping=True,
+        validation_fraction=0.15,
+        n_iter_no_change=8,
+        random_state=int(seed),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        return model.fit(x, y)
+
+
 def _time_splits(n: int, n_splits: int = 3) -> list[tuple[np.ndarray, np.ndarray]]:
     if n < 90:
         return []
@@ -1469,7 +2183,14 @@ def _time_splits(n: int, n_splits: int = 3) -> list[tuple[np.ndarray, np.ndarray
 
 
 def _time_oof_classifier_proba(
-    x: np.ndarray, y: np.ndarray, n_classes: int, *, seed: int
+    x: np.ndarray,
+    y: np.ndarray,
+    n_classes: int,
+    *,
+    seed: int,
+    max_fit_rows: int = 120_000,
+    n_estimators: int = 80,
+    min_samples_leaf: int = 30,
 ) -> np.ndarray:
     out = np.zeros((len(y), n_classes), dtype=np.float32)
     counts = np.bincount(np.asarray(y, dtype=np.int32), minlength=n_classes).astype(
@@ -1478,7 +2199,35 @@ def _time_oof_classifier_proba(
     prior = counts / max(float(counts.sum()), 1.0)
     out[:] = prior
     for tr, va in _time_splits(len(y)):
-        model = _fit_classifier_final(x[tr], y[tr], seed=seed)
+        model = _fit_classifier_final(
+            x[tr],
+            y[tr],
+            seed=seed,
+            max_fit_rows=max_fit_rows,
+            n_estimators=n_estimators,
+            min_samples_leaf=min_samples_leaf,
+        )
+        if model is None:
+            continue
+        raw = model.predict_proba(x[va])
+        for idx, klass in enumerate(model.classes_):
+            if int(klass) < n_classes:
+                out[va, int(klass)] = raw[:, idx]
+    rowsum = out.sum(axis=1, keepdims=True)
+    return np.divide(out, np.where(rowsum <= 0.0, 1.0, rowsum)).astype(np.float32)
+
+
+def _time_oof_mlp_classifier_proba(
+    x: np.ndarray, y: np.ndarray, n_classes: int, *, seed: int
+) -> np.ndarray:
+    out = np.zeros((len(y), n_classes), dtype=np.float32)
+    counts = np.bincount(np.asarray(y, dtype=np.int32), minlength=n_classes).astype(
+        np.float32
+    )
+    prior = counts / max(float(counts.sum()), 1.0)
+    out[:] = prior
+    for split_idx, (tr, va) in enumerate(_time_splits(len(y))):
+        model = _fit_mlp_classifier_final(x[tr], y[tr], seed=seed + split_idx * 101)
         if model is None:
             continue
         raw = model.predict_proba(x[va])
@@ -1539,6 +2288,11 @@ def make_regime_builder(arm: str, *, seed: int = 52) -> RegimeFeatureBuilder | N
     if arm in {
         "baseline_current_full_context",
         "baseline_no_cross_context",
+        # The residual-event discovery ledger is already walk-forward: every
+        # row holds outputs from a state fitted only on earlier history. This
+        # arm consumes those frozen inference features directly rather than
+        # recomputing an expensive internal OOF state bundle.
+        "residual_event_aegmm_precomputed",
         "causal_phase_state_context",
         "side_archetype_identity_context",
         "causal_phase_side_archetype_context",
@@ -1566,6 +2320,32 @@ def make_regime_builder(arm: str, *, seed: int = 52) -> RegimeFeatureBuilder | N
             seed=seed,
             joint_features=True,
         )
+    if arm == "hit_surprise_failure_shock_regimes":
+        return FailureShockRegimeBuilder(
+            name=arm,
+            prefix="ab_failshock",
+            seed=seed,
+            backend="extratrees",
+        )
+    if arm == "mlp_failure_shock_regimes":
+        return FailureShockRegimeBuilder(
+            name=arm,
+            prefix="ab_mlp_failshock",
+            seed=seed,
+            backend="mlp",
+        )
+    if arm == "residual_event_aegmm_local":
+        return ResidualEventAEGMMRegimeBuilder(
+            name=arm,
+            seed=seed,
+            include_market_secondary=False,
+        )
+    if arm == "residual_event_aegmm_local_market":
+        return ResidualEventAEGMMRegimeBuilder(
+            name=arm,
+            seed=seed,
+            include_market_secondary=True,
+        )
     if arm == "side_archetype_local_regimes":
         return SideArchetypeLocalRegimeBuilder(seed=seed, n_clusters=4)
     if arm == "temporal_reliability_regimes":
@@ -1578,6 +2358,8 @@ def make_regime_builder(arm: str, *, seed: int = 52) -> RegimeFeatureBuilder | N
 
 
 def regime_feature_names(arm: str, *, seed: int = 52) -> list[str]:
+    if arm == "residual_event_aegmm_precomputed":
+        return list(residual_event_feature_names())
     builder = make_regime_builder(arm, seed=seed)
     return [] if builder is None else builder.feature_names()
 

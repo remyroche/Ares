@@ -146,11 +146,52 @@ BROAD_STATE_FEATURE_FAMILIES = (
     "MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS",
     "ORDERBOOK_META_FEATURE_KEYS",
     "FUNDING_META_FEATURE_KEYS",
+    "CROSS_ASSET_FEATURE_KEYS",
     "CROSS_ASSET_META_FEATURE_KEYS",
     "CHANGE_POINT_REGIME_FEATURE_KEYS",
     "RESIDUAL_META_FEATURE_KEYS",
     "CRASH_LIFECYCLE_NEW_FEATURE_KEYS",
 )
+
+CALENDAR_OBSERVABLE_FAMILY_PATTERNS: dict[str, tuple[str, ...]] = {
+    "btc_eth_alt_rotation": (
+        "btc_ret_",
+        "eth_ret_",
+        "eth_btc_ret_",
+        "ret_resid_btc",
+        "ret_resid_eth",
+        "asset_ret_vs_btc",
+    ),
+    "cross_asset_synchronization": (
+        "return_dispersion",
+        "market_dispersion",
+        "cross_asset_corr",
+        "market_pc1",
+        "first_pc_variance",
+        "downside_pairwise_corr",
+    ),
+    "downside_volatility": (
+        "downside_semivariance",
+        "downside_semivol",
+        "mkt_rv_",
+        "realized_vol",
+    ),
+    "volume_liquidity": (
+        "volume_z",
+        "climax_volume",
+        "amihud",
+        "spread",
+        "liquidity",
+        "quote_volume",
+    ),
+    "oi_liquidation_lifecycle": (
+        "oi_flush",
+        "oi_drawdown",
+        "oi_recovery",
+        "liquidation",
+    ),
+    "funding_crowding": ("funding",),
+}
 
 
 def _broad_state_feature_candidates(
@@ -242,9 +283,11 @@ def _broad_binned_mi_preselection(
             sample[name] = overlay[name].to_numpy()
     sample = _derive_row_economic_targets(_downcast(sample))
 
-    selected_by_archetype: dict[str, list[str]] = {}
+    selected_by_partition: dict[str, list[str]] = {}
     relevance_parts: list[pd.DataFrame] = []
-    for archetype, local in sample.groupby("archetype_policy_key", observed=True):
+    for (side, archetype), local in sample.groupby(
+        ["side_name", "archetype_policy_key"], observed=True
+    ):
         selected, relevance = select_partition_state_features(
             local.reset_index(drop=True),
             broad,
@@ -252,25 +295,56 @@ def _broad_binned_mi_preselection(
             min_coverage=0.50,
             max_rows=max(2_000, len(local)),
         )
-        key = str(archetype)
-        selected_by_archetype[key] = selected
+        side_name = str(side).strip().lower()
+        key = archetype_state_token(side_name, str(archetype))
+        selected_by_partition[key] = selected
         if not relevance.empty:
             report = relevance.copy(deep=False)
-            report["archetype_policy_key"] = key
+            report["side_name"] = side_name
+            report["archetype_policy_key"] = str(archetype)
+            report["state_partition_token"] = key
             relevance_parts.append(report)
-    if not selected_by_archetype:
-        raise ValueError("Binned-MI preselection found no supported archetype features")
+    if not selected_by_partition:
+        raise ValueError(
+            "Binned-MI preselection found no supported side x archetype features"
+        )
 
     selected_union: list[str] = []
     for rank in range(int(top_per_archetype)):
-        for archetype in sorted(selected_by_archetype):
-            values = selected_by_archetype[archetype]
+        for partition in sorted(selected_by_partition):
+            values = selected_by_partition[partition]
             if rank < len(values) and values[rank] not in selected_union:
                 selected_union.append(values[rank])
                 if len(selected_union) >= int(max_union_features):
                     break
         if len(selected_union) >= int(max_union_features):
             break
+    relevance_table = (
+        pd.concat(relevance_parts, ignore_index=True, sort=False)
+        if relevance_parts
+        else pd.DataFrame()
+    )
+    family_anchors: dict[str, list[str]] = {}
+    if not relevance_table.empty:
+        feature_relevance = (
+            relevance_table.groupby("feature", observed=True)["relevance"]
+            .agg(["max", "mean"])
+            .sort_values(["max", "mean"], ascending=False, kind="stable")
+        )
+        for family, patterns in CALENDAR_OBSERVABLE_FAMILY_PATTERNS.items():
+            eligible = [
+                str(name)
+                for name in feature_relevance.index
+                if any(pattern in str(name).lower() for pattern in patterns)
+            ]
+            selected_anchors = eligible[:2]
+            family_anchors[family] = selected_anchors
+            for name in selected_anchors:
+                if name not in selected_union and len(selected_union) < int(
+                    max_union_features
+                ):
+                    selected_union.append(name)
+
     market_family_names = {
         "MODEL_REGIME_CONTEXT_META_FEATURE_KEYS",
         "MODEL_REGIME_XS_META_FEATURE_KEYS",
@@ -278,6 +352,7 @@ def _broad_binned_mi_preselection(
         "MODEL_REGIME_EIGEN_META_FEATURE_KEYS",
         "MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS",
         "CROSS_ASSET_META_FEATURE_KEYS",
+        "CROSS_ASSET_FEATURE_KEYS",
         "CHANGE_POINT_REGIME_FEATURE_KEYS",
     }
     market_candidates = {
@@ -286,17 +361,19 @@ def _broad_binned_mi_preselection(
         if family in market_family_names
         for name in names
     }
-    market = [name for name in selected_union if name in market_candidates]
-    asset = [name for name in selected_union if name not in market_candidates]
-    relevance_table = (
-        pd.concat(relevance_parts, ignore_index=True, sort=False)
-        if relevance_parts
-        else pd.DataFrame()
-    )
+    market = [
+        name
+        for name in selected_union
+        if name in market_candidates
+        or str(name).lower().startswith(
+            ("mkt_", "market_", "cross_asset_", "pct_assets_")
+        )
+    ]
+    asset = [name for name in selected_union if name not in set(market)]
     relevance_table.to_csv(output / "raw_feature_binned_mi_relevance.csv", index=False)
     manifest = {
         "schema": "per_archetype_broad_binned_mi_preselection_v1",
-        "fit_partition": "archetype_policy_key",
+        "fit_partition": "side_name_x_archetype_policy_key",
         "train_cutoff": train_cutoff,
         "anchor_months": [path.stem.removeprefix("candidates_") for path in anchors],
         "sample_rows": len(sample),
@@ -306,7 +383,8 @@ def _broad_binned_mi_preselection(
         "asset_feature_count": len(asset),
         "top_per_archetype": int(top_per_archetype),
         "max_union_features": int(max_union_features),
-        "selected_by_archetype": selected_by_archetype,
+        "selected_by_partition": selected_by_partition,
+        "calendar_observable_family_anchors": family_anchors,
         "feature_families": by_family,
         "leakage_contract": (
             "Feature relevance uses only rows before the purged search-validation boundary; "
@@ -591,14 +669,7 @@ def _materialize_states(
     else:
         sample = _read_feature_sample(candidate_root, feature_root)
         market_features, asset_features = select_state_features(sample, state_cfg)
-    candidate_schema = set(sample.columns)
-    candidate_columns = list(
-        dict.fromkeys(
-            [name for name in KEY_COLUMNS if name in candidate_schema]
-            + market_features
-            + asset_features
-        )
-    )
+    selected_raw_features = list(dict.fromkeys(market_features + asset_features))
     ledger = pd.read_parquet(args.ledger, columns=list(LEDGER_OVERLAY_COLUMNS))
     ledger = ledger.drop_duplicates("row_id", keep="last").set_index("row_id")
     monthly: list[pd.DataFrame] = []
@@ -606,6 +677,13 @@ def _materialize_states(
     all_state_features: set[str] = set()
     archetype_partitions: dict[str, dict[str, str]] = {}
     for path in sorted(candidate_root.glob("candidates_*.parquet")):
+        path_schema = set(_parquet_columns(path))
+        candidate_columns = list(
+            dict.fromkeys(
+                [name for name in KEY_COLUMNS if name in path_schema]
+                + [name for name in selected_raw_features if name in path_schema]
+            )
+        )
         candidates = pd.read_parquet(path, columns=candidate_columns)
         candidates = _refresh_store_features(
             candidates, feature_root, market_features + asset_features

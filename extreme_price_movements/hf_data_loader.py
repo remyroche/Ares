@@ -25,6 +25,8 @@ import numpy as np
 from pathlib import Path
 import ccxt
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.timestamp_contract import to_utc_index, to_utc_timestamp
+from extreme_price_movements.data_store import ensure_hf_ohlcv_store_contract
 
 
 # Storage directory for 15m data
@@ -34,6 +36,62 @@ HF_DATA_DIR.mkdir(exist_ok=True)
 # Storage directory for 5m data
 HF_DATA_DIR_5M = Path(os.environ.get("EPM_HF_DATA_DIR_5M", str(Path(__file__).parent / "5m_ohlcv")))
 HF_DATA_DIR_5M.mkdir(exist_ok=True)
+
+
+def configure_hf_data_dirs(
+    *,
+    cfg: Optional[Dict[str, Any]] = None,
+    market_data_root: Optional[str | Path] = None,
+    exchange_id: Optional[str] = None,
+    market_mode: str = "perps",
+    force_canonical: bool = False,
+) -> tuple[Path, Path]:
+    """Configure the precise-data cache shared by train, replay, and live.
+
+    Historically this module defaulted to package-local ``15m_ohlcv`` files.
+    That made a live 15-minute gap repair capable of reading a different source
+    than label construction or historical replay.  Production callers pass
+    ``force_canonical=True`` so both 15m and 5m caches live below the same
+    exchange-scoped root as hourly OHLCV and microdata.
+
+    Explicit environment directories remain supported for isolated tests and
+    legacy one-off tooling when a canonical root was not supplied.
+    """
+    global HF_DATA_DIR, HF_DATA_DIR_5M
+
+    if market_data_root is not None:
+        contract_cfg: Dict[str, Any] = {
+            "data_root": str(market_data_root),
+            "exchange_scoped_data": False,
+            "exchange_id": exchange_id,
+            "market_mode": market_mode,
+            "use_perps": str(market_mode).strip().lower()
+            in {"perp", "perps", "future", "futures", "swap"},
+        }
+    else:
+        contract_cfg = dict(cfg or {})
+        if exchange_id:
+            contract_cfg["exchange_id"] = str(exchange_id)
+        contract_cfg.setdefault("market_mode", market_mode)
+
+    can_use_canonical = bool(market_data_root is not None or contract_cfg.get("data_root"))
+    if force_canonical and not can_use_canonical:
+        raise ValueError("Canonical high-frequency cache requires a market-data root")
+
+    if can_use_canonical and force_canonical:
+        hf_15m = ensure_hf_ohlcv_store_contract(contract_cfg, timeframe="15m")
+        hf_5m = ensure_hf_ohlcv_store_contract(contract_cfg, timeframe="5m")
+    else:
+        hf_15m = Path(os.environ.get("EPM_HF_DATA_DIR", str(HF_DATA_DIR)))
+        hf_5m = Path(os.environ.get("EPM_HF_DATA_DIR_5M", str(HF_DATA_DIR_5M)))
+        hf_15m.mkdir(parents=True, exist_ok=True)
+        hf_5m.mkdir(parents=True, exist_ok=True)
+
+    HF_DATA_DIR = Path(hf_15m)
+    HF_DATA_DIR_5M = Path(hf_5m)
+    os.environ["EPM_HF_DATA_DIR"] = str(HF_DATA_DIR)
+    os.environ["EPM_HF_DATA_DIR_5M"] = str(HF_DATA_DIR_5M)
+    return HF_DATA_DIR, HF_DATA_DIR_5M
 
 
 def _get_parquet_path(symbol: str) -> Path:
@@ -62,11 +120,7 @@ def _load_existing_data(symbol: str, allow_quote_fallback: bool = True) -> pd.Da
     if path.exists():
         try:
             df = pd.read_parquet(path)
-            idx = pd.to_datetime(df.index)
-            if idx.tz is None:
-                df.index = idx.tz_localize("UTC")
-            else:
-                df.index = idx.tz_convert("UTC")
+            df.index = to_utc_index(df.index)
             return df
         except Exception as e:
             tprint(f"WARNING: Failed to load {path}: {e}")
@@ -85,11 +139,7 @@ def _load_existing_data(symbol: str, allow_quote_fallback: bool = True) -> pd.Da
             if fallback_path.exists():
                 try:
                     df = pd.read_parquet(fallback_path)
-                    idx = pd.to_datetime(df.index)
-                    if idx.tz is None:
-                        df.index = idx.tz_localize("UTC")
-                    else:
-                        df.index = idx.tz_convert("UTC")
+                    df.index = to_utc_index(df.index)
                     return df
                 except Exception:
                     pass
@@ -109,11 +159,7 @@ def _load_existing_data_5m(symbol: str, allow_quote_fallback: bool = True) -> pd
     if path.exists():
         try:
             df = pd.read_parquet(path)
-            idx = pd.to_datetime(df.index)
-            if idx.tz is None:
-                df.index = idx.tz_localize("UTC")
-            else:
-                df.index = idx.tz_convert("UTC")
+            df.index = to_utc_index(df.index)
             return df
         except Exception as e:
             tprint(f"WARNING: Failed to load {path}: {e}")
@@ -132,11 +178,7 @@ def _load_existing_data_5m(symbol: str, allow_quote_fallback: bool = True) -> pd
             if fallback_path.exists():
                 try:
                     df = pd.read_parquet(fallback_path)
-                    idx = pd.to_datetime(df.index)
-                    if idx.tz is None:
-                        df.index = idx.tz_localize("UTC")
-                    else:
-                        df.index = idx.tz_convert("UTC")
+                    df.index = to_utc_index(df.index)
                     return df
                 except Exception:
                     pass
@@ -151,6 +193,8 @@ def _save_data(symbol: str, df: pd.DataFrame):
     if df.empty:
         return
     
+    df = df.copy()
+    df.index = to_utc_index(df.index)
     # Downcast to float32
     for col in ['open', 'high', 'low', 'close', 'volume']:
         if col in df.columns:
@@ -165,6 +209,8 @@ def _save_data_5m(symbol: str, df: pd.DataFrame):
     if df.empty:
         return
 
+    df = df.copy()
+    df.index = to_utc_index(df.index)
     # Downcast to float32
     for col in ['open', 'high', 'low', 'close', 'volume']:
         if col in df.columns:
@@ -177,6 +223,32 @@ def _save_data_5m(symbol: str, df: pd.DataFrame):
 def _download_from_exchange(exchange: ccxt.Exchange, symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
     """Download 15m OHLCV via CCXT."""
     return _download_from_exchange_generic(exchange, symbol, '15m', start_ts, end_ts)
+
+
+def _missing_15m_ranges(
+    index: pd.Index,
+    since_ts: pd.Timestamp,
+    until_ts: pd.Timestamp,
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Return inclusive contiguous 15-minute gaps in the requested interval."""
+    start = pd.Timestamp(since_ts).ceil("15min")
+    end = pd.Timestamp(until_ts).floor("15min")
+    if start > end:
+        return []
+    expected = pd.date_range(start, end, freq="15min", tz="UTC")
+    if index is None or len(index) == 0:
+        missing = expected
+    else:
+        present = to_utc_index(index)
+        missing = expected.difference(present.dropna().drop_duplicates())
+    if missing.empty:
+        return []
+
+    values = missing.asi8
+    breaks = np.flatnonzero(np.diff(values) > pd.Timedelta(minutes=15).value)
+    starts = np.r_[0, breaks + 1]
+    ends = np.r_[breaks, len(missing) - 1]
+    return [(missing[int(left)], missing[int(right)]) for left, right in zip(starts, ends)]
 
 
 def _download_from_exchange_5m(exchange: ccxt.Exchange, symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
@@ -257,10 +329,7 @@ def get_15m_ohlcv(exchange: ccxt.Exchange, symbol: str, entry_ts: pd.Timestamp, 
         DataFrame with 15m OHLCV data
     """
     # Ensure UTC
-    if entry_ts.tz is None:
-        entry_ts = entry_ts.tz_localize('UTC')
-    else:
-        entry_ts = entry_ts.tz_convert('UTC')
+    entry_ts = to_utc_timestamp(entry_ts)
     
     # Download window: 12 hours from entry
     download_start = entry_ts
@@ -320,52 +389,23 @@ def sync_15m_ohlcv_range(
     full_backfill: bool = True,
 ) -> pd.DataFrame:
     """Ensure local 15m cache covers [since_ts, until_ts] for symbol."""
-    if since_ts.tz is None:
-        since_ts = since_ts.tz_localize("UTC")
-    else:
-        since_ts = since_ts.tz_convert("UTC")
+    since_ts = to_utc_timestamp(since_ts)
 
     if until_ts is None:
-        until_ts = pd.Timestamp.now(tz="UTC")
-    elif until_ts.tz is None:
-        until_ts = until_ts.tz_localize("UTC")
+        until_ts = to_utc_timestamp(pd.Timestamp.now(tz="UTC"))
     else:
-        until_ts = until_ts.tz_convert("UTC")
+        until_ts = to_utc_timestamp(until_ts)
 
     if until_ts <= since_ts:
         return pd.DataFrame()
 
     # Strict check: only this exact symbol/quote cache should determine coverage.
     existing_df = _load_existing_data(symbol, allow_quote_fallback=False)
-    if not existing_df.empty:
-        ex_start = existing_df.index.min()
-        ex_end = existing_df.index.max()
-        if ex_start <= since_ts and ex_end >= until_ts:
-            return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
-
-    # Build missing ranges and only download gaps instead of re-downloading covered periods.
-    download_ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
-    if existing_df.empty:
-        download_ranges.append((since_ts, until_ts))
-    else:
-        ex_start = existing_df.index.min()
-        ex_end = existing_df.index.max()
-
-        if full_backfill:
-            # Legacy behavior: force a single pass from since_ts, may overlap.
-            download_ranges.append((since_ts, until_ts))
-        else:
-            # Missing history before current cache start.
-            if since_ts < ex_start:
-                left_end = min(until_ts, ex_start - pd.Timedelta(minutes=15))
-                if since_ts <= left_end:
-                    download_ranges.append((since_ts, left_end))
-
-            # Missing tail after current cache end.
-            if until_ts > ex_end:
-                right_start = max(since_ts, ex_end + pd.Timedelta(minutes=15))
-                if right_start <= until_ts:
-                    download_ranges.append((right_start, until_ts))
+    download_ranges = (
+        [(since_ts.ceil("15min"), until_ts.floor("15min"))]
+        if full_backfill
+        else _missing_15m_ranges(existing_df.index, since_ts, until_ts)
+    )
 
     if not download_ranges:
         if existing_df.empty:
@@ -374,11 +414,16 @@ def sync_15m_ohlcv_range(
 
     chunks: list[pd.DataFrame] = []
     for dl_start, dl_end in download_ranges:
-        if dl_start >= dl_end:
+        if dl_start > dl_end:
             continue
-        new_df = _download_from_exchange(exchange, symbol, dl_start, dl_end)
+        # The downloader's loop uses an exclusive end condition. Request one
+        # extra interval so a one-candle gap is fetched, then retain only the
+        # exact inclusive missing range before publishing it.
+        new_df = _download_from_exchange(
+            exchange, symbol, dl_start, dl_end + pd.Timedelta(minutes=15)
+        )
         if not new_df.empty:
-            chunks.append(new_df)
+            chunks.append(new_df.loc[(new_df.index >= dl_start) & (new_df.index <= dl_end)])
 
     if existing_df.empty and not chunks:
         return pd.DataFrame()
@@ -413,10 +458,7 @@ def get_5m_ohlcv(exchange: ccxt.Exchange, symbol: str, entry_ts: pd.Timestamp, m
         DataFrame with 5m OHLCV data
     """
     # Ensure UTC
-    if entry_ts.tz is None:
-        entry_ts = entry_ts.tz_localize('UTC')
-    else:
-        entry_ts = entry_ts.tz_convert('UTC')
+    entry_ts = to_utc_timestamp(entry_ts)
 
     # Download window: 12 hours from entry
     download_start = entry_ts
@@ -476,17 +518,12 @@ def sync_5m_ohlcv_range(
     full_backfill: bool = True,
 ) -> pd.DataFrame:
     """Ensure local 5m cache covers [since_ts, until_ts] for symbol."""
-    if since_ts.tz is None:
-        since_ts = since_ts.tz_localize("UTC")
-    else:
-        since_ts = since_ts.tz_convert("UTC")
+    since_ts = to_utc_timestamp(since_ts)
 
     if until_ts is None:
-        until_ts = pd.Timestamp.now(tz="UTC")
-    elif until_ts.tz is None:
-        until_ts = until_ts.tz_localize("UTC")
+        until_ts = to_utc_timestamp(pd.Timestamp.now(tz="UTC"))
     else:
-        until_ts = until_ts.tz_convert("UTC")
+        until_ts = to_utc_timestamp(until_ts)
 
     if until_ts <= since_ts:
         return pd.DataFrame()
@@ -720,8 +757,8 @@ def bulk_sync_15m_universe(
     if until_ts is None:
         until_ts = pd.Timestamp.now(tz="UTC")
 
-    since_ts = since_ts.tz_localize("UTC") if since_ts.tz is None else since_ts.tz_convert("UTC")
-    until_ts = until_ts.tz_localize("UTC") if until_ts.tz is None else until_ts.tz_convert("UTC")
+    since_ts = to_utc_timestamp(since_ts)
+    until_ts = to_utc_timestamp(until_ts)
 
     # Extract unique base assets from symbol list
     requested_quotes = tuple(q.upper() for q in quotes)

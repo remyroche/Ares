@@ -6,6 +6,7 @@ import pytest
 from extreme_price_movements.portfolio_policy_replay import (
     DEFAULT_OFFLINE_PRICE_GAP_BPS,
     PortfolioPolicyParams,
+    _max_new_entries_search_space,
     load_portfolio_policy_params,
     normalise_candidate_table,
     portfolio_policy_params_from_live_config,
@@ -54,6 +55,14 @@ def _candidate(
         "liquidity_capacity_weight": 1.0,
         "market_mode": "spot",
     }
+
+
+def test_portfolio_entry_cap_search_space_is_explicit_and_configurable(monkeypatch):
+    monkeypatch.delenv("EPM_PORTFOLIO_MAX_NEW_ENTRIES_SEARCH", raising=False)
+    assert _max_new_entries_search_space() == [2, 3, 4]
+
+    monkeypatch.setenv("EPM_PORTFOLIO_MAX_NEW_ENTRIES_SEARCH", "4,2,3,3")
+    assert _max_new_entries_search_space() == [2, 3, 4]
 
 
 def test_global_auction_uses_one_priority_queue_without_long_first_bias():
@@ -171,11 +180,17 @@ def test_replay_dynamic_threshold_uses_allocated_share_and_caps_position_size():
 
     eth = decisions[decisions["symbol"] == "ETH/USD"].iloc[0]
     sol = decisions[decisions["symbol"] == "SOL/USD"].iloc[0]
-    assert sol["dynamic_threshold"] == pytest.approx(0.88)
+    expected_threshold = 0.60 + 0.40 * min(
+        float(sol["open_notional_before"]) / 7500.0,
+        1.0,
+    )
+    assert sol["dynamic_threshold"] == pytest.approx(expected_threshold)
     assert bool(sol["accepted"]) is True
-    assert sol["position_size"] == 500.0
+    assert sol["position_size"] == pytest.approx(
+        7500.0 - float(sol["open_notional_before"])
+    )
     assert sol["open_notional_after"] <= 7500.0
-    assert eth["dynamic_threshold"] == pytest.approx(0.90)
+    assert eth["dynamic_threshold"] == pytest.approx(0.999)
     assert eth["rejection_reason"] == "below_dynamic_threshold"
 
 

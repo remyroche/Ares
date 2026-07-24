@@ -49,7 +49,7 @@ DEFAULT_LABELS_PATH = Path(
     "data_perp/artifacts/"
     "20260708_s59_h5_2025start_monthly_v6_15mchart_trailing_cost100bps_labels/labels"
 )
-DEFAULT_FEATURE_DIR = Path("data_perp/features/20260708_180000")
+DEFAULT_FEATURE_DIR = Path("data_perp/features/20260711_070000")
 DEFAULT_FEATURE_LIST_CSV = Path(
     "data_perp/reports/s52_trailing_profit_best_pointwise_scored_ledger_20260705_v1/"
     "s52_config_meta_full_feature_list.csv"

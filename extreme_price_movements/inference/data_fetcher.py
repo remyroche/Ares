@@ -36,6 +36,10 @@ from extreme_price_movements.data_store import (
     normalize_orderbook_proxy_frame,
     scoped_data_root,
 )
+from extreme_price_movements.raw_market_data_contract import (
+    load_raw_market_panel,
+    repair_hourly_from_complete_15m,
+)
 from extreme_price_movements.utils import tprint
 
 # Default configuration
@@ -52,6 +56,21 @@ MICRODATA_FRAME_FIELDS = (
     "index_price",
     "premium_index",
 )
+
+
+def _atomic_write_microdata_parquet(frame: pd.DataFrame, path: Path) -> None:
+    """Publish a complete parquet atomically, including across live processes."""
+    tmp = path.with_name(
+        f".{path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+    )
+    try:
+        frame.to_parquet(tmp)
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 PERP_OHLCV_EXTRA_FIELDS = (
     "funding_rate",
@@ -206,6 +225,12 @@ class DataFetcher:
         else:
             self.ohlcv_store = make_ohlcv_store(cfg, timeframe="1h")
             market_data_root = Path(scoped_data_root(cfg))
+        self.hf_data_dir, self.hf_data_dir_5m = hf_data_loader.configure_hf_data_dirs(
+            market_data_root=market_data_root,
+            exchange_id=exchange_id,
+            market_mode=self.market_mode,
+            force_canonical=True,
+        )
         self.orderbook_dir = market_data_root / "orderbook_hourly"
         self.funding_dir = market_data_root / "funding_hourly"
         self.open_interest_dir = market_data_root / "open_interest_hourly"
@@ -217,6 +242,10 @@ class DataFetcher:
         self._perp_exchange: Optional[Any] = None
         self._symbols_without_perp_funding: set[str] = set()
         self._ohlcv_cache: Dict[str, pd.DataFrame] = {}
+        self._warm_panel_cache: Optional[Dict[str, pd.DataFrame]] = None
+        self._warm_panel_symbols: tuple[str, ...] = ()
+        self._warm_panel_lookback_hours: Optional[int] = None
+        self._warm_panel_lock = threading.RLock()
         self._microdata_symbol_cache: Dict[
             str, tuple[Optional[float], Optional[float], Optional[float], Dict[str, pd.Series]]
         ] = {}
@@ -231,6 +260,13 @@ class DataFetcher:
     def _invalidate_symbol_cache(self, symbol: str, *, microdata: bool = False) -> None:
         """Invalidate in-memory panel cache entries after local data writes."""
         self._ohlcv_cache.pop(symbol, None)
+        # Gap repair can alter historical rows, so an existing wide panel is no
+        # longer authoritative. Normal append-only refreshes use
+        # ``_merge_warm_panel_rows`` and keep the panel hot.
+        with self._warm_panel_lock:
+            self._warm_panel_cache = None
+            self._warm_panel_symbols = ()
+            self._warm_panel_lookback_hours = None
         if microdata:
             self._microdata_symbol_cache.pop(symbol, None)
 
@@ -272,10 +308,62 @@ class DataFetcher:
         cached = self._ohlcv_cache.get(symbol)
         if cached is None or cached.empty:
             self._ohlcv_cache[symbol] = new_df.sort_index()
+            self._merge_warm_panel_rows(symbol, new_df)
             return
         merged = pd.concat([cached, new_df]).sort_index()
         merged = merged[~merged.index.duplicated(keep="last")]
         self._ohlcv_cache[symbol] = merged
+        self._merge_warm_panel_rows(symbol, new_df)
+
+    def _merge_warm_panel_rows(self, symbol: str, rows: pd.DataFrame) -> None:
+        """Patch append-only symbol rows into the retained wide panel."""
+        if rows is None or not isinstance(rows, pd.DataFrame) or rows.empty:
+            return
+        with self._warm_panel_lock:
+            panel = self._warm_panel_cache
+            if not panel or symbol not in self._warm_panel_symbols:
+                return
+            row_index = pd.DatetimeIndex(pd.to_datetime(rows.index, utc=True))
+            for field, values in rows.items():
+                field_name = str(field)
+                frame = panel.get(field_name)
+                if not isinstance(frame, pd.DataFrame):
+                    anchor = panel.get("close")
+                    if not isinstance(anchor, pd.DataFrame):
+                        continue
+                    frame = pd.DataFrame(
+                        np.nan,
+                        index=anchor.index.union(row_index),
+                        columns=list(self._warm_panel_symbols),
+                        dtype=np.float32,
+                    )
+                elif not row_index.isin(frame.index).all():
+                    frame = frame.reindex(frame.index.union(row_index))
+                numeric = pd.to_numeric(values, errors="coerce").astype(np.float32)
+                frame.loc[row_index, symbol] = numeric.to_numpy(copy=False)
+                panel[field_name] = frame.sort_index()
+
+            lookback = self._warm_panel_lookback_hours
+            if lookback is not None:
+                keep_after = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
+                    hours=int(lookback) + 2
+                )
+                for field_name, frame in list(panel.items()):
+                    if isinstance(frame, pd.DataFrame) and not frame.empty:
+                        panel[field_name] = frame.loc[frame.index >= keep_after]
+
+    def _merge_warm_panel_microdata(self, symbol: str) -> None:
+        """Patch refreshed persisted derivative rows into the retained panel."""
+        _, by_field = self._load_microdata_symbol_cached(symbol)
+        if not by_field:
+            return
+        recent = {
+            str(field): series.tail(72).to_frame(name=str(field))
+            for field, series in by_field.items()
+            if isinstance(series, pd.Series) and not series.empty
+        }
+        for field, frame in recent.items():
+            self._merge_warm_panel_rows(symbol, frame.rename(columns={field: field}))
 
     def _load_microdata_symbol_cached(
         self, symbol: str
@@ -755,8 +843,9 @@ class DataFetcher:
         if is_empty:
             return df_15m.copy()
 
-        # Ensure we have a clean copy sorted by index
-        df_15m = df_15m.copy().sort_index()
+        # Ensure one observation per quarter before checking hour completeness.
+        df_15m = df_15m.sort_index()
+        df_15m = df_15m[~df_15m.index.duplicated(keep="last")]
 
         df_1h = df_15m.resample("1h", label="left", closed="left").agg(
             {
@@ -767,6 +856,13 @@ class DataFetcher:
                 "volume": "sum",
             }
         )
+
+        quarter_counts = (
+            pd.to_numeric(df_15m["close"], errors="coerce")
+            .resample("1h", label="left", closed="left")
+            .count()
+        )
+        df_1h = df_1h.loc[quarter_counts.reindex(df_1h.index).ge(4)]
 
         # Drop rows with all NaN
         df_1h.dropna(how="all", inplace=True)
@@ -1029,6 +1125,8 @@ class DataFetcher:
         check_recent_gaps_days: int = 7,
         backfill_fn: Optional[Any] = None,
         refresh_microdata: bool = True,
+        microdata_lookback_hours: int = 48,
+        microdata_allow_live_snapshot: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch one closed 1h candle for the full live universe.
 
@@ -1069,6 +1167,8 @@ class DataFetcher:
         microdata_refreshed = 0
         microdata_failed = 0
         microdata_canceled = 0
+        micro_executor: Optional[ThreadPoolExecutor] = None
+        micro_futures: Dict[Any, str] = {}
         symbols_to_fetch: list[str] = []
         skipped_existing_symbols: list[str] = []
         for sym in symbols:
@@ -1095,7 +1195,34 @@ class DataFetcher:
             f"target_hour={target_hour}"
         )
         started_at = time.monotonic()
-        if refresh_microdata and skipped_existing_symbols:
+        if refresh_microdata and symbols:
+            # Derivative snapshots are independent of the closed OHLCV request.
+            # Start both universe refreshes together so their network latency
+            # overlaps instead of serializing two Kraken passes.
+            microdata_symbols = list(dict.fromkeys(str(sym) for sym in symbols))
+            microdata_workers = max(
+                1, min(int(microdata_workers), len(microdata_symbols), worker_cap)
+            )
+            tprint(
+                "Hourly concurrent microdata refresh start: "
+                f"symbols={len(microdata_symbols)} workers={microdata_workers} "
+                f"target_hour={target_hour}"
+            )
+            micro_executor = ThreadPoolExecutor(max_workers=microdata_workers)
+            micro_futures = {
+                micro_executor.submit(
+                    self.update_microdata_symbol,
+                    sym,
+                    start_ts=(
+                        target_hour
+                        - pd.Timedelta(hours=max(0, int(microdata_lookback_hours)))
+                    ),
+                    end_ts=target_hour,
+                    allow_live_snapshot=bool(microdata_allow_live_snapshot),
+                ): sym
+                for sym in microdata_symbols
+            }
+        if refresh_microdata and skipped_existing_symbols and not micro_futures:
             # OHLCV target-hour bars and derivative microdata have independent
             # freshness. A restart can have the candle already on disk while
             # the current ticker-derived OI/funding/mark snapshot is missing;
@@ -1173,7 +1300,7 @@ class DataFetcher:
                     if isinstance(df, pd.DataFrame) and not df.empty:
                         out[sym] = df
                         last_data_time = time.monotonic()
-                        if refresh_microdata:
+                        if refresh_microdata and not micro_futures:
                             microdata_symbols.append(sym)
                     else:
                         empty += 1
@@ -1236,26 +1363,12 @@ class DataFetcher:
                         failed += 1
                         self._record_api_error(sym, exc, context="gap_backfill")
 
-        if refresh_microdata and microdata_symbols:
-            microdata_symbols = list(dict.fromkeys(microdata_symbols))
-            microdata_workers = max(
-                1, min(int(microdata_workers), len(microdata_symbols), worker_cap)
-            )
+        if refresh_microdata and micro_futures:
             tprint(
-                "Hourly microdata refresh batch start: "
+                "Hourly concurrent microdata refresh join: "
                 f"symbols={len(microdata_symbols)} workers={microdata_workers} "
                 f"target_hour={target_hour}"
             )
-            micro_executor = ThreadPoolExecutor(max_workers=microdata_workers)
-            micro_futures = {
-                micro_executor.submit(
-                    self.update_microdata_symbol,
-                    sym,
-                    start_ts=target_hour,
-                    end_ts=target_hour,
-                ): sym
-                for sym in microdata_symbols
-            }
             micro_pending = set(micro_futures.keys())
             last_microdata_time = time.monotonic()
             try:
@@ -1281,6 +1394,7 @@ class DataFetcher:
                         try:
                             fut.result()
                             self._microdata_symbol_cache.pop(sym, None)
+                            self._merge_warm_panel_microdata(sym)
                             microdata_refreshed += 1
                             last_microdata_time = time.monotonic()
                         except Exception as exc:
@@ -1289,7 +1403,8 @@ class DataFetcher:
                                 sym, exc, context="microdata_refresh"
                             )
             finally:
-                micro_executor.shutdown(wait=False, cancel_futures=True)
+                if micro_executor is not None:
+                    micro_executor.shutdown(wait=False, cancel_futures=True)
 
         tprint(
             "Hourly OHLCV universe batch complete: "
@@ -1341,21 +1456,32 @@ class DataFetcher:
         *,
         days: int = 7,
     ) -> Optional[pd.DataFrame]:
-        """Backfill recent missing 1h OHLCV rows in the inference hourly store."""
-        end_ts = pd.Timestamp.now(tz="UTC")
-        start_ts = end_ts - pd.Timedelta(days=int(days))
-        new_data = self.fetch_ohlcv(symbol, start=start_ts, end=end_ts)
-        if new_data is None or not isinstance(new_data, pd.DataFrame) or new_data.empty:
+        """Repair missing hourly rows from complete Kraken 15-minute candles."""
+        now = pd.Timestamp.now(tz="UTC")
+        end_hour = now.floor("1h") - pd.Timedelta(hours=1)
+        start_hour = (now - pd.Timedelta(days=int(days))).ceil("1h")
+        if start_hour > end_hour:
             return pd.DataFrame()
-        existing = self.ohlcv_store.load(symbol, start_ts=None, end_ts=None)
-        merged = (
-            self._resample_and_merge(existing, new_data)
-            if isinstance(existing, pd.DataFrame) and not existing.empty
-            else new_data
+
+        fifteen_minute = self.trigger_gap_backfill(
+            symbol,
+            days=days,
+            backfill_fn=hf_data_loader.sync_15m_ohlcv_range,
         )
-        if isinstance(merged, pd.DataFrame) and not merged.empty:
-            self.ohlcv_store.save_partitioned(symbol=symbol, df=merged)
-        return new_data
+        if not isinstance(fifteen_minute, pd.DataFrame) or fifteen_minute.empty:
+            return pd.DataFrame()
+        repaired = repair_hourly_from_complete_15m(
+            store=self.ohlcv_store,
+            symbol=symbol,
+            frame_15m=fifteen_minute,
+            start_ts=start_hour,
+            end_ts=end_hour,
+            persist=True,
+        )
+        if repaired.empty:
+            return repaired
+        self._merge_symbol_cache(symbol, repaired)
+        return repaired
 
     def needs_incremental_update(self, symbol: str) -> bool:
         """Cheap probe using latest exchange kline (limit=1) vs local store tail."""
@@ -1451,9 +1577,14 @@ class DataFetcher:
         backfill_days: int = 180,
         start_ts: pd.Timestamp | None = None,
         end_ts: pd.Timestamp | None = None,
+        allow_live_snapshot: bool = True,
     ) -> Dict[str, bool]:
         """Incrementally refresh orderbook/funding snapshots for one symbol."""
-        microdata_min_ranges = 10
+        # This endpoint is already called over a bounded recent window. Keep
+        # every missing range in that window: dropping an internal gap can make
+        # rolling order-book inputs undefined even when the target snapshot is
+        # present. Only absent rows are fetched/materialized.
+        microdata_min_ranges = 1
         now_h = pd.Timestamp.now(tz="UTC").floor("1h")
         end_h = (
             pd.Timestamp(end_ts).tz_convert("UTC").floor("1h")
@@ -1520,7 +1651,7 @@ class DataFetcher:
             if ob_frames:
                 rec = pd.concat(ob_frames).sort_index().groupby(level=0).last()
                 rec = normalize_orderbook_proxy_frame(rec)
-                rec.to_parquet(ob_path)
+                _atomic_write_microdata_parquet(rec, ob_path)
                 out["orderbook"] = True
         except Exception as exc:
             self._log_microdata_error(symbol, exc, context="microdata_orderbook")
@@ -1562,13 +1693,21 @@ class DataFetcher:
                         funding_frames.append(hist.to_frame(name="funding_rate"))
                 if funding_frames:
                     fr_df = pd.concat(funding_frames).sort_index()
-            if fr_df is None and hasattr(funding_exchange, "fetch_funding_rate"):
+            if (
+                fr_df is None
+                and allow_live_snapshot
+                and hasattr(funding_exchange, "fetch_funding_rate")
+            ):
                 fr_df = pd.DataFrame(
                     [funding_exchange.fetch_funding_rate(funding_symbol)]
                 )
-            live_derivatives = self._fetch_live_derivative_snapshot(
-                funding_symbol,
-                timestamp=end_h,
+            live_derivatives = (
+                self._fetch_live_derivative_snapshot(
+                    funding_symbol,
+                    timestamp=end_h,
+                )
+                if allow_live_snapshot
+                else None
             )
             if fr_df is not None and not fr_df.empty:
                 if "funding_rate" in fr_df.columns and isinstance(
@@ -1622,7 +1761,7 @@ class DataFetcher:
                 if existing_funding is not None and not existing_funding.empty:
                     fr_df = pd.concat([existing_funding, fr_df], sort=True)
                 fr_df = fr_df.sort_index().groupby(level=0).last()
-                fr_df.to_parquet(fr_path)
+                _atomic_write_microdata_parquet(fr_df, fr_path)
                 out["funding"] = "funding_rate" in fr_df.columns
         except Exception as exc:
             self._log_microdata_error(symbol, exc, context="microdata_funding")
@@ -1714,57 +1853,76 @@ class DataFetcher:
         Returns:
             Panel dictionary with open, high, low, close, volume DataFrames
         """
-        # Fetch OHLCV data for all symbols
-        ohlcv_data = {}
+        ordered_symbols = tuple(sorted(dict.fromkeys(str(s) for s in symbols)))
+        with self._warm_panel_lock:
+            if (
+                self._warm_panel_cache
+                and self._warm_panel_symbols == ordered_symbols
+                and self._warm_panel_lookback_hours == lookback_hours
+            ):
+                tprint(
+                    "DataFetcher retained warm raw-market panel hit: "
+                    f"symbols={len(ordered_symbols)} fields={len(self._warm_panel_cache)} "
+                    f"lookback_hours={lookback_hours}"
+                )
+                return self._warm_panel_cache
+
         start_ts = None
         if lookback_hours is not None:
             start_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
                 hours=int(lookback_hours)
             )
-        cache_hits = 0
-        cache_misses = 0
-        for symbol in symbols:
-            try:
-                cached = self._ohlcv_cache.get(symbol)
-                if self._cache_covers(cached, start_ts):
-                    cache_hits += 1
-                else:
-                    cache_misses += 1
-                data = self._load_ohlcv_symbol_cached(symbol, start_ts=start_ts)
-                # Safely check data
-                try:
-                    data_not_empty = (
-                        data is not None
-                        and isinstance(data, (pd.DataFrame, pd.Series))
-                        and not (hasattr(data, "empty") and data.empty)
-                    )
-                except Exception:
-                    data_not_empty = False
+        try:
+            workers = int(os.getenv("EPM_RAW_MARKET_DATA_LOAD_WORKERS", "8") or "8")
+        except (TypeError, ValueError):
+            workers = 8
 
-                if data_not_empty:
-                    ohlcv_data[symbol] = data
-            except Exception as e:
-                tprint(f"Warning: Could not load data for {symbol}: {e}")
+        def _symbol_loader(
+            symbol: str,
+            requested_start: Optional[pd.Timestamp],
+            _requested_end: Optional[pd.Timestamp],
+        ) -> pd.DataFrame:
+            return self._load_ohlcv_symbol_cached(
+                symbol,
+                start_ts=requested_start,
+            )
 
-        # Convert to panel format
-        tprint(
-            "DataFetcher panel load: "
-            f"symbols={len(symbols)} cache_hits={cache_hits} "
-            f"cache_misses={cache_misses} lookback_hours={lookback_hours}"
+        def _microdata_loader(
+            requested_symbols: List[str],
+            requested_start: Optional[pd.Timestamp],
+            _requested_end: Optional[pd.Timestamp],
+        ) -> Dict[str, pd.DataFrame]:
+            return self._load_microdata_panel(
+                list(requested_symbols),
+                start_ts=requested_start,
+            )
+
+        panel = load_raw_market_panel(
+            store=self.ohlcv_store,
+            symbols=list(ordered_symbols),
+            panel_fields=(
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                *PERP_OHLCV_EXTRA_FIELDS,
+            ),
+            start_ts=start_ts,
+            end_ts=None,
+            max_workers=workers,
+            symbol_loader=_symbol_loader,
+            microdata_loader=_microdata_loader,
         )
-        panel = get_panel_from_dict(ohlcv_data)
-        micro_panel = self._load_microdata_panel(symbols, start_ts=start_ts)
-        for key, frame in micro_panel.items():
-            existing = panel.get(key)
-            if (
-                isinstance(existing, pd.DataFrame)
-                and not existing.empty
-                and isinstance(frame, pd.DataFrame)
-                and not frame.empty
-            ):
-                panel[key] = frame.combine_first(existing).sort_index()
-            else:
-                panel[key] = frame
+        tprint(
+            "DataFetcher canonical raw-market panel load: "
+            f"symbols={len(symbols)} fields={len(panel)} "
+            f"lookback_hours={lookback_hours} workers={workers}"
+        )
+        with self._warm_panel_lock:
+            self._warm_panel_cache = panel
+            self._warm_panel_symbols = ordered_symbols
+            self._warm_panel_lookback_hours = lookback_hours
         return panel
 
 

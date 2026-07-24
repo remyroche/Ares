@@ -1798,3 +1798,122 @@ def compute_oi_features(
             out[f"funding_vol_{days}_robust_z"] = funding_z_90d.copy()
 
     return {k: v.astype(np.float32) for k, v in out.items()}
+
+
+def compute_residual_market_context_oi_features(
+    *,
+    oi_native: pd.DataFrame,
+    price: pd.DataFrame,
+    quote_volume: pd.DataFrame,
+    funding_rate: pd.DataFrame | None = None,
+    bars_per_day: int = 24,
+) -> dict[str, pd.DataFrame]:
+    """Compute the small OI context required by residual-state composites.
+
+    This is intentionally a narrow, allocation-conscious subset of
+    :func:`compute_oi_features`.  The formulas and causal rolling windows are
+    identical to the full OI pipeline for the returned fields, while avoiding
+    a large transient dictionary when historical context must be backfilled.
+    """
+
+    bpd = max(1, int(bars_per_day))
+    h_1h = max(1, bpd // 24)
+    h_4h = max(h_1h, 4 * h_1h)
+    h_24h = max(h_1h, 24 * h_1h)
+    w_7d = 7 * bpd
+    w_30d = 30 * bpd
+    w_90d = 90 * bpd
+
+    oi_native = (
+        oi_native.reindex(index=price.index, columns=price.columns)
+        .replace([np.inf, -np.inf], np.nan)
+        .where(lambda frame: frame > 0.0)
+        .ffill(limit=3 * bpd)
+        .astype(np.float32)
+    )
+    price = (
+        price.reindex(index=oi_native.index, columns=oi_native.columns)
+        .replace([np.inf, -np.inf], np.nan)
+        .where(lambda frame: frame > 0.0)
+        .ffill(limit=bpd)
+        .astype(np.float32)
+    )
+    quote_volume = (
+        quote_volume.reindex(index=oi_native.index, columns=oi_native.columns)
+        .replace([np.inf, -np.inf], np.nan)
+        .where(lambda frame: frame > 0.0)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    if funding_rate is not None:
+        funding_rate = (
+            funding_rate.reindex(index=oi_native.index, columns=oi_native.columns)
+            .replace([np.inf, -np.inf], np.nan)
+            .astype(np.float32)
+        )
+
+    oi_value = (oi_native * price).replace([np.inf, -np.inf], np.nan).where(
+        lambda frame: frame > 0.0
+    )
+    oi_value_log = np.log(oi_value.clip(lower=1e-12)).astype(np.float32)
+    price_log = np.log(price.clip(lower=1e-12)).astype(np.float32)
+    oi_chg_1h = (oi_value_log - oi_value_log.shift(h_1h)).astype(np.float32)
+    oi_chg_4h = (oi_value_log - oi_value_log.shift(h_4h)).astype(np.float32)
+    price_ret_1h = (price_log - price_log.shift(h_1h)).astype(np.float32)
+    price_ret_4h = (price_log - price_log.shift(h_4h)).astype(np.float32)
+
+    def _robust_or_standard(frame: pd.DataFrame) -> pd.DataFrame:
+        robust = rolling_robust_zscore_by_symbol(
+            frame, w_30d, min_periods=w_7d
+        ).clip(-10, 10)
+        fallback = rolling_zscore_by_symbol(
+            frame, w_30d, min_periods=w_7d
+        ).clip(-10, 10)
+        return robust.where(robust.notna(), fallback).fillna(0.0).astype(np.float32)
+
+    oi_chg_1h_z = _robust_or_standard(oi_chg_1h)
+    oi_chg_4h_z = _robust_or_standard(oi_chg_4h)
+    price_ret_1h_z = _robust_or_standard(price_ret_1h)
+    price_ret_4h_z = _robust_or_standard(price_ret_4h)
+    if funding_rate is None:
+        funding_z_30d = pd.DataFrame(
+            0.0, index=oi_native.index, columns=oi_native.columns, dtype=np.float32
+        )
+        funding_1d_chg_z_90d = pd.DataFrame(
+            np.nan, index=oi_native.index, columns=oi_native.columns, dtype=np.float32
+        )
+    else:
+        funding_z_30d = rolling_robust_zscore_by_symbol(
+            funding_rate, w_30d, min_periods=w_7d
+        ).clip(-10, 10).fillna(0.0).astype(np.float32)
+        funding_1d_chg = (funding_rate - funding_rate.shift(h_24h)).astype(np.float32)
+        funding_1d_chg_z_90d = rolling_long_iqr_robust_zscore_by_symbol(
+            funding_1d_chg, w_90d
+        ).clip(-10, 10).astype(np.float32)
+
+    _, price_recovery_24h, _, _ = _rolling_lifecycle_frames(
+        price_log, price_ret_1h, h_24h
+    )
+    volume_z_7d = rolling_robust_zscore_by_symbol(
+        np.log1p(quote_volume).astype(np.float32),
+        w_7d,
+        min_periods=max(h_24h, h_1h),
+    ).clip(-10, 10)
+    asset_short_covering = (
+        price_ret_1h_z.clip(lower=0.0).fillna(0.0)
+        + (-oi_chg_1h_z).clip(lower=0.0).fillna(0.0)
+        + (-funding_z_30d).clip(lower=0.0).fillna(0.0)
+        + price_recovery_24h.clip(lower=0.0).fillna(0.0)
+        + volume_z_7d.clip(lower=0.0).fillna(0.0)
+    ) / np.float32(5.0)
+
+    return {
+        "asset_short_covering_score": asset_short_covering.clip(0.0, 20.0).astype(
+            np.float32
+        ),
+        "funding_1d_chg_z_90d": funding_1d_chg_z_90d,
+        "price_down_oi_down_4h_rz": (
+            (-price_ret_4h_z).clip(lower=0.0)
+            * (-oi_chg_4h_z).clip(lower=0.0)
+        ).clip(0.0, 100.0).astype(np.float32),
+    }

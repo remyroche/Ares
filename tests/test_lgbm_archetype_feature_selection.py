@@ -27,6 +27,120 @@ def _univariate_stats(columns: list[str], selected: str) -> pd.DataFrame:
     )
 
 
+def test_archetype_prescreen_config_defaults_and_normalizes_booleans() -> None:
+    assert lp._resolve_lgbm_archetype_prescreen_config(None) == {
+        "archetype_univariate_prescreen_enabled": True,
+        "archetype_relief_prescreen_enabled": True,
+    }
+    assert lp._resolve_lgbm_archetype_prescreen_config(
+        {
+            "archetype_univariate_prescreen_enabled": "false",
+            "archetype_relief_prescreen_enabled": "YES",
+        }
+    ) == {
+        "archetype_univariate_prescreen_enabled": False,
+        "archetype_relief_prescreen_enabled": True,
+    }
+
+
+def test_univariate_prescreen_switches_between_global_and_archetype_modes(
+    monkeypatch,
+) -> None:
+    x = pd.DataFrame({"feature_a": [0.0, 1.0], "feature_b": [1.0, 0.0]})
+    y = np.asarray([0.0, 1.0], dtype=np.float32)
+    calls: list[str] = []
+
+    def fake_global(*args, **kwargs):
+        calls.append("global")
+        return ["feature_a"], _univariate_stats(list(x.columns), "feature_a")
+
+    def fake_union(*args, **kwargs):
+        calls.append("archetype_union")
+        return ["feature_b"], _univariate_stats(
+            list(x.columns), "feature_b"
+        ), {"enabled": True, "source": "test"}
+
+    monkeypatch.setattr(lp, "_univariate_directional_filter", fake_global)
+    monkeypatch.setattr(lp, "_univariate_directional_filter_archetype_union", fake_union)
+
+    selected_global, stats_global, diag_global = lp._run_lgbm_univariate_prescreen(
+        x,
+        y,
+        archetype_enabled=False,
+        classifier=False,
+        random_state=3,
+    )
+    selected_union, stats_union, diag_union = lp._run_lgbm_univariate_prescreen(
+        x,
+        y,
+        archetype_enabled=True,
+        classifier=False,
+        random_state=3,
+    )
+
+    assert calls == ["global", "archetype_union"]
+    assert selected_global == ["feature_a"]
+    assert selected_union == ["feature_b"]
+    assert diag_global["mode"] == "global"
+    assert diag_union["mode"] == "archetype_union"
+    assert stats_global["archetype_prescreen_mode"].eq("global").all()
+    assert stats_union["archetype_prescreen_mode"].eq("archetype_union").all()
+
+
+def test_relief_prescreen_switches_between_global_and_archetype_modes(
+    monkeypatch,
+) -> None:
+    x = pd.DataFrame({"feature_a": [0.0, 1.0], "feature_b": [1.0, 0.0]})
+    y = np.asarray([0.0, 1.0], dtype=np.float32)
+    calls: list[str] = []
+    relief_stats = pd.DataFrame(
+        {
+            "feature": list(x.columns),
+            "relief_score": [0.1, 1.0],
+            "relief_rescued": [False, True],
+        }
+    )
+
+    def fake_global(*args, **kwargs):
+        calls.append("global")
+        return ["feature_b"], relief_stats
+
+    def fake_union(*args, **kwargs):
+        calls.append("archetype_union")
+        return ["feature_b"], relief_stats, {"enabled": True, "source": "test"}
+
+    monkeypatch.setattr(lp, "_relief_rescue_filter", fake_global)
+    monkeypatch.setattr(lp, "_relief_rescue_filter_archetype_union", fake_union)
+    monkeypatch.setattr(
+        lp,
+        "_feature_selection_archetype_labels",
+        lambda *args, **kwargs: (np.asarray(["a", "b"], dtype=object), {"source": "test"}),
+    )
+
+    _, stats_global, diag_global = lp._run_lgbm_relief_prescreen(
+        x,
+        y,
+        ["feature_a"],
+        archetype_enabled=False,
+        classifier=False,
+        random_state=5,
+    )
+    _, stats_union, diag_union = lp._run_lgbm_relief_prescreen(
+        x,
+        y,
+        ["feature_a"],
+        archetype_enabled=True,
+        classifier=False,
+        random_state=5,
+    )
+
+    assert calls == ["global", "archetype_union"]
+    assert diag_global["mode"] == "global"
+    assert diag_union["mode"] == "archetype_union"
+    assert stats_global["archetype_prescreen_mode"].eq("global").all()
+    assert stats_union["archetype_prescreen_mode"].eq("archetype_union").all()
+
+
 def test_archetype_univariate_scores_economic_target_within_each_slice(
     monkeypatch,
 ) -> None:

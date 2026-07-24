@@ -1,4 +1,6 @@
 import json
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -148,6 +150,26 @@ def test_candidate_priority_uses_live_friction_ev_rank_and_hr_adjustment():
     ) < ri._candidate_portfolio_priority(base_decision)
 
 
+def test_corrected_ev_rank_is_canonical_for_position_sizing():
+    decision = {
+        "normalized_rank_score": 0.93,
+        "chain_results": {
+            "threshold_basis_corrected_expected_ev_rank": 0.97,
+        },
+    }
+
+    assert ri._candidate_corrected_ev_rank_for_sizing(decision) == pytest.approx(0.97)
+
+
+def test_policy_size_power_prefers_deployed_field_with_legacy_fallback():
+    assert ri._resolve_policy_size_power(
+        {"size_power": 1.4, "best_size_power": 2.0}
+    ) == pytest.approx(1.4)
+    assert ri._resolve_policy_size_power({"best_size_power": 2.0}) == pytest.approx(
+        2.0
+    )
+
+
 def test_prediction_ledger_row_persists_replay_strategy_auction_and_portfolio_state():
     now = pd.Timestamp("2026-07-10T09:00:00Z")
     pm = PortfolioManager(max_positions=4, portfolio_value=1000.0)
@@ -231,10 +253,10 @@ def test_prediction_ledger_row_persists_replay_strategy_auction_and_portfolio_st
     assert row["open_positions_before_count"] == 1
     assert row["open_positions_after_count"] == 2
     assert json.loads(row["portfolio_state_snapshot_json"])["schema"] == (
-        "portfolio_replay_state_v2"
+        "portfolio_replay_state_v4_pre_leverage_wallet"
     )
     assert json.loads(row["portfolio_state_after_snapshot_json"])["schema"] == (
-        "portfolio_replay_state_v2"
+        "portfolio_replay_state_v4_pre_leverage_wallet"
     )
 
 
@@ -363,6 +385,65 @@ def test_meta_hit_rate_calibration_resolves_side_tbm_alias(tmp_path):
     assert resolved["estimated_hit_rate"] == pytest.approx(0.80)
     assert resolved["estimated_hit_rate_calibration_n"] == 40
     assert resolved["estimated_hit_rate_source"].endswith(":mr")
+
+
+def test_live_regime_calibration_raw_contract_excludes_generated_and_injected():
+    artifact = {
+        "effects": [
+            {
+                "feature_cols": [
+                    "raw_market_feature",
+                    "resid_event_aegmm_gmm_entropy",
+                    "hit_probability",
+                    "calibrated_score",
+                    "__regime_source_shock_impulse_score__",
+                ]
+            }
+        ]
+    }
+    residual_payload = {
+        "generated_feature_columns": ["resid_event_aegmm_gmm_entropy"]
+    }
+
+    assert ri._live_regime_calibration_raw_feature_columns(
+        artifact, residual_payload
+    ) == ["raw_market_feature"]
+
+
+def test_live_postprocessor_hydration_only_fails_missing_residual_inputs():
+    frame = pd.DataFrame({"strict_observable": [1.0, 2.0]})
+
+    hydrated, strict_missing, optional_missing = (
+        ri._hydrate_optional_frozen_features(
+            frame,
+            attempted_columns=["strict_observable", "optional_calibration_bin"],
+            strict_columns=["strict_observable"],
+        )
+    )
+
+    assert strict_missing == []
+    assert optional_missing == ["optional_calibration_bin"]
+    assert "optional_calibration_bin" in hydrated
+    assert hydrated["optional_calibration_bin"].isna().all()
+
+
+def test_live_postprocessor_hydration_keeps_residual_contract_fail_closed():
+    frame = pd.DataFrame(index=[0, 1])
+
+    _, strict_missing, optional_missing = ri._hydrate_optional_frozen_features(
+        frame,
+        attempted_columns=["strict_observable", "optional_calibration_bin"],
+        strict_columns=["strict_observable"],
+    )
+
+    assert strict_missing == ["strict_observable"]
+    assert optional_missing == ["optional_calibration_bin"]
+
+
+def test_effective_live_entry_cap_never_exceeds_policy_cap():
+    assert ri._effective_live_entry_cap(4, 2, entries_allowed=True) == 2
+    assert ri._effective_live_entry_cap(1, 2, entries_allowed=True) == 1
+    assert ri._effective_live_entry_cap(4, 2, entries_allowed=False) == 0
 
 
 def test_fullscope_score_distribution_reference_is_mapping_only(tmp_path, monkeypatch):
@@ -624,7 +705,13 @@ class _DummyExecutor:
 
     def __init__(self):
         self.calls = []
-        self.config = {"allow_live_batch_rank_fallback_for_debug": True}
+        self._entry_budget_tmpdir = tempfile.TemporaryDirectory()
+        self.config = {
+            "allow_live_batch_rank_fallback_for_debug": True,
+            "entry_budget_guard_path": str(
+                Path(self._entry_budget_tmpdir.name) / "entry_budget.sqlite"
+            ),
+        }
 
     def get_cooldown_hours(self, bucket_key):
         return 0.0
@@ -936,6 +1023,66 @@ def test_run_inference_step_global_auction_executes_best_cross_side_first(monkey
     assert results["trades"][0]["side"] == "short"
 
 
+def test_run_inference_step_global_auction_fails_closed_when_one_side_errors(
+    monkeypatch, tmp_path
+):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame(
+        {"LONG/USDT": [100.0] * len(idx), "SHORT/USDT": [100.0] * len(idx)},
+        index=idx,
+    )
+    panel = {name: close for name in ("close", "high", "low", "open", "volume")}
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+    monkeypatch.setattr(
+        ri, "select_candidates", lambda **kwargs: (["LONG/USDT"], ["SHORT/USDT"])
+    )
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+    monkeypatch.setattr(
+        ri,
+        "apply_policy_rank_percentile_gate",
+        lambda decision, **kwargs: (True, None),
+    )
+
+    class _OneSideFailureOrchestrator(_DummyOrchestrator):
+        def predict_alpha(self, features, side, kind):
+            if side == "short":
+                raise RuntimeError("synthetic short-side failure")
+            return super().predict_alpha(features, side, kind)
+
+    executor = _DummyExecutor()
+    executor.config["entry_budget_guard_path"] = str(tmp_path / "budget.sqlite")
+    results = ri.run_inference_step(
+        orchestrator=_OneSideFailureOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr", "short_mr"},
+        calibration_data={
+            side: {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+            for side in ("long_mr", "short_mr")
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0),
+        initial_rank_threshold=0.5,
+        max_entries_total=1,
+    )
+
+    assert executor.calls == []
+    assert results["global_auction_completeness"]["complete"] is False
+    assert results["global_auction_completeness"]["completed_sides"] == ["long"]
+    assert "short" in results["global_auction_completeness"]["failed_sides"]
+
+
 def test_run_inference_step_rejects_portfolio_strategy_contract_mismatch(monkeypatch):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame({"LONG/USDT": [100.0] * len(idx)}, index=idx)
@@ -1017,7 +1164,7 @@ def test_run_inference_step_global_auction_keeps_ticker_liquidity_gate(monkeypat
 
     executor = _DummyExecutor()
     executor.exchange = _WideSpreadExchange()
-    executor.config = {"allow_live_batch_rank_fallback_for_debug": True}
+    executor.config["allow_live_batch_rank_fallback_for_debug"] = True
 
     def _gate(decision, **kwargs):
         score = float(decision.get("calibrated_score") or 0.9)
@@ -1225,16 +1372,7 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
     # calibrated policy sizing and symbol-underperformance downweights. A
     # single-candidate auction rank is 1.0, so the default global-auction policy
     # fills one reserved slot, capped by max_position_wallet_pct.
-    expected_slot_size = (
-        10000.0
-        * portfolio_policy.max_total_wallet_allocation_pct
-        / float(
-            portfolio_policy.reserved_position_slots
-            or portfolio_policy.max_concurrent_positions
-        )
-    )
     expected_size = min(
-        expected_slot_size,
         10000.0 * portfolio_policy.max_position_wallet_pct,
         portfolio_policy.max_position_quote_notional,
     )
@@ -1679,6 +1817,38 @@ def test_live_policy_archetype_classifier_fallback_normalizes_side_prefix():
         meta_model_input_row=None,
     )
     assert predicted == "long__long_mixed_wideslow_tentative"
+
+
+def test_observable_policy_archetype_matches_label_time_family_contract():
+    scores = {
+        "__regime_source_trend_following_score__": 0.31,
+        "__regime_source_mean_reversion_score__": 0.44,
+        "__regime_source_vol_compression_score__": 0.62,
+        "__regime_source_breakout_impulse_score__": 0.41,
+        "__regime_source_dirty_avoid_score__": 0.27,
+    }
+    predicted = ri.predict_observable_policy_archetype(
+        side="long",
+        candidate_feature_row=pd.DataFrame([scores]),
+    )
+    assert predicted == "long__long_volcompression_wideslow_candidate"
+
+
+def test_observable_policy_archetype_uses_mixed_for_small_score_gap():
+    scores = {
+        "__regime_source_trend_following_score__": 0.61,
+        "__regime_source_mean_reversion_score__": 0.60,
+        "__regime_source_vol_compression_score__": 0.20,
+        "__regime_source_breakout_impulse_score__": 0.19,
+        "__regime_source_dirty_avoid_score__": 0.18,
+    }
+    assert (
+        ri.predict_observable_policy_archetype(
+            side="short",
+            candidate_feature_row=pd.DataFrame([scores]),
+        )
+        == "short__short_mixed_clean_path"
+    )
 
 
 def test_live_policy_archetype_prefers_existing_row_value():

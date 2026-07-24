@@ -20,13 +20,27 @@ selection; the holdout metrics are validation-only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
+import joblib
 import numpy as np
 import pandas as pd
+
+from extreme_price_movements.features_gmm_ae import (
+    AE_GMM_FEATURE_COLUMNS,
+    transform_ae_gmm_features,
+)
+from extreme_price_movements.data_store import _feature_schema_names
+from extreme_price_movements.static_feature_store import (
+    STATIC_FEATURE_ENDPOINT_VERSION,
+    read_static_features,
+)
 
 
 DEFAULT_LEDGER = Path(
@@ -44,7 +58,129 @@ DEFAULT_FEATURE_DIR = Path("data_perp/features/20260617_090000")
 DEFAULT_FIT_MONTHS = ("2026-04", "2026-05")
 DEFAULT_HOLDOUT_MONTH = "2026-06"
 DEFAULT_SELECTED_COL = "selected_top10"
-FEATURE_STORE_SCOPES = ("cross_market", "config_meta_full", "all_safe")
+HANDOFF_RANK_SCOPE = "timestamp_side"
+HANDOFF_RANK_SCOPE_COLUMN = "candidate_handoff_rank_scope"
+BASE_TARGET_CONTRACT_HASH_COLUMN = "base_target_contract_hash"
+BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN = "base_sample_weight_spec_hash"
+HANDOFF_PROVENANCE_COLUMNS = (
+    HANDOFF_RANK_SCOPE_COLUMN,
+    BASE_TARGET_CONTRACT_HASH_COLUMN,
+    BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN,
+)
+FEATURE_STORE_SCOPES = (
+    "cross_market",
+    "config_meta_full",
+    "all_safe",
+    "aegmm_inputs",
+)
+
+
+def _frozen_ae_gmm_input_columns(state_path: Path | None) -> list[str]:
+    if state_path is None:
+        return []
+    state = joblib.load(Path(state_path))
+    return [str(column) for column in state.get("feature_columns", [])]
+
+
+def _append_frozen_ae_gmm_context(
+    frame: pd.DataFrame,
+    state_path: Path | None,
+    *,
+    chunk_rows: int = 50_000,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if state_path is None:
+        return frame, {"status": "not_requested"}
+    state_path = Path(state_path)
+    state = joblib.load(state_path)
+    feature_cols = [str(col) for col in state.get("feature_columns", [])]
+    if not feature_cols:
+        raise ValueError(f"frozen AE/GMM state has no feature contract: {state_path}")
+    probe_values = state.get("cycle_input_fill_values", {})
+    probe = pd.DataFrame(
+        [[float(probe_values.get(col, 0.0)) for col in feature_cols]],
+        columns=feature_cols,
+        dtype=np.float32,
+    )
+    expected_generated = list(
+        transform_ae_gmm_features(probe, state, index=probe.index).columns
+    )
+    available = set(frame.columns)
+    present = [col for col in feature_cols if col in available]
+    missing = [col for col in feature_cols if col not in available]
+    existing_generated = [col for col in expected_generated if col in available]
+    existing_complete = np.ones(len(frame), dtype=bool)
+    if len(existing_generated) == len(expected_generated):
+        for col in expected_generated:
+            existing_complete &= pd.to_numeric(
+                frame[col], errors="coerce"
+            ).notna().to_numpy(dtype=bool, copy=False)
+    else:
+        existing_complete[:] = False
+    existing_complete_rows = int(existing_complete.sum())
+    if bool(existing_complete.all()):
+        return frame, {
+            "status": "existing_frozen_outputs_reused",
+            "state_path": str(state_path),
+            "cycle_state_hash": state.get("cycle_state_hash"),
+            "state_input_features": int(len(feature_cols)),
+            "state_input_features_present": int(len(present)),
+            "state_input_coverage": float(len(present) / max(len(feature_cols), 1)),
+            "missing_state_input_features_not_required_for_reuse": missing,
+            "generated_features": int(len(expected_generated)),
+            "generated_columns": expected_generated,
+            "existing_complete_rows": existing_complete_rows,
+            "recomputed_rows": 0,
+            "transform_contract": "reuse exact base-emitted outputs from the same frozen cycle state; no handoff recomputation",
+        }
+    if missing:
+        raise ValueError(
+            "Cannot recompute frozen AE/GMM context: missing required inputs "
+            f"{missing[:20]} (missing={len(missing)}), while only "
+            f"{len(existing_generated)}/{len(expected_generated)} generated outputs are present "
+            f"and {len(frame) - existing_complete_rows}/{len(frame)} rows have incomplete frozen outputs"
+        )
+    recompute_positions = np.flatnonzero(~existing_complete)
+    cycle_fill = {
+        str(col): float(value)
+        for col, value in dict(state.get("cycle_input_fill_values", {}) or {}).items()
+        if np.isfinite(value)
+    }
+    generated_parts: list[pd.DataFrame] = []
+    for start in range(0, len(recompute_positions), max(int(chunk_rows), 1)):
+        positions = recompute_positions[start : start + max(int(chunk_rows), 1)]
+        x = frame.iloc[positions].loc[:, feature_cols]
+        x = x.apply(pd.to_numeric, errors="coerce").astype(np.float32)
+        if cycle_fill:
+            x = x.fillna({col: cycle_fill[col] for col in feature_cols if col in cycle_fill})
+        generated_parts.append(
+            transform_ae_gmm_features(x, state, index=frame.index[positions])
+        )
+    generated = pd.concat(generated_parts, axis=0)
+    out = frame
+    for col in generated.columns:
+        if col not in out.columns:
+            out[col] = np.float32(np.nan)
+        out.loc[generated.index, col] = generated[col].to_numpy(
+            dtype=np.float32, copy=False
+        )
+    return out, {
+        "status": (
+            "existing_frozen_outputs_completed"
+            if existing_generated
+            else "frozen_state_transformed"
+        ),
+        "state_path": str(state_path),
+        "state_input_features": int(len(feature_cols)),
+        "state_input_features_present": int(len(present)),
+        "state_input_coverage": float(len(present) / max(len(feature_cols), 1)),
+        "missing_state_input_features": missing,
+        "generated_features": int(len(generated.columns)),
+        "generated_columns": list(generated.columns),
+        "existing_complete_rows": existing_complete_rows,
+        "recomputed_rows": int(len(recompute_positions)),
+        "cycle_state_hash": state.get("cycle_state_hash"),
+        "transform_contract": "exact frozen scaler/AE/GMM state with the complete ordered input contract and persisted cycle fill values",
+    }
 
 CROSS_MARKET_FEATURE_PREFIXES: tuple[str, ...] = (
     "q_tail_",
@@ -200,6 +336,260 @@ def _json_safe(value: Any) -> Any:
     except (TypeError, ValueError):
         pass
     return value
+
+
+def _contract_hash(payload: Any) -> str:
+    """Return a stable hash for a serializable model-contract payload."""
+
+    encoded = json.dumps(
+        _json_safe(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _contract_value_from_rows(
+    frame: pd.DataFrame,
+    candidates: Iterable[str],
+) -> tuple[Any | None, str | None, list[str]]:
+    """Resolve one stable JSON-like contract from compatible source columns."""
+
+    values: list[Any] = []
+    sources: list[str] = []
+    for column in candidates:
+        if column not in frame.columns:
+            continue
+        series = frame[column].dropna()
+        for raw in series.astype(str):
+            text = raw.strip()
+            if not text:
+                continue
+            try:
+                value = json.loads(text)
+            except json.JSONDecodeError:
+                value = text
+            values.append(value)
+            sources.append(str(column))
+    if not values:
+        return None, None, []
+    by_hash: dict[str, Any] = {}
+    for value in values:
+        by_hash.setdefault(_contract_hash(value), value)
+    if len(by_hash) != 1:
+        return None, "mixed_row_contract_values", sorted(set(sources))
+    return next(iter(by_hash.values())), None, sorted(set(sources))
+
+
+def _inherited_base_contract(
+    ledger: pd.DataFrame,
+    *,
+    strict: bool,
+) -> dict[str, Any]:
+    """Build explicit base target/weight provenance for the meta handoff.
+
+    New base artifacts carry the two serialized contracts and hashes.  Legacy
+    ledgers can still be materialized for diagnostics, but strict consumers
+    must reject their derived fallback contract.
+    """
+
+    rank_scope_values = (
+        ledger.get(HANDOFF_RANK_SCOPE_COLUMN, pd.Series(dtype="object"))
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    unique_scopes = sorted(value for value in rank_scope_values.unique() if value)
+    if unique_scopes and unique_scopes != [HANDOFF_RANK_SCOPE]:
+        raise ValueError(
+            "candidate_handoff_rank_scope must be timestamp_side; "
+            f"found {unique_scopes}"
+        )
+    if strict and unique_scopes != [HANDOFF_RANK_SCOPE]:
+        raise ValueError(
+            "Strict meta handoff requires candidate_handoff_rank_scope="
+            "timestamp_side on every base candidate row."
+        )
+
+    target_contract, target_error, target_sources = _contract_value_from_rows(
+        ledger,
+        (
+            "base_target_contract_json",
+            "base_target_contract",
+            "target_contract_json",
+        ),
+    )
+    weight_spec, weight_error, weight_sources = _contract_value_from_rows(
+        ledger,
+        (
+            "base_sample_weight_spec_json",
+            "base_sample_weight_spec",
+            "sample_weight_spec_json",
+        ),
+    )
+    target_mode = sorted(
+        value
+        for value in ledger.get("base_model_target_mode", pd.Series(dtype="object"))
+        .dropna()
+        .astype(str)
+        .unique()
+        if value
+    )
+    weight_arm = sorted(
+        value
+        for value in ledger.get("base_model_weight_arm", pd.Series(dtype="object"))
+        .dropna()
+        .astype(str)
+        .unique()
+        if value
+    )
+    explicit = target_contract is not None and weight_spec is not None
+    if target_error or weight_error:
+        if strict:
+            raise ValueError(
+                "Strict meta handoff cannot use mixed base provenance: "
+                f"target={target_error}, weight={weight_error}."
+            )
+    if target_contract is None:
+        target_contract = {
+            "schema": "base_soft_label_contract_v1",
+            "target_column": "__first_touch_target_soft__",
+            "base_model_target_mode": target_mode,
+            "provenance": "derived_legacy_default",
+        }
+    if weight_spec is None:
+        weight_spec = {
+            "schema": "target_strength_weight_v1",
+            "spec": {},
+            "base_model_weight_arm": weight_arm,
+            "provenance": "derived_legacy_default",
+        }
+    if strict and not explicit:
+        raise ValueError(
+            "Strict meta handoff requires explicit base_target_contract and "
+            "base_sample_weight_spec values from the base artifact."
+        )
+    target_hash = _contract_hash(target_contract)
+    weight_hash = _contract_hash(weight_spec)
+    source_target_hashes = sorted(
+        value
+        for value in ledger.get(
+            BASE_TARGET_CONTRACT_HASH_COLUMN, pd.Series(dtype="object")
+        )
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        if value
+    )
+    source_weight_hashes = sorted(
+        value
+        for value in ledger.get(
+            BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN, pd.Series(dtype="object")
+        )
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        if value
+    )
+    if strict and (
+        source_target_hashes != [target_hash]
+        or source_weight_hashes != [weight_hash]
+    ):
+        raise ValueError(
+            "Strict meta handoff requires one matching base contract hash on "
+            "every candidate row; "
+            f"target={source_target_hashes}, weight={source_weight_hashes}."
+        )
+    return {
+        "schema": "base_to_meta_inherited_contract_v1",
+        "candidate_handoff_rank_scope": HANDOFF_RANK_SCOPE,
+        "rank_scope_status": "explicit" if unique_scopes else "derived_legacy_default",
+        "base_target_contract": target_contract,
+        "base_target_contract_hash": target_hash,
+        "base_sample_weight_spec": weight_spec,
+        "base_sample_weight_spec_hash": weight_hash,
+        "explicit_base_contract": bool(explicit),
+        "target_contract_source_columns": target_sources,
+        "sample_weight_spec_source_columns": weight_sources,
+        "target_contract_resolution_error": target_error,
+        "sample_weight_spec_resolution_error": weight_error,
+        "source_base_target_contract_hashes": source_target_hashes,
+        "source_base_sample_weight_spec_hashes": source_weight_hashes,
+        "strict": bool(strict),
+    }
+
+
+def _materialize_promoted_base_contract(ledger: pd.DataFrame) -> pd.DataFrame:
+    """Upgrade completed base ledgers without rerunning model scoring.
+
+    This is deterministic contract materialization from the uniform target mode
+    and weight arm already recorded on every scored row.  It changes no score,
+    target, rank, or candidate decision.
+    """
+
+    modes = set(
+        ledger.get("base_model_target_mode", pd.Series(dtype="object"))
+        .dropna()
+        .astype(str)
+    )
+    weight_arms = set(
+        ledger.get("base_model_weight_arm", pd.Series(dtype="object"))
+        .dropna()
+        .astype(str)
+    )
+    if len(modes) != 1 or len(weight_arms) != 1:
+        return ledger
+    required = {
+        "base_target_contract_json",
+        "base_sample_weight_spec_json",
+        BASE_TARGET_CONTRACT_HASH_COLUMN,
+        BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN,
+    }
+    if required.issubset(ledger.columns):
+        return ledger
+    out = ledger.copy(deep=False)
+    target_mode = next(iter(modes))
+    weight_arm = next(iter(weight_arms))
+    if target_mode == "side_continuous_geometry_v1":
+        from extreme_price_movements.base_side_target_contract import (
+            build_promoted_side_target,
+            promoted_side_target_provenance,
+        )
+
+        promoted = build_promoted_side_target(out)
+        out["__first_touch_target_soft__"] = promoted["target_soft"].to_numpy(
+            dtype=np.float32, copy=False
+        )
+        provenance = promoted_side_target_provenance()
+    else:
+        target_contract = {
+            "schema": "base_soft_label_contract_v1",
+            "target_column": "__first_touch_target_soft__",
+            "target_mode": target_mode,
+            "source": "base_scoring_target_from_frame",
+        }
+        weight_spec = {
+            "schema": "base_weight_arm_v1",
+            "weight_arm": weight_arm,
+            "source": "base_weight_series",
+        }
+        provenance = {
+            "base_target_contract": target_contract,
+            BASE_TARGET_CONTRACT_HASH_COLUMN: _contract_hash(target_contract),
+            "base_sample_weight_spec": weight_spec,
+            BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN: _contract_hash(weight_spec),
+        }
+    out["base_target_contract_json"] = json.dumps(
+        provenance["base_target_contract"], sort_keys=True, separators=(",", ":")
+    )
+    out["base_sample_weight_spec_json"] = json.dumps(
+        provenance["base_sample_weight_spec"], sort_keys=True, separators=(",", ":")
+    )
+    out[BASE_TARGET_CONTRACT_HASH_COLUMN] = provenance[BASE_TARGET_CONTRACT_HASH_COLUMN]
+    out[BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN] = provenance[
+        BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN
+    ]
+    return out
 
 
 def _parse_csv(value: str | None, default: Iterable[str]) -> list[str]:
@@ -377,6 +767,11 @@ def _join_label_context(ledger: pd.DataFrame, label_context_dir: Path | None) ->
     if not parts:
         return ledger, {"label_context_status": "no_joinable_files", "label_context_dir": str(label_context_dir)}
     context = pd.concat(parts, ignore_index=True)
+    # Keep exact point-in-time keys comparable regardless of whether a source
+    # parquet persisted timezone metadata. No rounding or asof matching is used.
+    ledger = ledger.copy()
+    ledger["__ts__"] = pd.to_datetime(ledger["__ts__"], errors="coerce", utc=True)
+    context["__ts__"] = pd.to_datetime(context["__ts__"], errors="coerce", utc=True)
     context = context.drop_duplicates(key_cols, keep="first")
     before = len(ledger)
     out = ledger.merge(context, on=key_cols, how="left", validate="one_to_one")
@@ -390,6 +785,84 @@ def _join_label_context(ledger: pd.DataFrame, label_context_dir: Path | None) ->
         "rows_after": int(len(out)),
         "matched_rows": matched,
         "match_rate": matched / max(before, 1),
+    }
+
+
+def _materialize_label_path_end(
+    ledger: pd.DataFrame,
+    label_context_dir: Path | None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Persist the exact time at which every forward label is fully observable.
+
+    The soft target uses full-path ordering diagnostics, so an early TP/SL touch
+    does not make the label available early.  Resolution is therefore the close
+    of the final configured path bar, not ``__first_touch_bar__``.
+    """
+
+    if label_context_dir is None:
+        raise ValueError("Label-path resolution requires label_context_dir")
+    summary_path = Path(label_context_dir) / "side_archetype_trailing_materialization_summary.json"
+    if not summary_path.exists():
+        raise FileNotFoundError(
+            f"Missing label-path materialization summary: {summary_path}"
+        )
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    datasets = payload.get("datasets", []) if isinstance(payload, dict) else []
+    contracts = {
+        (
+            int(row.get("path_fetch", {}).get("path_len")),
+            str(row.get("path_fetch", {}).get("path_timeframe")),
+        )
+        for row in datasets
+        if isinstance(row, dict)
+        and row.get("path_fetch", {}).get("path_len") is not None
+        and row.get("path_fetch", {}).get("path_timeframe")
+    }
+    if len(contracts) != 1:
+        raise ValueError(
+            "Label datasets must share one path resolution contract; "
+            f"found {sorted(contracts)}"
+        )
+    path_len, path_timeframe = next(iter(contracts))
+    if path_len <= 0:
+        raise ValueError(f"Invalid label path_len={path_len}")
+    try:
+        path_bar_delta = pd.Timedelta(path_timeframe)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid label path_timeframe={path_timeframe!r}"
+        ) from exc
+    if path_bar_delta <= pd.Timedelta(0):
+        raise ValueError(f"Invalid label path delta={path_bar_delta}")
+    if "__first_path_ts__" not in ledger.columns:
+        raise ValueError("Scored ledger is missing __first_path_ts__")
+    first_path_ts = pd.to_datetime(
+        ledger["__first_path_ts__"], utc=True, errors="coerce"
+    )
+    if first_path_ts.isna().any():
+        raise ValueError(
+            "Scored ledger contains non-finite __first_path_ts__ rows: "
+            f"{int(first_path_ts.isna().sum())}"
+        )
+    out = ledger.copy()
+    out["__first_path_ts__"] = first_path_ts
+    if "__decision_ts__" in out.columns:
+        out["__decision_ts__"] = pd.to_datetime(
+            out["__decision_ts__"], utc=True, errors="coerce"
+        )
+    label_horizon = path_bar_delta * int(path_len)
+    out["__label_path_end_ts__"] = first_path_ts + label_horizon
+    return out, {
+        "schema": "forward_label_resolution_v1",
+        "source": str(summary_path),
+        "path_len": int(path_len),
+        "path_timeframe": str(path_timeframe),
+        "path_bar_seconds": float(path_bar_delta.total_seconds()),
+        "label_horizon_seconds": float(label_horizon.total_seconds()),
+        "resolution_column": "__label_path_end_ts__",
+        "resolution_rule": "__first_path_ts__ + path_len * path_timeframe",
+        "rows": int(len(out)),
+        "missing_resolution_rows": 0,
     }
 
 
@@ -562,6 +1035,11 @@ def _build_regime_columns(
     *,
     fit_mask: pd.Series,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    # Regime construction overwrites derived columns which may already exist
+    # in a saved handoff. Keep this isolated: frozen-model reconstruction must
+    # not mutate the caller's source blocks through pandas copy-on-write
+    # behavior, otherwise the supervised regime refit can drift from its
+    # serialized training contract.
     out = ledger.copy()
     specs: dict[str, Any] = {}
     for regime_name, col, kind in REGIME_SPECS:
@@ -589,16 +1067,23 @@ def _build_regime_columns(
         specs["side_aegmm_cluster"] = {"source_column": "side_name+gmm_cluster_id", "kind": "category"}
     if "__ts__" in out.columns:
         ts = pd.to_datetime(out["__ts__"], errors="coerce")
-        out["calendar_month_regime"] = ts.dt.to_period("M").astype(str).map(lambda value: f"calendar_month__{value}")
-        out["calendar_week_regime"] = ts.dt.to_period("W").astype(str).map(lambda value: f"calendar_week__{value}")
-        out["calendar_weekday_regime"] = ts.dt.dayofweek.map(lambda value: f"weekday__{int(value)}")
+        month_value = ts.dt.strftime("%Y-%m").fillna("missing")
+        week_start = (
+            ts.dt.normalize() - pd.to_timedelta(ts.dt.dayofweek.fillna(0), unit="D")
+        ).dt.strftime("%Y-%m-%d").fillna("missing")
+        weekday_value = ts.dt.dayofweek.fillna(-1).astype(np.int8).astype(str)
+        out["calendar_month_regime"] = pd.Categorical("calendar_month__" + month_value)
+        out["calendar_week_regime"] = pd.Categorical("calendar_week__" + week_start)
+        out["calendar_weekday_regime"] = pd.Categorical("weekday__" + weekday_value)
         hour = ts.dt.hour
         session = np.select(
             [hour.between(0, 5), hour.between(6, 11), hour.between(12, 17), hour.between(18, 23)],
             ["asia_late", "europe_open", "us_open", "us_late"],
             default="missing",
         )
-        out["calendar_session_regime"] = pd.Series(session, index=out.index).map(lambda value: f"session__{value}")
+        out["calendar_session_regime"] = pd.Categorical(
+            "session__" + pd.Series(session, index=out.index, dtype="string").fillna("missing")
+        )
         specs["calendar_month_regime"] = {"source_column": "__ts__", "kind": "calendar_month"}
         specs["calendar_week_regime"] = {"source_column": "__ts__", "kind": "calendar_week"}
         specs["calendar_weekday_regime"] = {"source_column": "__ts__", "kind": "calendar_weekday"}
@@ -869,7 +1354,7 @@ def _enrich_ledger(
     embedded_round_trip_cost: float,
     executable_cost_floor: float,
 ) -> pd.DataFrame:
-    out = ledger.copy()
+    out = ledger.copy(deep=False)
     out["month"] = out["month"].astype(str)
     out["source_tag"] = out["side_name"].astype(str) + "_trailing_tp075_sl050_tr035"
     out["source_family"] = out["side_name"].astype(str) + "_trailing_profit"
@@ -947,7 +1432,10 @@ def _enrich_ledger(
 
     out["first_touch_gross"] = first_touch_net.fillna(0.0) + float(embedded_round_trip_cost)
     out["exec_margin"] = out["first_touch_gross"] - float(executable_cost_floor)
-    out["ev_after_1pct"] = first_touch_net.fillna(0.0) - float(executable_cost_floor)
+    # ``first_touch_net`` already contains ``embedded_round_trip_cost``. Rebuild
+    # gross before applying the requested executable floor so the fee is
+    # reconciled exactly once when embedded cost and floor are equal.
+    out["ev_after_1pct"] = out["first_touch_gross"] - float(executable_cost_floor)
     out["first_touch_bad_mae_1r"] = first_touch_mae_norm.ge(1.0).astype(float)
     out["full_path_bad_mae_1r"] = first_touch_full_path_mae_norm.ge(1.0).astype(float)
     out["timeout"] = timeout.fillna(0.0).gt(0.5).astype(float)
@@ -1021,7 +1509,7 @@ def _add_base_score_context(
 ) -> pd.DataFrame:
     """Add pre-entry base-score context using fit-month priors for cutoffs."""
 
-    out = ledger.copy()
+    out = ledger.copy(deep=False)
     score = _num(out, "score", np.nan)
     ts = pd.to_datetime(out.get("__ts__"), utc=True, errors="coerce")
     side = out.get("side_name", pd.Series("", index=out.index)).astype(str).str.lower()
@@ -1966,10 +2454,26 @@ def _train_meta_handoff(
     *,
     selected_col: str,
     extra_context_cols: Iterable[str] | None = None,
+    strict_base_contract: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Materialize row-level regime/source context for train_meta consumption."""
 
-    key_cols = [col for col in ("__ts__", "__symbol__", "side_name", "month") if col in ledger.columns]
+    inherited_contract = _inherited_base_contract(
+        ledger, strict=bool(strict_base_contract)
+    )
+    key_cols = [
+        col
+        for col in (
+            "__ts__",
+            "__symbol__",
+            "side_name",
+            "month",
+            "__decision_ts__",
+            "__first_path_ts__",
+            "__label_path_end_ts__",
+        )
+        if col in ledger.columns
+    ]
     archetype_cols = [
         col
         for col in (
@@ -2061,6 +2565,9 @@ def _train_meta_handoff(
     posterior_cols = sorted(
         col for col in ledger.columns if col.startswith("gmm_cluster_posterior_") or col.startswith("gmm_dist_center_")
     )
+    aegmm_cols = [
+        str(col) for col in AE_GMM_FEATURE_COLUMNS if str(col) in ledger.columns
+    ]
     cross_market_cols = sorted(
         col
         for col in ledger.columns
@@ -2081,6 +2588,7 @@ def _train_meta_handoff(
         + archetype_cols
         + base_cols
         + regime_models
+        + aegmm_cols
         + continuous_cols
         + posterior_cols
         + cross_market_cols
@@ -2089,6 +2597,15 @@ def _train_meta_handoff(
         if col in ledger.columns and col not in cols:
             cols.append(col)
     out = ledger[cols].copy()
+    # Row-level hashes are auditable provenance only.  The full contracts live
+    # in the sidecar JSON and neither belongs in the meta model matrix.
+    out[HANDOFF_RANK_SCOPE_COLUMN] = HANDOFF_RANK_SCOPE
+    out[BASE_TARGET_CONTRACT_HASH_COLUMN] = inherited_contract[
+        BASE_TARGET_CONTRACT_HASH_COLUMN
+    ]
+    out[BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN] = inherited_contract[
+        BASE_SAMPLE_WEIGHT_SPEC_HASH_COLUMN
+    ]
     for raw_col, alias_col in (
         ("__archetype_label_family__", "archetype_label_family"),
         ("__archetype_label_source__", "archetype_label_source"),
@@ -2197,11 +2714,18 @@ def _train_meta_handoff(
         "kind": "train_meta_regime_feature_handoff",
         "row_count": int(len(out)),
         "selected_col": selected_col,
+        "candidate_handoff_rank_scope": HANDOFF_RANK_SCOPE,
+        "inherited_base_contract": inherited_contract,
+        "provenance_columns": list(HANDOFF_PROVENANCE_COLUMNS),
         "key_columns": key_cols,
         "archetype_columns": [col for col in out.columns if "archetype" in str(col).lower()],
         "source_columns": [col for col in base_cols if col.startswith("source_") or col == "source_tag"],
         "regime_columns": regime_models,
-        "continuous_context_columns": continuous_cols + posterior_cols,
+        "ae_gmm_context_columns": aegmm_cols,
+        "ae_gmm_context_column_count": int(len(aegmm_cols)),
+        "continuous_context_columns": list(
+            dict.fromkeys([*aegmm_cols, *continuous_cols, *posterior_cols])
+        ),
         "cross_market_context_columns": cross_market_cols,
         "extra_feature_store_context_columns": extra_feature_store_cols,
         "extra_feature_store_context_column_count": int(len(extra_feature_store_cols)),
@@ -2357,8 +2881,14 @@ def _feature_store_context_columns(columns: Iterable[str], *, scope: str = "cros
     scope = str(scope or "cross_market").strip().lower()
     if scope not in FEATURE_STORE_SCOPES:
         raise ValueError(f"Unsupported feature store scope {scope!r}; expected one of {FEATURE_STORE_SCOPES}")
-    available = [str(col) for col in columns]
+    # Storage keys are handled by the point-in-time join and must never become
+    # model candidates. The shared reader materializes ``ts`` as each feature
+    # panel's DatetimeIndex; timestamp fields are join keys, not model inputs.
+    storage_keys = {"ts", "timestamp", "__ts__", "__symbol__", "symbol"}
+    available = [str(col) for col in columns if str(col) not in storage_keys]
     available_set = set(available)
+    if scope == "aegmm_inputs":
+        return []
     if scope == "all_safe":
         return sorted(name for name in available if _safe_feature_store_context_column(name))
     if scope == "config_meta_full":
@@ -2374,30 +2904,230 @@ def _feature_store_context_columns(columns: Iterable[str], *, scope: str = "cros
     return sorted(set(out))
 
 
-def _read_feature_store_symbol_context(path: Path, columns: list[str]) -> pd.DataFrame:
-    import pyarrow.parquet as pq
-
-    schema_cols = set(pq.read_schema(path).names)
-    read_cols = [col for col in columns if col in schema_cols]
-    if "__symbol__" in schema_cols and "__symbol__" not in read_cols:
-        read_cols.append("__symbol__")
-    frame = pd.read_parquet(path, columns=read_cols if read_cols else None)
-    if "ts" in frame.columns:
-        frame["__ts__"] = pd.to_datetime(frame["ts"], utc=True, errors="coerce").dt.tz_convert(None)
-    else:
-        idx = frame.index
-        if getattr(idx, "name", None) == "ts" or str(getattr(idx, "name", "")).lower() in {"ts", "timestamp"}:
-            frame = frame.reset_index()
-            frame["__ts__"] = pd.to_datetime(frame["ts"], utc=True, errors="coerce").dt.tz_convert(None)
-        elif "timestamp" in frame.columns:
-            frame["__ts__"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce").dt.tz_convert(None)
-        else:
-            raise ValueError(f"Feature file has no ts/timestamp column or index: {path}")
-    if "__symbol__" not in frame.columns:
-        file_symbol = path.name.removeprefix("symbol=").removesuffix(".parquet").replace("_USD:USD", "/USD:USD")
-        frame["__symbol__"] = file_symbol
+def _read_feature_store_symbol_context(
+    *,
+    feature_store_ts: pd.Timestamp,
+    data_root: Path,
+    symbol: str,
+    columns: list[str],
+    start_ts: pd.Timestamp | None,
+    end_ts: pd.Timestamp | None,
+) -> pd.DataFrame:
+    frame = read_static_features(
+        feature_store_ts=feature_store_ts,
+        data_root=data_root,
+        feature_keys=columns,
+        symbols=[symbol],
+        start_ts=start_ts,
+        end_ts=end_ts,
+        output_layout="symbol_frame",
+    )
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return pd.DataFrame(columns=["__ts__", "__symbol__", *columns])
+    frame["__ts__"] = pd.to_datetime(
+        frame.index, utc=True, errors="coerce"
+    ).tz_convert(None)
+    frame["__symbol__"] = str(symbol)
     keep = ["__ts__", "__symbol__"] + [col for col in columns if col in frame.columns]
-    return frame[keep].dropna(subset=["__ts__", "__symbol__"]).drop_duplicates(["__ts__", "__symbol__"], keep="last")
+    return (
+        frame[keep]
+        .dropna(subset=["__ts__", "__symbol__"])
+        .drop_duplicates(["__ts__", "__symbol__"], keep="last")
+    )
+
+
+def _read_feature_store_symbol_context_batch(
+    *,
+    feature_store_ts: pd.Timestamp,
+    data_root: Path,
+    symbols: list[str],
+    columns: list[str],
+    start_ts: pd.Timestamp | None,
+    end_ts: pd.Timestamp | None,
+) -> dict[str, pd.DataFrame]:
+    """Read a bounded symbol batch once, then materialize exact symbol frames."""
+
+    requested_symbols = [str(symbol) for symbol in symbols]
+    if not requested_symbols:
+        return {}
+    loaded = read_static_features(
+        feature_store_ts=feature_store_ts,
+        data_root=data_root,
+        feature_keys=columns,
+        symbols=requested_symbols,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        output_layout="panels",
+    )
+    if loaded is None or not hasattr(loaded, "symbol_frame"):
+        return {}
+    result: dict[str, pd.DataFrame] = {}
+    for symbol in requested_symbols:
+        frame = loaded.symbol_frame(symbol, keys=columns)
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        frame["__ts__"] = pd.to_datetime(
+            frame.index, utc=True, errors="coerce"
+        ).tz_convert(None)
+        frame["__symbol__"] = symbol
+        keep = [
+            "__ts__",
+            "__symbol__",
+            *[column for column in columns if column in frame.columns],
+        ]
+        result[symbol] = (
+            frame[keep]
+            .dropna(subset=["__ts__", "__symbol__"])
+            .drop_duplicates(["__ts__", "__symbol__"], keep="last")
+        )
+    return result
+
+
+def _context_cache_paths(
+    cache_root: Path,
+    *,
+    feature_dir: Path,
+    scope: str,
+    symbol: str,
+    columns: list[str],
+    source_signature: Mapping[str, Any],
+) -> tuple[Path, Path]:
+    """Build a source-fingerprinted, per-symbol context-cache location."""
+
+    contract = {
+        "feature_dir": str(feature_dir.resolve()),
+        "scope": str(scope),
+        "symbol": str(symbol),
+        "columns": list(columns),
+        "source_signature": dict(source_signature),
+    }
+    digest = hashlib.sha256(
+        json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    directory = cache_root / digest[:2] / digest
+    return directory / "context.parquet", directory / "contract.json"
+
+
+def _cached_symbol_context(
+    *,
+    cache_root: Path | None,
+    feature_dir: Path,
+    scope: str,
+    symbol: str,
+    columns: list[str],
+    requested_timestamps: pd.Series,
+    source_signature: Mapping[str, Any],
+) -> pd.DataFrame | None:
+    """Return a cache hit only when every requested timestamp is present."""
+
+    if cache_root is None or requested_timestamps.empty:
+        return None
+    data_path, contract_path = _context_cache_paths(
+        cache_root,
+        feature_dir=feature_dir,
+        scope=scope,
+        symbol=symbol,
+        columns=columns,
+        source_signature=source_signature,
+    )
+    if not data_path.exists() or not contract_path.exists():
+        return None
+    try:
+        stored = json.loads(contract_path.read_text(encoding="utf-8"))
+        expected = {
+            "feature_dir": str(feature_dir.resolve()),
+            "scope": str(scope),
+            "symbol": str(symbol),
+            "columns": list(columns),
+            "source_signature": dict(source_signature),
+        }
+        if stored != expected:
+            return None
+        available = pd.Index(
+            pd.to_datetime(
+                pd.read_parquet(data_path, columns=["__ts__"])["__ts__"], errors="coerce"
+            ).dropna().unique()
+        )
+        requested = pd.Index(pd.to_datetime(requested_timestamps, errors="coerce").dropna().unique())
+        if requested.empty or not requested.isin(available).all():
+            return None
+        return pd.read_parquet(data_path, columns=["__ts__", "__symbol__", *columns])
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
+def _cache_symbol_context(
+    frame: pd.DataFrame,
+    *,
+    cache_root: Path | None,
+    feature_dir: Path,
+    scope: str,
+    symbol: str,
+    columns: list[str],
+    source_signature: Mapping[str, Any],
+) -> None:
+    if cache_root is None or frame.empty:
+        return
+    data_path, contract_path = _context_cache_paths(
+        cache_root,
+        feature_dir=feature_dir,
+        scope=scope,
+        symbol=symbol,
+        columns=columns,
+        source_signature=source_signature,
+    )
+    contract = {
+        "feature_dir": str(feature_dir.resolve()),
+        "scope": str(scope),
+        "symbol": str(symbol),
+        "columns": list(columns),
+        "source_signature": dict(source_signature),
+    }
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True)
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        values = frame.loc[:, ["__ts__", "__symbol__", *columns]].copy(deep=False)
+        if data_path.exists() and contract_path.exists():
+            if json.loads(contract_path.read_text(encoding="utf-8")) == contract:
+                values = pd.concat([pd.read_parquet(data_path), values], ignore_index=True, copy=False)
+        values.drop_duplicates(["__ts__", "__symbol__"], keep="last").to_parquet(
+            data_path, index=False, compression="zstd"
+        )
+        contract_path.write_text(json.dumps(contract, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        # This cache is optional. On any issue the caller remains exact by
+        # reading the published static store directly.
+        return
+
+
+def _feature_store_signature(paths: Iterable[Path]) -> dict[str, Any]:
+    """Fingerprint the logical files read by a published handoff artifact."""
+
+    entries: list[tuple[str, int, int]] = []
+    for parquet_path in sorted({Path(path) for path in paths}, key=str):
+        related = [
+            parquet_path,
+            Path(str(parquet_path) + ".deltas.duckdb"),
+            Path(str(parquet_path).removesuffix(".parquet") + ".meta.json"),
+        ]
+        delta_dir = Path(str(parquet_path) + ".deltas")
+        if delta_dir.exists():
+            related.extend(sorted(delta_dir.glob("*.parquet")))
+        for path in related:
+            if not path.exists() or not path.is_file():
+                continue
+            stat = path.stat()
+            entries.append((str(path), int(stat.st_size), int(stat.st_mtime_ns)))
+    digest = hashlib.sha256()
+    for path, size, mtime_ns in entries:
+        digest.update(f"{path}\0{size}\0{mtime_ns}\n".encode("utf-8"))
+    return {
+        "algorithm": "sha256_path_size_mtime_ns_v1",
+        "digest": digest.hexdigest(),
+        "file_count": int(len(entries)),
+        "total_size": int(sum(size for _, size, _ in entries)),
+        "max_mtime_ns": int(max((mtime for _, _, mtime in entries), default=0)),
+    }
 
 
 def _join_feature_store_context(
@@ -2405,6 +3135,9 @@ def _join_feature_store_context(
     feature_dir: Path | None,
     *,
     feature_store_scope: str = "cross_market",
+    required_context_columns: Iterable[str] = (),
+    context_allowlist: Iterable[str] = (),
+    context_cache_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Join live feature-store columns by timestamp and symbol."""
 
@@ -2419,9 +3152,21 @@ def _join_feature_store_context(
             "feature_dir": str(feature_dir),
             "required_keys": ["__ts__", "__symbol__"],
         }
-    import pyarrow.parquet as pq
-
     feature_dir = Path(feature_dir)
+    try:
+        feature_store_ts = pd.to_datetime(
+            feature_dir.name, format="%Y%m%d_%H%M%S", utc=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Feature directory must be a timestamped shared static store, e.g. "
+            "data_perp/features/20260711_070000"
+        ) from exc
+    if feature_dir.parent.name != "features":
+        raise ValueError(
+            f"Feature directory is outside the shared static-store layout: {feature_dir}"
+        )
+    data_root = feature_dir.parent.parent
     symbols = sorted(ledger["__symbol__"].dropna().astype(str).unique().tolist())
     schema_columns: set[str] = set()
     available_files: dict[str, Path] = {}
@@ -2432,12 +3177,35 @@ def _join_feature_store_context(
             missing_symbols.append(symbol)
             continue
         available_files[symbol] = path
-        if not schema_columns:
-            try:
-                schema_columns = set(pq.read_schema(path).names)
-            except Exception:
-                schema_columns = set(pd.read_parquet(path).columns)
-    context_cols = _feature_store_context_columns(schema_columns, scope=feature_store_scope)
+        schema_columns.update(_feature_schema_names(str(path)))
+    requested_context_cols = list(
+        dict.fromkeys(
+            [
+                *_feature_store_context_columns(
+                    schema_columns, scope=feature_store_scope
+                ),
+                *[
+                    str(column)
+                    for column in required_context_columns
+                    if str(column) in schema_columns
+                    and _safe_feature_store_context_column(str(column))
+                ],
+            ]
+        )
+    )
+    allowlist = list(dict.fromkeys(str(column) for column in context_allowlist))
+    if allowlist:
+        allowed = set(allowlist)
+        requested_context_cols = [
+            column for column in requested_context_cols if column in allowed
+        ]
+    # Ledger-native columns include the exact OOS base outputs and may also
+    # include raw inputs used by the frozen state. Never let a store join suffix
+    # or replace them.
+    existing_ledger_cols = set(ledger.columns)
+    context_cols = [
+        col for col in requested_context_cols if col not in existing_ledger_cols
+    ]
     if not context_cols or not available_files:
         return ledger, {
             "feature_store_context_status": "no_joinable_context_columns",
@@ -2446,27 +3214,130 @@ def _join_feature_store_context(
             "available_symbol_files": int(len(available_files)),
             "missing_symbol_files": int(len(missing_symbols)),
             "context_columns": context_cols,
+            "context_allowlist": allowlist,
+            "skipped_existing_columns": sorted(
+                set(requested_context_cols) & existing_ledger_cols
+            ),
         }
+    # Enrich one symbol slice at a time. Building a complete context frame and
+    # then merging it with the complete candidate ledger retained multiple
+    # copies of a very wide matrix. Exact-key semantics are unchanged here,
+    # while peak memory is bounded by one symbol slice plus the final output.
+    left = ledger.copy(deep=False)
+    left["__ts__"] = pd.to_datetime(
+        left["__ts__"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
+    left["__symbol__"] = left["__symbol__"].astype(str)
+    row_order_col = "__handoff_row_order__"
+    if row_order_col in left.columns:
+        raise ValueError(f"Reserved handoff column already exists: {row_order_col}")
+    left[row_order_col] = np.arange(len(left), dtype=np.int64)
+    before_cols = set(left.columns)
     parts: list[pd.DataFrame] = []
-    for symbol, path in available_files.items():
-        symbol_rows = ledger[ledger["__symbol__"].astype(str).eq(symbol)]
-        if symbol_rows.empty:
-            continue
-        feature_part = _read_feature_store_symbol_context(path, context_cols)
-        symbol_keys = symbol_rows.loc[:, ["__ts__", "__symbol__"]].copy()
-        symbol_keys["__ts__"] = pd.to_datetime(symbol_keys["__ts__"], utc=True, errors="coerce").dt.tz_convert(None)
-        symbol_keys["__symbol__"] = symbol_keys["__symbol__"].astype(str)
-        symbol_keys = symbol_keys.dropna(subset=["__ts__", "__symbol__"]).drop_duplicates()
-        min_ts = pd.to_datetime(symbol_rows["__ts__"], utc=True, errors="coerce").dt.tz_convert(None).min()
-        max_ts = pd.to_datetime(symbol_rows["__ts__"], utc=True, errors="coerce").dt.tz_convert(None).max()
-        if pd.notna(min_ts) and pd.notna(max_ts):
-            feature_part = feature_part[
-                pd.to_datetime(feature_part["__ts__"], errors="coerce").between(min_ts, max_ts)
-            ]
-        if not feature_part.empty and not symbol_keys.empty:
-            feature_part = feature_part.merge(symbol_keys, on=["__ts__", "__symbol__"], how="inner", validate="one_to_one")
-        if not feature_part.empty:
-            parts.append(feature_part)
+    matched_rows = 0
+    batch_size = max(
+        1,
+        int(os.environ.get("EPM_META_HANDOFF_FEATURE_SYMBOL_BATCH_SIZE", "4")),
+    )
+    cache_root = (
+        Path(context_cache_dir)
+        if context_cache_dir is not None
+        else (
+            Path(os.environ["EPM_META_HANDOFF_CONTEXT_CACHE_DIR"])
+            if os.environ.get("EPM_META_HANDOFF_CONTEXT_CACHE_DIR")
+            else None
+        )
+    )
+    cache_hits = 0
+    cache_misses = 0
+    for batch_start in range(0, len(symbols), batch_size):
+        batch_symbols = symbols[batch_start : batch_start + batch_size]
+        batch_mask = left["__symbol__"].isin(batch_symbols)
+        batch_rows = left.loc[batch_mask]
+        batch_available = [
+            symbol for symbol in batch_symbols if symbol in available_files
+        ]
+        batch_context: dict[str, pd.DataFrame] = {}
+        symbols_to_load: list[str] = []
+        for symbol in batch_available:
+            symbol_rows = batch_rows.loc[batch_rows["__symbol__"].eq(symbol)]
+            signature = _feature_store_signature([available_files[symbol]])
+            cached = _cached_symbol_context(
+                cache_root=cache_root,
+                feature_dir=feature_dir,
+                scope=feature_store_scope,
+                symbol=symbol,
+                columns=context_cols,
+                requested_timestamps=symbol_rows["__ts__"],
+                source_signature=signature,
+            )
+            if cached is None:
+                symbols_to_load.append(symbol)
+                cache_misses += 1
+            else:
+                batch_context[symbol] = cached
+                cache_hits += 1
+        if symbols_to_load:
+            loaded_context = _read_feature_store_symbol_context_batch(
+                feature_store_ts=feature_store_ts,
+                data_root=data_root,
+                symbols=symbols_to_load,
+                columns=context_cols,
+                start_ts=(
+                    batch_rows["__ts__"].min() if not batch_rows.empty else None
+                ),
+                end_ts=(
+                    batch_rows["__ts__"].max() if not batch_rows.empty else None
+                ),
+            )
+            for symbol, feature_part in loaded_context.items():
+                batch_context[symbol] = feature_part
+                _cache_symbol_context(
+                    feature_part,
+                    cache_root=cache_root,
+                    feature_dir=feature_dir,
+                    scope=feature_store_scope,
+                    symbol=symbol,
+                    columns=context_cols,
+                    source_signature=_feature_store_signature([available_files[symbol]]),
+                )
+        for symbol in batch_symbols:
+            symbol_rows = batch_rows.loc[
+                batch_rows["__symbol__"].eq(symbol)
+            ].copy(deep=False)
+            if symbol_rows.empty:
+                continue
+            feature_part = batch_context.get(symbol)
+            if feature_part is None or feature_part.empty:
+                parts.append(symbol_rows)
+                continue
+            symbol_keys = (
+                symbol_rows.loc[:, ["__ts__", "__symbol__"]]
+                .dropna(subset=["__ts__", "__symbol__"])
+                .drop_duplicates()
+            )
+            if not symbol_keys.empty:
+                feature_part = feature_part.merge(
+                    symbol_keys,
+                    on=["__ts__", "__symbol__"],
+                    how="inner",
+                    validate="one_to_one",
+                )
+            if feature_part.empty:
+                parts.append(symbol_rows)
+                continue
+            feature_part["__feature_store_match__"] = np.uint8(1)
+            joined_symbol = symbol_rows.merge(
+                feature_part,
+                on=["__ts__", "__symbol__"],
+                how="left",
+                validate="many_to_one",
+                sort=False,
+            )
+            matched_rows += int(
+                joined_symbol["__feature_store_match__"].fillna(0).sum()
+            )
+            parts.append(joined_symbol)
     if not parts:
         return ledger, {
             "feature_store_context_status": "no_matching_rows",
@@ -2476,26 +3347,61 @@ def _join_feature_store_context(
             "missing_symbol_files": int(len(missing_symbols)),
             "context_columns": context_cols,
         }
-    context = pd.concat(parts, ignore_index=True)
-    left = ledger.copy()
-    left["__ts__"] = pd.to_datetime(left["__ts__"], utc=True, errors="coerce").dt.tz_convert(None)
-    before_cols = set(left.columns)
-    out = left.merge(context, on=["__ts__", "__symbol__"], how="left", validate="many_to_one")
+    out = pd.concat(parts, ignore_index=True, copy=False)
+    out = out.sort_values(row_order_col, kind="stable").reset_index(drop=True)
+    out.drop(columns=[row_order_col], inplace=True)
     loaded_cols = [col for col in context_cols if col in out.columns and col not in before_cols]
-    matched_any = out[loaded_cols].notna().any(axis=1) if loaded_cols else pd.Series(False, index=out.index)
+    if "__feature_store_match__" in out.columns:
+        matched_any = out.pop("__feature_store_match__").fillna(0).astype(bool)
+    else:
+        matched_any = pd.Series(False, index=out.index)
+    coverage = {
+        col: float(out[col].notna().mean())
+        for col in loaded_cols
+    }
+    coverage_values = np.asarray(list(coverage.values()), dtype=np.float64)
+    worst_coverage = sorted(coverage.items(), key=lambda item: (item[1], item[0]))[:50]
     contract = {
         "feature_store_context_status": "joined",
         "feature_dir": str(feature_dir),
         "feature_store_scope": str(feature_store_scope),
+        "required_context_columns": [
+            str(column) for column in required_context_columns
+        ],
+        "context_allowlist": allowlist,
+        "context_allowlist_count": int(len(allowlist)),
         "available_symbol_files": int(len(available_files)),
         "missing_symbol_files": int(len(missing_symbols)),
         "loaded_columns": loaded_cols,
         "loaded_column_count": int(len(loaded_cols)),
-        "matched_rows": int(matched_any.sum()),
+        "skipped_existing_columns": sorted(
+            set(requested_context_cols) & existing_ledger_cols
+        ),
+        "logical_store_reader": "static_feature_store.read_static_features",
+        "static_feature_endpoint_version": STATIC_FEATURE_ENDPOINT_VERSION,
+        "store_access": "read_only",
+        "context_cache_dir": str(cache_root) if cache_root is not None else None,
+        "context_cache_hits": int(cache_hits),
+        "context_cache_misses": int(cache_misses),
+        "source_signature": _feature_store_signature(available_files.values()),
+        "matched_rows": int(matched_rows),
         "row_count": int(len(out)),
         "match_rate": float(matched_any.mean()) if len(out) else float("nan"),
+        "feature_coverage_summary": {
+            "min": float(np.nanmin(coverage_values)) if coverage_values.size else float("nan"),
+            "p10": float(np.nanquantile(coverage_values, 0.10)) if coverage_values.size else float("nan"),
+            "median": float(np.nanmedian(coverage_values)) if coverage_values.size else float("nan"),
+            "p90": float(np.nanquantile(coverage_values, 0.90)) if coverage_values.size else float("nan"),
+            "max": float(np.nanmax(coverage_values)) if coverage_values.size else float("nan"),
+            "fully_covered_columns": int(sum(value >= 0.999 for value in coverage.values())),
+            "columns": int(len(coverage)),
+        },
+        "worst_feature_coverage": [
+            {"feature": feature, "finite_rate": rate}
+            for feature, rate in worst_coverage
+        ],
         "context_key_filter": "exact_candidate_timestamp_symbol",
-        "leakage_contract": "feature-store context joined exactly on row timestamp and symbol; columns are live/pre-entry feature-store fields and exclude target/label/future names",
+        "leakage_contract": "logical feature-store context (Parquet plus append-only delta sidecars) joined exactly on row timestamp and symbol; columns are live/pre-entry fields and exclude target/label/future names",
     }
     return out, contract
 
@@ -2583,6 +3489,7 @@ def run_report(
     label_context_dir: Path | None,
     feature_dir: Path | None,
     feature_store_scope: str,
+    fixed_ae_gmm_state_pkl: Path | None,
     fit_months: list[str],
     holdout_month: str,
     selected_col: str,
@@ -2590,14 +3497,25 @@ def run_report(
     executable_cost_floor: float,
     shrinkage_k: float,
     bootstrap_iterations: int,
+    strict_base_contract: bool = False,
+    feature_context_allowlist: Iterable[str] = (),
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    ledger = pd.read_parquet(ledger_path)
+    ledger = _materialize_promoted_base_contract(pd.read_parquet(ledger_path))
     ledger, label_context_contract = _join_label_context(ledger, label_context_dir)
+    ledger, label_resolution_contract = _materialize_label_path_end(
+        ledger, label_context_dir
+    )
+    state_input_columns = _frozen_ae_gmm_input_columns(fixed_ae_gmm_state_pkl)
     ledger, feature_store_context_contract = _join_feature_store_context(
         ledger,
         feature_dir,
         feature_store_scope=feature_store_scope,
+        required_context_columns=state_input_columns,
+        context_allowlist=feature_context_allowlist,
+    )
+    ledger, frozen_ae_gmm_contract = _append_frozen_ae_gmm_context(
+        ledger, fixed_ae_gmm_state_pkl
     )
     if selected_col not in ledger.columns:
         raise ValueError(f"selected column not found in ledger: {selected_col}")
@@ -2659,7 +3577,9 @@ def run_report(
         regime_models,
         selected_col=selected_col,
         extra_context_cols=feature_store_context_contract.get("loaded_columns", []),
+        strict_base_contract=bool(strict_base_contract),
     )
+    train_meta_contract["label_resolution_contract"] = label_resolution_contract
     bootstrap_ci = pd.concat(
         [
             _bootstrap_confidence_intervals(
@@ -2722,6 +3642,7 @@ def run_report(
         "fit_months": fit_months,
         "holdout_month": str(holdout_month),
         "selected_col": str(selected_col),
+        "strict_base_contract": bool(strict_base_contract),
         "embedded_round_trip_cost": float(embedded_round_trip_cost),
         "executable_cost_floor": float(executable_cost_floor),
         "rows": int(len(ledger)),
@@ -2729,7 +3650,9 @@ def run_report(
         "holdout_rows": int(len(hold_rows)),
         "regime_specs": regime_specs,
         "label_context_contract": label_context_contract,
+        "label_resolution_contract": label_resolution_contract,
         "feature_store_context_contract": feature_store_context_contract,
+        "frozen_ae_gmm_context_contract": frozen_ae_gmm_contract,
         "source_contract": source_contract,
         "execution_policy_status": "exact_current_policy_plus_fit_month_proxy_policy_menu",
         "incremental_value_test_status": "source_only_vs_source_plus_regime_vs_source_x_regime_fit_months_to_holdout",
@@ -2765,27 +3688,61 @@ def run_handoff_only(
     label_context_dir: Path | None,
     feature_dir: Path | None,
     feature_store_scope: str,
+    fixed_ae_gmm_state_pkl: Path | None,
     fit_months: list[str],
     holdout_month: str,
     selected_col: str,
     embedded_round_trip_cost: float,
     executable_cost_floor: float,
+    context_cache_dir: Path | None = None,
+    strict_base_contract: bool = False,
+    feature_context_allowlist: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Materialize feature-enriched scored ledger and train-meta handoff only."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    ledger = pd.read_parquet(ledger_path)
+    ledger = _materialize_promoted_base_contract(pd.read_parquet(ledger_path))
     rows_before_selected_filter = int(len(ledger))
     if selected_col not in ledger.columns:
-        raise ValueError(f"selected column not found in ledger: {selected_col}")
+        match = re.fullmatch(r"selected_top(\d+)", str(selected_col))
+        required_rank = {"__ts__", "side_name", "base_rank_within_timestamp_side"}
+        if match is None or not required_rank.issubset(ledger.columns):
+            raise ValueError(f"selected column not found in ledger: {selected_col}")
+        fraction = float(match.group(1)) / 100.0
+        if not 0.0 < fraction < 1.0:
+            raise ValueError(f"invalid selected frontier: {selected_col}")
+        group_rows = ledger.groupby(
+            ["__ts__", "side_name"], sort=False, observed=True
+        )["base_rank_within_timestamp_side"].transform("size")
+        cutoff = np.ceil(group_rows.to_numpy(dtype=float) * fraction).astype(np.int32)
+        ledger[selected_col] = (
+            pd.to_numeric(ledger["base_rank_within_timestamp_side"], errors="coerce")
+            .fillna(np.iinfo(np.int32).max)
+            .to_numpy(dtype=np.int64)
+            <= cutoff
+        )
     selected_mask = ledger[selected_col].fillna(False).astype(bool)
     ledger = ledger.loc[selected_mask].copy()
     rows_after_selected_filter = int(len(ledger))
     ledger, label_context_contract = _join_label_context(ledger, label_context_dir)
+    ledger, label_resolution_contract = _materialize_label_path_end(
+        ledger, label_context_dir
+    )
+    # Base scored ledgers carry the complete frozen AE/GMM output registry. Do
+    # not rejoin hundreds of raw state inputs speculatively; the exact frozen
+    # output check below reuses complete outputs and fails closed if any are
+    # absent rather than widening the handoff silently.
+    state_input_columns: list[str] = []
     ledger, feature_store_context_contract = _join_feature_store_context(
         ledger,
         feature_dir,
         feature_store_scope=feature_store_scope,
+        required_context_columns=state_input_columns,
+        context_allowlist=feature_context_allowlist,
+        context_cache_dir=context_cache_dir,
+    )
+    ledger, frozen_ae_gmm_contract = _append_frozen_ae_gmm_context(
+        ledger, fixed_ae_gmm_state_pkl
     )
     ledger = _enrich_ledger(
         ledger,
@@ -2803,7 +3760,9 @@ def run_handoff_only(
         regime_models,
         selected_col=selected_col,
         extra_context_cols=feature_store_context_contract.get("loaded_columns", []),
+        strict_base_contract=bool(strict_base_contract),
     )
+    train_meta_contract["label_resolution_contract"] = label_resolution_contract
     outputs = {
         "scored_ledger": output_dir / "s52_trailing_regime_scored_ledger.parquet",
         "train_meta_regime_handoff": output_dir / "train_meta_regime_handoff.parquet",
@@ -2824,11 +3783,14 @@ def run_handoff_only(
         "label_context_dir": str(label_context_dir) if label_context_dir is not None else None,
         "feature_dir": str(feature_dir) if feature_dir is not None else None,
         "feature_store_scope": str(feature_store_scope),
+        "feature_context_allowlist": list(feature_context_allowlist),
         "fit_months": fit_months,
         "holdout_month": str(holdout_month),
         "selected_col": str(selected_col),
+        "strict_base_contract": bool(strict_base_contract),
         "embedded_round_trip_cost": float(embedded_round_trip_cost),
         "executable_cost_floor": float(executable_cost_floor),
+        "context_cache_dir": str(context_cache_dir) if context_cache_dir is not None else None,
         "rows": int(len(ledger)),
         "rows_before_selected_filter": rows_before_selected_filter,
         "rows_after_selected_filter": rows_after_selected_filter,
@@ -2837,7 +3799,9 @@ def run_handoff_only(
         "holdout_rows": int(ledger["month"].eq(str(holdout_month)).sum()) if "month" in ledger.columns else 0,
         "regime_specs": regime_specs,
         "label_context_contract": label_context_contract,
+        "label_resolution_contract": label_resolution_contract,
         "feature_store_context_contract": feature_store_context_contract,
+        "frozen_ae_gmm_context_contract": frozen_ae_gmm_contract,
         "source_contract": source_contract,
         "train_meta_handoff_status": "row_level_regime_source_action_features_materialized_handoff_only",
         "outputs": {key: str(value) for key, value in outputs.items()},
@@ -2861,6 +3825,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label-context-dir", type=Path, default=DEFAULT_LABEL_CONTEXT_DIR)
     parser.add_argument("--feature-dir", type=Path, default=DEFAULT_FEATURE_DIR)
     parser.add_argument("--feature-store-scope", choices=FEATURE_STORE_SCOPES, default="cross_market")
+    parser.add_argument(
+        "--feature-context-allowlist",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CSV/JSON feature candidate list applied before the wide "
+            "static-store join. Ledger-native base and AE/GMM outputs remain available."
+        ),
+    )
+    parser.add_argument("--fixed-ae-gmm-state-pkl", type=Path, default=None)
     parser.add_argument("--fit-months", default=",".join(DEFAULT_FIT_MONTHS))
     parser.add_argument("--holdout-month", default=DEFAULT_HOLDOUT_MONTH)
     parser.add_argument("--selected-col", default=DEFAULT_SELECTED_COL)
@@ -2869,22 +3843,49 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shrinkage-k", type=float, default=100.0)
     parser.add_argument("--bootstrap-iterations", type=int, default=200)
     parser.add_argument("--handoff-only", action="store_true")
+    parser.add_argument(
+        "--strict-base-contract",
+        action="store_true",
+        help=(
+            "Require explicit uniform base target/weight provenance hashes and "
+            "timestamp_side candidate ranking before writing the meta handoff."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    feature_context_allowlist: list[str] = []
+    if args.feature_context_allowlist is not None:
+        path = Path(args.feature_context_allowlist)
+        if path.suffix.lower() == ".json":
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                raw = raw.get("features", raw.get("selected_features", []))
+            if not isinstance(raw, list):
+                raise ValueError(f"Invalid feature context allowlist JSON: {path}")
+            feature_context_allowlist = [str(value) for value in raw]
+        else:
+            table = pd.read_csv(path)
+            column = "feature" if "feature" in table.columns else str(table.columns[0])
+            feature_context_allowlist = (
+                table[column].dropna().astype(str).drop_duplicates().tolist()
+            )
     common = {
         "ledger_path": args.ledger_path,
         "output_dir": args.output_dir,
         "label_context_dir": args.label_context_dir,
         "feature_dir": args.feature_dir,
         "feature_store_scope": str(args.feature_store_scope),
+        "fixed_ae_gmm_state_pkl": args.fixed_ae_gmm_state_pkl,
         "fit_months": _parse_csv(args.fit_months, DEFAULT_FIT_MONTHS),
         "holdout_month": str(args.holdout_month),
         "selected_col": str(args.selected_col),
         "embedded_round_trip_cost": float(args.embedded_round_trip_cost),
         "executable_cost_floor": float(args.executable_cost_floor),
+        "strict_base_contract": bool(args.strict_base_contract),
+        "feature_context_allowlist": feature_context_allowlist,
     }
     if args.handoff_only:
         manifest = run_handoff_only(**common)

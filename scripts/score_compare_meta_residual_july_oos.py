@@ -59,7 +59,7 @@ DEFAULT_BUNDLE = (
     / "inference_bundle_residual_pca8_globaloverlay_shock"
     / "alternative_meta_residual_pca8_shock_bundle.joblib"
 )
-DEFAULT_FEATURE_ROOT = Path("data_perp/features/20260710_180000")
+DEFAULT_FEATURE_ROOT = Path("data_perp/features/20260711_070000")
 DEFAULT_TRAIN_REFERENCE = ROOT / "cache" / "compact_reference_with_lifecycle.parquet"
 DEFAULT_OUTPUT = ROOT / "july_oos_comparison"
 DEFAULT_POLICY_ROOT = Path(

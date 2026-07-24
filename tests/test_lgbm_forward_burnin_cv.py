@@ -9,8 +9,10 @@ def _patch_forward_defaults(monkeypatch):
     monkeypatch.setattr(lp, "LGBM_PURGE_HOURS", 0.0)
     monkeypatch.setattr(lp, "LGBM_BASE_FORWARD_BURN_IN_DAYS", 365.0)
     monkeypatch.setattr(lp, "LGBM_META_FORWARD_VALIDATION_MONTHS", 6)
+    monkeypatch.setattr(lp, "LGBM_AUX_FORWARD_VALIDATION_MONTHS", 6)
     monkeypatch.setattr(lp, "LGBM_FORWARD_MIN_TRAIN_ROWS", 5)
     monkeypatch.setattr(lp, "LGBM_FORWARD_MIN_VALID_ROWS", 1)
+    monkeypatch.setattr(lp, "LGBM_AUX_FORWARD_MIN_VALID_ROWS", 1)
     monkeypatch.setattr(lp, "LGBM_FORWARD_BURNIN_STRICT", True)
     monkeypatch.setattr(lp, "LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK", False)
     monkeypatch.setattr(lp, "LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC", 0.70)
@@ -62,6 +64,50 @@ def test_forward_burnin_meta_validates_only_last_six_months(monkeypatch):
         assert not np.intersect1d(train_idx, valid_idx).size
 
 
+def test_forward_burnin_auxiliary_validates_only_last_six_months(monkeypatch):
+    _patch_forward_defaults(monkeypatch)
+    timestamps = pd.date_range("2024-01-01", periods=800, freq="D", tz="UTC")
+    y = np.linspace(0.0, 1.0, len(timestamps), dtype=np.float32)
+
+    splitter, y_split = lp._forward_burnin_splitter(
+        y,
+        False,
+        42,
+        timestamps=timestamps,
+        n_splits=3,
+        objective_mode="auxiliary_regression",
+    )
+    folds = list(splitter.split(np.zeros(len(y_split)), y_split))
+    cutoff = timestamps[-1] - pd.DateOffset(months=6)
+
+    assert folds
+    for train_idx, valid_idx in folds:
+        assert timestamps[valid_idx].min() >= cutoff
+        assert timestamps[train_idx].max() < timestamps[valid_idx].min()
+        assert not np.intersect1d(train_idx, valid_idx).size
+
+
+def test_forward_burnin_auxiliary_rejects_undersupported_validation(
+    monkeypatch,
+):
+    _patch_forward_defaults(monkeypatch)
+    monkeypatch.setattr(lp, "LGBM_AUX_FORWARD_MIN_VALID_ROWS", 300)
+    timestamps = pd.date_range("2024-01-01", periods=800, freq="D", tz="UTC")
+    y = np.linspace(0.0, 1.0, len(timestamps), dtype=np.float32)
+
+    with np.testing.assert_raises_regex(
+        ValueError, "under-supported.*min_valid_rows=300"
+    ):
+        lp._forward_burnin_splitter(
+            y,
+            False,
+            42,
+            timestamps=timestamps,
+            n_splits=3,
+            objective_mode="auxiliary_regression",
+        )
+
+
 def test_time_spread_subsample_takes_beginning_middle_and_end():
     timestamps = pd.date_range("2024-01-01", periods=90, freq="D", tz="UTC")
     y = (np.arange(len(timestamps)) % 2).astype(np.float32)
@@ -102,6 +148,27 @@ def test_forward_burnin_short_history_fallback_stays_chronological(monkeypatch):
         assert timestamps[valid_idx].min() >= fallback_cutoff
         assert timestamps[train_idx].max() < timestamps[valid_idx].min()
         assert not np.intersect1d(train_idx, valid_idx).size
+
+
+def test_latest_holdout_can_enable_local_short_history_fallback(monkeypatch):
+    _patch_forward_defaults(monkeypatch)
+    timestamps = pd.date_range("2025-04-01", periods=360, freq="D", tz="UTC")
+    y = (np.arange(len(timestamps)) % 2).astype(np.float32)
+
+    train_idx, valid_idx = lp._forward_burnin_latest_holdout_indices(
+        y,
+        True,
+        42,
+        timestamps=timestamps,
+        objective_mode="train_base",
+        allow_short_history_fallback=True,
+    )
+
+    fallback_cutoff = timestamps[int(np.floor(0.70 * len(timestamps)))]
+    assert timestamps[valid_idx].min() >= fallback_cutoff
+    assert timestamps[train_idx].max() < timestamps[valid_idx].min()
+    assert not np.intersect1d(train_idx, valid_idx).size
+    assert lp.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK is False
 
 
 def test_distillation_skips_short_forward_cv_failure(monkeypatch):

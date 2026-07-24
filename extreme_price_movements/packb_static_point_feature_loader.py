@@ -1625,10 +1625,26 @@ def _cap_coverage_admitted_columns(
             )
             for column in columns
         }
-    # Preserve broad raw-input coverage without consulting outcomes. Within
-    # each top-level generator family, prefer the strongest coverage first;
-    # then round-robin across families so a lexical cluster cannot consume the
-    # entire 256-column AE budget merely because many fields tie at 100%.
+    ranked = _family_round_robin_rank(columns, scores=scores)
+    kept = ranked[:cap]
+    rejected = {
+        name: (
+            f"coverage_family_round_robin_rank_{rank + 1}_"
+            f"outside_deterministic_cap_{cap}"
+        )
+        for rank, name in enumerate(ranked[cap:], start=cap)
+    }
+    return sorted(kept), rejected
+
+
+def _family_round_robin_rank(
+    columns: Sequence[str], *, scores: Mapping[str, float]
+) -> list[str]:
+    """Outcome-free coverage rank diversified across generator families."""
+
+    # Within each top-level generator family, prefer the strongest coverage
+    # first; then round-robin across families so a lexical cluster cannot
+    # consume the AE budget merely because many fields tie at 100%.
     families: dict[str, list[str]] = {}
     for column in columns:
         name = str(column)
@@ -1650,15 +1666,7 @@ def _cap_coverage_admitted_columns(
             ranked.append(families[family].pop(0))
             if not families[family]:
                 del families[family]
-    kept = ranked[:cap]
-    rejected = {
-        name: (
-            f"coverage_family_round_robin_rank_{rank + 1}_"
-            f"outside_deterministic_cap_{cap}"
-        )
-        for rank, name in enumerate(ranked[cap:], start=cap)
-    }
-    return sorted(kept), rejected
+    return ranked
 
 
 def freeze_feature_contract(
@@ -1756,6 +1764,24 @@ def freeze_feature_contract(
             binary_prevalence_bounds=binary_prevalence_bounds,
             required_segment_names=required_segment_names,
         )
+    elif max_feature_columns is not None and len(selected) > int(max_feature_columns):
+        cap = int(max_feature_columns)
+        if cap < 1:
+            raise PackBStaticPointFeatureLoaderError(
+                "max_feature_columns must be positive or null"
+            )
+        ranked = _family_round_robin_rank(
+            selected, scores={name: 1.0 for name in selected}
+        )
+        selected = ranked[:cap]
+        for rank, name in enumerate(ranked[cap:], start=cap):
+            admission_rejections.setdefault(
+                name,
+                (
+                    f"schema_family_round_robin_rank_{rank + 1}_"
+                    f"outside_preprofile_cap_{cap}"
+                ),
+            )
     if not selected:
         raise PackBStaticPointFeatureLoaderError(
             "coverage-only filtering leaves no causal trainable feature columns"
@@ -1800,6 +1826,7 @@ def build_fresh_causal_feature_contract(
     min_exact_key_coverage: float = 1.0,
     min_non_null_feature_coverage: float = 0.99,
     max_feature_columns: int | None = 256,
+    max_profile_feature_columns: int | None = 512,
     coverage_segments: Mapping[str, pd.DataFrame] | None = None,
     min_segment_exact_key_coverage: float | None = None,
     min_segment_non_null_feature_coverage: float | None = None,
@@ -1824,7 +1851,7 @@ def build_fresh_causal_feature_contract(
         universe,
         min_exact_key_coverage=0.0,
         min_non_null_feature_coverage=0.0,
-        max_feature_columns=None,
+        max_feature_columns=max_profile_feature_columns,
     )
     profile = profile_point_feature_coverage(
         identity_ledger,
@@ -1850,6 +1877,9 @@ def build_fresh_causal_feature_contract(
         min_segment_variance=min_segment_variance,
         binary_prevalence_bounds=binary_prevalence_bounds,
         required_segment_names=required_segment_names,
+        prior_coverage_admission_rejections=dict(
+            preliminary.coverage_admission_rejections
+        ),
     )
     survivor_profile = profile_point_feature_coverage(
         identity_ledger,

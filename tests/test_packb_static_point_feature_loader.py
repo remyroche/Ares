@@ -352,11 +352,12 @@ def test_outcome_free_feature_cap_is_deterministic_and_bound_in_contract(
         coverage_sample_rows=16,
         min_non_null_feature_coverage=0.0,
         max_feature_columns=1,
+        max_profile_feature_columns=1,
         max_rows_per_batch=2,
         max_columns_per_read=1,
     )
     assert contract.max_feature_columns == 1
     assert contract.feature_columns == ("ret1h",)
     assert dict(contract.coverage_admission_rejections)["ret24h"].startswith(
-        "coverage_family_round_robin_rank_"
+        "schema_family_round_robin_rank_"
     )

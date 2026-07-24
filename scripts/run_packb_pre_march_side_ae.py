@@ -47,6 +47,7 @@ DEFAULT_DECISIONS = ROOT / "config/full_pipeline_decisions_20260724.json"
 DEFAULT_OUTPUT = ROOT / "data_perp/artifacts/packb_side_local_ae_20260724_v1"
 DEFAULT_COVERAGE_SAMPLE_ROWS = 20_000
 DEFAULT_MAX_FEATURE_COLUMNS = 256
+DEFAULT_MAX_PROFILE_FEATURE_COLUMNS = 512
 
 
 class PackBSideAERunnerError(RuntimeError):
@@ -279,6 +280,7 @@ def run(
                 min_exact_key_coverage=1.0,
                 min_non_null_feature_coverage=0.99,
                 max_feature_columns=int(max_feature_columns),
+                max_profile_feature_columns=DEFAULT_MAX_PROFILE_FEATURE_COLUMNS,
                 coverage_segments=segments,
                 min_segment_exact_key_coverage=1.0,
                 min_segment_non_null_feature_coverage=0.99,
@@ -357,6 +359,7 @@ def run(
                 "variance_min_exclusive": 1e-6,
                 "binary_prevalence_bounds": [0.005, 0.995],
                 "max_feature_columns": int(max_feature_columns),
+                "max_profile_feature_columns": DEFAULT_MAX_PROFILE_FEATURE_COLUMNS,
                 "selection": "coverage_then_generator_family_round_robin_no_outcomes",
             },
             "sides": side_reports,

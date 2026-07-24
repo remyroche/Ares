@@ -69,3 +69,15 @@ def test_composite_source_partition_is_disjoint_and_ordered() -> None:
     assert list(result.columns) == ["dae_b16_06", "candidate"]
     assert result.iloc[0].tolist() == [3.0, 1.0]
     assert loader.source_contract()["source_precedence"].startswith("candidate")
+
+
+def test_cached_representation_loader_preserves_requested_order() -> None:
+    ledger = pd.DataFrame({"candidate_id": ["a", "b"]})
+    values = pd.DataFrame({"dae_b16_06": [1.0, 2.0], "gmm_ood_score": [3.0, 4.0]})
+    loader = runner.CachedRepresentationFeatureLoader(ledger, values)
+    result = loader(
+        pd.DataFrame({"candidate_id": ["b", "a"]}),
+        ("gmm_ood_score", "dae_b16_06"),
+    )
+    assert list(result.columns) == ["gmm_ood_score", "dae_b16_06"]
+    assert result.to_numpy().tolist() == [[4.0, 2.0], [3.0, 1.0]]

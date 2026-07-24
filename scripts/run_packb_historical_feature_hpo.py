@@ -36,6 +36,7 @@ from extreme_price_movements import packb_side_stage_manifest as stage_manifest
 from extreme_price_movements.packb_side_local_fs_hpo_stage import (
     FeatureSelectionInput,
     HPOFoldLedger,
+    _bounded_beginning_middle_end_sample,
     fit_side_local_fs_hpo_stages,
 )
 from extreme_price_movements.training_resource_guard import (
@@ -243,7 +244,7 @@ class HistoricalCompositeFeatureLoader:
         all_features: Sequence[str],
         candidate_features: Sequence[str],
         candidate_loader: ExactCandidateFeatureLoader,
-        representation_loader: SideRepresentationFeatureLoader,
+        representation_loader: Any,
         generated_features: Sequence[str],
         feature_store: Path,
         resource_guard: TrainingResourceGuard,
@@ -334,6 +335,118 @@ class HistoricalCompositeFeatureLoader:
             ],
             "source_precedence": "candidate_frame_then_static_store_then_ae_gmm",
         }
+
+
+class CachedRepresentationFeatureLoader:
+    """Serve one precomputed side-local AE/GMM union by exact candidate ID."""
+
+    def __init__(
+        self,
+        ledger: pd.DataFrame,
+        values: pd.DataFrame,
+    ) -> None:
+        if (
+            len(ledger) != len(values)
+            or ledger["candidate_id"].astype(str).duplicated().any()
+            or values.empty
+        ):
+            raise HistoricalFeatureHPORunnerError(
+                "cached representation union is not one-to-one"
+            )
+        self.features = tuple(map(str, values.columns))
+        self.feature_set = frozenset(self.features)
+        self.values = values.copy()
+        self.values.index = ledger["candidate_id"].astype(str).to_numpy()
+
+    def __call__(
+        self, ledger: pd.DataFrame, requested_features: Sequence[str]
+    ) -> pd.DataFrame:
+        requested = tuple(map(str, requested_features))
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(name not in self.feature_set for name in requested)
+        ):
+            raise HistoricalFeatureHPORunnerError(
+                "cached representation request is invalid"
+            )
+        candidate_ids = ledger["candidate_id"].astype(str)
+        missing = candidate_ids.loc[~candidate_ids.isin(self.values.index)]
+        if not missing.empty:
+            raise HistoricalFeatureHPORunnerError(
+                "cached representation union misses requested candidate IDs"
+            )
+        return (
+            self.values.reindex(candidate_ids.to_numpy())
+            .loc[:, list(requested)]
+            .reset_index(drop=True)
+        )
+
+
+def _precompute_representations(
+    *,
+    representation_loader: SideRepresentationFeatureLoader,
+    generated_features: Sequence[str],
+    fs_train: pd.DataFrame,
+    fs_valid: pd.DataFrame,
+    folds: Sequence[HPOFoldLedger],
+    fs_train_max_rows: int,
+    fs_valid_max_rows: int,
+    hpo_train_max_rows: int,
+    hpo_valid_max_rows: int,
+) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any]]:
+    samples = [
+        _bounded_beginning_middle_end_sample(
+            fs_train,
+            max_rows=int(fs_train_max_rows),
+            name="historical representation feature-selection train",
+        ),
+        _bounded_beginning_middle_end_sample(
+            fs_valid,
+            max_rows=int(fs_valid_max_rows),
+            name="historical representation feature-selection validation",
+        ),
+    ]
+    for fold in folds:
+        samples.extend(
+            [
+                _bounded_beginning_middle_end_sample(
+                    fold.train_ledger,
+                    max_rows=int(hpo_train_max_rows),
+                    name=f"historical representation {fold.name} train",
+                ),
+                _bounded_beginning_middle_end_sample(
+                    fold.valid_ledger,
+                    max_rows=int(hpo_valid_max_rows),
+                    name=f"historical representation {fold.name} validation",
+                ),
+            ]
+        )
+    union = (
+        pd.concat(samples, ignore_index=True, copy=False)
+        .drop_duplicates("candidate_id", keep="first")
+        .sort_values(["__ts__", "__symbol__", "candidate_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    generated = tuple(map(str, generated_features))
+    values = representation_loader(union, generated)
+    cache = CachedRepresentationFeatureLoader(union, values)
+    evidence = {
+        "schema": "packb_side_local_representation_union_cache_v1",
+        "union_rows": int(len(union)),
+        "generated_features": list(generated),
+        "candidate_stream_sha256": hashlib.sha256(
+            "\n".join(union["candidate_id"].astype(str)).encode("utf-8")
+        ).hexdigest(),
+        "values_sha256": hashlib.sha256(
+            pd.util.hash_pandas_object(values, index=True)
+            .to_numpy(dtype=np.uint64, copy=False)
+            .tobytes()
+        ).hexdigest(),
+        "reuse_scope": "one_side_across_fs_and_three_hpo_folds",
+        "outcome_columns_loaded": False,
+    }
+    return cache, evidence
 
 
 class ApprovedHistoricalSelector:
@@ -558,6 +671,33 @@ def run(
                 state=state,
                 generated_features=generated,
             )
+            fs_train, fs_train_path = _cohort(
+                Path(population_root), side, "feature_selection_train"
+            )
+            fs_valid, fs_valid_path = _cohort(
+                Path(population_root), side, "feature_selection_valid"
+            )
+            folds = _folds(Path(population_root), side)
+            selected_generated = [
+                feature
+                for feature in historical[side]
+                if feature.startswith(GENERATED_PREFIXES)
+            ]
+            guard.checkpoint(f"packb_hist55_37:{side}:before_representation_union")
+            cached_representation, representation_cache_evidence = (
+                _precompute_representations(
+                    representation_loader=representation,
+                    generated_features=selected_generated,
+                    fs_train=fs_train,
+                    fs_valid=fs_valid,
+                    folds=folds,
+                    fs_train_max_rows=int(fs_train_max_rows),
+                    fs_valid_max_rows=int(fs_valid_max_rows),
+                    hpo_train_max_rows=int(hpo_train_max_rows),
+                    hpo_valid_max_rows=int(hpo_valid_max_rows),
+                )
+            )
+            guard.checkpoint(f"packb_hist55_37:{side}:representation_union_complete")
             label_schema = _label_schema(label_files, side=side)
             candidate = [
                 feature
@@ -575,18 +715,12 @@ def run(
                 all_features=historical[side],
                 candidate_features=candidate,
                 candidate_loader=candidate_loader,
-                representation_loader=representation,
+                representation_loader=cached_representation,
                 generated_features=generated,
                 feature_store=Path(feature_store),
                 resource_guard=guard,
             )
             labels = ExactLabelLoader(label_files, resource_guard=guard)
-            fs_train, fs_train_path = _cohort(
-                Path(population_root), side, "feature_selection_train"
-            )
-            fs_valid, fs_valid_path = _cohort(
-                Path(population_root), side, "feature_selection_valid"
-            )
             trials = make_hpo_trials(side=side, count=int(hpo_trials))
             seed = 20260724 + side_index * 1_000
             source_contract = composite.source_contract()
@@ -596,7 +730,7 @@ def run(
                 fs_train_ledger_path=fs_train_path,
                 fs_valid_ledger=fs_valid,
                 fs_valid_ledger_path=fs_valid_path,
-                hpo_folds=_folds(Path(population_root), side),
+                hpo_folds=folds,
                 authorized_population_ledger_path=(
                     Path(population_root)
                     / population_manifest["ledgers"]["authorized_population"]["path"]
@@ -638,6 +772,9 @@ def run(
                     "source_partition_contract_sha256": _canonical_sha256(
                         source_contract
                     ),
+                    "representation_union_cache_sha256": _canonical_sha256(
+                        representation_cache_evidence
+                    ),
                 },
                 fs_train_max_rows=int(fs_train_max_rows),
                 fs_valid_max_rows=int(fs_valid_max_rows),
@@ -651,8 +788,10 @@ def run(
                 **report,
                 "feature_count": len(historical[side]),
                 "source_contract": source_contract,
+                "representation_union_cache": representation_cache_evidence,
             }
-            del labels, composite, representation, raw_loader, state, bundle
+            del labels, composite, cached_representation, representation
+            del raw_loader, state, bundle, folds
             del trials, fs_train, fs_valid, report
             _release_memory()
             gc.collect()

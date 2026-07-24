@@ -45,6 +45,7 @@ from extreme_price_movements.path_auxiliary_lgbm import (  # noqa: E402
     transform_base_archetype_label_features,
 )
 from extreme_price_movements.path_auxiliary_targets import (  # noqa: E402
+    ALL_MODEL_FAMILY_LABEL_COLUMNS,
     ALL_SUPPORTIVE_LABEL_COLUMNS,
     FUTURE_SLOPE_ATR_PER_HOUR_CLIP,
     MAE_BEFORE_MEANINGFUL_MFE_ATR_CLIP,
@@ -580,6 +581,7 @@ def _selection_hpo_fingerprint(
         "target_schema": TARGET_SCHEMA,
         "target_columns": TARGET_COLUMNS,
         "supportive_label_columns": list(ALL_SUPPORTIVE_LABEL_COLUMNS),
+        "model_family_label_columns": list(ALL_MODEL_FAMILY_LABEL_COLUMNS),
         "supportive_weight_contract": "head_specific_supportive_labels_clipped_0.5_2.0_v1",
         "selected_population_identity_sha256": selected_population_identity_sha256,
         "selection_hpo_reference_contract_sha256": selection_hpo_reference_contract[
@@ -842,6 +844,7 @@ def _load_labels(
         label_resolution_column,
         *TARGET_COLUMNS.values(),
         *ALL_SUPPORTIVE_LABEL_COLUMNS,
+        *ALL_MODEL_FAMILY_LABEL_COLUMNS,
     }
     frames: list[pd.DataFrame] = []
     source_columns: set[str] = set()
@@ -864,6 +867,7 @@ def _load_labels(
                 *CONTEXT_COLUMNS,
                 *TARGET_COLUMNS.values(),
                 *ALL_SUPPORTIVE_LABEL_COLUMNS,
+                *ALL_MODEL_FAMILY_LABEL_COLUMNS,
             ]
             if column in columns
         ]
@@ -965,7 +969,11 @@ def _load_labels(
         raise ValueError(
             "label candidate_id does not match canonical UTC/symbol/1h/side identity"
         )
-    for column in [*TARGET_COLUMNS.values(), *ALL_SUPPORTIVE_LABEL_COLUMNS]:
+    for column in [
+        *TARGET_COLUMNS.values(),
+        *ALL_SUPPORTIVE_LABEL_COLUMNS,
+        *ALL_MODEL_FAMILY_LABEL_COLUMNS,
+    ]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").astype(np.float32)
     for column in CONTEXT_COLUMNS:
         if column not in frame:
@@ -2909,6 +2917,7 @@ def run(
             "side-local HPO"
         ),
         "supportive_label_columns": list(ALL_SUPPORTIVE_LABEL_COLUMNS),
+        "model_family_label_columns": list(ALL_MODEL_FAMILY_LABEL_COLUMNS),
         "sample_weight_contract": (
             "head_specific_supportive_labels_clipped_0.5_2.0_v1; training_loss_only; "
             "validation_mda_hpo_early_stopping_oof_metrics_unweighted"

@@ -184,6 +184,20 @@ ALL_SUPPORTIVE_LABEL_COLUMNS: tuple[str, ...] = tuple(
     for target_name in TARGET_COLUMNS
     for column in SUPPORTIVE_LABEL_COLUMNS[target_name]
 )
+MODEL_FAMILY_LABEL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "peak_mfe_12h_atr": ("__meaningful_mfe_reached_12h__",),
+    "time_to_first_meaningful_mfe": ("__meaningful_mfe_reached_12h__",),
+    "mae_before_meaningful_mfe_atr": ("__meaningful_mfe_reached_12h__",),
+    "bars_before_price_stops_decreasing": ("__bars_to_confirmed_adverse_trough__",),
+    "future_slope_atr_per_hour": (),
+}
+ALL_MODEL_FAMILY_LABEL_COLUMNS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        column
+        for target_name in TARGET_COLUMNS
+        for column in MODEL_FAMILY_LABEL_COLUMNS[target_name]
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -219,8 +233,12 @@ class PathAuxiliaryTargets:
             "__log1p_future_slope_atr_per_hour_12h__": self.log1p_future_slope_atr_per_hour_12h,
             **self.supportive_columns,
             "__path_auxiliary_target_valid__": self.valid.astype(np.int8),
-            "__time_to_first_meaningful_mfe_target_valid__": self.timing_valid.astype(np.int8),
-            "__meaningful_mfe_reached_12h__": self.meaningful_mfe_reached.astype(np.int8),
+            "__time_to_first_meaningful_mfe_target_valid__": self.timing_valid.astype(
+                np.int8
+            ),
+            "__meaningful_mfe_reached_12h__": self.meaningful_mfe_reached.astype(
+                np.int8
+            ),
         }
 
 
@@ -274,9 +292,7 @@ def build_path_auxiliary_targets(
         raise ValueError("future path does not contain the complete requested horizon")
     high = high[:, :horizon_bars]
     low = low[:, :horizon_bars]
-    shape_horizon_bars = int(
-        np.floor(60.0 * float(horizon_hours) / float(bar_minutes))
-    )
+    shape_horizon_bars = int(np.floor(60.0 * float(horizon_hours) / float(bar_minutes)))
     if shape_horizon_bars <= 0:
         raise ValueError("bar_minutes exceeds the requested path-shape horizon")
 
@@ -312,9 +328,7 @@ def build_path_auxiliary_targets(
     meaningful_reached = valid & np.any(meaningful_hits, axis=1)
     first_meaningful_index = np.argmax(meaningful_hits, axis=1)
     reached_hours = (
-        (first_meaningful_index.astype(np.float64) + 1.0)
-        * float(bar_minutes)
-        / 60.0
+        (first_meaningful_index.astype(np.float64) + 1.0) * float(bar_minutes) / 60.0
     )
     # A bar size that does not divide the horizon can make the final partial
     # bar end slightly beyond it. The timing target remains right-censored at
@@ -439,16 +453,27 @@ def build_path_auxiliary_targets(
     bar_hours = float(bar_minutes) / 60.0
     support: dict[str, np.ndarray] = {}
 
-    for threshold, label in ((0.5, "0_5"), (1.0, "1"), (1.5, "1_5"), (2.0, "2"), (3.0, "3"), (4.0, "4")):
+    for threshold, label in (
+        (0.5, "0_5"),
+        (1.0, "1"),
+        (1.5, "1_5"),
+        (2.0, "2"),
+        (3.0, "3"),
+        (4.0, "4"),
+    ):
         support[f"__peak_mfe_ge_{label}atr_12h__"] = np.where(
             valid, (shape_peak_atr >= threshold).astype(float), np.nan
         ).astype(np.float32)
 
     positive_shape_peak = shape_peak_return > 0.0
     for threshold, label in ((0.5, "50"), (0.8, "80")):
-        above_peak = (shape_fav_positive >= threshold * shape_peak_return[:, None]) & positive_shape_peak[:, None]
+        above_peak = (
+            shape_fav_positive >= threshold * shape_peak_return[:, None]
+        ) & positive_shape_peak[:, None]
         bars = np.sum(above_peak, axis=1)
-        support[f"__peak_mfe_bars_above_{label}pct_12h__"] = np.where(valid, bars, np.nan).astype(np.float32)
+        support[f"__peak_mfe_bars_above_{label}pct_12h__"] = np.where(
+            valid, bars, np.nan
+        ).astype(np.float32)
         support[f"__peak_mfe_fraction_above_{label}pct_12h__"] = np.where(
             valid, bars / float(shape_horizon_bars), np.nan
         ).astype(np.float32)
@@ -461,7 +486,8 @@ def build_path_auxiliary_targets(
     )
     support["__mfe_integral_atr_hours_12h__"] = np.where(
         valid,
-        np.sum(np.minimum(instantaneous_mfe_atr, PEAK_MFE_ATR_CLIP), axis=1) * bar_hours,
+        np.sum(np.minimum(instantaneous_mfe_atr, PEAK_MFE_ATR_CLIP), axis=1)
+        * bar_hours,
         np.nan,
     ).astype(np.float32)
 
@@ -469,33 +495,64 @@ def build_path_auxiliary_targets(
     for hours in (2.0, 4.0, 8.0):
         prefix_bars = int(np.floor(hours / bar_hours))
         if hours > float(horizon_hours) or prefix_bars <= 0:
-            support[f"__mfe_ratio_to_peak_at_{int(hours)}h_12h__"] = np.full(n, np.nan, dtype=np.float32)
+            support[f"__mfe_ratio_to_peak_at_{int(hours)}h_12h__"] = np.full(
+                n, np.nan, dtype=np.float32
+            )
             continue
         prefix_peak = np.max(shape_fav_positive[:, :prefix_bars], axis=1)
-        ratio = np.divide(prefix_peak, shape_peak_return, out=np.zeros(n), where=positive_shape_peak)
-        support[f"__mfe_ratio_to_peak_at_{int(hours)}h_12h__"] = np.where(valid, np.clip(ratio, 0.0, 1.0), np.nan).astype(np.float32)
+        ratio = np.divide(
+            prefix_peak, shape_peak_return, out=np.zeros(n), where=positive_shape_peak
+        )
+        support[f"__mfe_ratio_to_peak_at_{int(hours)}h_12h__"] = np.where(
+            valid, np.clip(ratio, 0.0, 1.0), np.nan
+        ).astype(np.float32)
     for hours in (1.0, 2.0, 4.0, 8.0):
         prefix_bars = int(np.floor(hours / bar_hours))
         available = hours <= float(horizon_hours) and prefix_bars > 0
         support[f"__peak_mfe_within_{int(hours)}h_12h__"] = (
-            np.where(valid, (positive_shape_peak & (peak_index < prefix_bars)).astype(float), np.nan).astype(np.float32)
-            if available else np.full(n, np.nan, dtype=np.float32)
+            np.where(
+                valid,
+                (positive_shape_peak & (peak_index < prefix_bars)).astype(float),
+                np.nan,
+            ).astype(np.float32)
+            if available
+            else np.full(n, np.nan, dtype=np.float32)
         )
 
     pre_mask = path_indices < mae_stop[:, None]
     pre_adverse = np.where(pre_mask, shape_adv_positive, -np.inf)
     pre_adverse_peak = np.maximum(np.max(pre_adverse, axis=1), 0.0)
-    support["__pre_mfe_mae_event_12h__"] = np.where(valid, (pre_adverse_peak > 0.0).astype(float), np.nan).astype(np.float32)
-    for threshold, label in ((0.25, "0_25"), (0.5, "0_5"), (0.75, "0_75"), (1.0, "1"), (1.5, "1_5")):
+    support["__pre_mfe_mae_event_12h__"] = np.where(
+        valid, (pre_adverse_peak > 0.0).astype(float), np.nan
+    ).astype(np.float32)
+    for threshold, label in (
+        (0.25, "0_25"),
+        (0.5, "0_5"),
+        (0.75, "0_75"),
+        (1.0, "1"),
+        (1.5, "1_5"),
+    ):
         hit = pre_mask & (shape_adv_positive >= threshold * atr[:, None])
         reached = np.any(hit, axis=1)
         first_index = np.argmax(hit, axis=1)
-        support[f"__pre_mfe_mae_ge_{label}atr_12h__"] = np.where(valid, reached.astype(float), np.nan).astype(np.float32)
-        support[f"__pre_mfe_mae_{label}atr_before_meaningful_mfe_12h__"] = np.where(valid, reached.astype(float), np.nan).astype(np.float32)
-        mfe_first = shape_meaningful_reached & reached & (shape_first_meaningful_index < first_index)
-        support[f"__meaningful_mfe_before_mae_{label}atr_12h__"] = np.where(valid, mfe_first.astype(float), np.nan).astype(np.float32)
+        support[f"__pre_mfe_mae_ge_{label}atr_12h__"] = np.where(
+            valid, reached.astype(float), np.nan
+        ).astype(np.float32)
+        support[f"__pre_mfe_mae_{label}atr_before_meaningful_mfe_12h__"] = np.where(
+            valid, reached.astype(float), np.nan
+        ).astype(np.float32)
+        mfe_first = (
+            shape_meaningful_reached
+            & reached
+            & (shape_first_meaningful_index < first_index)
+        )
+        support[f"__meaningful_mfe_before_mae_{label}atr_12h__"] = np.where(
+            valid, mfe_first.astype(float), np.nan
+        ).astype(np.float32)
     underwater_bars = np.sum(pre_mask & (shape_adv_positive > 0.0), axis=1)
-    support["__pre_mfe_underwater_bars_12h__"] = np.where(valid, underwater_bars, np.nan).astype(np.float32)
+    support["__pre_mfe_underwater_bars_12h__"] = np.where(
+        valid, underwater_bars, np.nan
+    ).astype(np.float32)
     support["__pre_mfe_underwater_fraction_12h__"] = np.where(
         valid, underwater_bars / np.maximum(mae_stop, 1), np.nan
     ).astype(np.float32)
@@ -504,26 +561,60 @@ def build_path_auxiliary_targets(
     trough_index = np.argmax(shape_adv_positive, axis=1)
     trough_valid = valid & (trough_return > 0.0)
     trough_atr = np.divide(trough_return, atr, out=np.full(n, np.nan), where=valid)
-    support["__adverse_trough_atr_12h__"] = np.where(valid, np.clip(trough_atr, 0.0, PEAK_MFE_ATR_CLIP), np.nan).astype(np.float32)
-    support["__adverse_trough_bar_12h__"] = np.where(valid, trough_index + 1.0, np.nan).astype(np.float32)
+    support["__adverse_trough_atr_12h__"] = np.where(
+        valid, np.clip(trough_atr, 0.0, PEAK_MFE_ATR_CLIP), np.nan
+    ).astype(np.float32)
+    support["__adverse_trough_bar_12h__"] = np.where(
+        valid, trough_index + 1.0, np.nan
+    ).astype(np.float32)
     post_trough = path_indices > trough_index[:, None]
     post_favorable = np.max(np.where(post_trough, shape_favorable, -np.inf), axis=1)
-    post_favorable = np.where(trough_index < shape_horizon_bars - 1, post_favorable, -trough_return)
-    recovery = np.divide(post_favorable + trough_return, trough_return, out=np.zeros(n), where=trough_return > 0.0)
+    post_favorable = np.where(
+        trough_index < shape_horizon_bars - 1, post_favorable, -trough_return
+    )
+    recovery = np.divide(
+        post_favorable + trough_return,
+        trough_return,
+        out=np.zeros(n),
+        where=trough_return > 0.0,
+    )
     recovery = np.clip(recovery, 0.0, 1.0)
-    support["__adverse_trough_recovery_fraction_12h__"] = np.where(trough_valid, recovery, np.nan).astype(np.float32)
-    per_bar_recovery = np.divide(shape_favorable + trough_return[:, None], trough_return[:, None], out=np.zeros_like(shape_favorable), where=trough_return[:, None] > 0.0)
+    support["__adverse_trough_recovery_fraction_12h__"] = np.where(
+        trough_valid, recovery, np.nan
+    ).astype(np.float32)
+    per_bar_recovery = np.divide(
+        shape_favorable + trough_return[:, None],
+        trough_return[:, None],
+        out=np.zeros_like(shape_favorable),
+        where=trough_return[:, None] > 0.0,
+    )
     per_bar_recovery = np.where(post_trough, per_bar_recovery, -np.inf)
     for threshold, label in ((0.5, "50"), (0.8, "80"), (1.0, "100")):
         recovered = per_bar_recovery >= threshold
-        support[f"__adverse_trough_recovered_{label}pct_12h__"] = np.where(trough_valid, np.any(recovered, axis=1).astype(float), np.nan).astype(np.float32)
+        support[f"__adverse_trough_recovered_{label}pct_12h__"] = np.where(
+            trough_valid, np.any(recovered, axis=1).astype(float), np.nan
+        ).astype(np.float32)
         if label in {"50", "100"}:
-            support[f"__adverse_trough_recovery_{label}pct_confirmed_2bars_12h__"] = np.where(trough_valid, (np.sum(recovered, axis=1) >= 2).astype(float), np.nan).astype(np.float32)
+            support[f"__adverse_trough_recovery_{label}pct_confirmed_2bars_12h__"] = (
+                np.where(
+                    trough_valid, (np.sum(recovered, axis=1) >= 2).astype(float), np.nan
+                ).astype(np.float32)
+            )
     full_recovery = per_bar_recovery >= 1.0
     first_recovery_index = np.argmax(full_recovery, axis=1)
-    bars_to_recovery = np.where(np.any(full_recovery, axis=1), first_recovery_index - trough_index, shape_horizon_bars)
-    support["__bars_from_adverse_trough_to_full_recovery_12h__"] = np.where(trough_valid, bars_to_recovery, np.nan).astype(np.float32)
-    support["__time_from_adverse_trough_to_full_recovery_hours_12h__"] = np.where(trough_valid, np.minimum(bars_to_recovery * bar_hours, float(horizon_hours)), np.nan).astype(np.float32)
+    bars_to_recovery = np.where(
+        np.any(full_recovery, axis=1),
+        first_recovery_index - trough_index,
+        shape_horizon_bars,
+    )
+    support["__bars_from_adverse_trough_to_full_recovery_12h__"] = np.where(
+        trough_valid, bars_to_recovery, np.nan
+    ).astype(np.float32)
+    support["__time_from_adverse_trough_to_full_recovery_hours_12h__"] = np.where(
+        trough_valid,
+        np.minimum(bars_to_recovery * bar_hours, float(horizon_hours)),
+        np.nan,
+    ).astype(np.float32)
 
     def _slope_for_horizon(hours: float) -> np.ndarray:
         prefix_bars = int(np.floor(hours / bar_hours))
@@ -533,17 +624,41 @@ def build_path_auxiliary_targets(
         prefix_peak = np.max(prefix, axis=1)
         prefix_atr = np.divide(prefix_peak, atr, out=np.zeros(n), where=valid)
         first_80 = np.argmax(prefix >= (0.8 * prefix_peak)[:, None], axis=1)
-        slope = np.divide(0.8 * np.clip(prefix_atr, 0.0, PEAK_MFE_ATR_CLIP), np.maximum((first_80 + 1.0) * bar_hours, bar_hours), out=np.zeros(n), where=prefix_peak > 0.0)
-        return np.where(valid, np.clip(slope, 0.0, FUTURE_SLOPE_ATR_PER_HOUR_CLIP), np.nan)
+        slope = np.divide(
+            0.8 * np.clip(prefix_atr, 0.0, PEAK_MFE_ATR_CLIP),
+            np.maximum((first_80 + 1.0) * bar_hours, bar_hours),
+            out=np.zeros(n),
+            where=prefix_peak > 0.0,
+        )
+        return np.where(
+            valid, np.clip(slope, 0.0, FUTURE_SLOPE_ATR_PER_HOUR_CLIP), np.nan
+        )
 
     for hours in (2.0, 4.0, 8.0):
-        support[f"__future_slope_atr_per_hour_{int(hours)}h__"] = _slope_for_horizon(hours).astype(np.float32)
+        support[f"__future_slope_atr_per_hour_{int(hours)}h__"] = _slope_for_horizon(
+            hours
+        ).astype(np.float32)
     for fraction, label in ((1.0, "peak"), (0.5, "50pct_peak"), (0.8, "80pct_peak")):
-        first_index = np.argmax(shape_fav_positive >= (fraction * shape_peak_return)[:, None], axis=1)
-        support[f"__time_to_{label}_mfe_hours_12h__"] = np.where(valid & positive_shape_peak, (first_index + 1.0) * bar_hours, np.nan).astype(np.float32)
-        support[f"__bars_to_{label}_mfe_12h__"] = np.where(valid & positive_shape_peak, first_index + 1.0, np.nan).astype(np.float32)
+        first_index = np.argmax(
+            shape_fav_positive >= (fraction * shape_peak_return)[:, None], axis=1
+        )
+        support[f"__time_to_{label}_mfe_hours_12h__"] = np.where(
+            valid & positive_shape_peak, (first_index + 1.0) * bar_hours, np.nan
+        ).astype(np.float32)
+        support[f"__bars_to_{label}_mfe_12h__"] = np.where(
+            valid & positive_shape_peak, first_index + 1.0, np.nan
+        ).astype(np.float32)
     total_excursion = shape_peak_return + trough_return
-    support["__mfe_mae_path_efficiency_12h__"] = np.where(valid, np.divide(shape_peak_return, total_excursion, out=np.zeros(n), where=total_excursion > 0.0), np.nan).astype(np.float32)
+    support["__mfe_mae_path_efficiency_12h__"] = np.where(
+        valid,
+        np.divide(
+            shape_peak_return,
+            total_excursion,
+            out=np.zeros(n),
+            where=total_excursion > 0.0,
+        ),
+        np.nan,
+    ).astype(np.float32)
     integral_efficiency = np.divide(
         np.sum(shape_fav_positive, axis=1),
         shape_peak_return * shape_horizon_bars,
@@ -553,8 +668,14 @@ def build_path_auxiliary_targets(
     support["__mfe_integral_path_efficiency_12h__"] = np.where(
         valid & positive_shape_peak, integral_efficiency, np.nan
     ).astype(np.float32)
-    support["__mfe_timing_path_efficiency_12h__"] = np.where(valid & positive_shape_peak, 1.0 - (peak_index + 1.0) / shape_horizon_bars, np.nan).astype(np.float32)
-    support["__mfe_persistence_path_efficiency_12h__"] = support["__peak_mfe_fraction_above_80pct_12h__"].copy()
+    support["__mfe_timing_path_efficiency_12h__"] = np.where(
+        valid & positive_shape_peak,
+        1.0 - (peak_index + 1.0) / shape_horizon_bars,
+        np.nan,
+    ).astype(np.float32)
+    support["__mfe_persistence_path_efficiency_12h__"] = support[
+        "__peak_mfe_fraction_above_80pct_12h__"
+    ].copy()
 
     aliases = {
         "__mfe_ge_0_5atr__": "__peak_mfe_ge_0_5atr_12h__",
@@ -603,9 +724,15 @@ def build_path_auxiliary_targets(
         "__mfe_persistence_path_efficiency__": "__mfe_persistence_path_efficiency_12h__",
     }
     for threshold in ("0_25", "0_5", "0_75", "1", "1_5"):
-        aliases[f"__pre_mfe_mae_ge_{threshold}atr__"] = f"__pre_mfe_mae_ge_{threshold}atr_12h__"
-        aliases[f"__pre_mfe_mae_{threshold}atr_before_meaningful_mfe__"] = f"__pre_mfe_mae_{threshold}atr_before_meaningful_mfe_12h__"
-        aliases[f"__meaningful_mfe_before_mae_{threshold}atr__"] = f"__meaningful_mfe_before_mae_{threshold}atr_12h__"
+        aliases[f"__pre_mfe_mae_ge_{threshold}atr__"] = (
+            f"__pre_mfe_mae_ge_{threshold}atr_12h__"
+        )
+        aliases[f"__pre_mfe_mae_{threshold}atr_before_meaningful_mfe__"] = (
+            f"__pre_mfe_mae_{threshold}atr_before_meaningful_mfe_12h__"
+        )
+        aliases[f"__meaningful_mfe_before_mae_{threshold}atr__"] = (
+            f"__meaningful_mfe_before_mae_{threshold}atr_12h__"
+        )
     support.update({alias: support[source].copy() for alias, source in aliases.items()})
     support["__future_slope_12h_atr_per_hour__"] = future_slope.astype(np.float32)
 
@@ -641,9 +768,7 @@ def build_path_auxiliary_targets(
     mae_pre_15 = np.maximum(
         np.max(np.where(pre_15_mask, shape_adv_positive, -np.inf), axis=1), 0.0
     )
-    mae_pre_15_atr = np.divide(
-        mae_pre_15, atr, out=np.full(n, np.nan), where=valid
-    )
+    mae_pre_15_atr = np.divide(mae_pre_15, atr, out=np.full(n, np.nan), where=valid)
     support["__reaches_1_5atr_within_12h__"] = np.where(
         valid, reached_15.astype(float), np.nan
     ).astype(np.float32)
@@ -662,9 +787,7 @@ def build_path_auxiliary_targets(
         (1.00, "1_00"),
         (1.50, "1_50"),
     ):
-        adverse_hit = pre_15_mask & (
-            shape_adv_positive >= threshold * atr[:, None]
-        )
+        adverse_hit = pre_15_mask & (shape_adv_positive >= threshold * atr[:, None])
         support[f"__pre_1_5_mfe_mae_ge_{label}atr__"] = np.where(
             valid, np.any(adverse_hit, axis=1).astype(float), np.nan
         ).astype(np.float32)
@@ -687,16 +810,10 @@ def build_path_auxiliary_targets(
         recovered = per_bar_recovery >= fraction
         any_recovered = trough_valid & np.any(recovered, axis=1)
         first = np.argmax(recovered, axis=1)
-        return np.where(any_recovered, first - trough_index, np.nan).astype(
-            np.float32
-        )
+        return np.where(any_recovered, first - trough_index, np.nan).astype(np.float32)
 
-    support["__bars_to_25pct_adverse_recovery__"] = _bars_to_recovery_fraction(
-        0.25
-    )
-    support["__bars_to_50pct_adverse_recovery__"] = _bars_to_recovery_fraction(
-        0.50
-    )
+    support["__bars_to_25pct_adverse_recovery__"] = _bars_to_recovery_fraction(0.25)
+    support["__bars_to_50pct_adverse_recovery__"] = _bars_to_recovery_fraction(0.50)
     trough_minutes = (trough_index + 1.0) * float(bar_minutes)
     support["__adverse_trough_within_60m__"] = np.where(
         trough_valid, (trough_minutes <= 60.0).astype(float), np.nan
@@ -721,11 +838,9 @@ def build_path_auxiliary_targets(
     ).astype(np.float32)
     support["__reaches_1_5atr_before_trough_confirmation__"] = np.where(
         valid,
-        (
-            reached_15
-            & confirmation_available
-            & (first_15 <= confirmation_index)
-        ).astype(float),
+        (reached_15 & confirmation_available & (first_15 <= confirmation_index)).astype(
+            float
+        ),
         np.nan,
     ).astype(np.float32)
     support["__trough_before_1_5atr_mfe__"] = np.where(
@@ -735,15 +850,15 @@ def build_path_auxiliary_targets(
     ).astype(np.float32)
 
     support["__future_slope_atr_per_hour_12h__"] = future_slope.astype(np.float32)
-    support["__bars_to_80pct_peak__"] = support[
-        "__bars_to_80pct_peak_mfe_12h__"
-    ].copy()
+    support["__bars_to_80pct_peak__"] = support["__bars_to_80pct_peak_mfe_12h__"].copy()
 
     path_with_entry = np.concatenate(
         [np.zeros((n, 1), dtype=np.float64), shape_fav_positive], axis=1
     )
 
-    def _first_hit_and_efficiency(level_return: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _first_hit_and_efficiency(
+        level_return: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
         hits = shape_fav_positive >= level_return[:, None]
         reached = valid & (level_return > 0.0) & np.any(hits, axis=1)
         first = np.argmax(hits, axis=1)
@@ -795,14 +910,16 @@ def build_path_auxiliary_targets(
         bars_before_price_stops_decreasing_12h=bars_before_turning.astype(np.float32),
         future_slope_atr_per_hour_12h=future_slope.astype(np.float32),
         log1p_peak_mfe_atr_12h=np.log1p(peak_atr).astype(np.float32),
-        log1p_time_to_first_meaningful_mfe_hours_12h=np.log1p(time_hours).astype(np.float32),
-        log1p_mae_before_meaningful_mfe_atr_12h=np.log1p(mae_before_hit_atr).astype(np.float32),
+        log1p_time_to_first_meaningful_mfe_hours_12h=np.log1p(time_hours).astype(
+            np.float32
+        ),
+        log1p_mae_before_meaningful_mfe_atr_12h=np.log1p(mae_before_hit_atr).astype(
+            np.float32
+        ),
         log1p_bars_before_price_stops_decreasing_12h=np.log1p(
             bars_before_turning
         ).astype(np.float32),
-        log1p_future_slope_atr_per_hour_12h=np.log1p(future_slope).astype(
-            np.float32
-        ),
+        log1p_future_slope_atr_per_hour_12h=np.log1p(future_slope).astype(np.float32),
         supportive_columns=support,
         valid=valid,
         timing_valid=timing_valid,
@@ -810,7 +927,9 @@ def build_path_auxiliary_targets(
     )
 
 
-def _finite_pair(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _finite_pair(
+    y_true: np.ndarray, y_pred: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(y_true, dtype=np.float64)
     p = np.asarray(y_pred, dtype=np.float64)
     mask = np.isfinite(y) & np.isfinite(p)
@@ -862,9 +981,9 @@ def _positive_target_regression_metrics(
     }
     for frac in top_fractions:
         k = max(1, int(np.ceil(float(frac) * len(order))))
-        out[
-            f"{target_name}_top_{int(round(100 * frac)):02d}pct_realized"
-        ] = float(np.mean(true_natural[order[:k]]))
+        out[f"{target_name}_top_{int(round(100 * frac)):02d}pct_realized"] = float(
+            np.mean(true_natural[order[:k]])
+        )
     return out
 
 
@@ -922,9 +1041,7 @@ def bars_before_price_stops_decreasing_regression_metrics(
     pred_bars = np.expm1(p).clip(min=0.0)
     out = {
         "rows": float(len(y)),
-        "bars_before_price_stops_decreasing_log_mae": float(
-            mean_absolute_error(y, p)
-        ),
+        "bars_before_price_stops_decreasing_log_mae": float(mean_absolute_error(y, p)),
         "bars_before_price_stops_decreasing_mae_bars": float(
             mean_absolute_error(true_bars, pred_bars)
         ),
@@ -932,9 +1049,7 @@ def bars_before_price_stops_decreasing_regression_metrics(
     }
     for bars in decision_bars:
         threshold = max(int(bars), 0)
-        out[
-            f"bars_before_price_stops_decreasing_accuracy_by_{threshold}_bars"
-        ] = float(
+        out[f"bars_before_price_stops_decreasing_accuracy_by_{threshold}_bars"] = float(
             np.mean((true_bars <= threshold) == (pred_bars <= threshold))
         )
     return out
@@ -1013,22 +1128,24 @@ def peak_mfe_regression_metrics(
 
 
 def required_target_columns() -> tuple[str, ...]:
-    return tuple(PathAuxiliaryTargets(
-        *(np.empty(0, dtype=np.float32) for _ in range(11)),
-        supportive_columns={
-            column: np.empty(0, dtype=np.float32)
-            for column in dict.fromkeys(
-                column
-                for groups in (
-                    _LEGACY_SUPPORTIVE_LABEL_COLUMNS,
-                    SUPPORTIVE_LABEL_COLUMNS,
+    return tuple(
+        PathAuxiliaryTargets(
+            *(np.empty(0, dtype=np.float32) for _ in range(11)),
+            supportive_columns={
+                column: np.empty(0, dtype=np.float32)
+                for column in dict.fromkeys(
+                    column
+                    for groups in (
+                        _LEGACY_SUPPORTIVE_LABEL_COLUMNS,
+                        SUPPORTIVE_LABEL_COLUMNS,
+                    )
+                    for columns in groups.values()
+                    for column in columns
+                    if column != "__future_slope_atr_per_hour_12h__"
                 )
-                for columns in groups.values()
-                for column in columns
-                if column != "__future_slope_atr_per_hour_12h__"
-            )
-        },
-        valid=np.empty(0, dtype=bool),
-        timing_valid=np.empty(0, dtype=bool),
-        meaningful_mfe_reached=np.empty(0, dtype=bool),
-    ).as_columns())
+            },
+            valid=np.empty(0, dtype=bool),
+            timing_valid=np.empty(0, dtype=bool),
+            meaningful_mfe_reached=np.empty(0, dtype=bool),
+        ).as_columns()
+    )

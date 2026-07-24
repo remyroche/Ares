@@ -18,7 +18,9 @@
       "worst_fold_objective": 0.19025806166485465,
       "loader_kind": "historical_candidate_static_ae_gmm",
       "missing_value_policy": "lightgbm_native_nan",
-      "min_per_feature_finite_fraction": 0.95,
+      "min_per_feature_finite_fraction": 0.0,
+      "hpo_min_per_feature_finite_fraction": 0.95,
+      "outer_coverage_policy": "measure_and_report_native_missing_drift_without_imputation",
       "decision": "DEFAULT_PENDING_PAIRED_OUTER_OOF_GATE"
     },
     "short": {
@@ -32,7 +34,9 @@
       "worst_fold_objective": 0.16852954105937562,
       "loader_kind": "historical_candidate_static_ae_gmm",
       "missing_value_policy": "lightgbm_native_nan",
-      "min_per_feature_finite_fraction": 0.95,
+      "min_per_feature_finite_fraction": 0.0,
+      "hpo_min_per_feature_finite_fraction": 0.95,
+      "outer_coverage_policy": "measure_and_report_native_missing_drift_without_imputation",
       "decision": "DEFAULT_PENDING_PAIRED_OUTER_OOF_GATE"
     }
   },

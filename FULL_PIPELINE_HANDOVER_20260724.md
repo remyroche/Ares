@@ -181,6 +181,13 @@ R3 execution update on 2026-07-24:
   It is not a final performance promotion: the v2 55/37 stream and v1 31/8
   stream must still be trained on the four outer folds and compared on the
   exact candidate-ID intersection with identical cost labels.
+- The 95% floor applies to inner HPO dataset admission. Outer OOF must not
+  discard or impute genuine future feature-availability drift: it admits
+  label-complete rows with LightGBM native missing values, records
+  per-feature coverage for every fold, and includes coverage deterioration in
+  the promotion audit. The bounded smoke exposed material July AE/GMM
+  coverage drift, so final promotion requires both paired economic metrics
+  and an explicit coverage-risk disposition.
 
 The locked inner calendar is fixed before this new search:
 

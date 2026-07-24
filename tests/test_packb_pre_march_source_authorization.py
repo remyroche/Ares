@@ -178,6 +178,40 @@ def test_pre_fit_population_and_post_fit_artifact_checks_are_separate(
     assert set(artifacts) == {"long", "short"}
 
 
+def test_population_preflight_calls_resource_checkpoints(tmp_path: Path) -> None:
+    labels, audit, _sources = _valid_inputs(tmp_path)
+    checkpoints: list[str] = []
+
+    authorization.preflight_pre_march_packb_population(
+        labels_dir=labels,
+        causal_audit_path=audit,
+        batch_rows=1,
+        checkpoint=checkpoints.append,
+    )
+
+    assert checkpoints[0] == "before_duplicate_index"
+    assert "before_label_shard:long.parquet" in checkpoints
+    assert "before_label_batch:short.parquet" in checkpoints
+
+
+def test_population_preflight_aborts_when_resource_checkpoint_fails(
+    tmp_path: Path,
+) -> None:
+    labels, audit, _sources = _valid_inputs(tmp_path)
+
+    def fail(stage: str) -> None:
+        if stage.startswith("before_label_batch:"):
+            raise RuntimeError("resource limit")
+
+    with pytest.raises(RuntimeError, match="resource limit"):
+        authorization.preflight_pre_march_packb_population(
+            labels_dir=labels,
+            causal_audit_path=audit,
+            batch_rows=1,
+            checkpoint=fail,
+        )
+
+
 @pytest.mark.parametrize("kind", ["extra", "missing"])
 def test_rejects_non_exact_causal_audit_inventory(tmp_path: Path, kind: str) -> None:
     labels, audit, sources = _valid_inputs(tmp_path)

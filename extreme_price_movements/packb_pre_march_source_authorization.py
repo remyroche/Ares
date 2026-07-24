@@ -23,7 +23,7 @@ import sqlite3
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
 
@@ -270,7 +270,11 @@ def _open_candidate_index(path: Path) -> sqlite3.Connection:
 
 
 def _scan_labels(
-    shards: Sequence[Path], *, cutoff: pd.Timestamp, batch_rows: int
+    shards: Sequence[Path],
+    *,
+    cutoff: pd.Timestamp,
+    batch_rows: int,
+    checkpoint: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Check IDs and timing in bounded Parquet batches.
 
@@ -301,10 +305,14 @@ def _scan_labels(
     with tempfile.TemporaryDirectory(
         prefix="packb-source-authorization-"
     ) as temporary_directory:
+        if checkpoint is not None:
+            checkpoint("before_duplicate_index")
         index_path = Path(temporary_directory) / "candidate_ids.sqlite"
         connection = _open_candidate_index(index_path)
         try:
             for shard in shards:
+                if checkpoint is not None:
+                    checkpoint(f"before_label_shard:{shard.name}")
                 parquet = pq.ParquetFile(shard)
                 schema = set(parquet.schema.names)
                 missing = sorted(set(_REQUIRED_LABEL_COLUMNS) - schema)
@@ -315,6 +323,8 @@ def _scan_labels(
                 for batch in parquet.iter_batches(
                     batch_size=batch_rows, columns=list(_REQUIRED_LABEL_COLUMNS)
                 ):
+                    if checkpoint is not None:
+                        checkpoint(f"before_label_batch:{shard.name}")
                     frame = batch.to_pandas()
                     total_rows += len(frame)
                     ids = frame["candidate_id"].astype("string")
@@ -438,6 +448,7 @@ def preflight_pre_march_packb_population(
     causal_audit_path: Path,
     resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
     batch_rows: int = DEFAULT_BATCH_ROWS,
+    checkpoint: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Authorize exact label populations before any learned artifact exists."""
 
@@ -446,7 +457,12 @@ def preflight_pre_march_packb_population(
         Path(labels_dir),
         Path(causal_audit_path),
     )
-    label_report = _scan_labels(shards, cutoff=cutoff, batch_rows=batch_rows)
+    label_report = _scan_labels(
+        shards,
+        cutoff=cutoff,
+        batch_rows=batch_rows,
+        checkpoint=checkpoint,
+    )
     return {
         "schema": POPULATION_PREFLIGHT_SCHEMA,
         "status": "AUTHORIZED_PRE_MARCH_POPULATION",
@@ -483,6 +499,7 @@ def authorize_pre_march_packb_sources(
     side_sources: Mapping[str, SideSourceAuthorization],
     resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
     batch_rows: int = DEFAULT_BATCH_ROWS,
+    checkpoint: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Return a compact, fail-closed authorization report for Pack-B sources.
 
@@ -498,6 +515,7 @@ def authorize_pre_march_packb_sources(
         causal_audit_path=causal_audit_path,
         resolution_cutoff_utc=resolution_cutoff_utc,
         batch_rows=batch_rows,
+        checkpoint=checkpoint,
     )
     side_report = verify_pre_march_side_artifacts(
         side_sources=side_sources,

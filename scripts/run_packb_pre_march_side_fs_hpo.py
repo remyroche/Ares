@@ -1,0 +1,1188 @@
+#!/usr/bin/env python3
+"""Run strict long/short Pack-B feature selection and 150-trial HPO.
+
+This production adapter binds the fixed pre-March population, the side-local
+raw feature contracts frozen by ``run_packb_pre_march_side_ae.py``, and the
+canonical label inventory to ``packb_side_local_fs_hpo_stage``.  It deliberately
+fits long then short so only one side's matrices and models are resident.
+
+Feature selection is supervised but fixed-calendar:
+
+* November is the only selector validation month;
+* univariate, mutual-information, and regression-Relief screens form a bounded
+  candidate union;
+* correlation pruning precedes side-local, multi-repeat permutation MDA; and
+* prefix confirmation selects the smallest feature set within a declared
+  objective tolerance of the best MDA prefix.
+
+HPO evaluates 150 explicit, deterministic LightGBM arms on December, January,
+and February.  The objective combines rank IC, top-decile executable net-return
+lift, and weighted soft-target error.  No post-cutoff row, shared-side selector,
+shared-side parameter study, or default fallback is available.
+"""
+
+from __future__ import annotations
+
+import argparse
+import gc
+import hashlib
+import json
+import math
+import os
+import subprocess
+import sys
+import uuid
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from extreme_price_movements import packb_side_stage_manifest as stage_manifest
+from extreme_price_movements.packb_side_local_fs_hpo_stage import (
+    FeatureSelectionInput,
+    HPOFoldInput,
+    HPOFoldLedger,
+    HPOTrial,
+    HPOTrialEvaluation,
+    fit_side_local_fs_hpo_stages,
+)
+from extreme_price_movements.packb_static_point_feature_loader import (
+    LoaderEvidenceBundle,
+    make_packb_static_feature_loader,
+)
+from extreme_price_movements.training_resource_guard import (
+    TrainingResourceGuard,
+    TrainingResourceLimits,
+)
+from scripts.audit_full_pipeline_migration import hash_path
+from scripts.prepare_packb_pre_march_side_contracts import parse_locked_dec09
+from scripts.run_packb_pre_march_side_ae import (
+    DEFAULT_DECISIONS,
+    DEFAULT_FEATURE_INVENTORY,
+    DEFAULT_FEATURE_STORE,
+    DEFAULT_POPULATION_ROOT,
+    _feature_inventory_binding,
+    _source_contracts,
+)
+
+DEFAULT_AE_ROOT = ROOT / "data_perp/artifacts/packb_side_local_ae_20260724_v1"
+DEFAULT_LABELS = (
+    ROOT / "data_perp/artifacts/"
+    "20260720_s59_h5_signalclose_causal_trailing_cost100bps_labels_v2/labels"
+)
+DEFAULT_OUTPUT = ROOT / "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1"
+DEFAULT_TRIALS = 150
+TARGET_COLUMN = "__first_touch_target_soft__"
+WEIGHT_COLUMN = "__w__"
+ECONOMIC_COLUMN = "__first_touch_capture_net__"
+LABEL_IDENTITY_COLUMNS = (
+    "candidate_id",
+    "side_name",
+    "__symbol__",
+    "__ts__",
+)
+
+
+class PackBSideFSHPORunnerError(RuntimeError):
+    """Raised when production FS/HPO evidence cannot be proven."""
+
+
+def _json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PackBSideFSHPORunnerError(f"cannot read JSON {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise PackBSideFSHPORunnerError(f"JSON object required: {path}")
+    return value
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _git_revision() -> str:
+    try:
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PackBSideFSHPORunnerError("cannot resolve source revision") from exc
+    if len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision):
+        raise PackBSideFSHPORunnerError("source revision is not a full Git SHA")
+    if dirty:
+        raise PackBSideFSHPORunnerError(
+            "production FS/HPO requires a clean tracked source revision"
+        )
+    return revision
+
+
+def _release_memory() -> None:
+    gc.collect()
+    try:
+        import pyarrow as pa
+
+        pa.default_memory_pool().release_unused()
+    except Exception:
+        pass
+
+
+def _canonical_label_files(
+    labels_dir: Path, population_manifest: Mapping[str, Any]
+) -> tuple[Path, ...]:
+    names = population_manifest.get("input", {}).get("canonical_shards")
+    if not isinstance(names, list) or not names:
+        raise PackBSideFSHPORunnerError(
+            "population manifest has no canonical label inventory"
+        )
+    paths = tuple(Path(labels_dir) / str(name) for name in names)
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        raise PackBSideFSHPORunnerError(
+            "canonical label inventory is incomplete: " + ", ".join(missing[:4])
+        )
+    actual_names = {path.name for path in Path(labels_dir).glob("*.parquet")}
+    explicitly_excluded = set(
+        population_manifest.get("population_preflight", {})
+        .get("label_inventory", {})
+        .get("explicitly_excluded_shards", [])
+    )
+    extras = sorted(actual_names - set(map(str, names)) - explicitly_excluded)
+    if extras:
+        raise PackBSideFSHPORunnerError(
+            "unlisted label shards are forbidden: " + ", ".join(extras[:8])
+        )
+    return paths
+
+
+class ExactLabelLoader:
+    """Bounded exact-key label reader retaining only its most recent slice."""
+
+    def __init__(
+        self,
+        files: Sequence[Path],
+        *,
+        resource_guard: TrainingResourceGuard | Any | None = None,
+    ) -> None:
+        self.files = tuple(str(Path(path)) for path in files)
+        self.resource_guard = resource_guard
+        self._key: tuple[str, ...] | None = None
+        self._frame: pd.DataFrame | None = None
+
+    def load(self, ledger: pd.DataFrame) -> pd.DataFrame:
+        candidate_ids = tuple(ledger["candidate_id"].astype(str))
+        if self._key == candidate_ids and self._frame is not None:
+            return self._frame.copy()
+        if self.resource_guard is not None:
+            self.resource_guard.checkpoint("packb_side_fs_hpo:before_label_join")
+        requested = ledger.loc[
+            :, ["candidate_id", "side_name", "__symbol__", "__ts__"]
+        ].copy()
+        requested["__order__"] = np.arange(len(requested), dtype=np.int64)
+        requested["__ts__"] = pd.to_datetime(
+            requested["__ts__"], utc=True, errors="raise"
+        )
+        try:
+            import duckdb
+
+            connection = duckdb.connect(database=":memory:")
+            try:
+                connection.register("requested", requested)
+                frame = connection.execute(
+                    """
+                    SELECT
+                        r.__order__,
+                        l.candidate_id,
+                        l.side_name,
+                        l.__symbol__,
+                        l.__ts__,
+                        l.__first_touch_target_soft__,
+                        l.__w__,
+                        l.__first_touch_capture_net__
+                    FROM requested AS r
+                    INNER JOIN read_parquet(?, union_by_name=true) AS l
+                    USING (candidate_id)
+                    ORDER BY r.__order__
+                    """,
+                    [list(self.files)],
+                ).fetchdf()
+            finally:
+                connection.close()
+        except Exception as exc:
+            raise PackBSideFSHPORunnerError(
+                f"cannot exact-join labels for {len(requested):,} rows: {exc}"
+            ) from exc
+        if len(frame) != len(requested):
+            raise PackBSideFSHPORunnerError(
+                "label join is not one-to-one and complete "
+                f"(requested={len(requested):,}, joined={len(frame):,})"
+            )
+        observed_ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
+        expected_ts = requested["__ts__"].reset_index(drop=True)
+        exact = (
+            frame["candidate_id"]
+            .astype(str)
+            .reset_index(drop=True)
+            .eq(requested["candidate_id"].astype(str).reset_index(drop=True))
+            & frame["side_name"]
+            .astype(str)
+            .str.lower()
+            .reset_index(drop=True)
+            .eq(requested["side_name"].astype(str).str.lower().reset_index(drop=True))
+            & frame["__symbol__"]
+            .astype(str)
+            .reset_index(drop=True)
+            .eq(requested["__symbol__"].astype(str).reset_index(drop=True))
+            & observed_ts.reset_index(drop=True).eq(expected_ts)
+        )
+        if not exact.all():
+            raise PackBSideFSHPORunnerError(
+                "candidate_id label join disagrees on side, symbol, or signal timestamp"
+            )
+        for column in (TARGET_COLUMN, WEIGHT_COLUMN, ECONOMIC_COLUMN):
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+            if not np.isfinite(frame[column].to_numpy(dtype=np.float64)).all():
+                raise PackBSideFSHPORunnerError(
+                    f"label column {column!r} contains non-finite values"
+                )
+        if (frame[WEIGHT_COLUMN] < 0.0).any() or frame[WEIGHT_COLUMN].sum() <= 0.0:
+            raise PackBSideFSHPORunnerError("label weights must be non-negative")
+        keep = frame.loc[
+            :, [TARGET_COLUMN, WEIGHT_COLUMN, ECONOMIC_COLUMN]
+        ].reset_index(drop=True)
+        self._key = candidate_ids
+        self._frame = keep
+        return keep.copy()
+
+    def target(self, ledger: pd.DataFrame) -> pd.Series:
+        return self.load(ledger)[TARGET_COLUMN].copy()
+
+    def weights(self, ledger: pd.DataFrame, _target: pd.Series) -> pd.Series:
+        return self.load(ledger)[WEIGHT_COLUMN].copy()
+
+    def economic(self, ledger: pd.DataFrame) -> np.ndarray:
+        return self.load(ledger)[ECONOMIC_COLUMN].to_numpy(dtype=np.float64, copy=True)
+
+
+def _weighted_mean(values: np.ndarray, weights: np.ndarray) -> float:
+    weights = np.asarray(weights, dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
+    total = float(weights.sum())
+    return float(np.dot(values, weights) / total) if total > 0.0 else float("nan")
+
+
+def _weighted_correlation(
+    left: np.ndarray, right: np.ndarray, weights: np.ndarray
+) -> float:
+    left = np.asarray(left, dtype=np.float64)
+    right = np.asarray(right, dtype=np.float64)
+    weights = np.asarray(weights, dtype=np.float64)
+    total = float(weights.sum())
+    if total <= 0.0:
+        return 0.0
+    left_mean = _weighted_mean(left, weights)
+    right_mean = _weighted_mean(right, weights)
+    left_centered = left - left_mean
+    right_centered = right - right_mean
+    covariance = float(np.dot(weights, left_centered * right_centered) / total)
+    left_var = float(np.dot(weights, left_centered**2) / total)
+    right_var = float(np.dot(weights, right_centered**2) / total)
+    denominator = math.sqrt(max(left_var * right_var, 0.0))
+    return covariance / denominator if denominator > 1e-15 else 0.0
+
+
+def _weighted_rank_ic(
+    predictions: np.ndarray, target: np.ndarray, weights: np.ndarray
+) -> float:
+    from scipy.stats import rankdata
+
+    return _weighted_correlation(
+        rankdata(predictions, method="average"),
+        rankdata(target, method="average"),
+        weights,
+    )
+
+
+def _economic_objective(
+    predictions: np.ndarray,
+    target: np.ndarray,
+    weights: np.ndarray,
+    net_return: np.ndarray,
+) -> dict[str, float]:
+    predictions = np.asarray(predictions, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    weights = np.asarray(weights, dtype=np.float64)
+    net_return = np.asarray(net_return, dtype=np.float64)
+    rank_ic = _weighted_rank_ic(predictions, target, weights)
+    residual = predictions - target
+    rmse = math.sqrt(_weighted_mean(residual**2, weights))
+    target_mean = _weighted_mean(target, weights)
+    baseline_rmse = math.sqrt(_weighted_mean((target - target_mean) ** 2, weights))
+    count = max(1, int(math.ceil(0.10 * len(predictions))))
+    order = np.argsort(-predictions, kind="mergesort")
+    top = order[:count]
+    top10_net = float(np.mean(net_return[top]))
+    overall_net = float(np.mean(net_return))
+    net_lift = top10_net - overall_net
+    error_gain = (baseline_rmse - rmse) / max(baseline_rmse, 1e-9)
+    objective = (
+        0.45 * rank_ic
+        + 0.35 * math.tanh(net_lift / 0.01)
+        + 0.20 * math.tanh(error_gain / 0.10)
+    )
+    return {
+        "objective": float(objective),
+        "weighted_rank_ic": float(rank_ic),
+        "weighted_rmse": float(rmse),
+        "weighted_baseline_rmse": float(baseline_rmse),
+        "relative_rmse_gain": float(error_gain),
+        "top10_mean_net_return": float(top10_net),
+        "overall_mean_net_return": float(overall_net),
+        "top10_net_return_lift": float(net_lift),
+        "top10_rows": int(count),
+    }
+
+
+def _lgbm_regressor(params: Mapping[str, Any], *, seed: int):
+    try:
+        from lightgbm import LGBMRegressor
+    except ImportError as exc:
+        raise PackBSideFSHPORunnerError("LightGBM is required for Pack-B") from exc
+    return LGBMRegressor(
+        objective="regression",
+        verbosity=-1,
+        n_jobs=1,
+        random_state=int(seed),
+        deterministic=True,
+        force_col_wise=True,
+        **dict(params),
+    )
+
+
+def _fit_predict(
+    train_x: pd.DataFrame,
+    train_y: pd.Series,
+    train_weight: pd.Series,
+    valid_x: pd.DataFrame,
+    valid_y: pd.Series,
+    valid_weight: pd.Series,
+    params: Mapping[str, Any],
+    *,
+    seed: int,
+) -> tuple[Any, np.ndarray, int]:
+    import lightgbm as lgb
+
+    model = _lgbm_regressor(params, seed=seed)
+    model.fit(
+        train_x,
+        train_y,
+        sample_weight=train_weight,
+        eval_set=[(valid_x, valid_y)],
+        eval_sample_weight=[valid_weight],
+        eval_metric="l2",
+        callbacks=[
+            lgb.early_stopping(stopping_rounds=60, verbose=False),
+            lgb.log_evaluation(period=0),
+        ],
+    )
+    best_iteration = int(model.best_iteration_ or params["n_estimators"])
+    prediction = model.predict(valid_x, num_iteration=best_iteration)
+    return model, np.asarray(prediction, dtype=np.float64), best_iteration
+
+
+def _normalise_scores(values: Mapping[str, float]) -> dict[str, float]:
+    series = pd.Series(values, dtype=np.float64)
+    if series.empty:
+        return {}
+    low = float(series.min())
+    high = float(series.max())
+    if high <= low:
+        return {str(key): 0.0 for key in series.index}
+    return {
+        str(key): float((value - low) / (high - low)) for key, value in series.items()
+    }
+
+
+def _regression_relief_scores(
+    features: pd.DataFrame, target: pd.Series, *, max_rows: int = 2_500
+) -> dict[str, float]:
+    from sklearn.neighbors import NearestNeighbors
+
+    rows = min(len(features), int(max_rows))
+    positions = np.linspace(0, len(features) - 1, num=rows, dtype=np.int64)
+    values = features.iloc[positions].to_numpy(dtype=np.float32, copy=True)
+    y = target.iloc[positions].to_numpy(dtype=np.float32, copy=True)
+    median = np.median(values, axis=0)
+    scale = np.subtract(*np.percentile(values, [75.0, 25.0], axis=0))
+    scale = np.where(scale > 1e-6, scale, 1.0)
+    values = np.clip((values - median) / scale, -8.0, 8.0)
+    neighbors = min(11, len(values))
+    indices = (
+        NearestNeighbors(n_neighbors=neighbors, n_jobs=1)
+        .fit(values)
+        .kneighbors(values, return_distance=False)[:, 1:]
+    )
+    if indices.shape[1] == 0:
+        return {column: 0.0 for column in features.columns}
+    row = np.repeat(np.arange(len(values)), indices.shape[1])
+    near = indices.reshape(-1)
+    target_distance = np.abs(y[row] - y[near]).astype(np.float64)
+    target_distance -= target_distance.mean()
+    target_scale = float(np.sqrt(np.dot(target_distance, target_distance)))
+    scores: dict[str, float] = {}
+    for index, column in enumerate(features.columns):
+        distance = np.abs(values[row, index] - values[near, index]).astype(np.float64)
+        distance -= distance.mean()
+        denominator = target_scale * float(np.sqrt(np.dot(distance, distance)))
+        scores[str(column)] = (
+            float(np.dot(distance, target_distance) / denominator)
+            if denominator > 1e-12
+            else 0.0
+        )
+    return scores
+
+
+def _screen_features(
+    train_x: pd.DataFrame, train_y: pd.Series, *, seed: int
+) -> tuple[list[str], dict[str, Any]]:
+    from sklearn.feature_selection import mutual_info_regression
+
+    correlations = {
+        str(column): abs(
+            float(
+                pd.Series(train_x[column], copy=False).corr(train_y, method="spearman")
+                or 0.0
+            )
+        )
+        for column in train_x.columns
+    }
+    mi_rows = min(len(train_x), 20_000)
+    positions = np.linspace(0, len(train_x) - 1, num=mi_rows, dtype=np.int64)
+    mi_values = mutual_info_regression(
+        train_x.iloc[positions],
+        train_y.iloc[positions],
+        random_state=int(seed),
+        n_neighbors=5,
+    )
+    mutual_information = {
+        str(column): float(mi_values[index])
+        for index, column in enumerate(train_x.columns)
+    }
+    relief = _regression_relief_scores(train_x, train_y)
+    top_univariate = sorted(correlations, key=lambda x: (-correlations[x], x))[:64]
+    top_mi = sorted(mutual_information, key=lambda x: (-mutual_information[x], x))[:48]
+    top_relief = sorted(relief, key=lambda x: (-relief[x], x))[:48]
+    union = list(dict.fromkeys([*top_univariate, *top_mi, *top_relief]))
+    norm_corr = _normalise_scores(correlations)
+    norm_mi = _normalise_scores(mutual_information)
+    norm_relief = _normalise_scores(relief)
+    combined = {
+        column: norm_corr.get(column, 0.0)
+        + norm_mi.get(column, 0.0)
+        + norm_relief.get(column, 0.0)
+        for column in union
+    }
+    ordered = sorted(union, key=lambda x: (-combined[x], x))
+    correlation_matrix = train_x.loc[:, ordered].corr(method="spearman").abs()
+    retained: list[str] = []
+    rejected: list[dict[str, Any]] = []
+    for column in ordered:
+        conflict = next(
+            (
+                prior
+                for prior in retained
+                if float(correlation_matrix.loc[column, prior]) >= 0.95
+            ),
+            None,
+        )
+        if conflict is None:
+            retained.append(column)
+        else:
+            rejected.append(
+                {
+                    "feature": column,
+                    "correlated_with": conflict,
+                    "absolute_spearman": float(
+                        correlation_matrix.loc[column, conflict]
+                    ),
+                }
+            )
+    retained = retained[:96]
+    return retained, {
+        "univariate_abs_spearman": correlations,
+        "mutual_information": mutual_information,
+        "regression_relief": relief,
+        "prescreen_union": union,
+        "combined_order": ordered,
+        "redundancy_threshold": 0.95,
+        "redundancy_rejections": rejected,
+        "mda_candidates": retained,
+    }
+
+
+class SideFeatureSelector:
+    def __init__(
+        self,
+        *,
+        side: str,
+        labels: ExactLabelLoader,
+        seed: int,
+        resource_guard: TrainingResourceGuard | Any | None = None,
+    ) -> None:
+        self.side = side
+        self.labels = labels
+        self.seed = int(seed)
+        self.resource_guard = resource_guard
+
+    def __call__(self, value: FeatureSelectionInput) -> dict[str, Any]:
+        if value.side != self.side:
+            raise PackBSideFSHPORunnerError("feature selector received wrong side")
+        if self.resource_guard is not None:
+            self.resource_guard.checkpoint(
+                f"packb_side_fs_hpo:{self.side}:feature_prescreen"
+            )
+        candidates, diagnostics = _screen_features(
+            value.train.features, value.train.target, seed=self.seed
+        )
+        if len(candidates) < 8:
+            raise PackBSideFSHPORunnerError(
+                f"{self.side} feature prescreen retained fewer than eight features"
+            )
+        params = {
+            "n_estimators": 500,
+            "learning_rate": 0.035,
+            "num_leaves": 31,
+            "max_depth": 6,
+            "min_child_samples": 80,
+            "subsample": 0.85,
+            "subsample_freq": 1,
+            "colsample_bytree": 0.85,
+            "reg_alpha": 0.10,
+            "reg_lambda": 3.0,
+            "min_split_gain": 0.0,
+        }
+        train_x = value.train.features.loc[:, candidates]
+        valid_x = value.validation.features.loc[:, candidates]
+        model, prediction, best_iteration = _fit_predict(
+            train_x,
+            value.train.target,
+            value.train.weights,
+            valid_x,
+            value.validation.target,
+            value.validation.weights,
+            params,
+            seed=self.seed,
+        )
+        net_return = self.labels.economic(value.validation.ledger)
+        baseline = _economic_objective(
+            prediction,
+            value.validation.target.to_numpy(dtype=np.float64),
+            value.validation.weights.to_numpy(dtype=np.float64),
+            net_return,
+        )
+        rng = np.random.default_rng(self.seed)
+        mda_rows: list[dict[str, Any]] = []
+        repeats = 3
+        for feature in candidates:
+            drops: list[float] = []
+            position = candidates.index(feature)
+            for _repeat in range(repeats):
+                permuted = valid_x.to_numpy(dtype=np.float32, copy=True)
+                permuted[:, position] = permuted[
+                    rng.permutation(len(permuted)), position
+                ]
+                permuted_prediction = model.predict(
+                    permuted, num_iteration=best_iteration
+                )
+                score = _economic_objective(
+                    permuted_prediction,
+                    value.validation.target.to_numpy(dtype=np.float64),
+                    value.validation.weights.to_numpy(dtype=np.float64),
+                    net_return,
+                )
+                drops.append(float(baseline["objective"] - score["objective"]))
+            mda_rows.append(
+                {
+                    "feature": feature,
+                    "importance_mean": float(np.mean(drops)),
+                    "importance_std": float(np.std(drops, ddof=1)),
+                    "repeat_drops": drops,
+                }
+            )
+            if self.resource_guard is not None:
+                self.resource_guard.checkpoint(
+                    f"packb_side_fs_hpo:{self.side}:mda:{feature}"
+                )
+        ranked = sorted(
+            mda_rows,
+            key=lambda row: (-row["importance_mean"], row["feature"]),
+        )
+        positive = [row for row in ranked if row["importance_mean"] > 0.0]
+        if len(positive) < 8:
+            raise PackBSideFSHPORunnerError(
+                f"{self.side} has fewer than eight positive-MDA features"
+            )
+        positive_mass = sum(row["importance_mean"] for row in positive)
+        cumulative = 0.0
+        mass_count = len(positive)
+        for index, row in enumerate(positive, start=1):
+            cumulative += row["importance_mean"]
+            if cumulative >= 0.99 * positive_mass:
+                mass_count = index
+                break
+        max_prefix = min(64, len(positive))
+        prefix_counts = sorted(
+            {
+                max(8, min(max_prefix, value))
+                for value in (8, 12, 16, 24, 32, 48, 64, mass_count)
+            }
+        )
+        prefix_rows: list[dict[str, Any]] = []
+        for count in prefix_counts:
+            columns = [row["feature"] for row in positive[:count]]
+            _prefix_model, prefix_prediction, prefix_iteration = _fit_predict(
+                value.train.features.loc[:, columns],
+                value.train.target,
+                value.train.weights,
+                value.validation.features.loc[:, columns],
+                value.validation.target,
+                value.validation.weights,
+                params,
+                seed=self.seed + count,
+            )
+            metrics = _economic_objective(
+                prefix_prediction,
+                value.validation.target.to_numpy(dtype=np.float64),
+                value.validation.weights.to_numpy(dtype=np.float64),
+                net_return,
+            )
+            prefix_rows.append(
+                {
+                    "feature_count": int(count),
+                    "features": columns,
+                    "best_iteration": int(prefix_iteration),
+                    **metrics,
+                }
+            )
+        best_objective = max(row["objective"] for row in prefix_rows)
+        tolerance = 0.005
+        selected_row = min(
+            (
+                row
+                for row in prefix_rows
+                if row["objective"] >= best_objective - tolerance
+            ),
+            key=lambda row: row["feature_count"],
+        )
+        return {
+            "side": self.side,
+            "selected_features": list(selected_row["features"]),
+            "selection_scope": "side_local",
+            "fallback_used": False,
+            "selection_methods": [
+                "univariate",
+                "mutual_information",
+                "regression_relief",
+                "correlation_redundancy_pruning",
+                "mda",
+                "mda_prefix_confirmation",
+            ],
+            "search_breadth": int(
+                len(value.candidate_features)
+                + len(mda_rows) * repeats
+                + len(prefix_rows)
+            ),
+            "target_contract": {
+                "column": TARGET_COLUMN,
+                "economic_validation_column": ECONOMIC_COLUMN,
+                "weight_column": WEIGHT_COLUMN,
+            },
+            "prescreen": diagnostics,
+            "mda": {
+                "baseline": baseline,
+                "repeats": repeats,
+                "rows": ranked,
+                "positive_importance_mass": float(positive_mass),
+                "positive_mass_99pct_count": int(mass_count),
+            },
+            "prefix_confirmation": {
+                "tolerance_from_best_objective": tolerance,
+                "evaluations": prefix_rows,
+                "selected_feature_count": int(selected_row["feature_count"]),
+                "best_objective": float(best_objective),
+            },
+        }
+
+
+def make_hpo_trials(*, side: str, count: int = DEFAULT_TRIALS) -> tuple[HPOTrial, ...]:
+    """Return a predeclared deterministic random design with no default arm."""
+
+    if count < 2:
+        raise PackBSideFSHPORunnerError("HPO requires at least two trials")
+    seed = 20260724 + (0 if side == "long" else 10_000)
+    rng = np.random.default_rng(seed)
+    trials: list[HPOTrial] = []
+    seen: set[str] = set()
+    while len(trials) < int(count):
+        max_depth = int(rng.integers(3, 10))
+        max_leaves = min(127, 2**max_depth - 1)
+        params = {
+            "n_estimators": int(rng.integers(240, 901)),
+            "learning_rate": float(np.exp(rng.uniform(np.log(0.008), np.log(0.08)))),
+            "num_leaves": int(rng.integers(4, max_leaves + 1)),
+            "max_depth": max_depth,
+            "min_child_samples": int(rng.integers(30, 181)),
+            "subsample": float(rng.uniform(0.65, 1.0)),
+            "subsample_freq": 1,
+            "colsample_bytree": float(rng.uniform(0.60, 1.0)),
+            "reg_alpha": float(np.exp(rng.uniform(np.log(1e-4), np.log(3.0)))),
+            "reg_lambda": float(np.exp(rng.uniform(np.log(1e-3), np.log(12.0)))),
+            "min_split_gain": float(rng.uniform(0.0, 0.08)),
+        }
+        fingerprint = _canonical_sha256(params)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        trials.append(HPOTrial(f"trial_{len(trials):03d}", params))
+    return tuple(trials)
+
+
+class SideHPOEvaluator:
+    def __init__(
+        self,
+        *,
+        side: str,
+        labels: ExactLabelLoader,
+        seed: int,
+    ) -> None:
+        self.side = side
+        self.labels = labels
+        self.seed = int(seed)
+
+    def __call__(self, value: HPOFoldInput) -> dict[str, Any]:
+        if value.side != self.side:
+            raise PackBSideFSHPORunnerError("HPO evaluator received wrong side")
+        _model, prediction, best_iteration = _fit_predict(
+            value.train.features,
+            value.train.target,
+            value.train.weights,
+            value.validation.features,
+            value.validation.target,
+            value.validation.weights,
+            value.trial.params,
+            seed=self.seed
+            + int(value.trial.trial_id.rsplit("_", 1)[-1])
+            + 1_000 * int(value.fold_name.rsplit("_", 1)[-1]),
+        )
+        metrics = _economic_objective(
+            prediction,
+            value.validation.target.to_numpy(dtype=np.float64),
+            value.validation.weights.to_numpy(dtype=np.float64),
+            self.labels.economic(value.validation.ledger),
+        )
+        return {
+            **metrics,
+            "best_iteration": int(best_iteration),
+            "train_rows": int(len(value.train.ledger)),
+            "validation_rows": int(len(value.validation.ledger)),
+            "selected_feature_count": int(len(value.selected_features)),
+        }
+
+
+class SideHPOSelector:
+    def __init__(self, *, side: str, trials: Sequence[HPOTrial]) -> None:
+        self.side = side
+        self.trials = {trial.trial_id: trial for trial in trials}
+
+    def __call__(self, evaluations: Sequence[HPOTrialEvaluation]) -> dict[str, Any]:
+        by_trial: dict[str, list[float]] = defaultdict(list)
+        fold_metrics: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for evaluation in evaluations:
+            by_trial[evaluation.trial_id].append(float(evaluation.result["objective"]))
+            fold_metrics[evaluation.trial_id].append(dict(evaluation.result))
+        if set(by_trial) != set(self.trials):
+            raise PackBSideFSHPORunnerError("not every HPO trial was evaluated")
+        if any(len(values) != 3 for values in by_trial.values()):
+            raise PackBSideFSHPORunnerError(
+                "every HPO arm must have exactly three chronological folds"
+            )
+        summaries = []
+        for trial_id, values in by_trial.items():
+            summaries.append(
+                {
+                    "trial_id": trial_id,
+                    "mean_objective": float(np.mean(values)),
+                    "worst_fold_objective": float(np.min(values)),
+                    "objective_std": float(np.std(values, ddof=1)),
+                    "fold_results": fold_metrics[trial_id],
+                }
+            )
+        ranked = sorted(
+            summaries,
+            key=lambda row: (
+                -row["mean_objective"],
+                -row["worst_fold_objective"],
+                row["objective_std"],
+                row["trial_id"],
+            ),
+        )
+        winner = ranked[0]
+        trial = self.trials[winner["trial_id"]]
+        return {
+            "side": self.side,
+            "selected_trial_id": trial.trial_id,
+            "selected_params": dict(trial.params),
+            "selection_scope": "side_local",
+            "fallback_used": False,
+            "selection_metric": (
+                "mean_three_fold_cost_aware_economic_objective_then_"
+                "worst_fold_then_stability"
+            ),
+            "evaluated_trial_count": int(len(ranked)),
+            "evaluated_fold_count_per_trial": 3,
+            "ranking": ranked,
+        }
+
+
+def _load_loader_contract(
+    loader_root: Path, *, source_revision: str
+) -> tuple[dict[str, Any], LoaderEvidenceBundle, dict[str, str]]:
+    contract_path = loader_root / "frozen_feature_contract.json"
+    evidence_path = loader_root / "loader_evidence.json"
+    universe_path = loader_root / "raw_feature_universe.json"
+    coverage_path = loader_root / "coverage_profile.json"
+    contract = _json(contract_path)
+    evidence = _json(evidence_path)
+    if evidence.get("source_revision") != source_revision:
+        raise PackBSideFSHPORunnerError(
+            "AE loader evidence revision does not match this source revision"
+        )
+    bundle = LoaderEvidenceBundle(
+        raw_universe_sha256=str(evidence["raw_universe_sha256"]),
+        coverage_profile_sha256=(
+            str(evidence["coverage_profile_sha256"])
+            if evidence.get("coverage_profile_sha256")
+            else None
+        ),
+        feature_contract_sha256=str(evidence["feature_contract_sha256"]),
+        loader_contract_sha256=str(evidence["loader_contract_sha256"]),
+        loader_module_sha256=str(evidence["loader_module_sha256"]),
+        source_schema_sha256=str(evidence["source_schema_sha256"]),
+        source_revision=str(evidence["source_revision"]),
+        path=str(evidence_path),
+    )
+    hashes = {
+        "raw_universe_sha256": stage_manifest.sha256_file(universe_path),
+        "coverage_profile_sha256": stage_manifest.sha256_file(coverage_path),
+        "feature_loader_contract_sha256": stage_manifest.sha256_file(evidence_path),
+        "frozen_feature_contract_sha256": stage_manifest.sha256_file(contract_path),
+    }
+    return contract, bundle, hashes
+
+
+def _feature_provenance(
+    contract: Mapping[str, Any],
+    bundle: LoaderEvidenceBundle,
+) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    for feature in contract["feature_columns"]:
+        result[str(feature)] = {
+            "causal_definition_sha256": _canonical_sha256(
+                {
+                    "feature": feature,
+                    "generator_registry_sha256": contract["generator_registry_sha256"],
+                    "raw_allowlist_sha256": contract["raw_allowlist_sha256"],
+                    "selection_provenance": contract["selection_provenance"],
+                }
+            ),
+            "inference_availability_sha256": _canonical_sha256(
+                {
+                    "feature": feature,
+                    "source_schema_sha256": contract["source_schema_sha256"],
+                    "store_scan_manifest_sha256": contract[
+                        "store_scan_manifest_sha256"
+                    ],
+                    "loader_contract_sha256": bundle.loader_contract_sha256,
+                    "exact_join": "__symbol__+__ts__",
+                }
+            ),
+            "units_contract_sha256": _canonical_sha256(
+                {
+                    "feature": feature,
+                    "storage_units": "canonical_feature_store_native_units",
+                    "training_dtype": "float32",
+                    "imputation": "forbidden_joint_complete_rows_only",
+                    "feature_contract_sha256": contract["feature_contract_sha256"],
+                }
+            ),
+        }
+    return result
+
+
+def _cohort(population_root: Path, side: str, name: str) -> tuple[pd.DataFrame, Path]:
+    path = Path(population_root) / f"cohorts/{side}/{name}.parquet"
+    frame = pd.read_parquet(path)
+    return frame, path
+
+
+def _folds(population_root: Path, side: str) -> tuple[HPOFoldLedger, ...]:
+    result = []
+    for index in range(1, 4):
+        train, train_path = _cohort(population_root, side, f"hpo_{index}_train")
+        valid, valid_path = _cohort(population_root, side, f"hpo_{index}_valid")
+        result.append(
+            HPOFoldLedger(
+                name=f"hpo_{index}",
+                train_ledger=train,
+                train_ledger_path=train_path,
+                valid_ledger=valid,
+                valid_ledger_path=valid_path,
+            )
+        )
+    return tuple(result)
+
+
+def run(
+    *,
+    output_dir: Path = DEFAULT_OUTPUT,
+    population_root: Path = DEFAULT_POPULATION_ROOT,
+    ae_root: Path = DEFAULT_AE_ROOT,
+    labels_dir: Path = DEFAULT_LABELS,
+    feature_store: Path = DEFAULT_FEATURE_STORE,
+    feature_inventory_path: Path = DEFAULT_FEATURE_INVENTORY,
+    decisions_path: Path = DEFAULT_DECISIONS,
+    hpo_trials: int = DEFAULT_TRIALS,
+) -> dict[str, Any]:
+    destination = Path(output_dir)
+    if destination.exists():
+        raise PackBSideFSHPORunnerError(
+            f"refusing to overwrite production FS/HPO output: {destination}"
+        )
+    revision = _git_revision()
+    ae_summary = _json(Path(ae_root) / "summary.json")
+    ae_revision = str(ae_summary.get("source_revision") or "")
+    if ae_summary.get("status") != "FROZEN_LONG_AND_SHORT_AE_GMM":
+        raise PackBSideFSHPORunnerError("side-local AE summary is absent or incomplete")
+    try:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ae_revision, revision],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PackBSideFSHPORunnerError(
+            "side-local AE source revision is not an ancestor of this runner"
+        ) from exc
+    population_manifest, source_hashes, calendar_sha256, feature_binding = (
+        _source_contracts(
+            population_root=Path(population_root),
+            feature_inventory_path=Path(feature_inventory_path),
+            decisions_path=Path(decisions_path),
+        )
+    )
+    expected_tree = _feature_inventory_binding(Path(feature_inventory_path))
+    current_tree = hash_path(Path(feature_store))
+    if (
+        current_tree.get("sha256") != expected_tree["tree_sha256"]
+        or current_tree.get("bytes") != expected_tree["bytes"]
+        or current_tree.get("files") != expected_tree["files"]
+    ):
+        raise PackBSideFSHPORunnerError(
+            "canonical feature store changed since the immutable inventory"
+        )
+    dec09 = parse_locked_dec09(Path(decisions_path))
+    if stage_manifest.canonical_json_sha256(dec09["calendar"]) != calendar_sha256:
+        raise PackBSideFSHPORunnerError("fixed calendar binding changed")
+    label_files = _canonical_label_files(Path(labels_dir), population_manifest)
+    label_inventory_hash = _canonical_sha256(
+        [
+            {
+                "name": path.name,
+                "sha256": stage_manifest.sha256_file(path),
+                "bytes": path.stat().st_size,
+            }
+            for path in label_files
+        ]
+    )
+    stage_root = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
+    stage_root.mkdir(parents=True, exist_ok=False)
+    guard = TrainingResourceGuard(
+        limits=TrainingResourceLimits(
+            min_free_ram_bytes=2 * 1024**3,
+            max_process_rss_bytes=12 * 1024**3,
+            min_free_disk_bytes=10 * 1024**3,
+            check_interval_seconds=1.0,
+        ),
+        disk_path=destination.parent,
+        telemetry_path=stage_root / "training_resource_telemetry.jsonl",
+    )
+    guard.preflight("packb_side_fs_hpo:preflight")
+    reports: dict[str, Any] = {}
+    try:
+        for side_index, side in enumerate(("long", "short")):
+            guard.checkpoint(f"packb_side_fs_hpo:{side}:before_inputs")
+            loader_root = Path(ae_root) / side / "loader_evidence"
+            contract, bundle, extra_hashes = _load_loader_contract(
+                loader_root, source_revision=ae_revision
+            )
+            feature_loader = make_packb_static_feature_loader(
+                feature_store_dir=feature_store,
+                feature_contract=contract,
+                max_rows_per_batch=2_048,
+                max_columns_per_read=64,
+                max_output_bytes=512 * 1024**2,
+                evidence_bundle=bundle,
+                resource_guard=guard,
+            )
+            label_loader = ExactLabelLoader(label_files, resource_guard=guard)
+            fs_train, fs_train_path = _cohort(
+                population_root, side, "feature_selection_train"
+            )
+            fs_valid, fs_valid_path = _cohort(
+                population_root, side, "feature_selection_valid"
+            )
+            folds = _folds(population_root, side)
+            trials = make_hpo_trials(side=side, count=int(hpo_trials))
+            seed = 20260724 + 1_000 * side_index
+            report = fit_side_local_fs_hpo_stages(
+                side=side,
+                fs_train_ledger=fs_train,
+                fs_train_ledger_path=fs_train_path,
+                fs_valid_ledger=fs_valid,
+                fs_valid_ledger_path=fs_valid_path,
+                hpo_folds=folds,
+                authorized_population_ledger_path=(
+                    Path(population_root)
+                    / population_manifest["ledgers"]["authorized_population"]["path"]
+                ),
+                feature_loader=feature_loader,
+                target_loader=label_loader.target,
+                weight_loader=label_loader.weights,
+                candidate_features=list(contract["feature_columns"]),
+                feature_provenance=_feature_provenance(contract, bundle),
+                feature_selection_callback=SideFeatureSelector(
+                    side=side,
+                    labels=label_loader,
+                    seed=seed,
+                    resource_guard=guard,
+                ),
+                hpo_trials=trials,
+                hpo_trial_evaluator=SideHPOEvaluator(
+                    side=side, labels=label_loader, seed=seed
+                ),
+                hpo_selection_callback=SideHPOSelector(side=side, trials=trials),
+                output_dir=stage_root / side,
+                source_hashes=source_hashes,
+                source_revision=revision,
+                fixed_calendar_sha256=calendar_sha256,
+                extra_provenance_hashes={
+                    **extra_hashes,
+                    "canonical_label_content_inventory_sha256": label_inventory_hash,
+                    "ae_summary_sha256": stage_manifest.sha256_file(
+                        Path(ae_root) / "summary.json"
+                    ),
+                    "side_ae_manifest_sha256": stage_manifest.sha256_file(
+                        Path(ae_root)
+                        / side
+                        / "ae_gmm"
+                        / "ae_gmm_side_stage_manifest.json"
+                    ),
+                },
+                fs_train_max_rows=60_000,
+                fs_valid_max_rows=20_000,
+                hpo_train_max_rows=10_000,
+                hpo_valid_max_rows=10_000,
+                resource_guard=guard,
+            )
+            reports[side] = report
+            del report, trials, folds, fs_valid, fs_train
+            del label_loader, feature_loader, bundle, contract
+            _release_memory()
+            guard.checkpoint(f"packb_side_fs_hpo:{side}:released")
+        summary = {
+            "schema": "packb_pre_march_side_fs_hpo_runner_v1",
+            "status": "FROZEN_LONG_AND_SHORT_FEATURE_SELECTION_AND_HPO",
+            "source_revision": revision,
+            "upstream_ae_source_revision": ae_revision,
+            "source_hashes": source_hashes,
+            "fixed_calendar_sha256": calendar_sha256,
+            "feature_store_revalidation": current_tree,
+            "feature_store_inventory": feature_binding,
+            "label_contract": {
+                "canonical_file_count": len(label_files),
+                "canonical_content_inventory_sha256": label_inventory_hash,
+                "target_column": TARGET_COLUMN,
+                "weight_column": WEIGHT_COLUMN,
+                "economic_validation_column": ECONOMIC_COLUMN,
+                "cost_accounting": (
+                    "economic validation column is canonical first-touch net "
+                    "return with stored round-trip cost applied once"
+                ),
+            },
+            "search_contract": {
+                "side_local": True,
+                "shared_selector_or_study": False,
+                "feature_selection_validation": "2025-11",
+                "hpo_validation_months": ["2025-12", "2026-01", "2026-02"],
+                "explicit_trials_per_side": int(hpo_trials),
+                "fallback": "FORBIDDEN",
+            },
+            "sides": reports,
+        }
+        summary_path = stage_root / "summary.json"
+        summary_path.write_text(
+            json.dumps(summary, sort_keys=True, indent=2, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+        guard.checkpoint("packb_side_fs_hpo:complete")
+        os.replace(stage_root, destination)
+        return {
+            **summary,
+            "summary_path": str(destination / "summary.json"),
+            "summary_sha256": stage_manifest.sha256_file(destination / "summary.json"),
+        }
+    except Exception:
+        raise
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--hpo-trials", type=int, default=DEFAULT_TRIALS)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = _parse_args()
+    report = run(output_dir=args.output_dir, hpo_trials=args.hpo_trials)
+    print(json.dumps(report, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

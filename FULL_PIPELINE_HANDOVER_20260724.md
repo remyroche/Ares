@@ -473,7 +473,8 @@ It may be deleted or reused as an output destination. It is not a model.
 
 ### 2.7 Auxiliary Path Heads
 
-Canonical auxiliary target artifact:
+Historical auxiliary target artifact (comparison only; do not use for the
+current 31/8 production route):
 
 ```text
 data_perp/artifacts/
@@ -490,6 +491,68 @@ Target data:
 - Meaningful MFE threshold: at least 1.5 ATR under the current target contract.
 - Targets are resolved path labels and must never enter inference features.
 
+Canonical 31/8 target and pre-entry context as of 2026-07-25:
+
+```text
+data_perp/artifacts/
+packb_path_auxiliary_targets_20260725_v1_31_8/targets.parquet
+
+data_perp/artifacts/
+packb_downstream_context_20260725_v2_31_8_frozen_ae_gmm/context.parquet
+```
+
+- Exact canonical population: 300,315 rows, comprising 140,768 long and
+  159,547 short rows.
+- Target geometry: decision at signal +1h, contiguous 12h path, resolution at
+  signal +13h.
+- Meaningful MFE is `max(1.5 * signal ATR, 1.5% entry return)`. The explicit
+  `__meaningful_mfe_reached_12h__` event must be used by hurdle/survival roles;
+  `__mfe_ge_1_5atr__` is not an equivalent substitute.
+- The context contains 63 outputs from each side's frozen, outcome-free
+  pre-March AE/GMM state plus `gmm_representation_available`; no outcome
+  columns were added.
+- Candidate identity is unchanged:
+  `1b7442bfd5a75c040869d156b6ed102423eff8876b8fca3b8a0781b7fcdaef55`.
+- Context artifact SHA-256:
+  `ecedbd3424ceb3b14c91179fa4518fe9966e42a66567d9f7e95b8c784069c837`.
+
+Frozen-representation availability:
+
+| Side/month | Jointly finite AE/GMM inputs |
+|---|---:|
+| Long April/May/June/July | 100.00% each |
+| Short April | 99.97% |
+| Short May | 95.35% |
+| Short June | 75.41% |
+| Short July | 71.01% |
+| Short aggregate | 89.71% |
+
+Do **not** median-fill, zero-fill, forward-fill, or interpolate these missing
+AE/GMM inputs into the frozen state. Every candidate has an exact feature-store
+row; the missing state comes from sparse individual rolling inputs, not missing
+candidate rows. In June, the largest contributors are
+`downside_deceleration_8h_rz` (13.24%),
+`downside_deceleration_4h_rz` (11.27%), `prog_eff_24` (11.15%),
+`efficiency_ratio_20` (10.53%), and `ker_16` (8.95%). The maturity contract
+intentionally masks rolling features after insufficient history or internal
+hourly gaps. A synthetic fill would violate the frozen training transform.
+
+Backfill policy:
+
+1. Audit raw OHLCV continuity and earlier history for the affected
+   symbol/timestamp windows.
+2. Recompute a missing feature only when the exact causal source history exists
+   and the current store is demonstrably incomplete or stale.
+3. Preserve NaN plus `gmm_representation_available=0` when the lookback is
+   genuinely immature or crosses a source gap.
+4. If missing-state OOF performance is materially worse, refit a new
+   training-time representation contract with explicit missingness masks or a
+   smaller robust input set; never retrofit an imputer into the current frozen
+   state.
+5. Report every auxiliary head by side and representation-available versus
+   representation-missing rows. No production promotion is allowed if the
+   missing-state slice collapses materially.
+
 Five required heads:
 
 1. `peak_mfe_12h_atr`
@@ -503,7 +566,7 @@ Head-specific intent and downstream use:
 | Head | Primary question | Target treatment | Intended execution-EV contribution |
 |---|---|---|---|
 | `peak_mfe_12h_atr` | How much favorable excursion remains over the causal 12h path? | ATR-normalized peak MFE; log/robust treatment and capped tail diagnostics | Opportunity magnitude, reachable profit geometry, ranking |
-| `time_to_first_meaningful_mfe` | How long until the path first reaches meaningful MFE? | Unreached rows capped at 12h; meaningful MFE is the current 1.5-ATR-based event | Realization speed, timeout risk, whether opportunity is too slow |
+| `time_to_first_meaningful_mfe` | How long until the path first reaches meaningful MFE? | Unreached rows right-censored at 12h; meaningful MFE is `max(1.5 ATR, 1.5% entry return)` | Realization speed, timeout risk, whether opportunity is too slow |
 | `mae_before_meaningful_mfe_atr` | How much adverse excursion occurs before the useful favorable move? | ATR-normalized pre-event MAE; reached-event and unreached-path supportive labels | Stop/adverse-path risk, entry quality, geometry tolerance |
 | `bars_before_price_stops_decreasing` | How long until the adverse move forms and confirms its trough? | Bars to confirmed adverse trough plus recovery/supportive events | Early adverse timing, whether immediate entry is premature |
 | `future_slope_atr_per_hour` | How efficiently does favorable excursion accumulate? | Signed ATR/hour slope through the defined favorable-path fraction, with 2/4/8/12h support | Path efficiency, continuation strength, timing complement to peak MFE |

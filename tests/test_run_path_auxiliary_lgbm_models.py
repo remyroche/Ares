@@ -32,6 +32,9 @@ def _labels() -> pd.DataFrame:
     )
     for column in runner.ALL_SUPPORTIVE_LABEL_COLUMNS:
         frame[column] = np.float32(0.0)
+    frame["gmm_representation_available"] = (
+        np.arange(len(frame), dtype=np.int8) % 2
+    ).astype(np.float32)
     frame["candidate_id"] = runner.candidate_id_series(
         frame["__ts__"], frame["__symbol__"], "1h", frame["side"]
     ).to_numpy()
@@ -43,6 +46,9 @@ def _add_candidate_model_context(frame: pd.DataFrame) -> pd.DataFrame:
     values = np.linspace(0.1, 0.9, len(out), dtype=np.float32)
     for offset, column in enumerate(runner.MANDATORY_HANDOFF_MODEL_FEATURES):
         out[column] = values + np.float32(offset)
+    out["gmm_representation_available"] = (
+        np.arange(len(out), dtype=np.int8) % 2
+    ).astype(np.float32)
     out["selected_top40"] = True
     out["candidate_id"] = runner.candidate_id_series(
         out["__ts__"],
@@ -74,7 +80,8 @@ def test_runner_persists_side_bundles_oof_and_availability(monkeypatch, tmp_path
         selected = [
             column
             for column in columns
-            if column in ("f_a", "f_b") or column.startswith("base_archetype_label__")
+            if column in ("f_a", "f_b", "gmm_representation_available")
+            or column.startswith("base_archetype_label__")
         ]
         return selected, {"available_selected_features": selected, "contract": "test"}
 
@@ -257,6 +264,14 @@ def test_runner_persists_side_bundles_oof_and_availability(monkeypatch, tmp_path
         metrics = json.loads((output / target / "metrics.json").read_text())
         assert set(metrics["by_side"]) == {"long", "short"}
         assert set(metrics["by_archetype"]) == {"trend", "mean_revert"}
+        assert set(metrics["by_representation_availability"]) == {
+            "available",
+            "missing",
+        }
+        assert set(metrics["by_side_representation_availability"]) == {
+            "long",
+            "short",
+        }
     timing = pd.read_parquet(
         output / "time_to_first_meaningful_mfe" / "oof_predictions.parquet"
     )

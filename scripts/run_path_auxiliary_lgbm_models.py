@@ -103,6 +103,7 @@ PREDICTION_ROLES = {
     "bars_before_price_stops_decreasing": "adverse_turn_oof",
     "future_slope_atr_per_hour": "path_slope_oof",
 }
+REPRESENTATION_AVAILABLE_FEATURE = "gmm_representation_available"
 RESOURCE_TELEMETRY_FILENAME = "training_resource_telemetry.jsonl"
 
 
@@ -2016,7 +2017,13 @@ def _metric_slices(
         _, values = auxiliary_hpo_objective(target_name, target[mask], oof[mask])
         return values
 
-    out: dict[str, Any] = {"overall": metrics(valid), "by_side": {}, "by_archetype": {}}
+    out: dict[str, Any] = {
+        "overall": metrics(valid),
+        "by_side": {},
+        "by_archetype": {},
+        "by_representation_availability": {},
+        "by_side_representation_availability": {},
+    }
     for side in ("long", "short"):
         out["by_side"][side] = metrics(valid & frame["side"].eq(side).to_numpy())
     archetypes = _archetype_context(frame)
@@ -2024,6 +2031,28 @@ def _metric_slices(
         out["by_archetype"][str(archetype)] = metrics(
             valid & archetypes.eq(archetype).to_numpy()
         )
+    if REPRESENTATION_AVAILABLE_FEATURE not in frame:
+        out["representation_availability_status"] = "not_supplied"
+        return out
+    availability = pd.to_numeric(
+        frame[REPRESENTATION_AVAILABLE_FEATURE], errors="coerce"
+    ).to_numpy(dtype=np.float64)
+    if not np.isfinite(availability).all() or not set(np.unique(availability)).issubset(
+        {0.0, 1.0}
+    ):
+        raise ValueError(
+            f"{REPRESENTATION_AVAILABLE_FEATURE} must be finite and binary"
+        )
+    available = availability == 1.0
+    for label, mask in (("available", available), ("missing", ~available)):
+        out["by_representation_availability"][label] = metrics(valid & mask)
+    for side in ("long", "short"):
+        side_mask = frame["side"].eq(side).to_numpy()
+        out["by_side_representation_availability"][side] = {
+            label: metrics(valid & side_mask & mask)
+            for label, mask in (("available", available), ("missing", ~available))
+        }
+    out["representation_availability_status"] = "reported_for_every_head_and_side"
     return out
 
 

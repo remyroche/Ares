@@ -1,0 +1,77 @@
+{
+  "schema": "packb_pre_march_population_materialization_evidence_v1",
+  "status": "MATERIALIZED_IMMUTABLE",
+  "created_at_utc": "2026-07-24T10:33:42.805247+00:00",
+  "artifact_root": "data_perp/artifacts/packb_pre_march_population_20260724_v1",
+  "artifact_manifest": {
+    "path": "data_perp/artifacts/packb_pre_march_population_20260724_v1/manifest.json",
+    "sha256": "742bd1b93406772a30fad02353d85fdcc3f0c9edf0fa30a3b7134c84da30b3a2"
+  },
+  "source": {
+    "canonical_shards": 38,
+    "current_inventory_rows": 4552934,
+    "current_inventory_audit_sha256": "39807bceb65e938615eaf3a2fae7ec141fbff0efd1fe0e4c8f394905bed9733d",
+    "explicitly_excluded_shards": [
+      "train_global_short_7.parquet"
+    ],
+    "dec09_decisions_sha256": "6b30db94caddcbf1f6644cb7660b461f265908d398478d364b25ccdc3a30a7c5"
+  },
+  "authorized_population": {
+    "rows": 3429788,
+    "long_rows": 1711400,
+    "short_rows": 1718388,
+    "parquet_sha256": "53d2b2590744d8282a43886a407ee67851ba20ee409ebb24c755511c4975fc77",
+    "identity_stream_sha256": "259f2cef2d1640e7497be339e1e0a6132bab79209d55df7b4e0eb2a72710d5a6",
+    "label_resolution_max_utc": "2026-02-28T23:00:00+00:00"
+  },
+  "cohort_rows": {
+    "long": {
+      "ae_reference": 1197582,
+      "feature_selection_train": 1197582,
+      "feature_selection_valid": 128153,
+      "hpo_train": [
+        1325760,
+        1457889,
+        1590669
+      ],
+      "hpo_valid": [
+        132204,
+        132761,
+        116250
+      ]
+    },
+    "short": {
+      "ae_reference": 1199653,
+      "feature_selection_train": 1199653,
+      "feature_selection_valid": 128742,
+      "hpo_train": [
+        1328370,
+        1462092,
+        1596756
+      ],
+      "hpo_valid": [
+        133772,
+        134664,
+        117107
+      ]
+    }
+  },
+  "independent_validation": {
+    "side_cohort_ledgers_checked": 18,
+    "duplicate_candidate_id_failures": 0,
+    "wrong_side_failures": 0,
+    "decision_lag_failures": 0,
+    "label_resolution_failures": 0
+  },
+  "resource_envelope": {
+    "artifact_size_mib": 43,
+    "process_rss_preflight_bytes": 102367232,
+    "process_rss_complete_bytes": 463814656,
+    "available_ram_preflight_bytes": 11000643584,
+    "available_ram_complete_bytes": 10913120256,
+    "free_disk_preflight_bytes": 84113305600,
+    "free_disk_complete_bytes": 84062130176,
+    "oom_or_resource_guard_failure": false
+  },
+  "next_gate": "Fit and validate distinct long and short outcome-free AE/GMM states, then run side-local feature selection and three-fold fixed-calendar HPO without fallback."
+}

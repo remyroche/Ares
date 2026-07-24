@@ -164,8 +164,14 @@ streaming audit of the current 38 monthly shards:
   short rows, both ending at label resolution `2026-02-28 23:00 UTC`.
 
 Evidence is under `docs/pipeline_roadmap/20260724/r3/`. This authorizes the
-candidate populations only; AE/GMM, feature selection, HPO, and OOF fitting
-remain unstarted.
+candidate populations. The immutable production population is now materialized
+under `data_perp/artifacts/packb_pre_march_population_20260724_v1` with
+3,429,788 authorized rows and 18 fixed-calendar side ledgers. The compact
+evidence record is
+`docs/pipeline_roadmap/20260724/r3/pre_march_population_materialization_v1.json`.
+Its guarded run peaked at 463,814,656 bytes RSS, retained more than 10 GiB
+available RAM, and produced a 43 MiB artifact. AE/GMM, feature selection, HPO,
+and OOF fitting remain unstarted.
 
 The downstream path, auxiliary, execution-EV, and timing targets remain
 12-hour contracts. Every manifest must bind the horizon of its own target

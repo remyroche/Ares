@@ -635,6 +635,13 @@ Tasks:
   by side on the authorized pre-March reference interval, then run feature
   selection and HPO independently for long and short using only labels whose
   actual 24-hour resolution is strictly before `2026-03-01 00:00 UTC`.
+- The immutable population and 18 fixed-calendar side-cohort ledgers are now
+  materialized under
+  `data_perp/artifacts/packb_pre_march_population_20260724_v1`: 3,429,788
+  authorized rows, 1,197,582/1,199,653 long/short AE-reference rows, and
+  distinct long/short November FS plus December/January/February HPO cohorts.
+  Independent checks found no duplicate IDs, wrong-side rows, or timing
+  violations. This completes population materialization, not learned fitting.
 - Use the immutable DEC-09 inner calendar: fit each side's AE/GMM on
   beginning/middle/end samples from authorized rows before November 1, use
   November as the feature-selection validation interval, and use December,
@@ -1187,7 +1194,7 @@ Track this table in the repository and update it only with linked evidence.
 | R0 Migration | IN PROGRESS | Data/provenance | No comparison baseline; six active Pack-B lineage paths missing | `docs/pipeline_roadmap/20260724/r0/`; `r0_missing_path_triage.md` |  |
 | R1 Source durability | IN PROGRESS | Roadmap + Data/provenance | Remote recovery requires explicit publication authorization | `config/pipeline_stage_manifest_repository_20260724.json`; schema v1 |  |
 | R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and stage-specific horizon reconciliation pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass; DEC-01…10 locked |  |
-| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Fresh pre-March side-local AE/FS/HPO fitting and four-fold OOF still required | Current 38-shard audit PASS on 4,552,934 rows; pre-March contract authorized 1,711,400 long and 1,718,388 short rows; historical `short_7` explicitly excluded; `docs/pipeline_roadmap/20260724/r3/` |  |
+| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Side-local AE/FS/HPO fitting and four-fold OOF still required; population materialization is complete | Current 38-shard audit PASS on 4,552,934 rows; immutable 3,429,788-row population + 18 side-cohort ledgers; historical `short_7` explicitly excluded; `docs/pipeline_roadmap/20260724/r3/pre_march_population_materialization_v1.json` |  |
 | C1 CatBoost long | BLOCKED BY R3 |  |  |  |  |
 | C2 CatBoost short | BLOCKED BY R3 |  |  |  |  |
 | A1 Auxiliary long | BLOCKED BY R3 |  |  |  |  |
@@ -1209,9 +1216,11 @@ Execute in this order:
 2. Complete R0 checksums, read-only loads, disk/environment, and process audit.
 3. Make the dirty/untracked source recoverable under R1.
 4. Run R2 deterministic and broader contract suites.
-5. Implement side-local AE/GMM fitting, feature selection, and HPO on the
-   now-authorized pre-March populations. The inventory, duplicate-key,
-   timing, fixed-calendar, and post-fit evidence gates are complete.
+5. Fit the distinct long and short outcome-free AE/GMM states from the now
+   materialized pre-November cohorts, then run side-local feature selection
+   and fixed three-fold HPO. The inventory, duplicate-key, timing,
+   fixed-calendar, population-ledger, and post-fit evidence validators pass;
+   no learned artifact has yet been fitted.
 6. Run the four canonical Pack-B OOF folds sequentially only after the
    pre-March artifact ledger and measured memory/disk envelope pass, then
    derive top-40 per timestamp × side.

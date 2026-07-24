@@ -61,6 +61,8 @@ from extreme_price_movements.packb_side_local_fs_hpo_stage import (
 )
 from extreme_price_movements.packb_static_point_feature_loader import (
     LoaderEvidenceBundle,
+    _feature_contract_digest,
+    load_point_in_time_features,
     make_packb_static_feature_loader,
 )
 from extreme_price_movements.training_resource_guard import (
@@ -85,6 +87,9 @@ DEFAULT_LABELS = (
 )
 DEFAULT_OUTPUT = ROOT / "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1"
 DEFAULT_TRIALS = 150
+POINT_LOADER_MAX_ROWS_PER_BATCH = 2_048
+POINT_LOADER_MAX_COLUMNS_PER_READ = 64
+POINT_LOADER_MAX_OUTPUT_BYTES = 512 * 1024**2
 TARGET_COLUMN = "__first_touch_target_soft__"
 WEIGHT_COLUMN = "__w__"
 ECONOMIC_COLUMN = "__first_touch_capture_net__"
@@ -495,6 +500,127 @@ class SideRepresentationFeatureLoader:
             )
         joined = pd.concat([raw, generated], axis=1, copy=False)
         return joined.loc[:, list(requested)].reset_index(drop=True)
+
+
+def _derived_raw_subset_contract(
+    parent_contract: Mapping[str, Any],
+    requested_features: Sequence[str],
+) -> dict[str, Any]:
+    """Derive a content-validated raw subset without changing feature semantics."""
+
+    parent_features = tuple(map(str, parent_contract["feature_columns"]))
+    parent_set = frozenset(parent_features)
+    requested = tuple(map(str, requested_features))
+    if (
+        not requested
+        or len(set(requested)) != len(requested)
+        or any(feature not in parent_set for feature in requested)
+    ):
+        raise PackBSideFSHPORunnerError(
+            "raw subset loader received an invalid feature subset"
+        )
+    subset = sorted(requested)
+    result = dict(parent_contract)
+    result["feature_columns"] = subset
+    result["feature_contract_sha256"] = _feature_contract_digest(
+        feature_columns=subset,
+        candidate_universe_sha256=str(result["candidate_universe_sha256"]),
+        source_schema_sha256=str(result["source_schema_sha256"]),
+        raw_allowlist_sha256=str(result["raw_allowlist_sha256"]),
+        generator_registry_sha256=str(result["generator_registry_sha256"]),
+        store_scan_manifest_sha256=str(result["store_scan_manifest_sha256"]),
+        coverage_profile_sha256=(
+            str(result["coverage_profile_sha256"])
+            if result.get("coverage_profile_sha256") is not None
+            else None
+        ),
+        min_exact_key_coverage=float(result["min_exact_key_coverage"]),
+        min_non_null_feature_coverage=float(result["min_non_null_feature_coverage"]),
+        max_feature_columns=(
+            int(result["max_feature_columns"])
+            if result.get("max_feature_columns") is not None
+            else None
+        ),
+        coverage_admission_rejections=[
+            (str(item[0]), str(item[1]))
+            for item in result.get("coverage_admission_rejections", [])
+        ],
+    )
+    return result
+
+
+def make_fs_hpo_raw_feature_loader(
+    *,
+    feature_store_dir: Path,
+    feature_contract: Mapping[str, Any],
+    evidence_bundle: LoaderEvidenceBundle,
+    resource_guard: TrainingResourceGuard,
+):
+    """Load raw-only HPO subsets narrowly while preserving the frozen parent.
+
+    The canonical full-contract loader remains the sole path whenever the
+    requested columns equal the AE input surface.  This is required for every
+    generated AE/GMM feature.  Once feature selection freezes a raw-only
+    subset, a derived contract reads only those columns and then restores the
+    caller's order.  Exact keys, causal registry hashes, coverage policy, dtype,
+    missingness policy, and the final dataset hash are unchanged.
+    """
+
+    parent = dict(feature_contract)
+    parent_features = tuple(map(str, parent["feature_columns"]))
+    parent_set = frozenset(parent_features)
+    canonical_loader = make_packb_static_feature_loader(
+        feature_store_dir=feature_store_dir,
+        feature_contract=parent,
+        max_rows_per_batch=POINT_LOADER_MAX_ROWS_PER_BATCH,
+        max_columns_per_read=POINT_LOADER_MAX_COLUMNS_PER_READ,
+        max_output_bytes=POINT_LOADER_MAX_OUTPUT_BYTES,
+        evidence_bundle=evidence_bundle,
+        resource_guard=resource_guard,
+    )
+    subset_contracts: dict[tuple[str, ...], dict[str, Any]] = {}
+
+    def _loader(ledger: pd.DataFrame, input_features: Sequence[str]) -> pd.DataFrame:
+        requested = tuple(map(str, input_features))
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(feature not in parent_set for feature in requested)
+        ):
+            raise PackBSideFSHPORunnerError(
+                "raw subset loader received an invalid feature subset"
+            )
+        if requested == parent_features:
+            return canonical_loader(ledger, requested)
+        contract_key = tuple(sorted(requested))
+        subset_contract = subset_contracts.get(contract_key)
+        if subset_contract is None:
+            subset_contract = _derived_raw_subset_contract(parent, contract_key)
+            subset_contracts[contract_key] = subset_contract
+        matrix = load_point_in_time_features(
+            ledger,
+            feature_store_dir=feature_store_dir,
+            feature_contract=subset_contract,
+            max_rows_per_batch=POINT_LOADER_MAX_ROWS_PER_BATCH,
+            max_columns_per_read=POINT_LOADER_MAX_COLUMNS_PER_READ,
+            max_output_bytes=POINT_LOADER_MAX_OUTPUT_BYTES,
+            resource_guard=resource_guard,
+        )
+        return matrix.loc[:, list(requested)]
+
+    _loader.fs_hpo_subset_loading_contract_sha256 = _canonical_sha256(
+        {
+            "schema": "packb_fs_hpo_raw_subset_loading_v1",
+            "parent_feature_contract_sha256": parent["feature_contract_sha256"],
+            "policy": ("full_parent_for_ae_gmm_inputs_else_sorted_derived_raw_subset"),
+            "exact_join": "__symbol__+__ts__",
+            "max_rows_per_batch": POINT_LOADER_MAX_ROWS_PER_BATCH,
+            "max_columns_per_read": POINT_LOADER_MAX_COLUMNS_PER_READ,
+            "max_output_bytes": POINT_LOADER_MAX_OUTPUT_BYTES,
+            "imputation": "forbidden_joint_complete_rows_only",
+        }
+    )
+    return _loader
 
 
 def _weighted_mean(values: np.ndarray, weights: np.ndarray) -> float:
@@ -1373,12 +1499,9 @@ def run(
             contract, bundle, extra_hashes = _load_loader_contract(
                 loader_root, source_revision=ae_revision
             )
-            raw_feature_loader = make_packb_static_feature_loader(
+            raw_feature_loader = make_fs_hpo_raw_feature_loader(
                 feature_store_dir=feature_store,
                 feature_contract=contract,
-                max_rows_per_batch=2_048,
-                max_columns_per_read=64,
-                max_output_bytes=512 * 1024**2,
                 evidence_bundle=bundle,
                 resource_guard=guard,
             )
@@ -1477,6 +1600,9 @@ def run(
                             ),
                         }
                     ),
+                    "fs_hpo_raw_subset_loading_contract_sha256": str(
+                        raw_feature_loader.fs_hpo_subset_loading_contract_sha256
+                    ),
                 },
                 fs_train_max_rows=60_000,
                 fs_valid_max_rows=20_000,
@@ -1518,6 +1644,10 @@ def run(
                     "side-local outcome-free AE/GMM outputs"
                 ),
                 "ae_gmm_temporal_contract": "row_independent_v1",
+                "raw_subset_load_optimization": (
+                    "full frozen parent for AE/GMM outputs; content-validated "
+                    "derived subset for raw-only selected features"
+                ),
                 "feature_selection_validation": "2025-11",
                 "hpo_validation_months": ["2025-12", "2026-01", "2026-02"],
                 "explicit_trials_per_side": int(hpo_trials),

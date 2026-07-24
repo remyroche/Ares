@@ -1,0 +1,28 @@
+{
+  "benchmark": {
+    "full_columns": 256,
+    "full_seconds": 46.121008417001576,
+    "rows": 500,
+    "speedup": 4.036475192929795,
+    "subset_columns": 8,
+    "subset_seconds": 11.42606016699574,
+    "values_exact_equal_including_nan": true
+  },
+  "contract": {
+    "derived_subset_columns_are_sorted_for_hashing": true,
+    "exact_join": "__symbol__+__ts__",
+    "generated_ae_gmm_requests_use_full_parent_contract": true,
+    "imputation": "forbidden_joint_complete_rows_only",
+    "output_order_restored_to_request_order": true,
+    "parent_feature_contract_is_unchanged": true,
+    "subset_contract_binds_parent_registry_and_coverage_hashes": true,
+    "subset_loading_runtime_contract_sha256": "a8a7e0e6f983c998d9f2b688f7e98f405a20ba39148a9c83f6603f906b863f3c"
+  },
+  "sample": {
+    "cohort": "short/hpo_3_valid",
+    "policy": "500 deterministic equal-position rows",
+    "selected_features_source": "packb_side_local_fs_hpo_20260724_v1/short/feature_contract.json"
+  },
+  "schema": "packb_fs_hpo_raw_subset_benchmark_v1",
+  "status": "EXACT_EQUIVALENCE_AND_RUNTIME_IMPROVEMENT_VERIFIED"
+}

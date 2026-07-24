@@ -288,6 +288,85 @@ def test_representation_loader_leaves_incomplete_rows_for_joint_coverage_filter(
     assert np.isnan(represented.loc[1, "dae_b16_00"])
 
 
+def test_fs_hpo_raw_loader_reads_only_requested_raw_subset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = {
+        "schema": "packb_static_point_feature_loader_v1",
+        "feature_columns": ["raw_a", "raw_b", "raw_c"],
+        "candidate_universe_sha256": "a" * 64,
+        "source_schema_sha256": "b" * 64,
+        "raw_allowlist_sha256": "c" * 64,
+        "generator_registry_sha256": "d" * 64,
+        "store_scan_manifest_sha256": "e" * 64,
+        "coverage_profile_sha256": "f" * 64,
+        "min_exact_key_coverage": 1.0,
+        "min_non_null_feature_coverage": 0.99,
+        "max_feature_columns": 256,
+        "coverage_admission_rejections": [],
+        "feature_contract_sha256": "0" * 64,
+    }
+    canonical_calls: list[tuple[str, ...]] = []
+    subset_calls: list[tuple[str, ...]] = []
+
+    def canonical_factory(**_kwargs: object):
+        def canonical(
+            _ledger: pd.DataFrame, columns: list[str] | tuple[str, ...]
+        ) -> pd.DataFrame:
+            canonical_calls.append(tuple(columns))
+            return pd.DataFrame(
+                {
+                    "raw_a": [1.0],
+                    "raw_b": [2.0],
+                    "raw_c": [3.0],
+                }
+            ).loc[:, list(columns)]
+
+        return canonical
+
+    def subset_load(
+        _ledger: pd.DataFrame,
+        *,
+        feature_contract: dict[str, object],
+        **_kwargs: object,
+    ) -> pd.DataFrame:
+        columns = tuple(feature_contract["feature_columns"])
+        subset_calls.append(columns)
+        values = {"raw_a": [1.0], "raw_b": [2.0], "raw_c": [3.0]}
+        return pd.DataFrame({column: values[column] for column in columns})
+
+    monkeypatch.setattr(runner, "make_packb_static_feature_loader", canonical_factory)
+    monkeypatch.setattr(runner, "load_point_in_time_features", subset_load)
+    loader = runner.make_fs_hpo_raw_feature_loader(
+        feature_store_dir=Path("/feature-store"),
+        feature_contract=parent,
+        evidence_bundle=LoaderEvidenceBundle(
+            raw_universe_sha256="1" * 64,
+            coverage_profile_sha256="2" * 64,
+            feature_contract_sha256="0" * 64,
+            loader_contract_sha256="3" * 64,
+            loader_module_sha256="4" * 64,
+            source_schema_sha256="b" * 64,
+            source_revision="5" * 40,
+        ),
+        resource_guard=object(),
+    )
+    ledger = pd.DataFrame({"candidate_id": ["a"]})
+
+    subset = loader(ledger, ["raw_c", "raw_a"])
+    full = loader(ledger, ["raw_a", "raw_b", "raw_c"])
+
+    assert subset.to_dict("list") == {"raw_c": [3.0], "raw_a": [1.0]}
+    assert full.to_dict("list") == {
+        "raw_a": [1.0],
+        "raw_b": [2.0],
+        "raw_c": [3.0],
+    }
+    assert subset_calls == [("raw_a", "raw_c")]
+    assert canonical_calls == [("raw_a", "raw_b", "raw_c")]
+    assert len(loader.fs_hpo_subset_loading_contract_sha256) == 64
+
+
 def test_active_ae_contract_excludes_row_order_temporal_outputs() -> None:
     columns = runner._active_ae_gmm_columns({"gmm_n_components": 3})
 

@@ -87,7 +87,7 @@ def materialize(
                 SELECT
                     p.__ts__, p.__symbol__, l.side, lower(p.side_name) AS side_name,
                     l.__barrier_pct__, l.__path_auxiliary_atr_fraction__,
-                    l.candidate_id, CAST(? AS FLOAT) AS path_cost_return,
+                    l.candidate_id, CAST(? AS DOUBLE) AS path_cost_return,
                     p.score AS base_oof_score,
                     p.base_candidate_rank_timestamp_side,
                     p.base_candidate_rank_pct_timestamp_side,

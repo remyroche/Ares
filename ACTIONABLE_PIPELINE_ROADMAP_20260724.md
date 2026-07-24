@@ -24,14 +24,24 @@ replay, and inference parity.
 The following architecture is locked:
 
 ```text
-LONG:  base -> residual alpha -> CatBoost + 5 auxiliary heads
-       -> execution EV -> optional entry timing -> long policy stream
-                                                           \
-                                                            -> global auction
-                                                           /
-SHORT: base -> residual alpha -> CatBoost + 5 auxiliary heads
-       -> execution EV -> optional entry timing -> short policy stream
+LONG:  long base ─┬─> long residual alpha ──────────┐
+                  ├─> long CatBoost ────────────────┤
+                  └─> 5 long auxiliary heads ──────┤
+                                                   └─> long execution EV
+                                                       -> optional entry timing
+                                                       -> long policy stream ─┐
+                                                                             ├─> global auction
+SHORT: short base ─┬─> short residual alpha ────────┐                        │
+                   ├─> short CatBoost ──────────────┤                        │
+                   └─> 5 short auxiliary heads ─────┤                        │
+                                                    └─> short execution EV   │
+                                                        -> optional entry timing
+                                                        -> short policy stream ─┘
 ```
+
+Residual alpha, CatBoost, and the five auxiliary heads are parallel,
+side-local inputs to execution EV. CatBoost and the auxiliary heads are not
+downstream of residual alpha.
 
 Until the global portfolio auction, long and short must have independent:
 
@@ -104,6 +114,7 @@ side-local production contract.
 | Timing OOF/OOS assessment | T1 requires side-local OOF | Strong row-level upstream OOF fold/cutoff validation, expanding purged outer folds, train-only inner isotonic maps, and separate final refit | PASS for assessment provenance |
 | Timing strictly side-local fitted state | T1 requires it | Fold models/calibration split by side, but model HPO and action-policy HPO are run once before the side loop | FAIL — move both searches inside each side |
 | Timing feature selection and feature contract | T1 requires side-local FS | Feature family/provenance checks are strong; no feature-selection stage exists | PARTIAL — add side-local task-aware FS |
+| Timing risk/benefit/cost semantics | T1 must compare waiting with entering now | Filled price improvement enters through conditional delta EV; no-fill opportunity loss and adverse-first risk are explicit; entry/exit costs are reconciled and double-accounting is rejected | PASS for research labels/objective; PARTIAL for live execution because the model emits an action template/ATR offset, not a validated order price |
 | Timing seven-class CatBoost contract | T1 assumes final taxonomy | Timing imports legacy eight-class `PATH_SHAPE_TYPES` and requires that probability count | FAIL — replace with explicit seven-class schema/hash from the CatBoost bundle |
 | Five auxiliary heads exist and are per-side | A1/A2 require ten streams/models | Five exact targets exist; models, HPO, OOF, and bundles split by side | PASS after selection-stage correction |
 | Auxiliary feature selection is per-side | A1/A2 requires all selector stages per-side | MDA is side-local, but the current contract explicitly performs global univariate/Relief pre-screening first | FAIL — move the entire pre-screen into each side |
@@ -201,6 +212,64 @@ feature sets. HPO must be side-local and scored on the combined action utility,
 fill Brier/log loss, adverse-first calibration, filled-delta error, missed-trade
 cost, and worst-period stability. Eight model trials and eight decision trials
 are smoke defaults, not adequate final search evidence.
+
+### Entry-timing objective and price-action boundary
+
+The current timing formulation is directionally correct and must be preserved
+as a side-local action-value problem. For each approved action template it
+estimates:
+
+- fill probability;
+- adverse-first probability;
+- conditional net execution-EV change versus entering now when filled;
+- missed-opportunity loss when the action is not filled.
+
+Its decision objective must retain the explicit decomposition:
+
+```text
+risk-adjusted action utility
+  = P(fill) × (net EV now + conditional filled delta EV)
+  - P(no fill) × missed-opportunity penalty × max(net EV now, 0)
+  - P(fill) × P(adverse first) × adverse-risk penalty
+```
+
+The filled delta captures the benefit or harm of the later entry price and
+subsequent re-anchored execution path. Fees, spread, slippage, and any
+maker/taker assumptions must be included exactly once in both labels and
+replay. The adverse-risk penalty is a tunable risk preference, not a trading
+cost; report the resulting quantity as `risk_adjusted_expected_utility`, not
+pure net EV.
+
+The ML layer may rank only a frozen, side-specific grid of `enter_now`,
+`wait_market`, and `adverse_limit` templates. It must not directly emit an
+executable order price. Add a separate deterministic timing-execution policy
+above the model. Using only current pre-entry state, it converts a selected
+adverse-limit template into a price:
+
+```text
+raw_limit = reference_price - side_sign × offset_atr × ATR
+```
+
+where `side_sign = +1` for long and `-1` for short. The policy must then apply
+the declared bid/ask/reference-price convention, side-correct tick rounding,
+price-band and non-crossing checks, time-in-force/cancel deadline, stale-quote
+checks, and exchange/order constraints. It must also reconcile action-specific
+maker/taker fees, spread/slippage, latency, queue priority, partial-fill, and
+cancel/replace assumptions.
+
+Initially keep the action and offset grid discrete to control overfitting. A
+continuous or interpolated price optimizer is a separate challenger and may
+advance only on nested OOF evidence. Select a wait or adverse-limit action only
+when its calibrated risk-adjusted utility clears `enter_now` by a predeclared
+margin and confidence, support, liquidity, fill-feasibility, staleness, and
+cost-reconciliation gates pass. Otherwise use `enter_now` or reject/abstain
+under the existing admission policy.
+
+Persist for every recommendation the complete scored action table, selected
+template, wait/expiry time, ATR offset, computed executable price, reference
+price and ATR timestamps, tick rule, cost components, confidence/support
+diagnostics, and model/policy versions. This makes the specific price
+suggestion reproducible without moving order mechanics into the ML model.
 
 ### Head-specific auxiliary target review and improvements
 
@@ -828,6 +897,9 @@ Before `VALIDATE`:
 - move model HPO and decision/action-policy HPO inside the long and short loops;
 - persist separate allowed-action grids, penalties, parameters, selected
   features, and isotonic maps by side;
+- preserve separate outputs for fill probability, adverse-first probability,
+  and conditional filled delta EV; do not collapse the adverse-risk preference
+  into a value presented as pure net EV;
 - require the selected execution-EV OOF score and its row-level source
   fold/cutoff as the protected timing input;
 - implement and sign the missing mapped execution-EV OOF producer required by
@@ -835,7 +907,10 @@ Before `VALIDATE`:
 - reconcile the 1-minute path interval so materialization and label building
   agree exactly on the first executable minute and the inclusive/exclusive 12h
   endpoint;
-- increase final HPO breadth beyond smoke defaults and record the full search.
+- increase final HPO breadth beyond smoke defaults and record the full search;
+- implement the deterministic timing-execution policy described above, including
+  side-correct conversion of an approved ATR offset into a tick-valid limit
+  price, expiry/cancel rules, action-specific costs, and fail-closed checks.
 
 Gate T1 when validating:
 
@@ -856,7 +931,19 @@ Gate T1 when validating:
 - the LGBM timing arm beats ridge/logistic, fixed-grid, and enter-now baselines
   on identical rows after spread, fees, missed opportunity, and adverse-first
   costs;
-- uplift is stable by side, week/month, archetype, spread, and action type.
+- uplift is stable by side, week/month, archetype, spread, liquidity, volatility,
+  and action type;
+- fill and adverse-first probabilities are calibrated side-locally, and
+  conditional filled-delta error is stable on supported rows;
+- report realized risk-adjusted utility and pure net EV separately, plus regret
+  versus enter-now and an OOF oracle, fill/no-fill rate, missed positive-EV
+  opportunity, adverse-first rate, and entry-price improvement in bps and ATR;
+- every price recommendation is reproducible from logged pre-entry inputs,
+  respects tick/market/order constraints, and has replay/live parity for
+  fill, partial-fill, expiry, cancel/replace, fee, spread, and slippage rules;
+- a wait/limit recommendation cannot pass unless its conservative calibrated
+  utility clears enter-now by the declared margin and all confidence, support,
+  liquidity, staleness, fill-feasibility, and cost gates pass.
 
 Do not let entry-timing experimentation silently block a valid execution-EV
 decision. Do not promote a replacement policy without an explicit T1 outcome.
@@ -911,8 +998,10 @@ Evaluate three increasingly invasive modes:
    policy folds.
 
 If timing is validated, add a fourth mode in which timing chooses
-enter-now/wait/adverse-limit before exit replay. The comparison without timing
-must remain present.
+an approved enter-now/wait/adverse-limit template before exit replay, and the
+separate deterministic timing-execution policy converts any adverse-limit
+template into a logged, tick-valid price. The comparison without timing must
+remain present.
 
 #### P1.3 OOF-only policy waterfall
 

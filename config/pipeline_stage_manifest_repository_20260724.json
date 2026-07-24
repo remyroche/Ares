@@ -1,0 +1,110 @@
+{
+  "schema_version": "pipeline_stage_manifest_v1",
+  "manifest_id": "repository_source_20260724_730c20d",
+  "stage_name": "repository_source_durability",
+  "status": "DRAFT",
+  "created_at_utc": "2026-07-24T08:30:00Z",
+  "source": {
+    "revision": "730c20dfef4b50b60168d10af16ec719a031a73e",
+    "branch": "codex/cleanup-generated-artifacts",
+    "tree_sha256": "32f54d5243de20b0d7641302e0e4784f1656059726d93b60dd722a95f5332c66",
+    "archive_sha256": "dd6caf2f20f4fd0bfc16de6c4d810d35f1278e58feb9cbcd5b63b41520371e26",
+    "dirty": true,
+    "dirty_paths": [
+      "ACTIONABLE_PIPELINE_ROADMAP_20260724.md"
+    ],
+    "dirty_diff_sha256": "7b93d8ba3a96bd2871f893e610271e45e0a8553361c4a30e282f2e006a68e473",
+    "remote_recovery": {
+      "state": "BLOCKED_AUTHORIZATION",
+      "reference": null
+    }
+  },
+  "command": {
+    "argv": [
+      "git",
+      "archive",
+      "--format=tar",
+      "730c20dfef4b50b60168d10af16ec719a031a73e"
+    ],
+    "working_directory": "/Users/remyroche/Documents/Ares"
+  },
+  "environment": {
+    "python": "3.12.2",
+    "packages": {
+      "catboost": "1.2.8",
+      "joblib": "1.5.2",
+      "lightgbm": "4.6.0",
+      "numba": "0.62.1",
+      "numpy": "1.26.4",
+      "optuna": "4.6.0",
+      "pandas": "2.3.3",
+      "pyarrow": "22.0.0",
+      "scikit-learn": "1.6.1"
+    }
+  },
+  "inputs": {
+    "feature_store": {
+      "name": "feature_store",
+      "path": null,
+      "sha256": null,
+      "not_applicable_reason": "Repository source durability stage does not consume model data."
+    },
+    "upstream_artifacts": []
+  },
+  "row_contract": {
+    "identity_columns": [],
+    "row_hash": null,
+    "key_hash": null,
+    "fold_hash": null
+  },
+  "scope": {
+    "side": "not_applicable"
+  },
+  "contracts": {
+    "label": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no labels."
+    },
+    "entry": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no execution entry."
+    },
+    "horizon": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no model horizon."
+    },
+    "purge": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no fitted rows."
+    },
+    "embargo": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no fitted rows."
+    },
+    "cost": {
+      "id": null,
+      "sha256": null,
+      "not_applicable_reason": "Source durability stage has no economic target."
+    }
+  },
+  "fitted_state": {
+    "selected_features_hash": null,
+    "parameters_hash": null,
+    "model_hash": null,
+    "calibrator_hash": null
+  },
+  "final_fit": {
+    "cutoff_utc": null,
+    "excluded_from_oof_claims": true
+  },
+  "notes": [
+    "Committed pipeline implementation is locally immutable at the recorded revision.",
+    "Remote publication was not performed because explicit authorization is required.",
+    "The roadmap edit is intentionally preserved as a separately hashed dirty document."
+  ]
+}

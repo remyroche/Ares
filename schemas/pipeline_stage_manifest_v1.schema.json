@@ -1,0 +1,393 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ares.local/schemas/pipeline_stage_manifest_v1.schema.json",
+  "title": "Ares pipeline stage manifest",
+  "description": "Immutable provenance contract for one side-local pipeline stage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "stage_name",
+    "status",
+    "created_at_utc",
+    "source",
+    "command",
+    "environment",
+    "inputs",
+    "row_contract",
+    "scope",
+    "contracts",
+    "fitted_state",
+    "final_fit"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "pipeline_stage_manifest_v1"
+    },
+    "manifest_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "RUNNING",
+        "FAILED_CONTRACT",
+        "OOF_COMPLETE",
+        "REJECTED",
+        "SELECTED",
+        "FINAL_REFIT",
+        "REPLAY_VALIDATED",
+        "INFERENCE_PARITY_VALIDATED",
+        "PROMOTED"
+      ]
+    },
+    "created_at_utc": {
+      "type": "string",
+      "pattern": "Z$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "branch",
+        "tree_sha256",
+        "archive_sha256",
+        "dirty",
+        "dirty_paths",
+        "dirty_diff_sha256",
+        "remote_recovery"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/gitSha"
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "archive_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "dirty_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "dirty_diff_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remote_recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "reference"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "VERIFIED",
+                "UNVERIFIED",
+                "BLOCKED_AUTHORIZATION"
+              ]
+            },
+            "reference": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "working_directory"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "working_directory": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python",
+        "packages"
+      ],
+      "properties": {
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_store",
+        "upstream_artifacts"
+      ],
+      "properties": {
+        "feature_store": {
+          "$ref": "#/$defs/identity"
+        },
+        "upstream_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        }
+      }
+    },
+    "row_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_columns",
+        "row_hash",
+        "key_hash",
+        "fold_hash"
+      ],
+      "properties": {
+        "identity_columns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "row_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "key_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "fold_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side"
+      ],
+      "properties": {
+        "side": {
+          "enum": [
+            "long",
+            "short",
+            "global",
+            "not_applicable"
+          ]
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "entry",
+        "horizon",
+        "purge",
+        "embargo",
+        "cost"
+      ],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "entry": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "horizon": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "purge": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "embargo": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "cost": {
+          "$ref": "#/$defs/contractIdentity"
+        }
+      }
+    },
+    "fitted_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_features_hash",
+        "parameters_hash",
+        "model_hash",
+        "calibrator_hash"
+      ],
+      "properties": {
+        "selected_features_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "parameters_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "model_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "calibrator_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      }
+    },
+    "final_fit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cutoff_utc",
+        "excluded_from_oof_claims"
+      ],
+      "properties": {
+        "cutoff_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excluded_from_oof_claims": {
+          "type": "boolean"
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableSha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "gitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "sha256",
+        "not_applicable_reason"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "not_applicable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "contractIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256",
+        "not_applicable_reason"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "not_applicable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

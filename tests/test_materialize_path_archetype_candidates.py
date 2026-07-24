@@ -13,7 +13,8 @@ def test_materializes_exact_top40_join(tmp_path: Path) -> None:
             "__ts__": pd.to_datetime(["2026-01-01", "2026-01-01"], utc=True),
             "__symbol__": ["A", "B"],
             "side_name": ["long", "short"],
-            "score": [0.8, 0.7],
+            "prediction": [0.8, 0.7],
+            "candidate_id": ["A-long", "B-short"],
             "base_candidate_rank_timestamp_side": [1, 1],
             "base_candidate_rank_pct_timestamp_side": [0.2, 0.2],
             "selected_top40": [True, True],
@@ -40,5 +41,7 @@ def test_materializes_exact_top40_join(tmp_path: Path) -> None:
     assert manifest["population_rows"] == 2
     assert manifest["rows"] == 1
     assert result.loc[0, "__symbol__"] == "A"
+    assert result.loc[0, "base_oof_score"] == 0.8
     assert result.loc[0, "path_cost_return"] == 0.01
     assert bool(result.loc[0, "selected_top40"])
+    assert manifest["score_column"] == "prediction"

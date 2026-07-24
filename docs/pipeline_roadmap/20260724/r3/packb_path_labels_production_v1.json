@@ -1,0 +1,45 @@
+{
+  "schema": "packb_path_labels_production_v1",
+  "status": "MATERIALIZED_FROM_CANONICAL_31_8_TOP40",
+  "canonical_top40": {
+    "path": "data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8/base_candidate_population.parquet",
+    "sha256": "54cf57e3718ba8315d7197bb83f0f26f15ad251ae0b9a529ec8796da53631630",
+    "rows": 300315
+  },
+  "geometry_candidates": {
+    "root": "data_perp/artifacts/20260724_path_archetype_candidates_v4_packb31_8_top40",
+    "manifest_sha256": "99504e33977a276d652f92a63c9f589096bea29a27c693731c05b80166db735c",
+    "parquet_sha256": "cb7db688ba1b3e3f3976b25f8404900807bbfd522dddc32bd504578740e29329",
+    "rows": 222490,
+    "rows_by_side": {
+      "long": 105949,
+      "short": 116541
+    },
+    "coverage_vs_top40": 0.7408554351264506,
+    "score_column": "prediction",
+    "candidate_id_equality_required": true
+  },
+  "path_labels": {
+    "root": "data_perp/artifacts/20260724_path_archetype_labels_v9_packb31_8_top40",
+    "manifest_sha256": "60aee8df76435f99142b0ecd9d8f3dea4e3c76ae4807ba2eb072f95e3b8ab415",
+    "parquet_sha256": "3828573c7867d535bd4285717b4c5fa5d5f919614c94e8857d8ca98a4698cd0d",
+    "rows": 222490,
+    "distinct_candidate_ids": 222490,
+    "outside_candidate_rows": 0,
+    "identity_mismatch_rows": 0,
+    "complete_24h_rows": 208133,
+    "realized_target_only": true,
+    "excluded_from_inference_features": true
+  },
+  "old_population_disposition": {
+    "path": "data_perp/artifacts/20260722_path_archetype_labels_v8_base_top40_costaware_dense12h",
+    "status": "HISTORICAL_COMPARATOR_NOT_CANONICAL",
+    "overlap_with_new_top40": {
+      "long_rows": 67289,
+      "long_fraction": 0.4780134689702205,
+      "short_rows": 63405,
+      "short_fraction": 0.3974064068895059
+    }
+  },
+  "next_gate": "Run geometry sweep, feature selection, model HPO, and bounded class-balance HPO independently per side using only complete resolved rows and the canonical top-40 candidate identities."
+}

@@ -26,24 +26,52 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _quoted(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 def materialize(
     population_path: Path,
     labels_path: Path,
     output_dir: Path,
     *,
     cost_return: float = 0.01,
+    score_col: str | None = None,
 ) -> dict[str, Any]:
     if not 0.0 <= float(cost_return) < 1.0:
         raise ValueError("cost_return must be in [0, 1)")
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "candidates.parquet"
-    label_glob = str(labels_path / "*.parquet") if labels_path.is_dir() else str(labels_path)
+    label_glob = (
+        str(labels_path / "*.parquet") if labels_path.is_dir() else str(labels_path)
+    )
     population_columns = set(pq.read_schema(population_path).names)
-    required_population = {"__ts__", "__symbol__", "side_name", "score", "selected_top40"}
+    if score_col is None:
+        score_col = (
+            "score"
+            if "score" in population_columns
+            else "prediction"
+            if "prediction" in population_columns
+            else None
+        )
+    if not score_col or score_col not in population_columns:
+        raise ValueError(
+            "candidate population needs an explicit score column; neither "
+            "'score' nor 'prediction' is present"
+        )
+    required_population = {
+        "__ts__",
+        "__symbol__",
+        "side_name",
+        "candidate_id",
+        "selected_top40",
+    }
     missing = sorted(required_population.difference(population_columns))
     if missing:
         raise ValueError(f"candidate population is missing columns: {missing}")
-    label_files = sorted(labels_path.glob("*.parquet")) if labels_path.is_dir() else [labels_path]
+    label_files = (
+        sorted(labels_path.glob("*.parquet")) if labels_path.is_dir() else [labels_path]
+    )
     if not label_files:
         raise FileNotFoundError(f"no path-label parquet files under {labels_path}")
     label_columns = set(pq.read_schema(label_files[0]).names)
@@ -70,7 +98,9 @@ def materialize(
             [str(population_path)],
         ).fetchone()[0]
         if int(duplicate_population) != 0:
-            raise ValueError("candidate population has duplicate UTC symbol-side identities")
+            raise ValueError(
+                "candidate population has duplicate UTC symbol-side identities"
+            )
         duplicate_labels = con.execute(
             """
             SELECT count(*) - count(DISTINCT (epoch_ns(__ts__), __symbol__, lower(side_name)))
@@ -79,7 +109,9 @@ def materialize(
             [label_glob],
         ).fetchone()[0]
         if int(duplicate_labels) != 0:
-            raise ValueError("path-label source has duplicate UTC symbol-side identities")
+            raise ValueError(
+                "path-label source has duplicate UTC symbol-side identities"
+            )
         quoted_output = str(output).replace("'", "''")
         con.execute(
             f"""
@@ -87,8 +119,8 @@ def materialize(
                 SELECT
                     p.__ts__, p.__symbol__, l.side, lower(p.side_name) AS side_name,
                     l.__barrier_pct__, l.__path_auxiliary_atr_fraction__,
-                    l.candidate_id, CAST(? AS DOUBLE) AS path_cost_return,
-                    p.score AS base_oof_score,
+                    p.candidate_id, CAST(? AS DOUBLE) AS path_cost_return,
+                    p.{_quoted(score_col)} AS base_oof_score,
                     p.base_candidate_rank_timestamp_side,
                     p.base_candidate_rank_pct_timestamp_side,
                     true AS selected_top40
@@ -97,6 +129,7 @@ def materialize(
                   ON epoch_ns(p.__ts__) = epoch_ns(l.__ts__)
                  AND p.__symbol__ = l.__symbol__
                  AND lower(p.side_name) = lower(l.side_name)
+                 AND p.candidate_id = l.candidate_id
                 WHERE coalesce(p.selected_top40, false)
                 ORDER BY p.__ts__, p.__symbol__, lower(p.side_name)
             ) TO '{quoted_output}' (FORMAT PARQUET, COMPRESSION ZSTD)
@@ -109,7 +142,11 @@ def materialize(
                 [str(population_path)],
             ).fetchone()[0]
         )
-        rows = int(con.execute("SELECT count(*) FROM read_parquet(?)", [str(output)]).fetchone()[0])
+        rows = int(
+            con.execute(
+                "SELECT count(*) FROM read_parquet(?)", [str(output)]
+            ).fetchone()[0]
+        )
         side_rows = {
             str(side): int(count)
             for side, count in con.execute(
@@ -128,9 +165,12 @@ def materialize(
         "output_sha256": _sha256(output),
         "population_rows": population_rows,
         "rows": rows,
-        "coverage_vs_population": float(rows / population_rows) if population_rows else 0.0,
+        "coverage_vs_population": float(rows / population_rows)
+        if population_rows
+        else 0.0,
         "side_rows": side_rows,
         "cost_return": float(cost_return),
+        "score_column": str(score_col),
         "join_key": ["UTC epoch_ns", "__symbol__", "side_name"],
         "downstream_population_contract": (
             "same exact joined rows for alpha residual, five auxiliary heads, and CatBoost"
@@ -148,6 +188,11 @@ def main() -> None:
     parser.add_argument("--labels", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--cost-return", type=float, default=0.01)
+    parser.add_argument(
+        "--score-col",
+        default=None,
+        help="Population score column; defaults to score, then prediction.",
+    )
     args = parser.parse_args()
     print(
         json.dumps(
@@ -156,6 +201,7 @@ def main() -> None:
                 args.labels,
                 args.output_dir,
                 cost_return=args.cost_return,
+                score_col=args.score_col,
             ),
             sort_keys=True,
         )

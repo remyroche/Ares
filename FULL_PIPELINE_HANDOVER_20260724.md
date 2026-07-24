@@ -1527,12 +1527,28 @@ Goal: produce leakage-safe OOF predictions and an inference-ready final model.
 
 Inputs:
 
-- Path labels v8.
+- Canonical path labels v9 at
+  `data_perp/artifacts/20260724_path_archetype_labels_v9_packb31_8_top40`,
+  regenerated from the final 31/8 top-40 handoff. The former v8 labels overlap
+  only 47.8% of the new long population and 39.7% of the new short population,
+  so they are historical comparison evidence only.
 - Base top-40 candidate population.
 - Frozen base-cycle AE/GMM outputs.
 - Existing CatBoost feature/HPO evidence as a starting benchmark, not as a
   shared production contract.
 - Geometry `geometry_e33b290e324f3182`.
+
+Current label status:
+
+- 222,490 exact candidate identities were materialized from the canonical
+  top-40 population: 105,949 long and 116,541 short.
+- All 222,490 regenerated path-label rows match their candidate ID, timestamp,
+  symbol, and side exactly; none falls outside the canonical candidate input.
+- 208,133 rows have a complete 24-hour path. Incomplete rows remain explicit
+  support evidence and must not be silently treated as complete training
+  targets.
+- The binding and hashes are frozen in
+  `docs/pipeline_roadmap/20260724/r3/packb_path_labels_production_v1.json`.
 
 The current shared CatBoost fit is not the final target. Build two independent
 pipelines:

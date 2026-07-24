@@ -1,0 +1,105 @@
+{
+  "artifact_root": "/Users/remyroche/Documents/Ares/data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1",
+  "checks": {
+    "all_manifest_contracts_valid": true,
+    "all_resource_events_ok": true,
+    "both_sides_distinct_hpo_winners": true,
+    "both_sides_distinct_selected_features": true,
+    "fallback_used": false,
+    "feature_selection_is_side_local": true,
+    "frozen_ae_gmm_features_competed_per_side": true,
+    "hpo_fold_evaluations_per_side": 450,
+    "hpo_folds_per_trial": 3,
+    "hpo_is_side_local": true,
+    "hpo_trials_per_side": 150,
+    "mda_repeats": 3,
+    "staging_reference_count": 0
+  },
+  "schema": "packb_side_local_fs_hpo_production_evidence_v1",
+  "sides": {
+    "long": {
+      "feature_contract_sha256": "bc9efdec45fe7c755d495f0f155ebcf8bc470afe753ca4e4798932f798182b7f",
+      "feature_selection_manifest_sha256": "4835c3131623b48ca8e26d679f8e6d4dcde82f4395241cf5ed1b33321d549e46",
+      "generated_mda_features": [
+        "gmm_mahal_6",
+        "dae_b16_00",
+        "dae_b16_02"
+      ],
+      "hpo_manifest_sha256": "565fda43370ee03227c3deb8c149102acd4d27bae6f925f1e31efdcc45a72ef6",
+      "hpo_parameters_sha256": "2636a49736bef52778df0759ce9e7568f0eb29fb0c246bc4c4db5299b09ac763",
+      "selected_feature_count": 16,
+      "selected_features": [
+        "mark_perp_dislocation",
+        "qv",
+        "mkt_abs_ret_per_oi_drop_1h",
+        "prog_eff_24",
+        "ker_10",
+        "trend_age_hours",
+        "gmm_mahal_6",
+        "eth_btc_ret_24h",
+        "wick_recovery_intensity",
+        "ts_12",
+        "eth_btc_ret_4h",
+        "v_power",
+        "bb_pos_12",
+        "second_leg_accel_1h",
+        "fvg",
+        "breadth_accel_1h"
+      ],
+      "selected_hpo_trial_id": "trial_049"
+    },
+    "short": {
+      "feature_contract_sha256": "8f42634c276fbcd2c1864f44e32cf0d9cd450e5b764fa4574a0b66e259c2961e",
+      "feature_selection_manifest_sha256": "c60b37b5b3c42f838b901d383d9f4c68c6d13ffe6c603f0d00dcdf0cf6bd2932",
+      "generated_mda_features": [
+        "gmm_cluster_posterior_9",
+        "dae_b16_15",
+        "gmm_dist_center_4",
+        "gmm_mahal_2",
+        "gmm_dist_center_1",
+        "gmm_cluster_id",
+        "gmm_dist_center_5",
+        "gmm_cluster_posterior_3",
+        "dae_b16_09",
+        "dae_b16_00",
+        "gmm_cluster_posterior_4",
+        "gmm_dist_center_6",
+        "gmm_dist_center_3",
+        "dae_b16_05",
+        "dae_b16_04",
+        "gmm_mahal_9"
+      ],
+      "hpo_manifest_sha256": "018676117a8a122aa53fb334f3d1a1e7e78c4ebfd3e2738009a86fe7a05169da",
+      "hpo_parameters_sha256": "e5e608cf1bb5e53c99df32711c862b4e1d0a05a7472c1ab2e8f2a4d0a6d9b250",
+      "selected_feature_count": 8,
+      "selected_features": [
+        "mark_perp_dislocation",
+        "mark_vs_perp_bps",
+        "climax_decay",
+        "impact_12",
+        "post_flush_leverage_rebuild",
+        "shock_12h",
+        "bb_pos_12",
+        "liquidation_onset_score"
+      ],
+      "selected_hpo_trial_id": "trial_084"
+    }
+  },
+  "source_revision": "77ce8b76f3a36d7f6375619db1cf0943be7845a6",
+  "status": "VALIDATED_PRODUCTION_SIDE_LOCAL_FS_HPO",
+  "summary_sha256": "2dde53f16e7d5e49e7cddf04616a4b9d0eaee5c193c8830f3ffd2f2215289fa7",
+  "telemetry": {
+    "events": 3604,
+    "limits": {
+      "max_process_rss_bytes": 12884901888,
+      "min_free_disk_bytes": 10737418240,
+      "min_free_ram_bytes": 2147483648
+    },
+    "max_process_rss_bytes": 7653834752,
+    "min_available_ram_bytes": 10118397952,
+    "min_free_disk_bytes": 84122648576,
+    "statuses": [
+      "ok"
+    ]
+  }
+}

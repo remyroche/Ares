@@ -200,6 +200,8 @@ def test_recent_winner_selector_is_side_local_and_preserves_process_contract(
     import extreme_price_movements.lgbm_pipeline as pipeline
 
     monkeypatch.setattr(pipeline, "train_lgbm_stability_candidate", fake_train)
+    original_burn_in_days = pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS
+    original_short_history_fallback = pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
     selector = runner.RecentWinnerSideFeatureSelector(
         side="short",
         labels=Labels(),  # type: ignore[arg-type]
@@ -232,6 +234,20 @@ def test_recent_winner_selector_is_side_local_and_preserves_process_contract(
     assert np.array_equal(captured["sample_weight"], np.ones(5, dtype=np.float32))
     assert captured["cfg"]["mda_config"]["correlation_pruning_floor_count"] == 300
     assert set(captured["label_context"]["side_name"]) == {"short"}
+    assert (
+        result["recent_winner_alignment"]["forward_validation"]["burn_in_days"] == 180.0
+    )
+    assert (
+        result["recent_winner_alignment"]["forward_validation"][
+            "short_history_fallback"
+        ]
+        is False
+    )
+    assert pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS == original_burn_in_days
+    assert (
+        pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
+        == original_short_history_fallback
+    )
 
 
 def test_top_fraction_is_per_timestamp_with_symbol_tie_break() -> None:

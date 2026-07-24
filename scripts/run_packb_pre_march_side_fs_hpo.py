@@ -100,6 +100,12 @@ TIMEOUT_COLUMN = "__first_touch_timeout__"
 RECENT_WINNER_SELECTOR_CONTRACT = (
     "packb_pre_march_recent_winner_archetype_prescreen_side_mda_corrfirst_v1"
 )
+# The reference selector used a one-year base burn-in because its fit history
+# exceeded one year.  This production stage is intentionally locked to the
+# legal Jan-Nov pre-March population, so six months is the longest simple
+# half-year burn-in that leaves a substantial, strictly later validation tail.
+# Short-history fallback remains disabled.
+RECENT_WINNER_SELECTOR_FORWARD_BURN_IN_DAYS = 180.0
 RECENT_WINNER_PROCESS_MANIFEST = (
     ROOT / "data_perp/reports/"
     "s59_h5_signalclose_causal_stagec_packb_sliding365_wf30_20260721_v1/"
@@ -1364,39 +1370,54 @@ class RecentWinnerSideFeatureSelector:
             ),
         }
 
-        from extreme_price_movements.lgbm_pipeline import (
-            train_lgbm_stability_candidate,
-        )
+        from extreme_price_movements import lgbm_pipeline
 
-        result = train_lgbm_stability_candidate(
-            features,
-            target,
-            # The recent winning per-side tail deliberately removed
-            # cross-archetype weighting before MDA.
-            sample_weight=np.ones(len(features), dtype=np.float32),
-            random_state=self.seed,
-            mode="classifier",
-            timestamps=pd.to_datetime(
-                ledger["__ts__"], utc=True, errors="raise"
-            ).astype("int64"),
-            assets=ledger["__symbol__"].astype(str).to_numpy(),
-            returns=returns,
-            hard_labels=hard,
-            hpo_objective_mode="train_base",
-            preset_best_params=dict(self._MODEL_PARAMS),
-            preset_source=RECENT_WINNER_SELECTOR_CONTRACT,
-            cfg={
-                "mda_config": {
-                    "archetype_conditioned_enabled": False,
-                    "side_tail_across_archetypes_unweighted": True,
-                    "correlation_pruning_before_prescreen": True,
-                    "correlation_pruning_floor_ratio": 0.50,
-                    "correlation_pruning_floor_count": 300,
-                },
-                "lgbm_joint_complete_case_filter_enabled": False,
-            },
-            label_context=label_context,
+        original_burn_in_days = lgbm_pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS
+        original_short_history_fallback = (
+            lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
         )
+        try:
+            # The selector implementation reads these process settings at
+            # runtime.  Scope the locked-calendar adaptation to this call and
+            # restore the shared module even when fitting fails.
+            lgbm_pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS = (
+                RECENT_WINNER_SELECTOR_FORWARD_BURN_IN_DAYS
+            )
+            lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK = False
+            result = lgbm_pipeline.train_lgbm_stability_candidate(
+                features,
+                target,
+                # The recent winning per-side tail deliberately removed
+                # cross-archetype weighting before MDA.
+                sample_weight=np.ones(len(features), dtype=np.float32),
+                random_state=self.seed,
+                mode="classifier",
+                timestamps=pd.to_datetime(
+                    ledger["__ts__"], utc=True, errors="raise"
+                ).astype("int64"),
+                assets=ledger["__symbol__"].astype(str).to_numpy(),
+                returns=returns,
+                hard_labels=hard,
+                hpo_objective_mode="train_base",
+                preset_best_params=dict(self._MODEL_PARAMS),
+                preset_source=RECENT_WINNER_SELECTOR_CONTRACT,
+                cfg={
+                    "mda_config": {
+                        "archetype_conditioned_enabled": False,
+                        "side_tail_across_archetypes_unweighted": True,
+                        "correlation_pruning_before_prescreen": True,
+                        "correlation_pruning_floor_ratio": 0.50,
+                        "correlation_pruning_floor_count": 300,
+                    },
+                    "lgbm_joint_complete_case_filter_enabled": False,
+                },
+                label_context=label_context,
+            )
+        finally:
+            lgbm_pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS = original_burn_in_days
+            lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK = (
+                original_short_history_fallback
+            )
         if not result:
             raise PackBSideFSHPORunnerError(
                 f"{self.side} recent-winner selector returned no fitted result"
@@ -1462,6 +1483,15 @@ class RecentWinnerSideFeatureSelector:
                 "mda_scope": self.side,
                 "mda_weighting": "uniform_across_archetypes",
                 "automatic_stopping": "iterative_mda",
+                "forward_validation": {
+                    "mode": "forward_burnin",
+                    "burn_in_days": (RECENT_WINNER_SELECTOR_FORWARD_BURN_IN_DAYS),
+                    "short_history_fallback": False,
+                    "adaptation_reason": (
+                        "locked selector history is shorter than the "
+                        "reference process one-year burn-in"
+                    ),
+                },
                 "selector_model_params": dict(self._MODEL_PARAMS),
                 "reference_process_manifest": (
                     str(RECENT_WINNER_PROCESS_MANIFEST.relative_to(ROOT))

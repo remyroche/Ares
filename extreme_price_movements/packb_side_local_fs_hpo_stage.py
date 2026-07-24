@@ -1228,6 +1228,7 @@ def fit_side_local_fs_hpo_stages(
     hpo_trial_evaluator: HPOTrialEvaluator,
     hpo_selection_callback: HPOSelectionCallback,
     output_dir: Path,
+    published_output_dir: Path | None = None,
     source_hashes: Mapping[str, str],
     source_revision: str,
     fixed_calendar_sha256: str,
@@ -1271,6 +1272,9 @@ def fit_side_local_fs_hpo_stages(
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise PackBSideLocalFSHPOStageError(f"{name} must be a positive integer")
     destination = Path(output_dir)
+    published_destination = (
+        Path(published_output_dir) if published_output_dir is not None else destination
+    )
     if destination.exists():
         raise PackBSideLocalFSHPOStageError(
             f"refusing to overwrite or reuse output directory: {destination}"
@@ -1766,15 +1770,15 @@ def fit_side_local_fs_hpo_stages(
         os.replace(stage, destination)
         return {
             **summary,
-            "summary_path": str(destination / "summary.json"),
+            "summary_path": str(published_destination / "summary.json"),
             "feature_selection": {
-                key: str(destination / Path(value).name)
+                key: str(published_destination / Path(value).name)
                 if key.endswith("_path")
                 else value
                 for key, value in fs_paths.items()
             },
             "hpo": {
-                key: str(destination / Path(value).name)
+                key: str(published_destination / Path(value).name)
                 if key.endswith("_path")
                 else value
                 for key, value in hpo_paths.items()

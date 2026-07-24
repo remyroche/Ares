@@ -1222,6 +1222,7 @@ def run(
                 ),
                 hpo_selection_callback=SideHPOSelector(side=side, trials=trials),
                 output_dir=stage_root / side,
+                published_output_dir=destination / side,
                 source_hashes=source_hashes,
                 source_revision=revision,
                 fixed_calendar_sha256=calendar_sha256,

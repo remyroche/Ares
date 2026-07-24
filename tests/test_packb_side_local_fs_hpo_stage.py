@@ -148,6 +148,7 @@ def _run(
     selection_result: dict[str, object] | None = None,
     loader=None,
     caps: bool = False,
+    published_output_dir: Path | None = None,
 ) -> tuple[dict[str, object], dict[str, object], _RecordingGuard]:
     active = _inputs(tmp_path) if inputs is None else inputs
     seen: dict[str, object] = {"loader": [], "hpo": [], "target": [], "weight": []}
@@ -220,6 +221,7 @@ def _run(
         hpo_trial_evaluator=evaluator,
         hpo_selection_callback=choose,
         output_dir=tmp_path / "out",
+        published_output_dir=published_output_dir,
         source_hashes=active["source_hashes"],
         source_revision=SOURCE_REVISION,
         fixed_calendar_sha256=CALENDAR_SHA256,
@@ -234,6 +236,25 @@ def _run(
         resource_guard=guard,
     )
     return report, seen, guard
+
+
+def test_returned_paths_survive_outer_atomic_publication(
+    tmp_path: Path,
+) -> None:
+    published = tmp_path / "published"
+    report, _seen, _guard = _run(
+        tmp_path,
+        caps=True,
+        published_output_dir=published,
+    )
+    (tmp_path / "out").rename(published)
+
+    assert Path(str(report["summary_path"])).is_file()
+    for stage_name in ("feature_selection", "hpo"):
+        for key, value in report[stage_name].items():
+            if key.endswith("_path"):
+                assert Path(str(value)).is_file()
+                assert str(value).startswith(str(published))
 
 
 def test_runs_side_local_fixed_calendar_stages_with_real_sampled_evidence(

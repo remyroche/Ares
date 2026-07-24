@@ -1,0 +1,57 @@
+{
+  "schema": "packb_side_fs_hpo_promotion_v1",
+  "status": "FROZEN_SIDE_ROUTED_FEATURE_SELECTION_AND_HPO",
+  "source_revision": "7db90f998bcf10cf27576d0b6ffc32aa06b75708",
+  "fixed_calendar_sha256": "47a20a372d14490878006dddc942bda60eea2a62b6a7b072ae6a2afa92ceea19",
+  "selection_evidence_role": "inner fixed-calendar HPO model selection; outer April-July OOF remains required for performance claims",
+  "promotion_rule": "mean three-fold cost-aware economic objective, then worst fold, then stability; comparisons use identical complete-case rows where feature missingness differs",
+  "sides": {
+    "long": {
+      "source_root": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v2/long",
+      "source_summary_sha256": "5297f2eb2b89e92cc3ee0a21c7daa61312480005545c7e5503840e10f16fdedd",
+      "feature_contract_sha256": "1afeeef229666c7a9accbbf4d59fd72b5242cdb11f2d97ca727f10c58cb1ac3b",
+      "hpo_parameters_sha256": "975645db3d717e72ed0725345f89fa0c37869059786b3a24d3f13bf05df7bbe5",
+      "selected_feature_count": 31,
+      "selected_trial_id": "trial_141",
+      "mean_objective": 0.3827871948193878,
+      "worst_fold_objective": 0.35325525516335854,
+      "comparator": {
+        "source": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1/long",
+        "selected_feature_count": 16,
+        "selected_trial_id": "trial_049",
+        "mean_objective": 0.37503625839167526,
+        "worst_fold_objective": 0.36764483732452247,
+        "same_complete_case_rows": true
+      },
+      "decision": "PROMOTE_V2_PRIMARY_MEAN_OBJECTIVE_WINNER"
+    },
+    "short": {
+      "source_root": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1/short",
+      "source_summary_sha256": "2dde53f16e7d5e49e7cddf04616a4b9d0eaee5c193c8830f3ffd2f2215289fa7",
+      "feature_contract_sha256": "8f42634c276fbcd2c1864f44e32cf0d9cd450e5b764fa4574a0b66e259c2961e",
+      "hpo_parameters_sha256": "e5e608cf1bb5e53c99df32711c862b4e1d0a05a7472c1ab2e8f2a4d0a6d9b250",
+      "selected_feature_count": 8,
+      "selected_trial_id": "trial_084",
+      "common_cohort_mean_objective": 0.35184205705066995,
+      "common_cohort_worst_fold_objective": 0.3122117077599815,
+      "comparator": {
+        "source": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v2/short",
+        "selected_feature_count": 36,
+        "selected_trial_id": "trial_145",
+        "common_cohort_mean_objective": 0.31632643416170697,
+        "common_cohort_worst_fold_objective": 0.28847368332997436,
+        "same_complete_case_rows": true
+      },
+      "decision": "REUSE_V1_FEATURE_LIST_AND_HPO_ECONOMIC_WINNER"
+    }
+  },
+  "common_cohort_gate": {
+    "path": "docs/pipeline_roadmap/20260724/r3/packb_short_feature_list_common_cohort_gate_v1.json",
+    "sha256": "6f18c4d94d1ec323fa980fc5049b85cb1932bff2ad5dfb298af14cf0c94d0ed6"
+  },
+  "recent_55_long_37_short_disposition": {
+    "status": "COMPARATOR_ONLY_NOT_PRE_MARCH_ELIGIBLE",
+    "reason": "selected on the 2026-05-31 to 2026-06-30 calibration fold and reused backward; only 19/55 long and 12/37 short features exist in the locked inventory"
+  },
+  "next_gate": "Generate April, May, June, and July 1-11 side-routed outer OOF streams using the promoted long and short contracts, then compare on exact outer-OOF rows."
+}

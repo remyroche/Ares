@@ -135,6 +135,32 @@ base_label_end = decision_timestamp + 24 hours
 eligible_train_signal < validation_start - 25 hours
 ```
 
+R3 execution update on 2026-07-24:
+
+- Fresh side-local AE/GMM state is frozen at
+  `data_perp/artifacts/packb_side_local_ae_20260724_v1`.
+- The recent-winner selector process was rerun independently by side on the
+  legal pre-March population. It produced 31 long and 36 short features; the
+  selector used correlation-first pruning, archetype univariate and Relief
+  screens, iterative MDA, and a strict forward-only 180-day burn-in adapted to
+  the locked 11-month history.
+- Each side then completed 150 HPO arms across the fixed December, January,
+  and February folds without fallback.
+- Long promotes the fresh 31-feature v2 contract (`trial_141`): it beats the
+  cutoff-legal 16-feature comparator on the primary mean cost-aware objective,
+  although its worst fold is weaker.
+- Short reuses the cutoff-legal eight-feature v1 contract (`trial_084`). A
+  separate 41-feature union common-cohort gate refit the eight- and 36-feature
+  winners on identical rows and seeds. The eight-feature model won mean
+  objective `0.351842` versus `0.316326`, worst-fold objective `0.312212`
+  versus `0.288474`, and executable net-return lift in all three folds.
+- The small short list is therefore an evidence-based economic promotion, not
+  a fixed-count shortcut. The 36-feature short result remains a diagnostic
+  predictive comparator.
+- The authoritative routed promotion contract is
+  `docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v1.json`.
+  These are inner model-selection results, not outer OOF performance claims.
+
 The locked inner calendar is fixed before this new search:
 
 - side-local AE/GMM reference: authorized beginning/middle/end samples from
@@ -1361,9 +1387,14 @@ directional opportunity streams before completing downstream heads.
 
 Steps:
 
-1. Use the current Pack-B per-side directional base as the active alpha
-   foundation; keep the shared-store base only as a historical comparator.
-2. Verify that its saved long and short contracts retain independent feature
+1. Use the routed pre-March Pack-B promotion contract as the active alpha
+   foundation: long uses the v2 31-feature/`trial_141` contract and short uses
+   the v1 eight-feature/`trial_084` contract. Keep the historical 55/37 and
+   shared-store bases only as comparators.
+2. Generate fresh April, May, June, and July 1–11 outer OOF base streams from
+   those routed contracts. Every fold must refit using only labels resolved
+   before its cutoff; final-refit predictions are forbidden from OOF metrics.
+3. Verify that the resulting long and short contracts retain independent feature
    selection, HPO parameters, fitted models, OOF streams, and final refits.
    This verification must inspect the serialized model bundle and manifests,
    not infer side locality from filenames:
@@ -1374,9 +1405,9 @@ Steps:
    - each OOF row must be scored by the model for its own `side_name`;
    - model, feature-contract, parameter, and source hashes must be recorded for
      each side.
-3. Reuse or regenerate separate leakage-safe long and short growing-window OOS
+4. Reuse or regenerate separate leakage-safe long and short growing-window OOS
    streams only when required by the corrected downstream handoff.
-4. Select the top 40% independently within each side for CatBoost, auxiliary,
+5. Select the top 40% independently within each side for CatBoost, auxiliary,
    and residual-alpha training.
    Selection must be performed per UTC timestamp and side from the matching
    per-side directional model:
@@ -1390,7 +1421,7 @@ Steps:
    feature-contract hashes used to create each score. Recompute the integer
    ranks from the source OOF ledger and require exact agreement with the saved
    selected mask, including deterministic tie handling.
-5. Refit the residual-alpha experts independently:
+6. Refit the residual-alpha experts independently:
    - long residual expert receives only long base OOF predictions;
    - short residual expert receives only short base OOF predictions;
    - selection, HPO, residual target construction, and EV mapping remain
@@ -1398,7 +1429,7 @@ Steps:
    Verify that each residual expert's training keys are a subset of its
    matching directional side stream and that no long row enters the short
    expert or vice versa.
-6. Preserve a common expected-EV unit only as an output contract so portfolio
+7. Preserve a common expected-EV unit only as an output contract so portfolio
    management can compare sides later.
 
 Gate:

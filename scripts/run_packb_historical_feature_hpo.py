@@ -352,8 +352,19 @@ class ApprovedHistoricalSelector:
 
     def __call__(self, value: FeatureSelectionInput) -> dict[str, Any]:
         if value.side != self.side or tuple(value.candidate_features) != self.expected:
+            missing = [
+                feature
+                for feature in self.expected
+                if feature not in value.candidate_features
+            ]
+            unexpected = [
+                feature
+                for feature in value.candidate_features
+                if feature not in self.expected
+            ]
             raise HistoricalFeatureHPORunnerError(
-                f"{self.side} approved historical list failed coverage admission"
+                f"{self.side} approved historical list failed coverage admission: "
+                f"missing={missing} unexpected={unexpected}"
             )
         return {
             "side": self.side,
@@ -454,6 +465,10 @@ def run(
     historical_contract_path: Path = DEFAULT_HISTORICAL_CONTRACT,
     historical_process_path: Path = DEFAULT_HISTORICAL_PROCESS,
     hpo_trials: int = DEFAULT_TRIALS,
+    fs_train_max_rows: int = 60_000,
+    fs_valid_max_rows: int = 20_000,
+    hpo_train_max_rows: int = 10_000,
+    hpo_valid_max_rows: int = 10_000,
 ) -> dict[str, Any]:
     destination = Path(output_dir)
     if destination.exists():
@@ -624,10 +639,10 @@ def run(
                         source_contract
                     ),
                 },
-                fs_train_max_rows=60_000,
-                fs_valid_max_rows=20_000,
-                hpo_train_max_rows=10_000,
-                hpo_valid_max_rows=10_000,
+                fs_train_max_rows=int(fs_train_max_rows),
+                fs_valid_max_rows=int(fs_valid_max_rows),
+                hpo_train_max_rows=int(hpo_train_max_rows),
+                hpo_valid_max_rows=int(hpo_valid_max_rows),
                 resource_guard=guard,
             )
             reports[side] = {
@@ -681,6 +696,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--historical-process", type=Path, default=DEFAULT_HISTORICAL_PROCESS
     )
     parser.add_argument("--hpo-trials", type=int, default=DEFAULT_TRIALS)
+    parser.add_argument("--fs-train-max-rows", type=int, default=60_000)
+    parser.add_argument("--fs-valid-max-rows", type=int, default=20_000)
+    parser.add_argument("--hpo-train-max-rows", type=int, default=10_000)
+    parser.add_argument("--hpo-valid-max-rows", type=int, default=10_000)
     return parser.parse_args(argv)
 
 
@@ -698,6 +717,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             historical_contract_path=args.historical_contract,
             historical_process_path=args.historical_process,
             hpo_trials=args.hpo_trials,
+            fs_train_max_rows=args.fs_train_max_rows,
+            fs_valid_max_rows=args.fs_valid_max_rows,
+            hpo_train_max_rows=args.hpo_train_max_rows,
+            hpo_valid_max_rows=args.hpo_valid_max_rows,
         )
     except (HistoricalFeatureHPORunnerError, ValueError, FileExistsError) as exc:
         print(

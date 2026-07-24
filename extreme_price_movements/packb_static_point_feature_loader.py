@@ -1225,19 +1225,12 @@ def profile_point_feature_coverage(
     reference slices or FS/HPO train/validation slices.  Segment names and
     input ledgers are caller-supplied, so this loader never infers them from
     outcomes.  Each segment gets its own deterministic identity-hash sample.
+    When named segments are supplied, their disjoint samples are aggregated
+    into the global coverage fields without re-reading a duplicate global
+    sample from the feature store.
     """
 
     contract = _require_contract(feature_contract)
-    overall = _profile_coverage_segment(
-        "all",
-        identity_ledger,
-        feature_store_dir=feature_store_dir,
-        contract=contract,
-        coverage_sample_rows=coverage_sample_rows,
-        max_rows_per_batch=max_rows_per_batch,
-        max_columns_per_read=max_columns_per_read,
-        resource_guard=resource_guard,
-    )
     named_segments: list[FeatureCoverageSegment] = []
     for name, segment_ledger in sorted((coverage_segments or {}).items()):
         if str(name) == "all":
@@ -1256,28 +1249,83 @@ def profile_point_feature_coverage(
                 resource_guard=resource_guard,
             )
         )
+    if named_segments:
+        sampled_rows = sum(segment.sampled_rows for segment in named_segments)
+        matched_exact_rows = sum(
+            segment.matched_exact_rows for segment in named_segments
+        )
+        missing_exact_rows = sum(
+            segment.missing_exact_rows for segment in named_segments
+        )
+        count_maps = [
+            dict(segment.feature_non_null_counts) for segment in named_segments
+        ]
+        feature_non_null_counts = tuple(
+            (
+                column,
+                sum(int(values.get(column, 0)) for values in count_maps),
+            )
+            for column in contract.feature_columns
+        )
+        feature_non_null_fractions = tuple(
+            (column, count / sampled_rows) for column, count in feature_non_null_counts
+        )
+        missing_symbols = tuple(
+            sorted(
+                {
+                    symbol
+                    for segment in named_segments
+                    for symbol in segment.missing_symbols
+                }
+            )
+        )
+        sample_identity_sha256 = _canonical_json_digest(
+            {
+                "aggregation": "disjoint_named_segment_samples_v1",
+                "segments": [
+                    [segment.name, segment.sample_identity_sha256]
+                    for segment in named_segments
+                ],
+            }
+        )
+    else:
+        overall = _profile_coverage_segment(
+            "all",
+            identity_ledger,
+            feature_store_dir=feature_store_dir,
+            contract=contract,
+            coverage_sample_rows=coverage_sample_rows,
+            max_rows_per_batch=max_rows_per_batch,
+            max_columns_per_read=max_columns_per_read,
+            resource_guard=resource_guard,
+        )
+        sampled_rows = overall.sampled_rows
+        matched_exact_rows = overall.matched_exact_rows
+        missing_exact_rows = overall.missing_exact_rows
+        feature_non_null_counts = overall.feature_non_null_counts
+        feature_non_null_fractions = overall.feature_non_null_fractions
+        missing_symbols = overall.missing_symbols
+        sample_identity_sha256 = overall.sample_identity_sha256
     profile_payload = {
-        "sample_identity_sha256": overall.sample_identity_sha256,
-        "sampled_rows": overall.sampled_rows,
-        "matched_exact_rows": overall.matched_exact_rows,
-        "missing_exact_rows": overall.missing_exact_rows,
-        "feature_non_null_counts": [
-            list(value) for value in overall.feature_non_null_counts
-        ],
+        "sample_identity_sha256": sample_identity_sha256,
+        "sampled_rows": sampled_rows,
+        "matched_exact_rows": matched_exact_rows,
+        "missing_exact_rows": missing_exact_rows,
+        "feature_non_null_counts": [list(value) for value in feature_non_null_counts],
         "feature_non_null_fractions": [
-            list(value) for value in overall.feature_non_null_fractions
+            list(value) for value in feature_non_null_fractions
         ],
-        "missing_symbols": list(overall.missing_symbols),
+        "missing_symbols": list(missing_symbols),
         "segments": [segment.to_dict() for segment in named_segments],
     }
     return FeatureCoverageProfile(
-        sample_identity_sha256=overall.sample_identity_sha256,
-        sampled_rows=overall.sampled_rows,
-        matched_exact_rows=overall.matched_exact_rows,
-        missing_exact_rows=overall.missing_exact_rows,
-        feature_non_null_counts=overall.feature_non_null_counts,
-        feature_non_null_fractions=overall.feature_non_null_fractions,
-        missing_symbols=overall.missing_symbols,
+        sample_identity_sha256=sample_identity_sha256,
+        sampled_rows=sampled_rows,
+        matched_exact_rows=matched_exact_rows,
+        missing_exact_rows=missing_exact_rows,
+        feature_non_null_counts=feature_non_null_counts,
+        feature_non_null_fractions=feature_non_null_fractions,
+        missing_symbols=missing_symbols,
         segments=tuple(named_segments),
         profile_sha256=_canonical_json_digest(profile_payload),
     )

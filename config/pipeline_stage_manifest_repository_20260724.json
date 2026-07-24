@@ -1,14 +1,14 @@
 {
   "schema_version": "pipeline_stage_manifest_v1",
-  "manifest_id": "repository_source_20260724_0cf4e1f",
+  "manifest_id": "repository_source_20260724_f27b871",
   "stage_name": "repository_source_durability",
   "status": "DRAFT",
   "created_at_utc": "2026-07-24T08:30:00Z",
   "source": {
-    "revision": "0cf4e1f3bbde7e890609697432446a1b6b3a4149",
+    "revision": "f27b8719f04a06a3c8a79b89e0abc8dbd4d1f003",
     "branch": "codex/cleanup-generated-artifacts",
-    "tree_sha256": "4421c769e42d97ddbd0409332b61ce7c7bf8f529b13f7514d4520f642c155d92",
-    "archive_sha256": "37985f660689fe40fe670014ef4595674296cedf287671be5cfc2d500d0f3def",
+    "tree_sha256": "b0df478b0f87583bd480835aaf585c58eaad7b56a24fcd79c8b0cdf4b083e32f",
+    "archive_sha256": "993d7b4a1a07d46d76451f3d43a9c3d8dca4f36996ec827812f1aac002cda8d6",
     "dirty": false,
     "dirty_paths": [],
     "dirty_diff_sha256": null,
@@ -22,7 +22,7 @@
       "git",
       "archive",
       "--format=tar",
-      "0cf4e1f3bbde7e890609697432446a1b6b3a4149"
+      "f27b8719f04a06a3c8a79b89e0abc8dbd4d1f003"
     ],
     "working_directory": "/Users/remyroche/Documents/Ares"
   },

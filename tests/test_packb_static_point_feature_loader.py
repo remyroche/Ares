@@ -293,6 +293,8 @@ def test_segment_filters_prune_not_abort_and_evidence_binds_callback_and_matrix(
     )
     matrix = callback(ledger, list(contract.feature_columns))
     assert list(matrix.columns) == list(contract.feature_columns)
+    subset = callback(ledger, [contract.feature_columns[-1]])
+    assert list(subset.columns) == [contract.feature_columns[-1]]
     assert callback.packb_static_feature_loader_evidence["loader_contract_sha256"] == (
         bundle.loader_contract_sha256
     )
@@ -356,5 +358,5 @@ def test_outcome_free_feature_cap_is_deterministic_and_bound_in_contract(
     assert contract.max_feature_columns == 1
     assert contract.feature_columns == ("ret1h",)
     assert dict(contract.coverage_admission_rejections)["ret24h"].startswith(
-        "coverage_rank_"
+        "coverage_family_round_robin_rank_"
     )

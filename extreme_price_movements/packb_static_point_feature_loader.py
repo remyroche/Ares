@@ -822,12 +822,20 @@ def _require_contract(
 def _validate_contract_against_universe(
     contract: FrozenFeatureContract,
     universe: CandidateFeatureUniverse,
+    *,
+    require_same_symbol_surface: bool = True,
 ) -> None:
-    if contract.source_schema_sha256 != universe.source_schema_sha256:
+    if (
+        require_same_symbol_surface
+        and contract.source_schema_sha256 != universe.source_schema_sha256
+    ):
         raise PackBStaticPointFeatureLoaderError(
             "canonical feature-store schema changed after the frozen contract was created"
         )
-    if contract.candidate_universe_sha256 != universe.universe_sha256:
+    if (
+        require_same_symbol_surface
+        and contract.candidate_universe_sha256 != universe.universe_sha256
+    ):
         raise PackBStaticPointFeatureLoaderError(
             "fresh causal candidate universe changed after the frozen contract was created"
         )
@@ -974,7 +982,15 @@ def iter_point_in_time_feature_batches(
             coverage_discovery=coverage_discovery,
             resource_guard=guard,
         )
-        _validate_contract_against_universe(contract, current_universe)
+        # A bounded AE/FS/HPO sample need not contain every symbol that was
+        # present when the side-local contract was frozen. Revalidate the
+        # global registry/store bindings and the requested feature surface;
+        # exact reads and the final matrix hash bind the sampled values.
+        _validate_contract_against_universe(
+            contract,
+            current_universe,
+            require_same_symbol_surface=False,
+        )
 
     symbol_groups = [
         (str(symbol), group.copy())
@@ -1561,12 +1577,37 @@ def _cap_coverage_admitted_columns(
             )
             for column in columns
         }
-    ranked = sorted(
-        (str(column) for column in columns), key=lambda name: (-scores[name], name)
-    )
+    # Preserve broad raw-input coverage without consulting outcomes. Within
+    # each top-level generator family, prefer the strongest coverage first;
+    # then round-robin across families so a lexical cluster cannot consume the
+    # entire 256-column AE budget merely because many fields tie at 100%.
+    families: dict[str, list[str]] = {}
+    for column in columns:
+        name = str(column)
+        family = name.split("_", 1)[0].lower()
+        families.setdefault(family, []).append(name)
+    for values in families.values():
+        values.sort(key=lambda name: (-scores[name], name))
+    ranked: list[str] = []
+    while families:
+        family_order = sorted(
+            families,
+            key=lambda family: (
+                -scores[families[family][0]],
+                family,
+                families[family][0],
+            ),
+        )
+        for family in family_order:
+            ranked.append(families[family].pop(0))
+            if not families[family]:
+                del families[family]
     kept = ranked[:cap]
     rejected = {
-        name: f"coverage_rank_{rank + 1}_outside_deterministic_cap_{cap}"
+        name: (
+            f"coverage_family_round_robin_rank_{rank + 1}_"
+            f"outside_deterministic_cap_{cap}"
+        )
         for rank, name in enumerate(ranked[cap:], start=cap)
     }
     return sorted(kept), rejected
@@ -2070,12 +2111,16 @@ def make_packb_static_feature_loader(
 
     def _loader(ledger: pd.DataFrame, input_features: Sequence[str]) -> pd.DataFrame:
         requested = tuple(str(column) for column in input_features)
-        if requested != contract.feature_columns:
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(column not in contract.feature_columns for column in requested)
+        ):
             raise PackBStaticPointFeatureLoaderError(
-                "Pack-B static feature loader requires the complete frozen ordered "
-                "feature contract"
+                "Pack-B static feature loader requires unique ordered members of "
+                "the frozen feature contract"
             )
-        return load_point_in_time_features(
+        matrix = load_point_in_time_features(
             ledger,
             feature_store_dir=feature_store_dir,
             feature_contract=contract,
@@ -2085,6 +2130,7 @@ def make_packb_static_feature_loader(
             include_identity=False,
             resource_guard=resource_guard,
         )
+        return matrix.loc[:, list(requested)]
 
     # The AE stage can bind these attributes into its side-stage manifest
     # without trusting a look-alike arbitrary callback.
@@ -2098,6 +2144,7 @@ def make_packb_static_feature_loader(
         "source_revision": evidence_bundle.source_revision
         if evidence_bundle is not None
         else None,
+        "requested_feature_policy": "unique_ordered_subset_of_frozen_contract",
         "evidence_path": evidence_bundle.path if evidence_bundle is not None else None,
     }
     _loader.packb_static_feature_contract = contract.to_dict()

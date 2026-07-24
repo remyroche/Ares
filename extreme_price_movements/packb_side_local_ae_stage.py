@@ -258,12 +258,97 @@ def _ledger_identity_sha256(frame: pd.DataFrame) -> str:
     return str(_candidate_stream_evidence(frame)["sha256"])
 
 
+def _validate_feature_loader_binding(
+    *,
+    feature_loader: FeatureLoader,
+    input_features: Sequence[str],
+    source_revision: str,
+) -> tuple[dict[str, Any], Callable[[pd.DataFrame, pd.DataFrame], str]]:
+    """Require the canonical bounded point loader and immutable evidence."""
+
+    evidence = getattr(feature_loader, "packb_static_feature_loader_evidence", None)
+    contract = getattr(feature_loader, "packb_static_feature_contract", None)
+    matrix_hasher = getattr(feature_loader, "packb_static_feature_matrix_sha256", None)
+    if not isinstance(evidence, Mapping) or not isinstance(contract, Mapping):
+        raise PackBSideLocalAEStageError(
+            "feature_loader must expose the frozen Pack-B static-loader evidence contract"
+        )
+    if not callable(matrix_hasher):
+        raise PackBSideLocalAEStageError(
+            "feature_loader must expose the canonical Pack-B feature-matrix hasher"
+        )
+    contract_features = contract.get("feature_columns")
+    if not isinstance(contract_features, list) or list(input_features) != [
+        str(value) for value in contract_features
+    ]:
+        raise PackBSideLocalAEStageError(
+            "AE/GMM input_features must equal the complete frozen static feature contract"
+        )
+    required_hashes = (
+        "raw_universe_sha256",
+        "coverage_profile_sha256",
+        "feature_contract_sha256",
+        "loader_contract_sha256",
+        "loader_module_sha256",
+        "source_schema_sha256",
+    )
+    normalized: dict[str, Any] = {
+        key: _require_sha256(evidence.get(key), name=f"feature_loader_evidence.{key}")
+        for key in required_hashes
+    }
+    contract_sha256 = _require_sha256(
+        contract.get("feature_contract_sha256"),
+        name="feature_loader_contract.feature_contract_sha256",
+    )
+    if normalized["feature_contract_sha256"] != contract_sha256:
+        raise PackBSideLocalAEStageError(
+            "feature-loader evidence does not bind its frozen feature contract"
+        )
+    loader_revision = str(evidence.get("source_revision") or "").strip().lower()
+    if loader_revision != source_revision:
+        raise PackBSideLocalAEStageError(
+            "feature-loader source revision does not match the AE stage source revision"
+        )
+    evidence_path = Path(str(evidence.get("evidence_path") or ""))
+    if not evidence_path.is_file():
+        raise PackBSideLocalAEStageError(
+            "feature-loader immutable evidence file does not exist"
+        )
+    try:
+        persisted = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PackBSideLocalAEStageError(
+            "feature-loader immutable evidence file is unreadable"
+        ) from exc
+    for key in required_hashes:
+        if persisted.get(key) != normalized[key]:
+            raise PackBSideLocalAEStageError(
+                f"feature-loader immutable evidence disagrees on {key}"
+            )
+    if persisted.get("source_revision") != loader_revision:
+        raise PackBSideLocalAEStageError(
+            "feature-loader immutable evidence has a different source revision"
+        )
+    normalized.update(
+        {
+            "source_revision": loader_revision,
+            "evidence_path": str(evidence_path),
+            "evidence_file_sha256": stage_manifest.sha256_file(evidence_path),
+            "requested_feature_policy": str(
+                evidence.get("requested_feature_policy") or ""
+            ),
+        }
+    )
+    return normalized, matrix_hasher
+
+
 def _load_reference_matrix(
     *,
     feature_loader: FeatureLoader,
     sampled_ledger: pd.DataFrame,
     input_features: Sequence[str],
-) -> tuple[pd.DataFrame, dict[str, float]]:
+    matrix_hasher: Callable[[pd.DataFrame, pd.DataFrame], str],
+) -> tuple[pd.DataFrame, dict[str, float], str]:
     loaded = feature_loader(sampled_ledger.copy(), list(input_features))
     if not isinstance(loaded, pd.DataFrame):
         raise PackBSideLocalAEStageError(
@@ -284,6 +369,10 @@ def _load_reference_matrix(
         raise PackBSideLocalAEStageError(
             "feature_loader returned non-numeric AE/GMM input values"
         ) from exc
+    matrix_sha256 = _require_sha256(
+        matrix_hasher(sampled_ledger.copy(), matrix.copy()),
+        name="feature_loader matrix SHA-256",
+    )
     fill_values = matrix.median(numeric_only=True).reindex(input_features).fillna(0.0)
     matrix = matrix.fillna(fill_values).astype(np.float32, copy=False)
     values = matrix.to_numpy(dtype=np.float32, copy=False)
@@ -291,7 +380,11 @@ def _load_reference_matrix(
         raise PackBSideLocalAEStageError(
             "AE/GMM matrix remains non-finite after frozen fill"
         )
-    return matrix, {name: float(fill_values[name]) for name in input_features}
+    return (
+        matrix,
+        {name: float(fill_values[name]) for name in input_features},
+        matrix_sha256,
+    )
 
 
 def _write_pickle_once(path: Path, value: Any) -> None:
@@ -411,11 +504,17 @@ def fit_side_local_ae_gmm_stage(
             "deterministic AE/GMM sample is below minimum support"
         )
     sampled = reference.iloc[sampled_positions].reset_index(drop=True)
+    loader_evidence, matrix_hasher = _validate_feature_loader_binding(
+        feature_loader=feature_loader,
+        input_features=features,
+        source_revision=revision,
+    )
     guard.checkpoint(f"packb_side_local_ae:{normalized_side}:before_feature_load")
-    matrix, fill_values = _load_reference_matrix(
+    matrix, fill_values, feature_matrix_sha256 = _load_reference_matrix(
         feature_loader=feature_loader,
         sampled_ledger=sampled,
         input_features=features,
+        matrix_hasher=matrix_hasher,
     )
     guard.checkpoint(f"packb_side_local_ae:{normalized_side}:before_fit")
     state = fit_ae_gmm_state(
@@ -458,6 +557,9 @@ def fit_side_local_ae_gmm_stage(
         ],
         "reference_label_resolution_end_exclusive": AE_REFERENCE_END_UTC.isoformat(),
         "input_feature_order_sha256": input_hash,
+        "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
+        "feature_matrix_sha256": feature_matrix_sha256,
+        "feature_loader_evidence": loader_evidence,
         "seed": int(seed),
         "max_train_rows": int(max_train_rows),
         "gmm_max_train_rows": int(gmm_max_train_rows),
@@ -488,6 +590,8 @@ def fit_side_local_ae_gmm_stage(
             "cycle_reference_candidate_stream": reference_stream,
             "cycle_reference_sampled_candidate_stream": sampled_stream,
             "cycle_input_fill_values": fill_values,
+            "cycle_input_matrix_sha256": feature_matrix_sha256,
+            "feature_loader_evidence": loader_evidence,
             "input_feature_order_hash": input_hash,
             "representation_selection_outcome_free": True,
             "representation_selection_context_keys": [],
@@ -518,6 +622,9 @@ def fit_side_local_ae_gmm_stage(
         "state_sha256": state_sha256,
         "cycle_state_hash": str(state["cycle_state_hash"]),
         "input_feature_order_sha256": input_hash,
+        "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
+        "feature_matrix_sha256": feature_matrix_sha256,
+        "feature_loader_evidence": loader_evidence,
         "cycle_input_fill_values": fill_values,
         "cycle_reference_sample_identity_sha256": sample_hash,
         "cycle_reference_candidate_stream": reference_stream,
@@ -595,5 +702,8 @@ def fit_side_local_ae_gmm_stage(
         "candidate_stream_evidence_path": str(candidate_stream_path),
         "candidate_stream_evidence_sha256": candidate_stream_sha256,
         "input_feature_order_sha256": input_hash,
+        "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
+        "feature_matrix_sha256": feature_matrix_sha256,
+        "feature_loader_evidence_sha256": loader_evidence["evidence_file_sha256"],
         "stage_config_sha256": str(state["stage_config_sha256"]),
     }

@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
 
 from extreme_price_movements import packb_side_stage_manifest as stage_manifest
 from extreme_price_movements.packb_side_local_fs_hpo_stage import (
+    _bounded_beginning_middle_end_sample,
     _prepare_dataset_pair,
     _stage_dataset_sha256,
 )
@@ -277,9 +278,19 @@ def run(
         production._folds(Path(population_root), "short"), start=1
     ):
         guard.checkpoint(f"packb_short_common_cohort:{fold.name}:before_union_load")
+        train_ledger = _bounded_beginning_middle_end_sample(
+            fold.train_ledger,
+            max_rows=10_000,
+            name=f"{fold.name} common-cohort train",
+        )
+        valid_ledger = _bounded_beginning_middle_end_sample(
+            fold.valid_ledger,
+            max_rows=10_000,
+            name=f"{fold.name} common-cohort validation",
+        )
         train, valid, admitted, coverage = _prepare_dataset_pair(
-            train_ledger=fold.train_ledger,
-            valid_ledger=fold.valid_ledger,
+            train_ledger=train_ledger,
+            valid_ledger=valid_ledger,
             features=union,
             feature_loader=feature_loader,
             target_loader=labels.target,

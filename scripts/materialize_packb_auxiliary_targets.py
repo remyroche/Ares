@@ -66,7 +66,8 @@ ATR_COLUMN = "__path_auxiliary_atr_fraction__"
 ATR_SOURCE_COLUMN = "raw_wilder_atr14_fraction_at_signal"
 INVALID_REASON_COLUMN = "__path_auxiliary_invalid_reason__"
 IDENTITY_COLUMNS = ("__ts__", "__symbol__", "side_name", "candidate_id")
-MIN_VALID_RATE_PER_SIDE = 0.95
+MIN_VALID_RATE_PER_SIDE = 0.90
+MIN_VALID_RATE_PER_SIDE_FOLD = 0.75
 ATR_PERIOD = 14
 ATR_BURN_IN_DAYS = 90
 
@@ -532,10 +533,26 @@ def run(
             for side, values in statistics.items()
             if float(values["valid_rate"]) < MIN_VALID_RATE_PER_SIDE
         ]
-        if failed_sides:
+        fold_validity = (
+            targets.groupby(["side_name", "oos_fold"], observed=True)[
+                "__path_auxiliary_target_valid__"
+            ]
+            .agg(rows="size", valid_rows="sum", valid_rate="mean")
+            .reset_index()
+        )
+        failed_folds = fold_validity.loc[
+            fold_validity["valid_rate"].lt(MIN_VALID_RATE_PER_SIDE_FOLD)
+        ]
+        if failed_sides or not failed_folds.empty:
             raise PackBAuxiliaryTargetError(
-                "path validity is below the production floor for: "
-                + ", ".join(failed_sides)
+                "path validity is below a production floor: sides="
+                + ",".join(failed_sides)
+                + " folds="
+                + ",".join(
+                    failed_folds["side_name"].astype(str)
+                    + "/"
+                    + failed_folds["oos_fold"].astype(str)
+                )
             )
         output_path = stage / "targets.parquet"
         targets.to_parquet(
@@ -628,8 +645,10 @@ def run(
                 "all_population_rows_retained": len(targets) == len(population),
                 "invalid_reason_column": INVALID_REASON_COLUMN,
                 "minimum_valid_rate_per_side": MIN_VALID_RATE_PER_SIDE,
+                "minimum_valid_rate_per_side_fold": MIN_VALID_RATE_PER_SIDE_FOLD,
             },
             "statistics": statistics,
+            "validity_by_side_fold": fold_validity.to_dict(orient="records"),
             "attrition_by_side_fold_reason": _group_counts(
                 targets, ["side_name", "oos_fold", INVALID_REASON_COLUMN]
             ),

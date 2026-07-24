@@ -415,7 +415,7 @@ def _precompute_outer_representations(
     representation_loader: SideRepresentationFeatureLoader,
     ledgers: Sequence[pd.DataFrame],
     generated_features: Sequence[str],
-) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any]]:
+) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any], pd.DataFrame]:
     union = (
         pd.concat(list(ledgers), ignore_index=True, copy=False)
         .drop_duplicates("candidate_id", keep="first")
@@ -425,20 +425,24 @@ def _precompute_outer_representations(
     generated = tuple(map(str, generated_features))
     values = representation_loader(union, generated)
     cache = CachedRepresentationFeatureLoader(union, values)
-    return cache, {
-        "schema": "packb_outer_representation_union_cache_v1",
-        "union_rows": int(len(union)),
-        "generated_features": list(generated),
-        "candidate_stream_sha256": hashlib.sha256(
-            "\n".join(union["candidate_id"].astype(str)).encode("utf-8")
-        ).hexdigest(),
-        "values_sha256": hashlib.sha256(
-            pd.util.hash_pandas_object(values, index=True)
-            .to_numpy(dtype=np.uint64, copy=False)
-            .tobytes()
-        ).hexdigest(),
-        "outcome_columns_loaded": False,
-    }
+    return (
+        cache,
+        {
+            "schema": "packb_outer_representation_union_cache_v1",
+            "union_rows": int(len(union)),
+            "generated_features": list(generated),
+            "candidate_stream_sha256": hashlib.sha256(
+                "\n".join(union["candidate_id"].astype(str)).encode("utf-8")
+            ).hexdigest(),
+            "values_sha256": hashlib.sha256(
+                pd.util.hash_pandas_object(values, index=True)
+                .to_numpy(dtype=np.uint64, copy=False)
+                .tobytes()
+            ).hexdigest(),
+            "outcome_columns_loaded": False,
+        },
+        union,
+    )
 
 
 def _fit_model(
@@ -680,7 +684,7 @@ def run(
             ]
             cache_ledgers.append(final_ledger)
             guard.checkpoint(f"packb_outer_oof:{side}:before_representation_union")
-            cached_representation, representation_cache_evidence = (
+            cached_representation, representation_cache_evidence, feature_union = (
                 _precompute_outer_representations(
                     representation_loader,
                     cache_ledgers,
@@ -696,7 +700,7 @@ def run(
                     if feature in label_schema
                     and not feature.startswith(("dae_", "gmm_"))
                 ]
-                feature_loader = HistoricalCompositeFeatureLoader(
+                composite_loader = HistoricalCompositeFeatureLoader(
                     side=side,
                     all_features=features,
                     candidate_features=candidate,
@@ -710,8 +714,26 @@ def run(
                     feature_store=Path(feature_store),
                     resource_guard=guard,
                 )
+                composite_values = composite_loader(feature_union, features)
+                feature_loader = CachedRepresentationFeatureLoader(
+                    feature_union,
+                    composite_values,
+                )
+                representation_cache_evidence["full_composite_cached"] = True
+                representation_cache_evidence["full_composite_values_sha256"] = (
+                    hashlib.sha256(
+                        pd.util.hash_pandas_object(composite_values, index=True)
+                        .to_numpy(dtype=np.uint64, copy=False)
+                        .tobytes()
+                    ).hexdigest()
+                )
             else:
                 feature_loader = cached_representation
+                representation_cache_evidence["full_composite_cached"] = True
+
+            admission_route = dict(route)
+            if validation_max_rows is not None:
+                admission_route["min_per_feature_finite_fraction"] = 0.0
 
             for fold_index, (
                 fold,
@@ -727,13 +749,13 @@ def run(
                     train,
                     feature_loader(train, features),
                     labels.load(train),
-                    route,
+                    admission_route,
                 )
                 valid_ledger, valid_x, valid_labels, valid_coverage = _admit_route(
                     validation,
                     feature_loader(validation, features),
                     labels.load(validation),
-                    route,
+                    admission_route,
                 )
                 seed = 20260724 + side_index * 1_000 + fold_index
                 model = _fit_model(train_x, train_labels, route["params"], seed=seed)
@@ -788,7 +810,7 @@ def run(
                 final_ledger,
                 feature_loader(final_ledger, features),
                 labels.load(final_ledger),
-                route,
+                admission_route,
             )
             final_model = _fit_model(
                 final_x,
@@ -819,6 +841,7 @@ def run(
                 "min_per_feature_finite_fraction": route[
                     "min_per_feature_finite_fraction"
                 ],
+                "diagnostic_coverage_floor_bypassed": validation_max_rows is not None,
                 "representation_union_cache": representation_cache_evidence,
                 "folds": fold_reports,
                 "aggregate_oof_metrics": aggregate_metrics,
@@ -842,7 +865,9 @@ def run(
             _atomic_json(side_root / "manifest.json", report)
             reports[side] = report
             del final_model, final_x, final_labels, final_ledger, last_train
-            del labels, feature_loader, cached_representation, raw_loader
+            del labels, feature_loader, cached_representation, feature_union, raw_loader
+            if route["loader_kind"] == "historical_candidate_static_ae_gmm":
+                del composite_loader, composite_values
             del representation_loader, state, contract, bundle
             _release_memory()
             guard.checkpoint(f"packb_outer_oof:{side}:released")

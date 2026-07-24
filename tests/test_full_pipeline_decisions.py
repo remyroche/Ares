@@ -32,6 +32,12 @@ def test_fold_calendar_precedes_buffer_and_untouched_replay() -> None:
     assert buffer_end == replay_start
     assert replay_start < replay_end
     assert decision["purge_hours"] + decision["post_label_embargo_hours"] == 24
+    assert decision["signal_timestamp_purge_hours"] == 25
+    horizons = decision["stage_label_horizons"]
+    assert "24 hours" in horizons["packb_directional_base"]
+    assert "96 x 15-minute" in horizons["packb_directional_base"]
+    assert "12 hours" in horizons["auxiliary_catboost_execution_ev_and_timing"]
+    assert "actual_stage_label_end" in decision["train_authorization"]
 
 
 def test_timing_failure_retains_enter_now_without_blocking_e1() -> None:

@@ -121,8 +121,12 @@
         ["2026-07-01T00:00:00Z", "2026-07-11T00:00:00Z"]
       ],
       "decision_timestamp": "signal_timestamp + 1 hour",
-      "label_end": "decision_timestamp + 12 hours",
-      "train_authorization": "decision_timestamp < validation_start AND label_end <= validation_start AND decision_timestamp <= validation_start - 24 hours",
+      "stage_label_horizons": {
+        "packb_directional_base": "decision_timestamp + 24 hours (96 x 15-minute causal path bars)",
+        "auxiliary_catboost_execution_ev_and_timing": "decision_timestamp + 12 hours"
+      },
+      "train_authorization": "decision_timestamp < validation_start AND actual_stage_label_end <= validation_start AND decision_timestamp <= validation_start - 24 hours",
+      "signal_timestamp_purge_hours": 25,
       "purge_hours": 12,
       "post_label_embargo_hours": 12,
       "no_use_buffer": ["2026-07-11T00:00:00Z", "2026-07-12T00:00:00Z"],

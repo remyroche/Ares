@@ -483,7 +483,14 @@ Hard requirements already fixed and not subject to tuning:
   unless DEC-05 defines a pre-fit merge.
 - Decision timestamp is signal timestamp plus one signal timeframe.
 - First path timestamp must be at or after the decision timestamp.
-- Current path horizon is 12 hours.
+- The Pack-B directional-base target resolves over 96 × 15-minute bars, or 24
+  hours after its decision. Auxiliary, CatBoost, execution-EV, and timing path
+  targets use 12 hours. Every stage must bind and hash its actual horizon; a
+  generic “current path horizon” is not sufficient provenance.
+- With the one-hour decision delay, the locked Pack-B outer-fold signal purge
+  is 25 hours: `signal_timestamp < validation_start - 25 hours`, equivalently
+  `decision_timestamp <= validation_start - 24 hours`. The final accepted
+  Pack-B training label must resolve no later than the validation boundary.
 - Exact join key is `__ts__, __symbol__, side_name`.
 - OOF assessment cannot use a final-refit prediction.
 - Costs are recorded once.
@@ -612,6 +619,15 @@ Tasks:
   comparators only.
 - Regenerate the alpha execution OOF if it cannot prove Pack-B + matching-side
   residual lineage.
+- Treat the seven saved monthly Pack-B fold models as a historical comparator
+  only. Their windows and train-cutoff evidence do not match DEC-09.
+- Regenerate four canonical Pack-B OOF folds using the locked half-open April,
+  May, June, and July 1–11 signal windows. Freeze the recovered exact AE/GMM
+  state and promoted 55-feature long / 37-feature short contracts; perform no
+  new FS or HPO in this recovery run.
+- Stream folds, sides, and bounded symbol batches sequentially. Do not persist
+  raw or AE-transformed fold caches. Preflight and checkpoint RAM, process RSS,
+  and free disk with JSONL telemetry.
 
 Deliverables:
 
@@ -620,6 +636,9 @@ Deliverables:
 - Canonical Pack-B-derived long top-40 handoff
 - Canonical Pack-B-derived short top-40 handoff
 - Exact rank/mask reconciliation and hashes
+- Four-fold DEC-09 Pack-B OOF ledger with row-level signal, decision,
+  24-hour label-resolution, fold, cutoff, side-model, feature-contract,
+  parameter, AE/GMM-state, source, and score hashes
 
 Gate R3:
 
@@ -1136,8 +1155,8 @@ Track this table in the repository and update it only with linked evidence.
 |---|---|---|---|---|---|
 | R0 Migration | IN PROGRESS | Data/provenance | No comparison baseline; six active Pack-B lineage paths missing | `docs/pipeline_roadmap/20260724/r0/`; `r0_missing_path_triage.md` |  |
 | R1 Source durability | IN PROGRESS | Roadmap + Data/provenance | Remote recovery requires explicit publication authorization | `config/pipeline_stage_manifest_repository_20260724.json`; schema v1 |  |
-| R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and DEC-09 pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass |  |
-| R3 Alpha/top-40 | BLOCKED BY R2 | Alpha + Data/provenance | Existing Pack-B/residual OOF lineage is insufficient | R3 audit 2026-07-24 |  |
+| R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and stage-specific horizon reconciliation pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass; DEC-01…10 locked |  |
+| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Saved seven-fold Pack-B models are historical-only; canonical four-fold regeneration required | Exact recovered AE/GMM state `6521f981…`; resource guards committed in `ac6a116305` |  |
 | C1 CatBoost long | BLOCKED BY R3 |  |  |  |  |
 | C2 CatBoost short | BLOCKED BY R3 |  |  |  |  |
 | A1 Auxiliary long | BLOCKED BY R3 |  |  |  |  |
@@ -1154,12 +1173,15 @@ Track this table in the repository and update it only with linked evidence.
 
 Execute in this order:
 
-1. Assign owners and freeze DEC-01 through DEC-10.
+1. Keep DEC-01 through DEC-10 frozen; bind the actual stage-specific label
+   horizon in every run manifest.
 2. Complete R0 checksums, read-only loads, disk/environment, and process audit.
 3. Make the dirty/untracked source recoverable under R1.
 4. Run R2 deterministic and broader contract suites.
-5. Audit Pack-B and residual serialized lineage under R3.
-6. Regenerate canonical Pack-B-derived top-40 per timestamp × side.
+5. Finish the four-fold DEC-09 Pack-B regeneration runner and smoke it under
+   the fail-closed resource guard.
+6. Run the canonical Pack-B OOF regeneration sequentially only if the measured
+   memory preflight is safe, then derive top-40 per timestamp × side.
 7. Decide whether the existing alpha execution OOF can prove canonical lineage;
    regenerate it if not.
 8. Start C1/C2 and A1/A2 in parallel using new output directories.

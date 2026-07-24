@@ -62,7 +62,7 @@ replacement inside binary joblib, pickle, SQLite, or Parquet files.
 |---|---|---|---|
 | Shared feature store | Materialized | `data_perp/features/20260711_070000` | Required input, not a model |
 | Frozen cycle AE/GMM | Materialized and used by base | Base run `_feature_selection_phase/ae_gmm_states` | Yes for its associated base cycle |
-| Base alpha model | Per-side Pack-B models trained with OOS and final refit | `s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1` | Research-ready; preserve side-local contract |
+| Base alpha model | Per-side Pack-B models trained with historical OOS windows and final refit | `s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1` | Preserve as historical evidence; regenerate locked DEC-09 OOF |
 | Shared-store reference/handoff source | Trained, monthly OOS generated, final refit saved | `s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1` | Historical comparator and current materialized handoff source |
 | Top-30 meta handoff | Materialized | Shared-store reference run `meta_handoff_top30` | Valid existing input; regenerate from per-side base when downstream pipeline is resumed |
 | Top-40 path-head handoff | Materialized | Shared-store reference run `meta_handoff_top40` | Existing CatBoost/aux population; regenerate per side for the final contract |
@@ -74,7 +74,7 @@ replacement inside binary joblib, pickle, SQLite, or Parquet files.
 | Five auxiliary target labels | Materialized | `20260723_s59_h5_path_aux_targets_v11...` | Label-only |
 | Five auxiliary LGBM heads | Partial selection checkpoints for 3/5 | `path_auxiliary_lgbm_full...v18` | No |
 | 12h execution-EV labels | Materialized | `execution_ev_12h_labels_p90spread_fee30bps...v3` | Label-only |
-| Alpha execution-EV OOF stream | Materialized | `execution_ev_alpha_oof_20260722_v2...` | Valid joined input |
+| Alpha execution-EV OOF stream | Materialized | `execution_ev_alpha_oof_20260722_v2...` | Historical benchmark; canonical Pack-B lineage is not proven |
 | Auxiliary/CatBoost execution OOF streams | Not materialized | None | No |
 | Strict joined execution-EV handoff | Not materialized | None | No |
 | Direct/residual execution-EV ablation | Not run | None | No |
@@ -96,6 +96,8 @@ Key contract:
 - 242 symbols.
 - Coverage from 2025-01-01 00:00 UTC through 2026-07-10 21:00 UTC.
 - Seven recorded OOS folds plus final refit.
+- The directional target resolves over 96 causal 15-minute path bars: 24 hours
+  after the one-hour-delayed decision timestamp.
 - One frozen cycle AE/GMM state.
 - Manifest records `model_side_scope=per_side`.
 - Independent selected-feature contracts: 55 long and 37 short features.
@@ -105,6 +107,23 @@ Key contract:
 The exact per-side feature lists and parameters are authoritative in this run's
 manifest and model directories; do not replace them with the shared-store
 run's shared HPO parameter block.
+
+The saved seven fold models do not match the locked DEC-09 four-fold calendar,
+and their manifests do not prove the required train cutoffs and row-level label
+resolution. They may be rescored only as a historical comparator. Canonical
+R3 evidence requires fresh April, May, June, and July 1–11 half-open OOF folds
+using the frozen 55/37 feature/parameter contracts and recovered exact AE/GMM
+state. For this Pack-B target:
+
+```text
+decision_timestamp = signal_timestamp + 1 hour
+base_label_end = decision_timestamp + 24 hours
+eligible_train_signal < validation_start - 25 hours
+```
+
+The downstream path, auxiliary, execution-EV, and timing targets remain
+12-hour contracts. Every manifest must bind the horizon of its own target
+rather than inheriting a generic pipeline horizon.
 
 The later shared-store run remains useful as a historical comparator and as the
 source of already materialized top-30/top-40 research handoffs, but it is not

@@ -246,12 +246,46 @@ def test_representation_loader_materializes_frozen_side_outputs_only_when_needed
     represented = loader(ledger, ["raw_b", "gmm_ood_score"])
     raw_only = loader(ledger, ["raw_a"])
 
-    assert represented.to_dict("list") == {
-        "raw_b": [3.0, 4.0],
-        "gmm_ood_score": [0.3, 0.4],
-    }
+    assert represented["raw_b"].tolist() == [3.0, 4.0]
+    assert represented["gmm_ood_score"].tolist() == pytest.approx([0.3, 0.4])
     assert raw_only.to_dict("list") == {"raw_a": [1.0, 2.0]}
     assert calls == [["raw_a", "raw_b"], ["raw_a"]]
+
+
+def test_representation_loader_leaves_incomplete_rows_for_joint_coverage_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raw_loader(_ledger: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+        values = {
+            "raw_a": np.asarray([1.0, np.nan, 3.0], dtype=np.float32),
+            "raw_b": np.asarray([4.0, 5.0, 6.0], dtype=np.float32),
+        }
+        return pd.DataFrame({column: values[column] for column in columns})
+
+    def transform(
+        raw: pd.DataFrame, _state: dict[str, object], *, index: pd.Index
+    ) -> pd.DataFrame:
+        assert list(index) == [0, 2]
+        assert np.isfinite(raw.to_numpy()).all()
+        return pd.DataFrame({"dae_b16_00": [0.1, 0.3]}, index=index)
+
+    monkeypatch.setattr(runner, "transform_ae_gmm_features", transform)
+    loader = runner.SideRepresentationFeatureLoader(
+        raw_loader=raw_loader,
+        raw_features=["raw_a", "raw_b"],
+        state={"enabled": True},
+        generated_features=["dae_b16_00"],
+    )
+
+    represented = loader(
+        pd.DataFrame({"candidate_id": ["a", "b", "c"]}),
+        ["raw_a", "dae_b16_00"],
+    )
+
+    assert represented["raw_a"].tolist()[0::2] == [1.0, 3.0]
+    assert np.isnan(represented.loc[1, "raw_a"])
+    assert represented["dae_b16_00"].tolist()[0::2] == pytest.approx([0.1, 0.3])
+    assert np.isnan(represented.loc[1, "dae_b16_00"])
 
 
 def test_active_ae_contract_excludes_row_order_temporal_outputs() -> None:

@@ -473,11 +473,26 @@ class SideRepresentationFeatureLoader:
         raw = self.raw_loader(ledger, list(raw_request))
         if not requested_generated:
             return raw.loc[:, list(requested)].reset_index(drop=True)
-        generated = transform_ae_gmm_features(
-            raw.loc[:, list(self.raw_features)],
-            self.state,
+        raw_contract = raw.loc[:, list(self.raw_features)]
+        complete = np.isfinite(raw_contract.to_numpy(dtype=np.float32, copy=False)).all(
+            axis=1
+        )
+        generated = pd.DataFrame(
+            np.nan,
             index=raw.index,
-        ).loc[:, requested_generated]
+            columns=requested_generated,
+            dtype=np.float32,
+        )
+        if complete.any():
+            transformed = transform_ae_gmm_features(
+                raw_contract.loc[complete],
+                self.state,
+                index=raw.index[complete],
+            ).loc[:, requested_generated]
+            generated.loc[complete, requested_generated] = transformed.to_numpy(
+                dtype=np.float32,
+                copy=False,
+            )
         joined = pd.concat([raw, generated], axis=1, copy=False)
         return joined.loc[:, list(requested)].reset_index(drop=True)
 

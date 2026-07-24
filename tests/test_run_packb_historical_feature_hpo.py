@@ -81,3 +81,49 @@ def test_cached_representation_loader_preserves_requested_order() -> None:
     )
     assert list(result.columns) == ["gmm_ood_score", "dae_b16_06"]
     assert result.to_numpy().tolist() == [[4.0, 2.0], [3.0, 1.0]]
+
+
+def test_representation_union_is_precomputed_once_across_cohorts() -> None:
+    base = pd.DataFrame(
+        {
+            "candidate_id": ["a", "b"],
+            "__ts__": pd.to_datetime(
+                ["2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z"], utc=True
+            ),
+            "__symbol__": ["BTCUSDT", "ETHUSDT"],
+        }
+    )
+    calls = []
+
+    def representation(ledger, features):
+        calls.append((ledger["candidate_id"].tolist(), list(features)))
+        return pd.DataFrame(
+            {
+                "dae_b16_06": range(len(ledger)),
+                "gmm_ood_score": range(len(ledger)),
+            },
+            dtype=float,
+        )
+
+    fold = runner.HPOFoldLedger(
+        name="hpo_1",
+        train_ledger=base,
+        train_ledger_path=Path("/train"),
+        valid_ledger=base.iloc[::-1].reset_index(drop=True),
+        valid_ledger_path=Path("/valid"),
+    )
+    cache, evidence = runner._precompute_representations(
+        representation_loader=representation,
+        generated_features=("dae_b16_06", "gmm_ood_score"),
+        fs_train=base,
+        fs_valid=base,
+        folds=(fold,),
+        fs_train_max_rows=2,
+        fs_valid_max_rows=2,
+        hpo_train_max_rows=2,
+        hpo_valid_max_rows=2,
+    )
+    assert len(calls) == 1
+    assert evidence["union_rows"] == 2
+    assert evidence["outcome_columns_loaded"] is False
+    assert len(cache(base, ("dae_b16_06",))) == 2

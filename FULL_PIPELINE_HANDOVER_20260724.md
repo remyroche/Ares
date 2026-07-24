@@ -121,13 +121,16 @@ The recovered Pack-B fitted-state contracts are also historical-only:
 - DEC-09 requires every feature-selection/HPO label to resolve strictly before
   `2026-03-01 00:00 UTC`.
 
-Consequently, the 55-long/37-short feature lists, promoted parameters, and
-recovered AE/GMM state cannot be frozen into canonical April–July OOF. They
-remain useful comparator evidence only. Canonical R3 requires a fresh,
-side-local pre-March reference process that independently fits AE/GMM state,
-feature selection, and HPO for long and short, freezes those artifacts, and
-then produces the April, May, June, and July 1–11 half-open OOF folds. For this
-Pack-B target:
+The recovered AE/GMM state and post-cutoff promoted parameters cannot be frozen
+into canonical April–July OOF. The user approved one narrow exception on
+2026-07-24 for future runs: the 55-long/37-short feature lists may be selected
+once on the 2026-05-31 through 2026-06-30 largest fold and reused backward.
+This exception applies only to the feature names. AE/GMM fitting, HPO, model
+fitting, calibration, and reported OOF predictions remain subject to their
+normal chronological cutoffs. Canonical R3 must therefore refit strict
+December-February HPO for the frozen 55/37 lists and compare them with the
+fresh 31/8 pair on identical outer rows and costs. Promote 31/8 only if it has
+higher paired metrics. For this Pack-B target:
 
 ```text
 decision_timestamp = signal_timestamp + 1 hour
@@ -160,6 +163,11 @@ R3 execution update on 2026-07-24:
 - The authoritative routed promotion contract is
   `docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v1.json`.
   These are inner model-selection results, not outer OOF performance claims.
+- Subsequent user direction supersedes that v1 routing as the final choice:
+  55/37 is the default feature-list route under the explicit selection-timing
+  exception. Regenerate strict pre-March HPO for those names, then run a paired
+  55/37-versus-31/8 outer-OOF gate. Retain 31/8 only if it wins the paired
+  cost-aware metrics. Do not reuse the historical post-cutoff HPO parameters.
 
 The locked inner calendar is fixed before this new search:
 
@@ -1387,13 +1395,16 @@ directional opportunity streams before completing downstream heads.
 
 Steps:
 
-1. Use the routed pre-March Pack-B promotion contract as the active alpha
-   foundation: long uses the v2 31-feature/`trial_141` contract and short uses
-   the v1 eight-feature/`trial_084` contract. Keep the historical 55/37 and
-   shared-store bases only as comparators.
+1. Use the approved feature-selection-timing exception to freeze the historical
+   55-long/37-short names. Verify exact causal point-in-time and inference
+   availability for every name, then rerun HPO independently per side on the
+   strict December, January, and February folds. Do not reuse the historical
+   post-cutoff HPO parameters.
 2. Generate fresh April, May, June, and July 1–11 outer OOF base streams from
-   those routed contracts. Every fold must refit using only labels resolved
-   before its cutoff; final-refit predictions are forbidden from OOF metrics.
+   both 55/37 and the fresh 31/8 comparator contracts on identical admitted
+   rows. Every fold must refit using only labels resolved before its cutoff;
+   final-refit predictions are forbidden from OOF metrics. Promote 55/37 by
+   default; retain 31/8 only if its paired cost-aware metrics are higher.
 3. Verify that the resulting long and short contracts retain independent feature
    selection, HPO parameters, fitted models, OOF streams, and final refits.
    This verification must inspect the serialized model bundle and manifests,

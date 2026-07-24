@@ -1521,6 +1521,24 @@ Immediate next action:
    these matching side-local identities before starting CatBoost or auxiliary
    models.
 
+Residual rebuild decision:
+
+- Do not invoke `run_meta_v9_ev_mapped_side_residual_ablation.py` unchanged.
+  Its current handoff, joint helper paths, and historical calendar are tied to
+  the former shared-base population.
+- The old residual bundle overlaps only 64,182 canonical long identities
+  (45.6%) and 57,355 canonical short identities (35.9%); it is not an
+  admissible training source or canonical fallback.
+- Because the final side-local base OOF stream begins in April, April is the
+  residual development warm-up. The first honest residual OOF fold is May,
+  trained only on prior resolved April rows; June and July then expand on prior
+  resolved canonical rows. April must be explicitly marked
+  `base_passthrough_warmup` or excluded from residual uplift claims.
+- Feature selection, HPO, baseline EV calibration, residual model, correction
+  strength, and final refit are all independent by side. The exact frozen
+  implementation and memory contract is
+  `docs/pipeline_roadmap/20260724/r3/packb_residual_rebuild_contract_v1.json`.
+
 ### Phase 3: Finish the Seven-Class CatBoost Classifier
 
 Goal: produce leakage-safe OOF predictions and an inference-ready final model.

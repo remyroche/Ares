@@ -1,0 +1,59 @@
+{
+  "schema": "packb_residual_rebuild_contract_v1",
+  "status": "FROZEN_IMPLEMENTATION_CONTRACT_NOT_YET_TRAINED",
+  "canonical_population": {
+    "path": "data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8/base_candidate_population.parquet",
+    "sha256": "54cf57e3718ba8315d7197bb83f0f26f15ad251ae0b9a529ec8796da53631630",
+    "rows": 300315,
+    "long_rows": 140768,
+    "short_rows": 159547
+  },
+  "legacy_bundle": {
+    "path": "data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_residual_only_hpo150_wf30_v1",
+    "disposition": "FORBIDDEN_FOR_CANONICAL_TRAINING",
+    "reason": "Shared-base lineage and insufficient identity overlap with the final side-local 31/8 top-40 population.",
+    "identity_overlap": {
+      "long_rows": 64182,
+      "long_fraction": 0.4559416912934758,
+      "short_rows": 57355,
+      "short_fraction": 0.35948654628416704
+    }
+  },
+  "calendar": {
+    "april": "development warm-up for side-local feature selection and HPO; no residual OOF performance claim",
+    "may": "first residual OOF fold; train only prior April identities whose labels resolved before 2026-05-01T00:00:00Z",
+    "june": "second residual OOF fold; train only prior April-May identities whose labels resolved before 2026-06-01T00:00:00Z",
+    "july_1_10": "third residual OOF fold; train only prior April-June identities whose labels resolved before 2026-07-01T00:00:00Z",
+    "april_output_policy": "explicit base_passthrough_warmup or excluded; never presented as residual OOF"
+  },
+  "side_local_invariants": {
+    "feature_selection": "independent long and short",
+    "hpo": "independent long and short",
+    "baseline_ev_map": "independent long and short",
+    "residual_model": "independent long and short",
+    "correction_strength": "independent long and short",
+    "final_refit": "independent long and short and excluded from OOF metrics",
+    "shared_fitted_state": false
+  },
+  "target": {
+    "column": "__first_touch_capture_net__",
+    "residual_definition": "observed cost-aware net capture minus train-only side-local baseline expected EV",
+    "cost_policy": "already net of the fixed 1% round-trip cost; do not subtract cost again",
+    "label_resolution_contract": "__ts__ + 25h, verified against canonical labels"
+  },
+  "features": {
+    "allowed": "causal point-in-time raw features, matching frozen side-local AE/GMM outputs, base OOF prediction, and ranks/margins recomputed from the canonical side stream",
+    "forbidden": "realized first-touch/path outcomes, old shared residual/meta predictions, outcome-generated archetypes, or opposite-side fitted state"
+  },
+  "resource_contract": {
+    "minimum_free_ram_gib": 2,
+    "maximum_process_rss_gib": 12,
+    "minimum_free_disk_gib": 10,
+    "selection_rows_per_side_max": 45000,
+    "hpo_rows_per_side_max": 45000,
+    "outer_train_rows_per_side_fold_max": 100000,
+    "process_order": "one side and one fold at a time",
+    "staging_policy": "atomic publish; remove failed staging directories"
+  },
+  "promotion_gate": "On exact May-July OOF rows, corrected residual EV must improve the matching side-local base EV on the cost-aware objective and preserve acceptable month stability; otherwise retain base passthrough for that side."
+}

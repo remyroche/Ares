@@ -1,0 +1,182 @@
+{
+  "calendar": {
+    "final_refit": "all resolved canonical rows; stored separately and forbidden from OOF metrics",
+    "inner_hpo": "three chronological purged folds inside the April reference population; every train label resolution must be strictly before validation start",
+    "oof_folds": [
+      {
+        "month": "2026-05",
+        "train_rule": "decision < 2026-05-01T00:00:00Z and label_resolution < 2026-05-01T00:00:00Z"
+      },
+      {
+        "month": "2026-06",
+        "train_rule": "decision < 2026-06-01T00:00:00Z and label_resolution < 2026-06-01T00:00:00Z"
+      },
+      {
+        "month": "2026-07",
+        "train_rule": "decision < 2026-07-01T00:00:00Z and label_resolution < 2026-07-01T00:00:00Z"
+      }
+    ],
+    "purge_hours": 13,
+    "selection_hpo_reference_end": "2026-05-01T00:00:00Z"
+  },
+  "context": {
+    "candidate_identity_sha256": "1b7442bfd5a75c040869d156b6ed102423eff8876b8fca3b8a0781b7fcdaef55",
+    "path": "data_perp/artifacts/packb_downstream_context_20260725_v2_31_8_frozen_ae_gmm/context.parquet",
+    "sha256": "ecedbd3424ceb3b14c91179fa4518fe9966e42a66567d9f7e95b8c784069c837"
+  },
+  "feature_selection": {
+    "contract": "full univariate plus Relief plus MDA pipeline independently by side and unique role target",
+    "event_role_reuse": "the exact meaningful-MFE event selector is shared by peak, timing, and MAE because the event target is identical",
+    "mandatory_context": [
+      "score",
+      "base_margin_to_cutoff",
+      "base_margin_to_cutoff_z",
+      "base_signal_zscore_within_archetype",
+      "gmm_representation_available",
+      "frozen base-archetype one-hot contract"
+    ],
+    "reference_sample": "up to 45000 April rows spread across beginning, middle, and end",
+    "side_scope": [
+      "long",
+      "short"
+    ]
+  },
+  "heads": {
+    "bars_before_price_stops_decreasing": {
+      "deployment_rule": "choose a side-local OOF winner only if aggregate and worst-month gates agree; otherwise diagnostic-only",
+      "roles": {
+        "confirmed_trough": {
+          "target": "__bars_to_confirmed_adverse_trough__",
+          "task": "regression"
+        },
+        "legacy_adverse_extreme": {
+          "target": "__bars_to_adverse_extreme_before_mfe_12h__",
+          "task": "regression"
+        }
+      }
+    },
+    "future_slope_atr_per_hour": {
+      "deployment_rule": "diagnostic-only unless an identical-row May-July ablation adds aggregate and worst-month economic value beyond peak plus timing",
+      "roles": {
+        "slope": {
+          "target": "__future_slope_atr_per_hour_12h__",
+          "task": "regression"
+        }
+      }
+    },
+    "mae_before_meaningful_mfe_atr": {
+      "roles": {
+        "mae_if_hit": {
+          "target": "__mae_before_meaningful_mfe_atr_12h__",
+          "task": "conditional_regression",
+          "training_rows": "__meaningful_mfe_reached_12h__ == 1"
+        },
+        "mae_if_no_hit": {
+          "target": "__mae_before_meaningful_mfe_atr_12h__",
+          "task": "conditional_regression",
+          "training_rows": "__meaningful_mfe_reached_12h__ == 0"
+        },
+        "p_meaningful_mfe": {
+          "shared_role": "meaningful_mfe_event",
+          "target": "__meaningful_mfe_reached_12h__",
+          "task": "binary"
+        }
+      }
+    },
+    "peak_mfe_12h_atr": {
+      "roles": {
+        "conditional_mean": {
+          "target": "__peak_mfe_atr_12h__",
+          "task": "conditional_regression",
+          "training_rows": "__meaningful_mfe_reached_12h__ == 1"
+        },
+        "conditional_q80": {
+          "alpha": 0.8,
+          "target": "__peak_mfe_atr_12h__",
+          "task": "conditional_quantile",
+          "training_rows": "__meaningful_mfe_reached_12h__ == 1"
+        },
+        "expected_peak": {
+          "formula": "p_meaningful_mfe * conditional_mean",
+          "task": "derived_oof_prediction"
+        },
+        "p_meaningful_mfe": {
+          "shared_role": "meaningful_mfe_event",
+          "target": "__meaningful_mfe_reached_12h__",
+          "task": "binary"
+        }
+      }
+    },
+    "time_to_first_meaningful_mfe": {
+      "roles": {
+        "cdf_12h": {
+          "target_rule": "__meaningful_mfe_reached_12h__ == 1",
+          "task": "binary"
+        },
+        "cdf_2h": {
+          "target_rule": "__meaningful_mfe_reached_12h__ == 1 and time_hours <= 2",
+          "task": "binary"
+        },
+        "cdf_4h": {
+          "target_rule": "__meaningful_mfe_reached_12h__ == 1 and time_hours <= 4",
+          "task": "binary"
+        },
+        "cdf_8h": {
+          "target_rule": "__meaningful_mfe_reached_12h__ == 1 and time_hours <= 8",
+          "task": "binary"
+        }
+      },
+      "transform": "project every row to nondecreasing CDF_2h <= CDF_4h <= CDF_8h <= CDF_12h"
+    }
+  },
+  "hpo": {
+    "cdf_parameter_sharing": "one side-local classifier HPO study scored jointly across 2h, 4h, 8h, and 12h; fit four threshold models with the frozen winner",
+    "early_stop": "stop after 12 completed or pruned trials without improvement, after at least 12 trials",
+    "maximum_trials_per_unique_role_study": 40,
+    "objective_requirements": {
+      "binary": [
+        "Brier",
+        "log loss",
+        "ECE",
+        "AUC when both classes exist",
+        "fold stability"
+      ],
+      "quantile": [
+        "pinball loss",
+        "q80 empirical coverage",
+        "conditional rank IC",
+        "fold stability"
+      ],
+      "regression": [
+        "MAE",
+        "RMSE",
+        "rank IC",
+        "fold stability"
+      ]
+    },
+    "reference_sample_rows": 45000,
+    "side_local": true
+  },
+  "labels": {
+    "meaningful_event": "__meaningful_mfe_reached_12h__",
+    "meaningful_event_contract": "max(1.5 * signal ATR, 1.5% entry return)",
+    "meaningful_event_forbidden_alias": "__mfe_ge_1_5atr__",
+    "path": "data_perp/artifacts/packb_path_auxiliary_targets_20260725_v1_31_8/targets.parquet",
+    "sha256": "f9c98d6234e4334c0f5003ab822a2d0208c86c9034da3ddcedcdfd27ffce929d"
+  },
+  "promotion_gates": {
+    "adverse_variant": "side-local aggregate and worst-month OOF winner; fail closed on mixed result",
+    "candidate_identity": "every emitted prediction is an exact canonical candidate and final-refit predictions are excluded",
+    "economics": "identical-row cost-aware aggregate and worst-month improvement before execution-EV consumption",
+    "representation_availability": "report every head by side and gmm_representation_available; no material missing-slice collapse",
+    "slope": "absent from deployable output until incremental-value gate passes"
+  },
+  "resource_contract": {
+    "execution": "one side, role, and fold at a time with checkpoints",
+    "max_process_rss_gib": 12,
+    "min_free_disk_gib": 10,
+    "min_free_ram_gib": 2
+  },
+  "schema": "packb_auxiliary_bundle_training_contract_v1",
+  "status": "FROZEN_IMPLEMENTATION_AND_TRAINING_CONTRACT"
+}

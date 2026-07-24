@@ -63,6 +63,50 @@ def test_complete_case_gate_rejects_alignment_and_zero_weight() -> None:
         runner._admit_complete(ledger.iloc[:1], pd.DataFrame({"a": [1.0, 2.0]}), labels)
 
 
+def test_native_missing_admission_keeps_nan_rows_without_imputation() -> None:
+    ledger = _ledger()
+    features = pd.DataFrame({"a": [1.0, np.nan], "b": [2.0, 3.0]})
+    labels = pd.DataFrame(
+        {
+            runner.TARGET_COLUMN: [0.4, 0.5],
+            runner.WEIGHT_COLUMN: [1.0, 1.0],
+            runner.ECONOMIC_COLUMN: [0.01, 0.02],
+        }
+    )
+    admitted_ledger, admitted_x, admitted_labels, evidence = (
+        runner._admit_native_missing(
+            ledger,
+            features,
+            labels,
+            min_per_feature_finite_fraction=0.5,
+        )
+    )
+    assert admitted_ledger["candidate_id"].tolist() == ["long-a", "long-b"]
+    assert np.isnan(admitted_x.loc[1, "a"])
+    assert len(admitted_labels) == 2
+    assert evidence["minimum_per_feature_finite_fraction"] == 0.5
+    assert evidence["policy"] == "lightgbm_native_nan_no_imputation_label_complete_rows"
+
+
+def test_native_missing_admission_rejects_feature_below_floor() -> None:
+    ledger = _ledger()
+    features = pd.DataFrame({"a": [1.0, np.nan], "b": [2.0, 3.0]})
+    labels = pd.DataFrame(
+        {
+            runner.TARGET_COLUMN: [0.4, 0.5],
+            runner.WEIGHT_COLUMN: [1.0, 1.0],
+            runner.ECONOMIC_COLUMN: [0.01, 0.02],
+        }
+    )
+    with pytest.raises(runner.PackBOuterOOFRunnerError, match="coverage fell below"):
+        runner._admit_native_missing(
+            ledger,
+            features,
+            labels,
+            min_per_feature_finite_fraction=0.95,
+        )
+
+
 def test_metrics_are_cost_aware_and_timestamp_ranked() -> None:
     ledger = _ledger()
     ledger.loc[1, "__ts__"] = ledger.loc[0, "__ts__"]

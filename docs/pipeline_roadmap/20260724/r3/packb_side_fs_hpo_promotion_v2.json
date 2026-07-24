@@ -1,0 +1,54 @@
+{
+  "schema": "packb_side_fs_hpo_promotion_v2",
+  "status": "FROZEN_HISTORICAL_FEATURE_EXCEPTION_WITH_STRICT_PRE_MARCH_HPO",
+  "source_revision": "569c624f9270bd1cef37af44cfa66281b9d43313",
+  "fixed_calendar_sha256": "47a20a372d14490878006dddc942bda60eea2a62b6a7b072ae6a2afa92ceea19",
+  "selection_evidence_role": "user-approved feature-name timing exception; HPO regenerated independently by side on the fixed December-February calendar; outer April-July OOF remains required for performance claims",
+  "promotion_rule": "55/37 is the default route; compare against 31/8 on the exact outer-OOF candidate-ID intersection and identical cost labels, retaining 31/8 only when its paired metrics are higher",
+  "historical_post_cutoff_parameters_reused": false,
+  "sides": {
+    "long": {
+      "source_root": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v3_hist55_37/long",
+      "source_summary_sha256": "a28e2e65ad1615fb98b85eeeeca79da09feb4f2c1dd68b9d5805fa71b9e0532d",
+      "feature_contract_sha256": "d0bcee5c8c88fe0322d12629d1e5ec1805521726029e6d767b18a0d627fa20dd",
+      "hpo_parameters_sha256": "b5e82ebad7bd003a4e713069baa5795342a32747b1918ca866b17080abfadc26",
+      "selected_feature_count": 55,
+      "selected_trial_id": "trial_003",
+      "mean_objective": 0.2331854849345444,
+      "worst_fold_objective": 0.19025806166485465,
+      "loader_kind": "historical_candidate_static_ae_gmm",
+      "missing_value_policy": "lightgbm_native_nan",
+      "min_per_feature_finite_fraction": 0.95,
+      "decision": "DEFAULT_PENDING_PAIRED_OUTER_OOF_GATE"
+    },
+    "short": {
+      "source_root": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v3_hist55_37/short",
+      "source_summary_sha256": "615c2844a794dbe37713c2b7010a567522a50a7bcfd6c88273e6be55b56f2d30",
+      "feature_contract_sha256": "9dd6fc9990332173a99fe2c2af9b898c3505a58ca35e71d4f3d2679cfff1959a",
+      "hpo_parameters_sha256": "6017371efc11b0ac8e924f4b34b633679c0c1c39e54a58839892f49caa75e8f5",
+      "selected_feature_count": 37,
+      "selected_trial_id": "trial_049",
+      "mean_objective": 0.185733809797593,
+      "worst_fold_objective": 0.16852954105937562,
+      "loader_kind": "historical_candidate_static_ae_gmm",
+      "missing_value_policy": "lightgbm_native_nan",
+      "min_per_feature_finite_fraction": 0.95,
+      "decision": "DEFAULT_PENDING_PAIRED_OUTER_OOF_GATE"
+    }
+  },
+  "selection_exception": {
+    "scope": "feature_names_only",
+    "selection_fold": "2026-05-31_2026-06-30",
+    "historical_feature_contract_sha256": "0032336a9733e442e2fd9cba8e4669e76ee9589b458932c83e4fe133924043c0",
+    "historical_process_manifest_sha256": "9c944de65e16b45d09699c9635460755b214a50708d291a5e3480043cce0726b"
+  },
+  "comparator": {
+    "promotion_contract": "docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v1.json",
+    "feature_counts": {
+      "long": 31,
+      "short": 8
+    },
+    "required_gate": "paired_exact_candidate_id_outer_oof_cost_aware_metrics"
+  },
+  "next_gate": "Generate both 55/37 and 31/8 April-July strict side-local outer-OOF streams, score their exact candidate-ID intersection with identical cost labels, and retain 31/8 only if its paired metrics are higher."
+}

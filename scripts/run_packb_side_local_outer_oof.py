@@ -10,6 +10,7 @@ separately and explicitly excluded from OOF metrics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -35,6 +36,12 @@ from extreme_price_movements.packb_side_local_fs_hpo_stage import (
 from extreme_price_movements.training_resource_guard import (
     TrainingResourceGuard,
     TrainingResourceLimits,
+)
+from scripts.run_packb_historical_feature_hpo import (
+    CachedRepresentationFeatureLoader,
+    ExactCandidateFeatureLoader,
+    HistoricalCompositeFeatureLoader,
+    _label_schema,
 )
 from scripts.run_packb_pre_march_side_ae import (
     DEFAULT_DECISIONS,
@@ -212,9 +219,19 @@ def _load_promotion(
     path: Path, *, fixed_calendar_sha256: str
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     promotion = _json(path)
+    schema = promotion.get("schema")
+    status = promotion.get("status")
     if (
-        promotion.get("schema") != "packb_side_fs_hpo_promotion_v1"
-        or promotion.get("status") != "FROZEN_SIDE_ROUTED_FEATURE_SELECTION_AND_HPO"
+        schema
+        not in {
+            "packb_side_fs_hpo_promotion_v1",
+            "packb_side_fs_hpo_promotion_v2",
+        }
+        or status
+        not in {
+            "FROZEN_SIDE_ROUTED_FEATURE_SELECTION_AND_HPO",
+            "FROZEN_HISTORICAL_FEATURE_EXCEPTION_WITH_STRICT_PRE_MARCH_HPO",
+        }
         or promotion.get("fixed_calendar_sha256") != fixed_calendar_sha256
     ):
         raise PackBOuterOOFRunnerError("frozen routed promotion is required")
@@ -257,7 +274,28 @@ def _load_promotion(
             "feature_contract_path": feature_path,
             "parameter_path": parameter_path,
             "route": dict(route),
+            "loader_kind": str(route.get("loader_kind") or "ae_gmm_only"),
+            "missing_value_policy": str(
+                route.get("missing_value_policy") or "joint_complete"
+            ),
+            "min_per_feature_finite_fraction": float(
+                route.get("min_per_feature_finite_fraction", 1.0)
+            ),
         }
+        if result[side]["loader_kind"] not in {
+            "ae_gmm_only",
+            "historical_candidate_static_ae_gmm",
+        }:
+            raise PackBOuterOOFRunnerError(
+                f"promoted {side} loader kind is unsupported"
+            )
+        if result[side]["missing_value_policy"] not in {
+            "joint_complete",
+            "lightgbm_native_nan",
+        }:
+            raise PackBOuterOOFRunnerError(
+                f"promoted {side} missing-value policy is unsupported"
+            )
     if (
         result["long"]["feature_contract_path"]
         == result["short"]["feature_contract_path"]
@@ -301,6 +339,106 @@ def _admit_complete(
         labels.loc[admitted].reset_index(drop=True),
         evidence,
     )
+
+
+def _admit_native_missing(
+    ledger: pd.DataFrame,
+    features: pd.DataFrame,
+    labels: pd.DataFrame,
+    *,
+    min_per_feature_finite_fraction: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    if len(ledger) != len(features) or len(ledger) != len(labels):
+        raise PackBOuterOOFRunnerError("feature/label loader changed row alignment")
+    matrix = features.replace([np.inf, -np.inf], np.nan)
+    finite_fraction = matrix.notna().mean()
+    rejected = finite_fraction.loc[
+        finite_fraction.lt(float(min_per_feature_finite_fraction))
+    ]
+    if not rejected.empty:
+        raise PackBOuterOOFRunnerError(
+            "historical feature coverage fell below the frozen native-missing floor: "
+            + ", ".join(f"{name}={value:.6f}" for name, value in rejected.items())
+        )
+    target = pd.to_numeric(labels[TARGET_COLUMN], errors="coerce").to_numpy()
+    weight = pd.to_numeric(labels[WEIGHT_COLUMN], errors="coerce").to_numpy()
+    economic = pd.to_numeric(labels[ECONOMIC_COLUMN], errors="coerce").to_numpy()
+    admitted = (
+        np.isfinite(target)
+        & np.isfinite(weight)
+        & np.isfinite(economic)
+        & (weight >= 0.0)
+    )
+    count = int(admitted.sum())
+    if count < 1 or float(weight[admitted].sum()) <= 0.0:
+        raise PackBOuterOOFRunnerError("no positive-weight label-complete rows")
+    evidence = {
+        "raw_rows": int(len(ledger)),
+        "admitted_rows": count,
+        "attrited_rows": int(len(ledger) - count),
+        "joint_complete_fraction": float(
+            matrix.notna().all(axis=1).loc[admitted].mean()
+        ),
+        "minimum_per_feature_finite_fraction": float(finite_fraction.min()),
+        "per_feature_finite_fraction": {
+            str(name): float(value) for name, value in finite_fraction.items()
+        },
+        "policy": "lightgbm_native_nan_no_imputation_label_complete_rows",
+    }
+    return (
+        ledger.loc[admitted].reset_index(drop=True),
+        matrix.loc[admitted].reset_index(drop=True),
+        labels.loc[admitted].reset_index(drop=True),
+        evidence,
+    )
+
+
+def _admit_route(
+    ledger: pd.DataFrame,
+    features: pd.DataFrame,
+    labels: pd.DataFrame,
+    route: Mapping[str, Any],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    if route["missing_value_policy"] == "lightgbm_native_nan":
+        return _admit_native_missing(
+            ledger,
+            features,
+            labels,
+            min_per_feature_finite_fraction=float(
+                route["min_per_feature_finite_fraction"]
+            ),
+        )
+    return _admit_complete(ledger, features, labels)
+
+
+def _precompute_outer_representations(
+    representation_loader: SideRepresentationFeatureLoader,
+    ledgers: Sequence[pd.DataFrame],
+    generated_features: Sequence[str],
+) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any]]:
+    union = (
+        pd.concat(list(ledgers), ignore_index=True, copy=False)
+        .drop_duplicates("candidate_id", keep="first")
+        .sort_values(["__ts__", "__symbol__", "candidate_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    generated = tuple(map(str, generated_features))
+    values = representation_loader(union, generated)
+    cache = CachedRepresentationFeatureLoader(union, values)
+    return cache, {
+        "schema": "packb_outer_representation_union_cache_v1",
+        "union_rows": int(len(union)),
+        "generated_features": list(generated),
+        "candidate_stream_sha256": hashlib.sha256(
+            "\n".join(union["candidate_id"].astype(str)).encode("utf-8")
+        ).hexdigest(),
+        "values_sha256": hashlib.sha256(
+            pd.util.hash_pandas_object(values, index=True)
+            .to_numpy(dtype=np.uint64, copy=False)
+            .tobytes()
+        ).hexdigest(),
+        "outcome_columns_loaded": False,
+    }
 
 
 def _fit_model(
@@ -349,11 +487,16 @@ def run(
     decisions_path: Path = DEFAULT_DECISIONS,
     train_max_rows: int = DEFAULT_TRAIN_MAX_ROWS,
     final_max_rows: int = DEFAULT_FINAL_MAX_ROWS,
+    validation_max_rows: int | None = None,
 ) -> dict[str, Any]:
     destination = Path(output_dir)
     if destination.exists():
         raise PackBOuterOOFRunnerError(f"refusing to overwrite output: {destination}")
-    if train_max_rows < 1 or final_max_rows < 1:
+    if (
+        train_max_rows < 1
+        or final_max_rows < 1
+        or (validation_max_rows is not None and validation_max_rows < 1)
+    ):
         raise PackBOuterOOFRunnerError("row caps must be positive")
     revision = _git_revision()
     (
@@ -437,7 +580,7 @@ def run(
                 expected_sha256=str(ae_manifest["artifact"]["sha256"]),
                 raw_features=contract["feature_columns"],
             )
-            feature_loader = SideRepresentationFeatureLoader(
+            representation_loader = SideRepresentationFeatureLoader(
                 raw_loader=raw_loader,
                 raw_features=contract["feature_columns"],
                 state=state,
@@ -450,8 +593,18 @@ def run(
             fold_reports: list[dict[str, Any]] = []
             side_predictions: list[pd.DataFrame] = []
             final_sources: list[pd.DataFrame] = []
-
-            for fold_index, fold in enumerate(folds):
+            fold_inputs: list[
+                tuple[
+                    Mapping[str, Any],
+                    pd.DataFrame,
+                    Path,
+                    Mapping[str, Any],
+                    pd.DataFrame,
+                    Path,
+                    Mapping[str, Any],
+                ]
+            ] = []
+            for fold in folds:
                 train, train_path, train_record = _load_bound_ledger(
                     Path(outer_population_root),
                     outer_manifest,
@@ -466,19 +619,121 @@ def run(
                     side=side,
                     role="validation",
                 )
+                if validation_max_rows is not None:
+                    validation = _bounded_beginning_middle_end_sample(
+                        validation,
+                        max_rows=int(validation_max_rows),
+                        name=f"{side}_{fold['name']}_validation_diagnostic",
+                    )
                 train = _bounded_beginning_middle_end_sample(
                     train,
                     max_rows=int(train_max_rows),
                     name=f"{side}_{fold['name']}_train",
                 )
-                guard.checkpoint(f"packb_outer_oof:{side}:{fold['name']}:load")
-                train_ledger, train_x, train_labels, train_coverage = _admit_complete(
-                    train, feature_loader(train, features), labels.load(train)
+                fold_inputs.append(
+                    (
+                        fold,
+                        train,
+                        train_path,
+                        train_record,
+                        validation,
+                        valid_path,
+                        valid_record,
+                    )
                 )
-                valid_ledger, valid_x, valid_labels, valid_coverage = _admit_complete(
+                final_sources.append(validation)
+
+            last_train, _, _ = _load_bound_ledger(
+                Path(outer_population_root),
+                outer_manifest,
+                fold=folds[-1],
+                side=side,
+                role="train",
+            )
+            final_sources.append(
+                _bounded_beginning_middle_end_sample(
+                    last_train,
+                    max_rows=int(final_max_rows),
+                    name=f"{side}_final_base",
+                )
+            )
+            final_ledger = (
+                pd.concat(final_sources, ignore_index=True)
+                .drop_duplicates("candidate_id", keep="last")
+                .reset_index(drop=True)
+            )
+            final_ledger = _bounded_beginning_middle_end_sample(
+                final_ledger,
+                max_rows=int(final_max_rows),
+                name=f"{side}_final_refit",
+            )
+            generated = [
+                feature for feature in features if feature.startswith(("dae_", "gmm_"))
+            ]
+            representation_features = (
+                list(features) if route["loader_kind"] == "ae_gmm_only" else generated
+            )
+            cache_ledgers = [
+                item
+                for fold_input in fold_inputs
+                for item in (fold_input[1], fold_input[4])
+            ]
+            cache_ledgers.append(final_ledger)
+            guard.checkpoint(f"packb_outer_oof:{side}:before_representation_union")
+            cached_representation, representation_cache_evidence = (
+                _precompute_outer_representations(
+                    representation_loader,
+                    cache_ledgers,
+                    representation_features,
+                )
+            )
+            guard.checkpoint(f"packb_outer_oof:{side}:representation_union_complete")
+            if route["loader_kind"] == "historical_candidate_static_ae_gmm":
+                label_schema = _label_schema(label_files, side=side)
+                candidate = [
+                    feature
+                    for feature in features
+                    if feature in label_schema
+                    and not feature.startswith(("dae_", "gmm_"))
+                ]
+                feature_loader = HistoricalCompositeFeatureLoader(
+                    side=side,
+                    all_features=features,
+                    candidate_features=candidate,
+                    candidate_loader=ExactCandidateFeatureLoader(
+                        label_files,
+                        available=candidate,
+                        resource_guard=guard,
+                    ),
+                    representation_loader=cached_representation,
+                    generated_features=_active_ae_gmm_columns(state),
+                    feature_store=Path(feature_store),
+                    resource_guard=guard,
+                )
+            else:
+                feature_loader = cached_representation
+
+            for fold_index, (
+                fold,
+                train,
+                train_path,
+                train_record,
+                validation,
+                valid_path,
+                valid_record,
+            ) in enumerate(fold_inputs):
+                guard.checkpoint(f"packb_outer_oof:{side}:{fold['name']}:load")
+                train_ledger, train_x, train_labels, train_coverage = _admit_route(
+                    train,
+                    feature_loader(train, features),
+                    labels.load(train),
+                    route,
+                )
+                valid_ledger, valid_x, valid_labels, valid_coverage = _admit_route(
                     validation,
                     feature_loader(validation, features),
                     labels.load(validation),
+                    route,
                 )
                 seed = 20260724 + side_index * 1_000 + fold_index
                 model = _fit_model(train_x, train_labels, route["params"], seed=seed)
@@ -512,6 +767,7 @@ def run(
                         "path": str(valid_path),
                         "sha256": valid_record["sha256"],
                         "authorized_rows": int(valid_record["rows"]),
+                        "sampled_rows": int(len(validation)),
                     },
                     "train_coverage": train_coverage,
                     "validation_coverage": valid_coverage,
@@ -523,40 +779,16 @@ def run(
                 fold_reports.append(fold_report)
                 side_predictions.append(scored)
                 all_predictions.append(scored)
-                final_sources.append(validation)
                 del model, prediction, valid_x, train_x, train_labels, valid_labels
                 del validation, train
                 _release_memory()
                 guard.checkpoint(f"packb_outer_oof:{side}:{fold['name']}:complete")
 
-            last_train, _, _ = _load_bound_ledger(
-                Path(outer_population_root),
-                outer_manifest,
-                fold=folds[-1],
-                side=side,
-                role="train",
-            )
-            final_sources.append(
-                _bounded_beginning_middle_end_sample(
-                    last_train,
-                    max_rows=int(final_max_rows),
-                    name=f"{side}_final_base",
-                )
-            )
-            final_ledger = (
-                pd.concat(final_sources, ignore_index=True)
-                .drop_duplicates("candidate_id", keep="last")
-                .reset_index(drop=True)
-            )
-            final_ledger = _bounded_beginning_middle_end_sample(
-                final_ledger,
-                max_rows=int(final_max_rows),
-                name=f"{side}_final_refit",
-            )
-            final_ledger, final_x, final_labels, final_coverage = _admit_complete(
+            final_ledger, final_x, final_labels, final_coverage = _admit_route(
                 final_ledger,
                 feature_loader(final_ledger, features),
                 labels.load(final_ledger),
+                route,
             )
             final_model = _fit_model(
                 final_x,
@@ -582,6 +814,12 @@ def run(
                 "feature_count": len(features),
                 "selected_trial_id": route["trial_id"],
                 "parameters": route["params"],
+                "loader_kind": route["loader_kind"],
+                "missing_value_policy": route["missing_value_policy"],
+                "min_per_feature_finite_fraction": route[
+                    "min_per_feature_finite_fraction"
+                ],
+                "representation_union_cache": representation_cache_evidence,
                 "folds": fold_reports,
                 "aggregate_oof_metrics": aggregate_metrics,
                 "oof_rows": int(len(side_oof)),
@@ -604,7 +842,8 @@ def run(
             _atomic_json(side_root / "manifest.json", report)
             reports[side] = report
             del final_model, final_x, final_labels, final_ledger, last_train
-            del labels, feature_loader, raw_loader, state, contract, bundle
+            del labels, feature_loader, cached_representation, raw_loader
+            del representation_loader, state, contract, bundle
             _release_memory()
             guard.checkpoint(f"packb_outer_oof:{side}:released")
 
@@ -631,6 +870,11 @@ def run(
             "fixed_calendar_sha256": fixed_calendar_sha256,
             "promotion_role": promotion["selection_evidence_role"],
             "final_refit_predictions_used_in_oof": False,
+            "validation_sampling": (
+                "full_authorized_outer_rows"
+                if validation_max_rows is None
+                else "bounded_diagnostic_only_not_promotion_evidence"
+            ),
         }
         _atomic_json(stage / "summary.json", summary)
         os.replace(stage, destination)
@@ -660,6 +904,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--decisions", type=Path, default=DEFAULT_DECISIONS)
     parser.add_argument("--train-max-rows", type=int, default=DEFAULT_TRAIN_MAX_ROWS)
     parser.add_argument("--final-max-rows", type=int, default=DEFAULT_FINAL_MAX_ROWS)
+    parser.add_argument("--validation-max-rows", type=int)
     return parser.parse_args(argv)
 
 
@@ -678,6 +923,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             decisions_path=args.decisions,
             train_max_rows=args.train_max_rows,
             final_max_rows=args.final_max_rows,
+            validation_max_rows=args.validation_max_rows,
         )
     except (PackBOuterOOFRunnerError, ValueError, FileExistsError) as exc:
         print(

@@ -168,6 +168,19 @@ R3 execution update on 2026-07-24:
   exception. Regenerate strict pre-March HPO for those names, then run a paired
   55/37-versus-31/8 outer-OOF gate. Retain 31/8 only if it wins the paired
   cost-aware metrics. Do not reuse the historical post-cutoff HPO parameters.
+- That regeneration is complete at
+  `data_perp/artifacts/packb_side_local_fs_hpo_20260724_v3_hist55_37`.
+  Long evaluated 150 trials over three folds and selected `trial_003`
+  (mean objective `0.233185`, worst fold `0.190258`); short selected
+  `trial_049` (mean objective `0.185734`, worst fold `0.168530`). All 55 and
+  37 requested features were admitted with the frozen 95% per-feature
+  coverage floor and LightGBM native missing-value handling; no imputation or
+  post-cutoff parameter reuse occurred.
+- The frozen default-pending-gate route is
+  `docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v2.json`.
+  It is not a final performance promotion: the v2 55/37 stream and v1 31/8
+  stream must still be trained on the four outer folds and compared on the
+  exact candidate-ID intersection with identical cost labels.
 
 The locked inner calendar is fixed before this new search:
 

@@ -527,6 +527,23 @@ Frozen-representation availability:
 | Short July | 71.01% |
 | Short aggregate | 89.71% |
 
+The June short slice contains 41,454 candidates; 10,192 have no jointly finite
+frozen representation. A targeted source audit found that the 30 symbols with
+the largest unavailable-candidate counts all have internal hourly OHLCV gaps
+during May-June. Those 30 symbols alone are missing 6,917 source hours. Examples
+include `OPEN` (234 missing hours, maximum gap 28h), `SPK` (228, 10h),
+`CAKE` (273, 17h), and `GRIFFAIN` (335, 36h). By contrast, a high-availability
+control sample was generally complete or had only one isolated 10h gap.
+
+**Decision:** attempt a targeted, exact-exchange OHLCV backfill for these
+internal gaps, then causally recompute the affected rolling features and
+rematerialize the frozen representation. Accept a recovered value only when
+the source candle is real and the full required lookback is continuous. This
+is a source-repair operation, not feature imputation. Record pre/post coverage
+and candidate hashes; retain the current artifact as the immutable baseline.
+Gaps that the exact exchange cannot supply, pre-listing windows, and genuine
+exchange outages remain unavailable.
+
 Do **not** median-fill, zero-fill, forward-fill, or interpolate these missing
 AE/GMM inputs into the frozen state. Every candidate has an exact feature-store
 row; the missing state comes from sparse individual rolling inputs, not missing

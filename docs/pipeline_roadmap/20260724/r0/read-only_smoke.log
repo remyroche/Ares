@@ -1,0 +1,464 @@
+{
+  "records": [
+    {
+      "method": "json.parse",
+      "p0_id": "alpha_execution_oof_v2_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/execution_ev_alpha_oof_20260722_v2_basearchetypes/alpha_execution_ev_oof.manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "alpha_execution_oof_v2_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/execution_ev_alpha_oof_20260722_v2_basearchetypes/alpha_execution_ev_oof.parquet",
+      "row_groups": 1,
+      "rows": 239966,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "bytes_inspected": 140152,
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "opcode_count": 20185,
+      "p0_id": "auxiliary_checkpoint_v18",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict/.checkpoints/mae_before_meaningful_mfe_atr/shared/selection.joblib",
+      "potential_object_construction_opcodes": 0,
+      "status": "inspected_without_deserialization",
+      "type": ".joblib"
+    },
+    {
+      "bytes_inspected": 139714,
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "opcode_count": 20252,
+      "p0_id": "auxiliary_checkpoint_v18",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict/.checkpoints/peak_mfe_12h_atr/shared/selection.joblib",
+      "potential_object_construction_opcodes": 0,
+      "status": "inspected_without_deserialization",
+      "type": ".joblib"
+    },
+    {
+      "bytes_inspected": 140086,
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "opcode_count": 20205,
+      "p0_id": "auxiliary_checkpoint_v18",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict/.checkpoints/time_to_first_meaningful_mfe/shared/selection.joblib",
+      "potential_object_construction_opcodes": 0,
+      "status": "inspected_without_deserialization",
+      "type": ".joblib"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "auxiliary_checkpoint_v18",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict/checkpoint.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "canonical_feature_store",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/features/20260711_070000/_feature_cache_scan_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "canonical_feature_store",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/features/20260711_070000/_live_latest_matrix/matrix_20260703T150000Z.meta.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "canonical_feature_store",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/features/20260711_070000/_live_latest_matrix/matrix_20260703T150000Z.parquet",
+      "row_groups": 1,
+      "rows": 242,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "canonical_feature_store",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/features/20260711_070000/_live_latest_matrix/matrix_20260710T180000Z.meta.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "canonical_feature_store",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/features/20260711_070000/_live_latest_matrix/matrix_20260710T180000Z.parquet",
+      "row_groups": 1,
+      "rows": 168,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_feature_selection_hpo_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3/feature_selection_checkpoint.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_feature_selection_hpo_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3/feature_selection_hpo_contract.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_feature_selection_hpo_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3/hpo_checkpoint.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_feature_selection_hpo_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3/hpo_progress.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "sqlite.read_only",
+      "p0_id": "catboost_feature_selection_hpo_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3/hpo_study.sqlite3",
+      "schema_version": 15,
+      "status": "opened",
+      "type": ".sqlite3"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_geometry_v2",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2/finalist_oos_predictions_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "catboost_geometry_v2",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2/geometry_fold_reports.parquet",
+      "row_groups": 1,
+      "rows": 52,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_geometry_v2",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2/geometry_search_checkpoint.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "catboost_geometry_v2",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2/geometry_search_checkpoint_sidecars/geometry_e33b290e324f3182.raw7.parquet",
+      "row_groups": 1,
+      "rows": 334546,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "catboost_geometry_v2",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2/geometry_search_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "bytes_inspected": 619543,
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "opcode_count": 88531,
+      "p0_id": "current_policy_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/ae_gmm_state/ae_gmm_state.pkl",
+      "potential_object_construction_opcodes": 0,
+      "status": "inspected_without_deserialization",
+      "type": ".pkl"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "current_policy_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/ae_gmm_state/ae_gmm_state_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "current_policy_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/feature_contracts/feature_source_contract.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "current_policy_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/live_candidate_feature_matrix/long/0221e9e70af380c5459cc0b5/data.parquet",
+      "row_groups": 1,
+      "rows": 167,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "current_policy_historical",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/live_candidate_feature_matrix/long/0221e9e70af380c5459cc0b5/meta.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "execution_ev_labels_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/execution_ev_12h_labels_p90spread_fee30bps_20260723_v3/execution_ev_12h_labels.manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "execution_ev_labels_v3",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/execution_ev_12h_labels_p90spread_fee30bps_20260723_v3/execution_ev_12h_labels.parquet",
+      "row_groups": 1,
+      "rows": 1034990,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "one_minute_policy_handoff",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/causal_signal_close_oos_may_june_v1/causal_entry_atr_audit.parquet",
+      "row_groups": 1,
+      "rows": 22207,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "one_minute_policy_handoff",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/causal_signal_close_oos_may_june_v1/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "one_minute_policy_handoff",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/causal_signal_close_oos_may_june_v1/selected_trade_ledger.parquet",
+      "row_groups": 1,
+      "rows": 2243,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "one_minute_policy_handoff",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/daily_replay_july01_17_nonzero_entry_volume_v1/candidate_liquidity_audit.parquet",
+      "row_groups": 1,
+      "rows": 3088,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "one_minute_policy_handoff",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/daily_replay_july01_17_nonzero_entry_volume_v1/cost_ablation_selected_trade_ledger.parquet",
+      "row_groups": 1,
+      "rows": 756,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "error": "ValueError: at position 0, opcode b'x' unknown",
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "p0_id": "packb_residual_alpha",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1/final_side_residual_expert.joblib",
+      "status": "not_deserialized",
+      "type": ".joblib"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_residual_alpha",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "packb_residual_alpha",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1/oos_predictions.parquet",
+      "row_groups": 1,
+      "rows": 239966,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_residual_alpha",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1/staged_feature_selection/selection_stage_family_audit.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_residual_alpha",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1/staged_feature_selection/side_long/round_01/mda_feature_selection_report.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "bytes_inspected": 1811580,
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "opcode_count": 207129,
+      "p0_id": "packb_side_local_final_bundle",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit/ae_gmm_state/ae_gmm_state.pkl",
+      "potential_object_construction_opcodes": 0,
+      "status": "inspected_without_deserialization",
+      "type": ".pkl"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_final_bundle",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit/ae_gmm_state/input_transform_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_final_bundle",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit/ae_gmm_state/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "error": "ValueError: at position 0, opcode b'x' unknown",
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "p0_id": "packb_side_local_final_bundle",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit/long/base_model.joblib",
+      "status": "not_deserialized",
+      "type": ".joblib"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_final_bundle",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit/long/features.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_report",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "error": "ValueError: at position 0, opcode b'x' unknown",
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "p0_id": "packb_side_local_report",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1/models/2026-01-01_2026-01-31/base_model.joblib",
+      "status": "not_deserialized",
+      "type": ".joblib"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_report",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1/models/2026-01-01_2026-01-31/columns.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "packb_side_local_report",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1/models/2026-01-01_2026-01-31/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "error": "ValueError: at position 0, opcode b'x' unknown",
+      "note": "pickle/joblib was not loaded because deserialization can execute code",
+      "p0_id": "packb_side_local_report",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1/models/2026-01-31_2026-03-02/base_model.joblib",
+      "status": "not_deserialized",
+      "type": ".joblib"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "path_archetype_labels_v8",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260722_path_archetype_labels_v8_base_top40_costaware_dense12h/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "path_archetype_labels_v8",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260722_path_archetype_labels_v8_base_top40_costaware_dense12h/path_archetype_labels.parquet",
+      "row_groups": 2,
+      "rows": 1426733,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "path_auxiliary_targets_v11",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260723_s59_h5_path_aux_targets_v11_resolved_supportive_15atr/labels/labels_manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "path_auxiliary_targets_v11",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260723_s59_h5_path_aux_targets_v11_resolved_supportive_15atr/labels/train_global_long_3.parquet",
+      "row_groups": 7,
+      "rows": 1688396,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "path_auxiliary_targets_v11",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260723_s59_h5_path_aux_targets_v11_resolved_supportive_15atr/labels/train_global_short_3.parquet",
+      "row_groups": 7,
+      "rows": 1688396,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "shared_store_historical_comparator",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/_feature_selection_bme_sample/labels.parquet",
+      "row_groups": 22,
+      "rows": 222773,
+      "status": "opened",
+      "type": ".parquet"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "shared_store_historical_comparator",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/_feature_selection_bme_sample/manifest.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "shared_store_historical_comparator",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/_feature_selection_bme_sample/selected_features.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "json.parse",
+      "p0_id": "shared_store_historical_comparator",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/_feature_selection_bme_sample/selection_result.json",
+      "status": "opened",
+      "type": ".json"
+    },
+    {
+      "method": "pyarrow.footer",
+      "p0_id": "shared_store_historical_comparator",
+      "path": "/Users/remyroche/Documents/Ares/data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/_feature_selection_phase/_fold_cache/2025-01-31_2025-02-01/ae_gmm_context_valid.parquet",
+      "row_groups": 1,
+      "rows": 7536,
+      "status": "opened",
+      "type": ".parquet"
+    }
+  ]
+}

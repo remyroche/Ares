@@ -1,19 +1,17 @@
 {
   "schema_version": "pipeline_stage_manifest_v1",
-  "manifest_id": "repository_source_20260724_730c20d",
+  "manifest_id": "repository_source_20260724_0cf4e1f",
   "stage_name": "repository_source_durability",
   "status": "DRAFT",
   "created_at_utc": "2026-07-24T08:30:00Z",
   "source": {
-    "revision": "730c20dfef4b50b60168d10af16ec719a031a73e",
+    "revision": "0cf4e1f3bbde7e890609697432446a1b6b3a4149",
     "branch": "codex/cleanup-generated-artifacts",
-    "tree_sha256": "32f54d5243de20b0d7641302e0e4784f1656059726d93b60dd722a95f5332c66",
-    "archive_sha256": "dd6caf2f20f4fd0bfc16de6c4d810d35f1278e58feb9cbcd5b63b41520371e26",
-    "dirty": true,
-    "dirty_paths": [
-      "ACTIONABLE_PIPELINE_ROADMAP_20260724.md"
-    ],
-    "dirty_diff_sha256": "7b93d8ba3a96bd2871f893e610271e45e0a8553361c4a30e282f2e006a68e473",
+    "tree_sha256": "4421c769e42d97ddbd0409332b61ce7c7bf8f529b13f7514d4520f642c155d92",
+    "archive_sha256": "37985f660689fe40fe670014ef4595674296cedf287671be5cfc2d500d0f3def",
+    "dirty": false,
+    "dirty_paths": [],
+    "dirty_diff_sha256": null,
     "remote_recovery": {
       "state": "BLOCKED_AUTHORIZATION",
       "reference": null
@@ -24,7 +22,7 @@
       "git",
       "archive",
       "--format=tar",
-      "730c20dfef4b50b60168d10af16ec719a031a73e"
+      "0cf4e1f3bbde7e890609697432446a1b6b3a4149"
     ],
     "working_directory": "/Users/remyroche/Documents/Ares"
   },
@@ -105,6 +103,6 @@
   "notes": [
     "Committed pipeline implementation is locally immutable at the recorded revision.",
     "Remote publication was not performed because explicit authorization is required.",
-    "The roadmap edit is intentionally preserved as a separately hashed dirty document."
+    "The manifest describes the clean committed source revision immediately preceding this evidence update."
   ]
 }

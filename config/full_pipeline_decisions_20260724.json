@@ -1,0 +1,180 @@
+{
+  "schema_version": "full_pipeline_decisions_v1",
+  "decision_set_id": "full_pipeline_20260724_pretraining_v1",
+  "status": "LOCKED_BEFORE_NEW_TRAINING",
+  "locked_at_utc": "2026-07-24T10:30:00Z",
+  "source_revision": "0cf4e1f3bbde7e890609697432446a1b6b3a4149",
+  "common_rules": {
+    "comparison_rows": "exact identical canonical OOF keys, labels, costs, folds, horizon and top-k basis",
+    "ranking": {
+      "scope": "within UTC decision timestamp and side",
+      "order": "score descending, symbol ascending",
+      "top10_count": "ceil(0.10 * eligible_rows)"
+    },
+    "cost_unit": "decimal net return per unit notional",
+    "multiple_testing": "all search arms and breadth must be reported; final replay is single-use"
+  },
+  "decisions": {
+    "DEC-01": {
+      "name": "Pack-B closeness to shared-base historical comparator",
+      "metric": "top10_mean_net_ev",
+      "pooled_delta_min": -0.0005,
+      "fold_delta_soft_min": -0.001,
+      "min_folds_at_or_above_soft_min": 3,
+      "evaluated_fold_count": 4,
+      "any_fold_hard_min": -0.0025,
+      "failure_action": "reject Pack-B replacement for that side"
+    },
+    "DEC-02": {
+      "name": "Residual-alpha improvement over matching Pack-B",
+      "metric": "top10_mean_net_ev",
+      "pooled_delta_min": 0.0005,
+      "min_positive_folds": 3,
+      "evaluated_fold_count": 4,
+      "any_fold_hard_min": -0.0015,
+      "failure_action": "retain Pack-B alpha without residual expert for that side"
+    },
+    "DEC-03": {
+      "name": "CatBoost probability and hard-class collapse limits",
+      "pooled_probability_target_total_variation_max": 0.12,
+      "monthly_probability_target_total_variation_max": 0.2,
+      "dominant_hard_class_share_max": "min(0.75, target_dominant_share + 0.15)",
+      "supported_class_pooled_hard_prediction_share_min": 0.0025,
+      "mean_normalized_entropy_per_fold_min": 0.4,
+      "failure_action": "reject CatBoost arm irrespective of predictive loss"
+    },
+    "DEC-04": {
+      "name": "CatBoost combined model and economic objective",
+      "selection_scope": "inner side-local OOF only",
+      "objective": "0.45 * model_score + 0.55 * economic_score",
+      "model_score": "0.50*z(-logloss) + 0.25*z(-ranked_probability_score) + 0.25*z(macro_f1)",
+      "economic_score": "0.50*z(economic_separation) + 0.30*z(spearman_probability_weighted_ev) + 0.20*z(top10_mean_net_ev)",
+      "zscore": "robust z-score across predeclared arms within each inner fold, clipped to [-3, 3], then mean across folds",
+      "complexity_margin": 0.1,
+      "tie_rule": "select simplest unweighted arm unless challenger exceeds it by 0.10 objective units",
+      "overrides": [
+        "DEC-03",
+        "DEC-05"
+      ]
+    },
+    "DEC-05": {
+      "name": "Seven-class support policy",
+      "reference_cutoff_utc": "2026-03-01T00:00:00Z",
+      "min_rows_per_class_side": 300,
+      "min_overall_share_per_class_side": 0.01,
+      "eligible_month_min_side_rows": 1000,
+      "min_month_rows_per_class_side": 20,
+      "min_month_share_per_class_side": 0.005,
+      "merge_policy": "no post-hoc merge; immutable seven-class taxonomy",
+      "failure_action": "CatBoost unavailable for failing side; run declared alpha-plus-auxiliary execution-EV arm"
+    },
+    "DEC-06": {
+      "name": "Execution-EV promotion uplift",
+      "baseline": "matched alpha-only arm",
+      "metric": "top10_mean_net_ev",
+      "pooled_uplift_min": 0.00075,
+      "min_positive_folds": 3,
+      "evaluated_fold_count": 4,
+      "confidence": {
+        "method": "paired ISO-week block bootstrap of challenger-minus-baseline deltas",
+        "resamples": 10000,
+        "seed": 20260724,
+        "one_sided_confidence": 0.95,
+        "lower_bound_must_exceed": 0.0
+      },
+      "promotion_scope": "both long and short must independently pass"
+    },
+    "DEC-07": {
+      "name": "Worst-period degradation limits",
+      "normal": {
+        "worst_week_delta_min": -0.001,
+        "worst_month_delta_min": -0.0005
+      },
+      "limited_exception": {
+        "pooled_uplift_min": 0.002,
+        "worst_week_delta_min": -0.0025,
+        "worst_month_delta_min": -0.0015
+      },
+      "failure_action": "reject regardless of aggregate PnL"
+    },
+    "DEC-08": {
+      "name": "Common execution-EV unit and side-map equivalence",
+      "unit": "decimal expected net return per unit notional from decision through canonical 12h policy exit",
+      "cost": "30bp round-trip fee plus full asset p90 spread, applied exactly once",
+      "mapping": "independently fitted and calibrated by side",
+      "absolute_oof_calibration_bias_max": 0.0005,
+      "decile_weighted_calibration_mae_max": 0.001,
+      "calibration_slope_min": 0.8,
+      "calibration_slope_max": 1.2,
+      "long_short_absolute_bias_difference_max": 0.0005,
+      "selection_scope": "side-local top 10 percent",
+      "global_top10_use": "reporting only until P1 global auction"
+    },
+    "DEC-09": {
+      "name": "Fold calendar, purge, embargo and untouched replay",
+      "universe_signal_cutoff_utc": "2026-07-20T16:00:00Z",
+      "feature_selection_hpo_resolution_cutoff_utc": "2026-03-01T00:00:00Z",
+      "outer_folds": [
+        ["2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z"],
+        ["2026-05-01T00:00:00Z", "2026-06-01T00:00:00Z"],
+        ["2026-06-01T00:00:00Z", "2026-07-01T00:00:00Z"],
+        ["2026-07-01T00:00:00Z", "2026-07-11T00:00:00Z"]
+      ],
+      "decision_timestamp": "signal_timestamp + 1 hour",
+      "label_end": "decision_timestamp + 12 hours",
+      "train_authorization": "decision_timestamp < validation_start AND label_end <= validation_start AND decision_timestamp <= validation_start - 24 hours",
+      "purge_hours": 12,
+      "post_label_embargo_hours": 12,
+      "no_use_buffer": ["2026-07-11T00:00:00Z", "2026-07-12T00:00:00Z"],
+      "untouched_replay_signal_interval": ["2026-07-12T00:00:00Z", "2026-07-20T17:00:00Z"],
+      "untouched_replay_last_signal_utc": "2026-07-20T16:00:00Z",
+      "untouched_replay_last_decision_utc": "2026-07-20T17:00:00Z",
+      "untouched_replay_last_label_resolution_utc": "2026-07-21T05:00:00Z",
+      "replay_use": "single-use confirmation only; cannot alter models, maps, thresholds, policy settings or decision rules"
+    },
+    "DEC-10": {
+      "name": "Entry-timing validation and fallback",
+      "choice": "VALIDATE_AFTER_STABLE_E1_WINNER",
+      "baseline": "enter_now",
+      "promotion_metric": "paired OOF risk_adjusted_expected_utility",
+      "pooled_uplift_min": 0.0005,
+      "min_positive_folds": 3,
+      "evaluated_fold_count": 4,
+      "confidence": {
+        "method": "paired ISO-week block bootstrap",
+        "resamples": 10000,
+        "seed": 20260724,
+        "one_sided_confidence": 0.95,
+        "lower_bound_must_exceed": 0.0
+      },
+      "risk_limits": {
+        "missed_positive_ev_rate_relative_increase_max": 0.05,
+        "adverse_first_rate_absolute_increase_max": 0.0,
+        "worst_month_utility_delta_min": -0.0005
+      },
+      "required_action_layer": "separate deterministic tick-valid price policy with cost, liquidity, staleness, expiry and fill-feasibility gates",
+      "failure_action": "retain enter_now; timing failure does not reject the stable execution-EV winner"
+    }
+  },
+  "required_manifest_bindings": [
+    "source revision",
+    "feature-store and upstream artifact hashes",
+    "eligible key and row hashes",
+    "label, entry, horizon and cost hashes",
+    "class taxonomy and order hash",
+    "side-local OOF fold, cutoff and availability fields",
+    "bootstrap seed and search breadth",
+    "untouched replay interval and hash",
+    "decision status and signer"
+  ],
+  "signers": [
+    {
+      "role": "roadmap_and_implementation",
+      "identity": "codex_root"
+    },
+    {
+      "role": "independent_quantitative_validation",
+      "identity": "terra_xhigh_decision_audit"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -19,6 +20,95 @@ assert SPEC and SPEC.loader
 materializer = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = materializer
 SPEC.loader.exec_module(materializer)
+
+
+def _lineage_hash(label: str) -> str:
+    return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+def _lineage_frames(paths: dict[str, Path]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    candidates = pd.read_parquet(paths["candidates"])
+    oof = pd.read_parquet(paths["oof"])
+    candidate_identity = pd.DataFrame(
+        {
+            "__ts__": pd.to_datetime(candidates["__ts__"], utc=True),
+            "__symbol__": candidates["__symbol__"].astype(str).str.strip(),
+            "side_name": candidates["side_name"].astype(str).str.lower().str.strip(),
+            "candidate_id": candidates["candidate_id"].astype(str).str.strip(),
+        }
+    )
+    oof_lineage = pd.DataFrame(
+        {
+            "__ts__": pd.to_datetime(oof["__ts__"], utc=True),
+            "__symbol__": oof["__symbol__"].astype(str).str.strip(),
+            "side_name": oof["side_name"].astype(str).str.lower().str.strip(),
+            "candidate_id": oof["candidate_id"].astype(str).str.strip(),
+            "oof_fold": oof["oof_fold"].astype(str).str.strip(),
+            "validation_start": pd.to_datetime(oof["validation_start"], utc=True),
+            "train_decision_cutoff": pd.to_datetime(
+                oof["train_decision_cutoff"], utc=True
+            ),
+            "label_resolution_available_at": pd.to_datetime(
+                oof["label_resolution_available_at"], utc=True
+            ),
+        }
+    )
+    return candidate_identity, oof_lineage
+
+
+def _write_canonical_packb_lineage(paths: dict[str, Path]) -> None:
+    candidates, oof = _lineage_frames(paths)
+    candidate_sides: dict[str, dict[str, str]] = {}
+    residual_sides: dict[str, dict[str, object]] = {}
+    for side in ("long", "short"):
+        candidate_rows = candidates.loc[candidates["side_name"].eq(side)]
+        oof_rows = oof.loc[oof["side_name"].eq(side)]
+        packb = {
+            "side": side,
+            "source_hash": _lineage_hash(f"packb-source-{side}"),
+            "model_hash": _lineage_hash(f"packb-model-{side}"),
+            "feature_contract_hash": _lineage_hash(f"packb-features-{side}"),
+            "parameter_hash": _lineage_hash(f"packb-parameters-{side}"),
+            "candidate_row_identity_hash": materializer._row_identity_hash(
+                candidate_rows
+            ),
+            "oof_row_identity_hash": materializer._row_identity_hash(oof_rows),
+            "oof_fold_cutoff_hash": materializer._oof_fold_cutoff_hash(oof_rows),
+        }
+        candidate_sides[side] = packb
+        residual_sides[side] = {
+            "side": side,
+            "source_hash": _lineage_hash(f"residual-source-{side}"),
+            "model_hash": _lineage_hash(f"residual-model-{side}"),
+            "feature_contract_hash": _lineage_hash(f"residual-features-{side}"),
+            "parameter_hash": _lineage_hash(f"residual-parameters-{side}"),
+            "oof_row_identity_hash": packb["oof_row_identity_hash"],
+            "oof_fold_cutoff_hash": packb["oof_fold_cutoff_hash"],
+            "upstream_packb": {"side": side, **packb},
+        }
+
+    candidate_manifest = {
+        "schema": "packb_candidate_handoff_lineage_v1",
+        "source_artifacts": {
+            "candidate_handoff": {"sha256": materializer._sha256(paths["candidates"])}
+        },
+        "packb_per_side_lineage": {
+            "model_side_scope": "per_side",
+            "sides": candidate_sides,
+        },
+    }
+    residual_manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    residual_manifest["source_artifacts"] = {
+        "residual_oof": {"sha256": materializer._sha256(paths["oof"])}
+    }
+    residual_manifest["residual_per_side_lineage"] = {
+        "model_side_scope": "per_side",
+        "sides": residual_sides,
+    }
+    paths["candidate_manifest"].write_text(
+        json.dumps(candidate_manifest), encoding="utf-8"
+    )
+    paths["manifest"].write_text(json.dumps(residual_manifest), encoding="utf-8")
 
 
 def _inputs(tmp_path: Path) -> dict[str, Path]:
@@ -103,16 +193,18 @@ def _inputs(tmp_path: Path) -> dict[str, Path]:
                 "test_start": "2026-07-02T00:00:00Z",
                 "test_end_exclusive": "2026-07-03T00:00:00Z",
             },
-        ]
+        ],
     }
     paths = {
         "oof": tmp_path / "residual_oof.parquet",
         "candidates": tmp_path / "candidate_handoff.parquet",
         "manifest": tmp_path / "residual_manifest.json",
+        "candidate_manifest": tmp_path / "candidate_handoff.manifest.json",
     }
     oof.to_parquet(paths["oof"], index=False)
     candidates.to_parquet(paths["candidates"], index=False)
     paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _write_canonical_packb_lineage(paths)
     return paths
 
 
@@ -122,7 +214,9 @@ def _args(
     values: dict[str, object] = {
         "residual_oof": paths["oof"],
         "candidate_handoff": paths["candidates"],
+        "candidate_manifest": paths["candidate_manifest"],
         "residual_manifest": paths["manifest"],
+        "lineage_mode": "canonical_packb",
         "output": tmp_path / "alpha_oof.parquet",
         "output_manifest": tmp_path / "alpha_oof.manifest.json",
         "residual_ev_col": "residual_ev",
@@ -243,7 +337,7 @@ def test_materializes_exact_oof_alpha_and_fold_causal_leaf_support(
         actual_btc_july_1.to_numpy(dtype=np.float32),
         expected_btc_july_1.to_numpy(dtype=np.float32),
     )
-    assert manifest["schema"] == "execution_ev_alpha_oof_v2"
+    assert manifest["schema"] == "execution_ev_alpha_oof_v3"
     assert manifest["definitions"]["outcome_contract"].startswith("no outcome")
     assert manifest["source_artifacts"]["residual_oof"]["sha256"]
     assert manifest["output_sha256"] == materializer._sha256(result["output"])
@@ -253,12 +347,18 @@ def test_materializes_exact_oof_alpha_and_fold_causal_leaf_support(
         "role": "pre_entry_alpha_ev_oof_prediction",
         "target": False,
     }
-    assert manifest["alpha_cost_basis"]["deducted_cost_return"] == pytest.approx(
-        0.01
+    assert manifest["lineage"]["mode"] == "canonical_packb"
+    assert manifest["lineage"]["canonical"] is True
+    assert set(manifest["lineage"]["per_side"]) == {"long", "short"}
+    _, oof_lineage = _lineage_frames(paths)
+    assert manifest["lineage"]["per_side"]["long"][
+        "oof_row_identity_hash"
+    ] == materializer._row_identity_hash(
+        oof_lineage.loc[oof_lineage["side_name"].eq("long")]
     )
+    assert manifest["alpha_cost_basis"]["deducted_cost_return"] == pytest.approx(0.01)
     assert (
-        manifest["alpha_cost_basis"]["target_semantics"]
-        == "residual_net_ev_after_1pct"
+        manifest["alpha_cost_basis"]["target_semantics"] == "residual_net_ev_after_1pct"
     )
     assert manifest[
         "prediction_role_manifest_sha256"
@@ -274,6 +374,7 @@ def test_leaf_support_excludes_future_candidate_rows(tmp_path: Path) -> None:
     future["__ts__"] = pd.Timestamp("2026-07-10T00:00:00Z")
     candidates = pd.concat([candidates, future], ignore_index=True)
     candidates.to_parquet(paths["candidates"], index=False)
+    _write_canonical_packb_lineage(paths)
 
     output = pd.read_parquet(materializer.run(_args(tmp_path, paths))["output"])
     btc_july_1 = output.loc[
@@ -281,6 +382,92 @@ def test_leaf_support_excludes_future_candidate_rows(tmp_path: Path) -> None:
         & output["__symbol__"].eq("BTC")
     ].iloc[0]
     assert btc_july_1["alpha_leaf_support"] == pytest.approx(np.log1p(1))
+
+
+def test_canonical_packb_lineage_requires_both_bound_manifests(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path)
+
+    with pytest.raises(ValueError, match="requires --candidate-manifest"):
+        materializer.run(_args(tmp_path, paths, candidate_manifest=None))
+
+    candidate_manifest = json.loads(
+        paths["candidate_manifest"].read_text(encoding="utf-8")
+    )
+    candidate_manifest["packb_per_side_lineage"]["sides"]["long"]["model_hash"] = (
+        candidate_manifest["packb_per_side_lineage"]["sides"]["short"]["model_hash"]
+    )
+    paths["candidate_manifest"].write_text(
+        json.dumps(candidate_manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="must not share fitted model_hash"):
+        materializer.run(_args(tmp_path, paths))
+
+
+def test_canonical_packb_lineage_rejects_mismatched_residual_upstream_hash(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    residual_manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    residual_manifest["residual_per_side_lineage"]["sides"]["short"]["upstream_packb"][
+        "feature_contract_hash"
+    ] = _lineage_hash("wrong-packb-feature-contract")
+    paths["manifest"].write_text(json.dumps(residual_manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="upstream Pack-B feature_contract_hash"):
+        materializer.run(_args(tmp_path, paths))
+
+
+def test_canonical_packb_lineage_binds_the_supplied_candidate_artifact(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    candidates = pd.read_parquet(paths["candidates"])
+    candidates.loc[0, "base_leaf_bin"] = "changed-after-manifest"
+    candidates.to_parquet(paths["candidates"], index=False)
+
+    with pytest.raises(ValueError, match="does not bind the supplied artifact"):
+        materializer.run(_args(tmp_path, paths))
+
+
+def test_canonical_packb_lineage_recomputes_oof_fold_cutoff_provenance(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    oof = pd.read_parquet(paths["oof"])
+    oof.loc[0, "train_decision_cutoff"] = pd.Timestamp("2026-06-30T22:00:00Z")
+    oof.to_parquet(paths["oof"], index=False)
+    residual_manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    residual_manifest["source_artifacts"]["residual_oof"]["sha256"] = (
+        materializer._sha256(paths["oof"])
+    )
+    paths["manifest"].write_text(json.dumps(residual_manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="oof fold/cutoff hash does not match"):
+        materializer.run(_args(tmp_path, paths))
+
+
+def test_historical_comparator_mode_is_explicitly_non_canonical(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path)
+    result = materializer.run(
+        _args(
+            tmp_path,
+            paths,
+            candidate_manifest=None,
+            lineage_mode="historical_comparator",
+        )
+    )
+    manifest = json.loads(result["manifest"].read_text(encoding="utf-8"))
+
+    assert manifest["lineage"] == {
+        "mode": "historical_comparator",
+        "canonical": False,
+        "reason": (
+            "explicit historical-comparator mode; Pack-B per-side lineage was not "
+            "required and this output must not be used as canonical downstream input"
+        ),
+        "candidate_manifest": None,
+    }
 
 
 @pytest.mark.parametrize(
@@ -307,6 +494,7 @@ def test_rejects_missing_exact_candidate_handoff_row(tmp_path: Path) -> None:
     paths = _inputs(tmp_path)
     candidates = pd.read_parquet(paths["candidates"])
     candidates.drop(index=2).to_parquet(paths["candidates"], index=False)
+    _write_canonical_packb_lineage(paths)
 
     with pytest.raises(ValueError, match="no exact candidate identity match"):
         materializer.run(_args(tmp_path, paths))
@@ -368,6 +556,8 @@ def test_rejects_invalid_canonical_alpha_provenance(
     oof = pd.read_parquet(paths["oof"])
     oof.loc[0, column] = value
     oof.to_parquet(paths["oof"], index=False)
+    if column in {"candidate_id", "oof_fold", "validation_start"}:
+        _write_canonical_packb_lineage(paths)
 
     with pytest.raises(ValueError, match=error):
         materializer.run(_args(tmp_path, paths))
@@ -384,6 +574,7 @@ def test_rejects_rows_outside_manifest_boundaries_and_late_leaf_availability(
     candidates.loc[2, "__ts__"] = pd.Timestamp("2026-07-04T00:00:00Z")
     candidates.loc[2, "available_at"] = pd.Timestamp("2026-07-04T00:00:00Z")
     candidates.to_parquet(paths["candidates"], index=False)
+    _write_canonical_packb_lineage(paths)
     with pytest.raises(ValueError, match="conflicts with manifest boundaries"):
         materializer.run(_args(tmp_path, paths))
 

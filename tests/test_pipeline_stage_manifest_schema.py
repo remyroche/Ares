@@ -4,12 +4,9 @@ import json
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "schemas" / "pipeline_stage_manifest_v1.schema.json"
-MANIFEST_PATH = (
-    ROOT / "config" / "pipeline_stage_manifest_repository_20260724.json"
-)
+MANIFEST_PATH = ROOT / "config" / "pipeline_stage_manifest_repository_20260724.json"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -32,9 +29,7 @@ def test_repository_manifest_covers_every_required_stage_identity() -> None:
     manifest = _load(MANIFEST_PATH)
 
     assert set(schema["required"]).issubset(manifest)
-    assert set(schema["properties"]["source"]["required"]).issubset(
-        manifest["source"]
-    )
+    assert set(schema["properties"]["source"]["required"]).issubset(manifest["source"])
     assert set(schema["properties"]["contracts"]["required"]).issubset(
         manifest["contracts"]
     )
@@ -51,7 +46,8 @@ def test_repository_manifest_uses_locked_status_and_hash_formats() -> None:
     assert GIT_SHA_RE.fullmatch(manifest["source"]["revision"])
     assert SHA256_RE.fullmatch(manifest["source"]["tree_sha256"])
     assert SHA256_RE.fullmatch(manifest["source"]["archive_sha256"])
-    assert SHA256_RE.fullmatch(manifest["source"]["dirty_diff_sha256"])
+    dirty_diff_sha256 = manifest["source"]["dirty_diff_sha256"]
+    assert dirty_diff_sha256 is None or SHA256_RE.fullmatch(dirty_diff_sha256)
     assert manifest["created_at_utc"].endswith("Z")
 
 
@@ -68,10 +64,11 @@ def test_non_applicable_contracts_are_explicit() -> None:
         assert contract["not_applicable_reason"]
 
 
-def test_dirty_source_cannot_claim_verified_remote_recovery() -> None:
+def test_source_recovery_state_matches_dirty_contract() -> None:
     manifest = _load(MANIFEST_PATH)
     source = manifest["source"]
 
-    assert source["dirty"] is True
-    assert source["dirty_paths"]
+    assert source["dirty"] is False
+    assert source["dirty_paths"] == []
+    assert source["dirty_diff_sha256"] is None
     assert source["remote_recovery"]["state"] != "VERIFIED"

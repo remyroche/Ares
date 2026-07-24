@@ -1,0 +1,90 @@
+{
+  "schema_version": "full_pipeline_p0_inventory_v1",
+  "repository_source_revision": "0cf4e1f3bbde7e890609697432446a1b6b3a4149",
+  "entries": [
+    {
+      "id": "canonical_feature_store",
+      "path": "data_perp/features/20260711_070000",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "packb_side_local_report",
+      "path": "data_perp/reports/s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "packb_side_local_final_bundle",
+      "path": "data_perp/artifacts/20260721_s59_packb_incumbenttarget_sliding365_base_final_refit",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "shared_store_historical_comparator",
+      "path": "data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "packb_residual_alpha",
+      "path": "data_perp/reports/s59_h5_signalclose_causal_stagec_packb_residual_only_hpo150_wf30_20260721_v1",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "path_archetype_labels_v8",
+      "path": "data_perp/artifacts/20260722_path_archetype_labels_v8_base_top40_costaware_dense12h",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "path_auxiliary_targets_v11",
+      "path": "data_perp/artifacts/20260723_s59_h5_path_aux_targets_v11_resolved_supportive_15atr",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "catboost_feature_selection_hpo_v3",
+      "path": "data_perp/reports/catboost_path_shape_base_top40_fs75_hpo_classsupported_20260723_v3",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "catboost_geometry_v2",
+      "path": "data_perp/reports/catboost_path_geometry_4m4m_train70k_classsupported_20260723_v2",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "auxiliary_checkpoint_v18",
+      "path": "data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "execution_ev_labels_v3",
+      "path": "data_perp/reports/execution_ev_12h_labels_p90spread_fee30bps_20260723_v3",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "alpha_execution_oof_v2_historical",
+      "path": "data_perp/reports/execution_ev_alpha_oof_20260722_v2_basearchetypes",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "current_policy_historical",
+      "path": "data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2",
+      "kind": "directory",
+      "required": true
+    },
+    {
+      "id": "one_minute_policy_handoff",
+      "path": "data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1",
+      "kind": "directory",
+      "required": true
+    }
+  ]
+}

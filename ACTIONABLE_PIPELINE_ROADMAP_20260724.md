@@ -466,16 +466,16 @@ after viewing final OOS results.
 
 | ID | Decision required | Current state |
 |---|---|---|
-| DEC-01 | “Remain close” tolerance for Pack-B vs shared-base benchmark | Undefined |
-| DEC-02 | Minimum residual-alpha improvement per side and required fold consistency | Undefined |
-| DEC-03 | CatBoost dominant-class, class-share divergence, and entropy collapse limits | Undefined |
-| DEC-04 | Formula/weights for combined CatBoost ML + economic objective | Undefined |
-| DEC-05 | Seven-class support failure policy: hard stop or predeclared merge | Ambiguous |
-| DEC-06 | Execution-EV minimum top-10 uplift and statistical/economic confidence rule | Undefined |
-| DEC-07 | Allowed worst-week/worst-month degradation trade-off | Undefined |
-| DEC-08 | Common EV unit, side-map equivalence test, and global-top-k reporting rule | Undefined |
-| DEC-09 | Exact fold calendar, embargo, and untouched replay period | Incomplete |
-| DEC-10 | Entry-timing promotion requirement or explicit omission rule | Undefined |
+| DEC-01 | “Remain close” tolerance for Pack-B vs shared-base benchmark | Locked in `config/full_pipeline_decisions_20260724.json` |
+| DEC-02 | Minimum residual-alpha improvement per side and required fold consistency | Locked in decision manifest |
+| DEC-03 | CatBoost dominant-class, class-share divergence, and entropy collapse limits | Locked in decision manifest |
+| DEC-04 | Formula/weights for combined CatBoost ML + economic objective | Locked in decision manifest |
+| DEC-05 | Seven-class support failure policy: hard stop or predeclared merge | Locked: hard stop for CatBoost side, no post-hoc merge |
+| DEC-06 | Execution-EV minimum top-10 uplift and statistical/economic confidence rule | Locked in decision manifest |
+| DEC-07 | Allowed worst-week/worst-month degradation trade-off | Locked in decision manifest |
+| DEC-08 | Common EV unit, side-map equivalence test, and global-top-k reporting rule | Locked in decision manifest |
+| DEC-09 | Exact fold calendar, embargo, and untouched replay period | Locked in decision manifest |
+| DEC-10 | Entry-timing promotion requirement or explicit omission rule | Locked: validate after stable E1; retain `enter_now` on failure |
 
 Hard requirements already fixed and not subject to tuning:
 
@@ -1134,10 +1134,10 @@ Track this table in the repository and update it only with linked evidence.
 
 | WP | Status | Owner | Blocking issue | Evidence/run ID | Gate signed by |
 |---|---|---|---|---|---|
-| R0 Migration | NOT STARTED |  |  |  |  |
-| R1 Source durability | NOT STARTED |  |  |  |  |
-| R2 Contracts | NOT STARTED |  |  |  |  |
-| R3 Alpha/top-40 | NOT STARTED |  |  |  |  |
+| R0 Migration | IN PROGRESS | Data/provenance | No comparison baseline; six active Pack-B lineage paths missing | `docs/pipeline_roadmap/20260724/r0/`; `r0_missing_path_triage.md` |  |
+| R1 Source durability | IN PROGRESS | Roadmap + Data/provenance | Remote recovery requires explicit publication authorization | `config/pipeline_stage_manifest_repository_20260724.json`; schema v1 |  |
+| R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and DEC-09 pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass |  |
+| R3 Alpha/top-40 | BLOCKED BY R2 | Alpha + Data/provenance | Existing Pack-B/residual OOF lineage is insufficient | R3 audit 2026-07-24 |  |
 | C1 CatBoost long | BLOCKED BY R3 |  |  |  |  |
 | C2 CatBoost short | BLOCKED BY R3 |  |  |  |  |
 | A1 Auxiliary long | BLOCKED BY R3 |  |  |  |  |

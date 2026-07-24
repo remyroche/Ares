@@ -31,6 +31,13 @@ def _labels() -> pd.DataFrame:
                     "2025-11-01T02:00:00Z",
                 ]
             ),
+            "__decision_ts__": pd.to_datetime(
+                [
+                    "2025-11-01T01:00:00Z",
+                    "2025-11-01T02:00:00Z",
+                    "2025-11-01T03:00:00Z",
+                ]
+            ),
             runner.TARGET_COLUMN: [0.1, 0.9, 0.4],
             runner.WEIGHT_COLUMN: [0.5, 1.0, 0.8],
             runner.ECONOMIC_COLUMN: [-0.01, 0.03, 0.005],
@@ -81,6 +88,25 @@ def test_exact_label_loader_rejects_candidate_identity_disagreement(
         match="disagrees on side, symbol, or signal timestamp",
     ):
         runner.ExactLabelLoader([path]).load(ledger)
+
+
+def test_exact_label_loader_handles_mixed_naive_and_utc_signal_timestamp_shards(
+    tmp_path: Path,
+) -> None:
+    april = _labels().iloc[[0]].copy()
+    july = _labels().iloc[[1]].copy()
+    april["__ts__"] = april["__ts__"].dt.tz_localize(None)
+    april_path = tmp_path / "april.parquet"
+    july_path = tmp_path / "july.parquet"
+    april.to_parquet(april_path, index=False)
+    july.to_parquet(july_path, index=False)
+    ledger = july.loc[
+        :, ["candidate_id", "side_name", "__symbol__", "__ts__"]
+    ].reset_index(drop=True)
+
+    loaded = runner.ExactLabelLoader([april_path, july_path]).load(ledger)
+
+    assert loaded[runner.TARGET_COLUMN].tolist() == [0.9]
 
 
 def test_explicit_hpo_design_is_side_local_deterministic_and_unique() -> None:

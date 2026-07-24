@@ -312,7 +312,7 @@ class ExactLabelLoader:
                         l.candidate_id,
                         l.side_name,
                         l.__symbol__,
-                        l.__ts__,
+                        l.__decision_ts__,
                         l.__first_touch_target_soft__,
                         l.__w__,
                         l.__first_touch_capture_net__,
@@ -338,8 +338,12 @@ class ExactLabelLoader:
                 "label join is not one-to-one and complete "
                 f"(requested={len(requested):,}, joined={len(frame):,})"
             )
-        observed_ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
-        expected_ts = requested["__ts__"].reset_index(drop=True)
+        observed_decision = pd.to_datetime(
+            frame["__decision_ts__"], utc=True, errors="coerce"
+        )
+        expected_decision = requested["__ts__"].reset_index(drop=True) + pd.Timedelta(
+            hours=1
+        )
         exact = (
             frame["candidate_id"]
             .astype(str)
@@ -354,7 +358,7 @@ class ExactLabelLoader:
             .astype(str)
             .reset_index(drop=True)
             .eq(requested["__symbol__"].astype(str).reset_index(drop=True))
-            & observed_ts.reset_index(drop=True).eq(expected_ts)
+            & observed_decision.reset_index(drop=True).eq(expected_decision)
         )
         if not exact.all():
             raise PackBSideFSHPORunnerError(

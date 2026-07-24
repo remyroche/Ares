@@ -56,7 +56,9 @@ DEFAULT_LABELS = (
     ROOT
     / "data_perp/artifacts/20260720_s59_h5_signalclose_causal_trailing_cost100bps_labels_v2/labels"
 )
-DEFAULT_AUDIT = DEFAULT_LABELS / "causal_path_invariant_audit.json"
+DEFAULT_AUDIT = (
+    ROOT / "docs/pipeline_roadmap/20260724/r3/current_label_inventory_audit.json"
+)
 DEFAULT_FEATURE_STORE_INVENTORY = (
     ROOT / "docs/pipeline_roadmap/20260724/r0/migration_inventory.json"
 )

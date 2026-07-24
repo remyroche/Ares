@@ -1,0 +1,1 @@
+{"event":"preflight","limits":{"check_interval_seconds":60.0,"max_process_rss_bytes":12884901888,"min_free_disk_bytes":10737418240,"min_free_ram_bytes":2147483648},"snapshot":{"available_ram_bytes":10878533632,"free_disk_bytes":84483985408,"process_rss_bytes":103759872},"stage":"packb_pre_march_contract_preflight","status":"ok","timestamp_utc":"2026-07-24T10:11:19.517228+00:00"}

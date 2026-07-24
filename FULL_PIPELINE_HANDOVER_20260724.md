@@ -152,6 +152,21 @@ directory contains an overlapping stale `train_global_short_7.parquet` file
 that is absent from the 38-file causal audit. Canonical preflight must reject
 unlisted or missing shards and duplicate candidate IDs before fitting.
 
+R3 subsequently reconciled the declared July tail append and completed a new
+streaming audit of the current 38 monthly shards:
+
+- 4,552,934 rows scanned;
+- zero duplicate candidate IDs or timing, path, cost, side, or validity
+  failures;
+- `train_global_short_7.parquet` is explicitly classified as an excluded
+  historical monolithic shard;
+- strict pre-March authorization retained 1,711,400 long rows and 1,718,388
+  short rows, both ending at label resolution `2026-02-28 23:00 UTC`.
+
+Evidence is under `docs/pipeline_roadmap/20260724/r3/`. This authorizes the
+candidate populations only; AE/GMM, feature selection, HPO, and OOF fitting
+remain unstarted.
+
 The downstream path, auxiliary, execution-EV, and timing targets remain
 12-hour contracts. Every manifest must bind the horizon of its own target
 rather than inheriting a generic pipeline horizon.

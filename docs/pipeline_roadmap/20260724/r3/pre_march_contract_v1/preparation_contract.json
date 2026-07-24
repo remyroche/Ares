@@ -1,0 +1,197 @@
+{
+  "canonical_oof_status": "NOT_STARTED",
+  "dec09": {
+    "calendar": {
+      "ae_gmm_reference_signal_interval": [
+        "2025-01-01T00:00:00+00:00",
+        "2025-11-01T00:00:00+00:00"
+      ],
+      "base_label_resolution": "actual __decision_ts__ + 24 hours",
+      "fallback": "FORBIDDEN_NO_POOLED_SIDE_OR_HISTORICAL_ARTIFACT_FALLBACK",
+      "feature_selection_validation": [
+        "2025-11-01T00:00:00+00:00",
+        "2025-12-01T00:00:00+00:00"
+      ],
+      "hpo_validations": [
+        [
+          "2025-12-01T00:00:00+00:00",
+          "2026-01-01T00:00:00+00:00"
+        ],
+        [
+          "2026-01-01T00:00:00+00:00",
+          "2026-02-01T00:00:00+00:00"
+        ],
+        [
+          "2026-02-01T00:00:00+00:00",
+          "2026-03-01T00:00:00+00:00"
+        ]
+      ],
+      "outer_folds": [
+        [
+          "2026-04-01T00:00:00Z",
+          "2026-05-01T00:00:00Z"
+        ],
+        [
+          "2026-05-01T00:00:00Z",
+          "2026-06-01T00:00:00Z"
+        ],
+        [
+          "2026-06-01T00:00:00Z",
+          "2026-07-01T00:00:00Z"
+        ],
+        [
+          "2026-07-01T00:00:00Z",
+          "2026-07-11T00:00:00Z"
+        ]
+      ],
+      "resolution_cutoff_utc": "2026-03-01T00:00:00+00:00",
+      "train_rule": "signal < validation_start - 25h AND decision == signal + 1h AND decision + 24h < validation_start",
+      "validation_rule": "validation_start <= signal < validation_end AND decision == signal + 1h AND decision + 24h < resolution_cutoff",
+      "windows": [
+        {
+          "name": "feature_selection",
+          "validation_end": "2025-12-01T00:00:00+00:00",
+          "validation_start": "2025-11-01T00:00:00+00:00"
+        },
+        {
+          "name": "hpo_1",
+          "validation_end": "2026-01-01T00:00:00+00:00",
+          "validation_start": "2025-12-01T00:00:00+00:00"
+        },
+        {
+          "name": "hpo_2",
+          "validation_end": "2026-02-01T00:00:00+00:00",
+          "validation_start": "2026-01-01T00:00:00+00:00"
+        },
+        {
+          "name": "hpo_3",
+          "validation_end": "2026-03-01T00:00:00+00:00",
+          "validation_start": "2026-02-01T00:00:00+00:00"
+        }
+      ]
+    },
+    "decision": {
+      "decision_timestamp": "signal_timestamp + 1 hour",
+      "feature_selection_hpo_authorization": "actual Pack-B label resolution timestamp < feature_selection_hpo_resolution_cutoff_utc; applies independently to side-local AE/GMM reference-state fitting, feature selection, HPO and every inner validation row",
+      "feature_selection_hpo_resolution_cutoff_utc": "2026-03-01T00:00:00Z",
+      "historical_packb_state_policy": "June/July recovered AE/GMM state, 55-long/37-short feature contracts and promoted parameters are comparator-only and cannot seed or constrain canonical selection",
+      "label_shard_authority": "manifest_or_causal_audit_exact_inventory; reject missing shards, unlisted extras, and duplicate candidate_id before fitting",
+      "name": "Fold calendar, purge, embargo and untouched replay",
+      "no_use_buffer": [
+        "2026-07-11T00:00:00Z",
+        "2026-07-12T00:00:00Z"
+      ],
+      "outer_folds": [
+        [
+          "2026-04-01T00:00:00Z",
+          "2026-05-01T00:00:00Z"
+        ],
+        [
+          "2026-05-01T00:00:00Z",
+          "2026-06-01T00:00:00Z"
+        ],
+        [
+          "2026-06-01T00:00:00Z",
+          "2026-07-01T00:00:00Z"
+        ],
+        [
+          "2026-07-01T00:00:00Z",
+          "2026-07-11T00:00:00Z"
+        ]
+      ],
+      "packb_pre_march_inner_calendar": {
+        "ae_gmm_reference_authorization": "decision_timestamp + 24 hours < 2025-11-01T00:00:00Z; beginning/middle/end time-spread sample independently per side",
+        "ae_gmm_reference_signal_interval": [
+          "2025-01-01T00:00:00Z",
+          "2025-11-01T00:00:00Z"
+        ],
+        "feature_selection_validation_interval": [
+          "2025-11-01T00:00:00Z",
+          "2025-12-01T00:00:00Z"
+        ],
+        "hpo_validation_intervals": [
+          [
+            "2025-12-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ],
+          [
+            "2026-01-01T00:00:00Z",
+            "2026-02-01T00:00:00Z"
+          ],
+          [
+            "2026-02-01T00:00:00Z",
+            "2026-03-01T00:00:00Z"
+          ]
+        ],
+        "inner_train_authorization": "decision_timestamp < validation_start AND decision_timestamp + 24 hours < validation_start",
+        "selection_policy": "freeze side-local AE/GMM after its reference interval; select features on the fixed November validation interval; select HPO parameters across all three fixed chronological validation intervals; no silent fallback"
+      },
+      "post_cutoff_recovery_exception": false,
+      "post_label_embargo_hours": 12,
+      "purge_hours": 12,
+      "replay_use": "single-use confirmation only; cannot alter models, maps, thresholds, policy settings or decision rules",
+      "signal_timestamp_purge_hours": 25,
+      "stage_label_horizons": {
+        "auxiliary_catboost_execution_ev_and_timing": "decision_timestamp + 12 hours",
+        "packb_directional_base": "decision_timestamp + 24 hours (96 x 15-minute causal path bars)"
+      },
+      "train_authorization": "decision_timestamp < validation_start AND actual_stage_label_end < validation_start AND decision_timestamp < validation_start - 24 hours",
+      "universe_signal_cutoff_utc": "2026-07-20T16:00:00Z",
+      "untouched_replay_last_decision_utc": "2026-07-20T17:00:00Z",
+      "untouched_replay_last_label_resolution_utc": "2026-07-21T05:00:00Z",
+      "untouched_replay_last_signal_utc": "2026-07-20T16:00:00Z",
+      "untouched_replay_signal_interval": [
+        "2026-07-12T00:00:00Z",
+        "2026-07-20T17:00:00Z"
+      ]
+    },
+    "path": "/Users/remyroche/Documents/Ares/config/full_pipeline_decisions_20260724.json",
+    "sha256": "6b30db94caddcbf1f6644cb7660b461f265908d398478d364b25ccdc3a30a7c5"
+  },
+  "expected_source_hashes": null,
+  "feature_store_inventory_evidence": null,
+  "fit_status": "NOT_IMPLEMENTED_NO_FALLBACK",
+  "fixed_calendar_sha256": "47a20a372d14490878006dddc942bda60eea2a62b6a7b072ae6a2afa92ceea19",
+  "population_preflight": {
+    "actual_label_resolution_contract": "__decision_ts__ must equal __ts__ + 1h; authorized only when __decision_ts__ + 24h < resolution_cutoff_utc",
+    "authorized_population_by_side": {
+      "long": {
+        "authorized_candidate_stream_sha256": "d921d74beac7af5a3e7e958b7dff77afc161e9c0a628754eb38cd5f8640de9d6",
+        "authorized_label_resolution_max_utc": "2026-02-28T23:00:00+00:00",
+        "authorized_label_resolution_min_utc": "2025-01-02T01:00:00+00:00",
+        "authorized_rows": 1711400,
+        "excluded_rows_at_or_after_cutoff": 557593
+      },
+      "short": {
+        "authorized_candidate_stream_sha256": "e5b7d54805d0039ba1817e40e7f05b49fa491fd9c6a3b7776356372d75585dba",
+        "authorized_label_resolution_max_utc": "2026-02-28T23:00:00+00:00",
+        "authorized_label_resolution_min_utc": "2025-01-02T01:00:00+00:00",
+        "authorized_rows": 1718388,
+        "excluded_rows_at_or_after_cutoff": 565553
+      }
+    },
+    "label_inventory": {
+      "canonical_shard_count": 38,
+      "canonical_shard_inventory_sha256": "e5a0354dc22d02f901d4b1c58920227e661bf02c4a7956cb3c8cd599cddccbf3",
+      "causal_audit_path": "/Users/remyroche/Documents/Ares/docs/pipeline_roadmap/20260724/r3/current_label_inventory_audit.json",
+      "causal_audit_sha256": "39807bceb65e938615eaf3a2fae7ec141fbff0efd1fe0e4c8f394905bed9733d",
+      "explicitly_excluded_shards": [
+        "train_global_short_7.parquet"
+      ]
+    },
+    "label_rows_scanned": 4552934,
+    "resolution_cutoff_utc": "2026-03-01T00:00:00+00:00",
+    "schema": "packb_pre_march_population_preflight_v1",
+    "status": "AUTHORIZED_PRE_MARCH_POPULATION",
+    "streaming_contract": {
+      "batch_rows": 50000,
+      "duplicate_id_index": "short_lived_sqlite_candidate_id_primary_key",
+      "feature_or_target_columns_loaded": false
+    }
+  },
+  "publication": "contract_only_json; no AE/GMM, feature, parameter, model, or OOF artifact was created",
+  "schema": "packb_pre_march_side_contract_runner_v1",
+  "side_artifact_verification": null,
+  "source_revision": null,
+  "status": "CONTRACT_ONLY_READY_FOR_REVIEW"
+}

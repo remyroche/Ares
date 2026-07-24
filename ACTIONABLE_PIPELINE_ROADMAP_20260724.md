@@ -1187,7 +1187,7 @@ Track this table in the repository and update it only with linked evidence.
 | R0 Migration | IN PROGRESS | Data/provenance | No comparison baseline; six active Pack-B lineage paths missing | `docs/pipeline_roadmap/20260724/r0/`; `r0_missing_path_triage.md` |  |
 | R1 Source durability | IN PROGRESS | Roadmap + Data/provenance | Remote recovery requires explicit publication authorization | `config/pipeline_stage_manifest_repository_20260724.json`; schema v1 |  |
 | R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and stage-specific horizon reconciliation pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass; DEC-01…10 locked |  |
-| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Existing seven-fold models and June/July AE/FS/HPO state are historical-only; fresh pre-March side-local AE/FS/HPO plus four-fold OOF required | Leakage blocker proven from Pack-B and AE manifests; stale unlisted short shard identified; resource guards committed in `ac6a116305` |  |
+| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Fresh pre-March side-local AE/FS/HPO fitting and four-fold OOF still required | Current 38-shard audit PASS on 4,552,934 rows; pre-March contract authorized 1,711,400 long and 1,718,388 short rows; historical `short_7` explicitly excluded; `docs/pipeline_roadmap/20260724/r3/` |  |
 | C1 CatBoost long | BLOCKED BY R3 |  |  |  |  |
 | C2 CatBoost short | BLOCKED BY R3 |  |  |  |  |
 | A1 Auxiliary long | BLOCKED BY R3 |  |  |  |  |
@@ -1209,9 +1209,9 @@ Execute in this order:
 2. Complete R0 checksums, read-only loads, disk/environment, and process audit.
 3. Make the dirty/untracked source recoverable under R1.
 4. Run R2 deterministic and broader contract suites.
-5. Implement and smoke a fail-closed pre-March Pack-B authorization phase:
-   authoritative label-shard inventory, duplicate-key rejection, side-local
-   AE/GMM fitting, feature selection, and HPO.
+5. Implement side-local AE/GMM fitting, feature selection, and HPO on the
+   now-authorized pre-March populations. The inventory, duplicate-key,
+   timing, fixed-calendar, and post-fit evidence gates are complete.
 6. Run the four canonical Pack-B OOF folds sequentially only after the
    pre-March artifact ledger and measured memory/disk envelope pass, then
    derive top-40 per timestamp × side.

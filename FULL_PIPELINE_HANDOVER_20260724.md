@@ -449,11 +449,15 @@ Pipeline position:
 
 ```text
 base alpha
--> residual meta alpha
--> CatBoost path probabilities + five auxiliary predictions
+-> residual meta alpha + CatBoost path probabilities + five auxiliary predictions
 -> execution-EV head
 -> admission/policy
 ```
+
+The residual-alpha, CatBoost, and five auxiliary branches are parallel
+consumers of the matching side-local base stream. CatBoost and the auxiliary
+heads are not downstream of residual alpha. Their OOF outputs are joined with
+base and residual-alpha OOF outputs only at the execution-EV handoff.
 
 The implementation supports two targets:
 
@@ -501,8 +505,8 @@ Question:
 
 ```text
 Given the estimated execution EV, should the system enter now or wait for a
-better price, balancing lower MAE/higher achievable EV against the risk of
-missing the trade?
+better price, balancing adverse-movement risk and achievable net-EV improvement
+against the cost and probability of losing the opportunity?
 ```
 
 Planned architecture:
@@ -513,14 +517,47 @@ Planned architecture:
 - Inputs include the execution-EV estimate, entry friction/spread, auxiliary
   timing/adverse predictions, archetype context, and observable market state.
 - Objective is cost- and spread-aware.
-- The decision grid should estimate both the value of waiting and the
-  probability the opportunity disappears before entry.
+- Each delayed action estimates fill probability, conditional net-EV change
+  versus enter-now, and adverse-first probability. Its expected utility must
+  subtract both missed-positive-EV loss when it does not fill and adverse-first
+  risk when it does fill.
+- The action grid includes passive adverse-limit actions expressed as a
+  side-relative ATR offset. The ML head estimates action values; it does not
+  place or round an order.
+- A separate deterministic layer above the ML head converts a selected
+  adverse-limit action into a suggested entry price:
+  `decision_price - ATR_offset * ATR` for long and
+  `decision_price + ATR_offset * ATR` for short. It must then apply
+  conservative tick rounding plus cost, liquidity, staleness, expiry,
+  marketability, and fill-feasibility gates.
 
 Current state:
 
 - Core module and runner code exist.
 - No canonical timing labels/handoff/model/OOF result is promoted.
 - It must remain deferred until the execution-EV head has a stable OOF stream.
+
+Implementation verification:
+
+- Counterfactual labels compare enter-now, delayed market entry, and bounded
+  passive adverse-limit entry on the same causal one-minute future path and
+  frozen side-local execution geometry.
+- Better-entry benefit is represented by conditional post-fill executable net
+  EV and `filled_delta_ev_vs_now`, so price improvement is credited only when
+  it improves the full post-fill policy outcome.
+- Losing the opportunity is represented by the no-fill probability and a
+  missed-opportunity loss based on positive enter-now EV; skipping a negative
+  enter-now opportunity is not penalized.
+- Adverse movement is represented by the probability of adverse-first movement
+  and an explicit adverse-first penalty, with OOF diagnostics for post-entry
+  MAE, MAE reduction, retained MFE, missed profitable trades, and regret.
+- Fee and spread accounting is action-aware and fail-closed: fee, entry spread,
+  and exit spread are applied once, and ambiguous passive-limit touch bars do
+  not receive optimistic intrabar ordering.
+- Model, calibration, and decision-policy evidence must be inner OOF/outer OOF
+  and side-local. These properties are implemented, but they are not promotion
+  evidence until the stable execution-EV OOF stream exists and the canonical
+  four-fold timing run passes the gates below.
 
 ### 2.10A Side-Local Head Audit
 
@@ -1117,13 +1154,26 @@ Reject:
 All remaining predictive and execution layers must be side-local:
 
 ```text
-long labels -> long FS -> long HPO -> long model -> long calibration -> long policy
-short labels -> short FS -> short HPO -> short model -> short calibration -> short policy
-                                                                    |
-                                              common expected-EV unit
-                                                                    |
-                                               global portfolio auction
+LONG
+long base alpha
+-> long residual alpha + long CatBoost archetypes + five long auxiliary heads
+-> long execution-EV head
+-> optional long entry-timing head
+-> long policy stream
+                         \
+                          -> global portfolio auction
+                         /
+SHORT
+short base alpha
+-> short residual alpha + short CatBoost archetypes + five short auxiliary heads
+-> short execution-EV head
+-> optional short entry-timing head
+-> short policy stream
 ```
+
+The `+` denotes parallel branches fed by the same side-local base stream, not a
+serial dependency. Each branch performs its own side-local FS, HPO, fitting,
+OOF scoring, and final refit as applicable.
 
 Long and short rows must not share a fitted feature selector, HPO study, model,
 probability calibrator, EV curve, geometry search, admission estimate, or sizing
@@ -1648,8 +1698,8 @@ Question:
 
 ```text
 Given current expected execution EV, should the system enter now or wait for a
-more favorable price, balancing improved entry/risk against the chance of
-missing the trade?
+more favorable price, balancing adverse-movement risk and achievable net-EV
+improvement against the cost and probability of losing the trade?
 ```
 
 Planned primary model:
@@ -1667,6 +1717,44 @@ The current implementation runs model HPO and decision-policy HPO before the
 side partition and has no independent feature-selection stage. Move feature
 selection, model HPO, action-grid HPO, isotonic calibration, and final fitting
 inside the long and short loops before treating this head as side-local.
+
+Required action-value decomposition for every delayed-market or passive-limit
+candidate:
+
+```text
+expected timing utility
+= P(fill) * (enter-now execution EV + conditional net-EV delta after fill)
+- (1 - P(fill)) * missed-opportunity penalty * max(enter-now execution EV, 0)
+- P(fill) * P(adverse-first | fill) * adverse-first penalty
+```
+
+The conditional net-EV delta must include the full effect of the changed entry
+price and remaining executable path under the frozen side-local geometry.
+Costs must use the same unit as execution EV, with fee, entry spread, and exit
+spread reconciled exactly once.
+
+The timing head may recommend an action of the form “wait up to N minutes for
+an adverse move of K ATR.” A separate deterministic target-price layer above
+the ML model must translate it into:
+
+```text
+long suggested limit  = decision price - K * decision-time ATR
+short suggested limit = decision price + K * decision-time ATR
+```
+
+That layer must round conservatively to the venue tick, reject crossed or
+immediately marketable limits unless explicitly intended, verify expected net
+benefit after incremental costs and queue/fill assumptions, enforce liquidity
+and staleness limits, attach a fixed expiry, and emit the exact suggested price,
+expiry, fallback action, and reason codes. The target-price formula and gates
+are deterministic policy logic, not extra fitted ML outputs.
+
+Promotion is relative to the enter-now baseline on paired OOF rows. It requires
+positive risk-adjusted utility uplift, controlled missed-positive-EV and
+adverse-first rates, acceptable worst-fold/week/month behavior, and calibration
+of fill, adverse-first, and action-value components. If it fails, retain
+enter-now; failure of this optional layer does not reject a stable execution-EV
+winner.
 
 Do not begin this phase before the execution-EV winner and its OOF stream are
 stable.
@@ -1762,24 +1850,24 @@ This is the final architecture decision for the remaining pipeline:
 ```text
 LONG
 long base alpha
--> long residual alpha
--> long CatBoost archetypes
--> five long auxiliary heads
+-> long residual alpha + long CatBoost archetypes + five long auxiliary heads
 -> long execution-EV head
--> long entry-timing head
+-> optional long entry-timing head
 -> long EV calibration/admission/geometry/sizing
                                       \
                                        -> global portfolio manager
                                       /
 SHORT
 short base alpha
--> short residual alpha
--> short CatBoost archetypes
--> five short auxiliary heads
+-> short residual alpha + short CatBoost archetypes + five short auxiliary heads
 -> short execution-EV head
--> short entry-timing head
+-> optional short entry-timing head
 -> short EV calibration/admission/geometry/sizing
 ```
+
+Here too, `residual alpha + CatBoost + five auxiliary heads` are parallel
+branches from the base model. None of those three branches is an upstream input
+to either of the other two.
 
 The global portfolio manager is the first and only fitted decision layer allowed
 to combine long and short candidates. Before that point, every selector, HPO

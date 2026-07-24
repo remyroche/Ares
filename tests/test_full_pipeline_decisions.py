@@ -40,6 +40,17 @@ def test_timing_failure_retains_enter_now_without_blocking_e1() -> None:
     assert decision["choice"] == "VALIDATE_AFTER_STABLE_E1_WINNER"
     assert decision["baseline"] == "enter_now"
     assert decision["failure_action"].startswith("retain enter_now")
+    assert set(decision["required_action_value_components"]) == {
+        "better_entry_benefit",
+        "fill_and_missed_opportunity",
+        "adverse_movement_risk",
+        "cost_accounting",
+    }
+    price_contract = decision["price_suggestion_contract"]
+    assert price_contract["long_formula"].startswith("decision_price -")
+    assert price_contract["short_formula"].startswith("decision_price +")
+    assert "does not round or place orders" in price_contract["model_output"]
+    assert "fixed expiry and explicit fallback action" in price_contract["policy_gates"]
 
 
 def test_common_ev_cost_is_applied_once() -> None:

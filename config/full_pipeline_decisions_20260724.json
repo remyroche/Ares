@@ -152,6 +152,25 @@
         "adverse_first_rate_absolute_increase_max": 0.0,
         "worst_month_utility_delta_min": -0.0005
       },
+      "required_action_value_components": {
+        "better_entry_benefit": "conditional net EV delta versus enter-now after the changed fill price and remaining executable path",
+        "fill_and_missed_opportunity": "fill probability and (1-fill probability) * penalty * max(enter-now EV, 0)",
+        "adverse_movement_risk": "fill probability * adverse-first probability conditional on fill * adverse-first penalty",
+        "cost_accounting": "fee, entry spread and exit spread reconciled exactly once in the common execution-EV unit"
+      },
+      "price_suggestion_contract": {
+        "model_output": "action value plus bounded wait_minutes and adverse_offset_atr; the ML model does not round or place orders",
+        "long_formula": "decision_price - adverse_offset_atr * decision_time_atr",
+        "short_formula": "decision_price + adverse_offset_atr * decision_time_atr",
+        "policy_gates": [
+          "conservative venue-tick rounding",
+          "marketability and crossed-limit rejection unless explicitly intended",
+          "incremental cost and fill-feasibility check",
+          "liquidity and staleness limits",
+          "fixed expiry and explicit fallback action",
+          "exact suggested price, expiry and reason-code logging"
+        ]
+      },
       "required_action_layer": "separate deterministic tick-valid price policy with cost, liquidity, staleness, expiry and fill-feasibility gates",
       "failure_action": "retain enter_now; timing failure does not reject the stable execution-EV winner"
     }

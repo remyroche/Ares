@@ -1,0 +1,34 @@
+{
+  "schema": "packb_side_local_top40_production_v1",
+  "status": "MATERIALIZED_AND_EXACTLY_REPRODUCED",
+  "source_root": "data_perp/artifacts/packb_side_local_outer_oof_20260724_v1_31_8",
+  "source_predictions_sha256": "fda2e9463310b472a54eef6e1788de053fd9f5e6d5370d656d08312d42a90ae5",
+  "final_promotion_contract": "docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_final_promotion_v3.json",
+  "output_root": "data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8",
+  "output_manifest_sha256": "7c0eb9d5a5a09f1bee097cabc6123a6f82d513fab4d9ba057696efd33e23b41a",
+  "output_parquet_sha256": "54cf57e3718ba8315d7197bb83f0f26f15ad251ae0b9a529ec8796da53631630",
+  "candidate_identity_sha256": "1b7442bfd5a75c040869d156b6ed102423eff8876b8fca3b8a0781b7fcdaef55",
+  "selection": {
+    "fraction": 0.4,
+    "scope": "UTC timestamp x side",
+    "ordering": "prediction descending, symbol ascending",
+    "authority": "persisted integer rank",
+    "rank_and_mask_exactly_reproduced": true,
+    "source_rows": 744251,
+    "selected_rows": 300315,
+    "selected_rows_by_side": {
+      "long": 140768,
+      "short": 159547
+    }
+  },
+  "strict_provenance": {
+    "status": "ready",
+    "side_local_model_manifests_verified": true,
+    "hashed_training_ledgers_verified": true,
+    "max_train_decision_timestamp_observed": true,
+    "max_label_resolution_timestamp_observed": true,
+    "all_label_resolution_timestamps_precede_validation": true,
+    "final_refit_predictions_used": false
+  },
+  "next_gate": "Refit the residual-alpha experts independently on the matching long and short selected identities; reject any bundle or OOF row that crosses sides or is outside this candidate-identity contract."
+}

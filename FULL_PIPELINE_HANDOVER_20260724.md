@@ -1508,12 +1508,18 @@ Immediate next action:
 
 1. Source both side streams from
    `data_perp/artifacts/packb_side_local_outer_oof_20260724_v1_31_8`.
-2. Recompute deterministic ranks within UTC timestamp and side and materialize
-   the independent long and short top-40 masks.
-3. Bind the handoff to the canonical prediction, feature-contract, HPO, AE/GMM,
-   calendar, population, and source hashes.
-4. Refit and validate the residual-alpha experts independently on those
-   matching side-local handoffs before starting CatBoost or auxiliary models.
+2. **Completed:** deterministic ranks were recomputed within UTC timestamp and
+   side and the independent long and short top-40 masks were materialized at
+   `data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8`. The saved
+   300,315-row mask reproduces exactly: 140,768 long and 159,547 short.
+3. **Completed:** the handoff is bound to the canonical prediction,
+   feature-contract, HPO, AE/GMM, fold-model, hashed training-ledger, calendar,
+   population, and source evidence. Every observed maximum label-resolution
+   timestamp precedes its validation boundary. The production evidence contract
+   is `docs/pipeline_roadmap/20260724/r3/packb_side_local_top40_production_v1.json`.
+4. **Next:** refit and validate the residual-alpha experts independently on
+   these matching side-local identities before starting CatBoost or auxiliary
+   models.
 
 ### Phase 3: Finish the Seven-Class CatBoost Classifier
 

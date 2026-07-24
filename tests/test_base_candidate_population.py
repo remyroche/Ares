@@ -54,7 +54,9 @@ def test_candidate_hash_is_order_invariant_and_population_sensitive() -> None:
             "side_name": ["long", "short"],
         }
     )
-    assert candidate_identity_sha256(frame) == candidate_identity_sha256(frame.iloc[::-1])
+    assert candidate_identity_sha256(frame) == candidate_identity_sha256(
+        frame.iloc[::-1]
+    )
     changed = frame.copy()
     changed.loc[0, "__symbol__"] = "C"
     assert candidate_identity_sha256(frame) != candidate_identity_sha256(changed)
@@ -62,10 +64,17 @@ def test_candidate_hash_is_order_invariant_and_population_sensitive() -> None:
 
 def test_contract_rejects_invalid_fraction() -> None:
     frame = pd.DataFrame(
-        {"__ts__": ["2026-01-01"], "__symbol__": ["A"], "side_name": ["long"], "score": [1.0]}
+        {
+            "__ts__": ["2026-01-01"],
+            "__symbol__": ["A"],
+            "side_name": ["long"],
+            "score": [1.0],
+        }
     )
     try:
-        select_base_candidate_population(frame, BaseCandidatePopulationContract(top_fraction=1.0))
+        select_base_candidate_population(
+            frame, BaseCandidatePopulationContract(top_fraction=1.0)
+        )
     except ValueError as exc:
         assert "top_fraction" in str(exc)
     else:
@@ -80,11 +89,14 @@ def test_deterministic_candidate_ids_require_exact_identity() -> None:
             "side_name": ["long", "short"],
         }
     )
-    assert deterministic_candidate_ids(frame).tolist() == deterministic_candidate_ids(
-        frame.iloc[::-1]
-    ).sort_index().tolist()
+    assert (
+        deterministic_candidate_ids(frame).tolist()
+        == deterministic_candidate_ids(frame.iloc[::-1]).sort_index().tolist()
+    )
     with pytest.raises(ValueError, match="not unique"):
-        deterministic_candidate_ids(pd.concat([frame, frame.iloc[[0]]], ignore_index=True))
+        deterministic_candidate_ids(
+            pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+        )
 
 
 def test_base_population_candidate_ids_match_existing_path_label_contract() -> None:
@@ -97,9 +109,12 @@ def test_base_population_candidate_ids_match_existing_path_label_contract() -> N
     )
     expected = "AAVE/USD:USD|2025-02-01T00:00:00Z|1h|long"
     assert deterministic_candidate_ids(frame).iloc[0] == expected
-    assert deterministic_candidate_ids(frame).iloc[0] == candidate_id_series(
-        frame["__ts__"], frame["__symbol__"], "1h", frame["side_name"]
-    ).iloc[0]
+    assert (
+        deterministic_candidate_ids(frame).iloc[0]
+        == candidate_id_series(
+            frame["__ts__"], frame["__symbol__"], "1h", frame["side_name"]
+        ).iloc[0]
+    )
 
 
 def test_materializer_records_manifest_boundaries_without_fabricating_resolution_proof(
@@ -140,7 +155,101 @@ def test_materializer_records_manifest_boundaries_without_fabricating_resolution
     assert output["candidate_id"].iloc[0] == "BTC/USD:USD|2026-01-01T00:00:00Z|1h|long"
     assert output["validation_start"].iloc[0] == pd.Timestamp("2026-01-01T00:00:00Z")
     assert pd.isna(output["train_decision_cutoff"].iloc[0])
-    assert output["train_decision_cutoff_evidence"].iloc[0] == "not_observed_in_model_manifest"
+    assert (
+        output["train_decision_cutoff_evidence"].iloc[0]
+        == "not_observed_in_model_manifest"
+    )
     assert manifest["fold_provenance"]["strict_execution_ev_handoff"]["status"] == (
         "blocked_regenerate_upstream_evidence"
+    )
+
+
+def test_materializer_accepts_side_local_outer_manifests_and_binds_hashed_ledgers(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "outer-oof.parquet"
+    frame = pd.DataFrame(
+        {
+            "__ts__": pd.to_datetime(
+                [
+                    "2026-04-01T00:00:00Z",
+                    "2026-04-01T00:00:00Z",
+                    "2026-04-01T00:00:00Z",
+                    "2026-04-01T00:00:00Z",
+                ],
+                utc=True,
+            ),
+            "__symbol__": ["BTC", "ETH", "BTC", "ETH"],
+            "side_name": ["long", "long", "short", "short"],
+            "prediction": [0.9, 0.1, 0.8, 0.2],
+            "outer_fold": ["outer_1"] * 4,
+        }
+    )
+    frame["candidate_id"] = deterministic_candidate_ids(frame)
+    frame.to_parquet(source, index=False)
+
+    outer_root = tmp_path / "outer"
+    for side in ("long", "short"):
+        side_dir = outer_root / side
+        side_dir.mkdir(parents=True)
+        train = side_dir / "train.parquet"
+        pd.DataFrame(
+            {
+                "__decision_ts__": pd.to_datetime(
+                    ["2026-03-30T22:00:00Z", "2026-03-30T23:00:00Z"], utc=True
+                ),
+                "__label_resolution_ts__": pd.to_datetime(
+                    ["2026-03-31T22:00:00Z", "2026-03-31T23:00:00Z"], utc=True
+                ),
+            }
+        ).to_parquet(train, index=False)
+        (side_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "side": side,
+                    "model_side_scope": "per_side",
+                    "feature_contract_sha256": f"{side}-features",
+                    "hpo_parameters_sha256": f"{side}-hpo",
+                    "ae_state_sha256": f"{side}-ae",
+                    "folds": [
+                        {
+                            "fold": "outer_1",
+                            "validation_start_utc": "2026-04-01T00:00:00Z",
+                            "validation_end_utc": "2026-05-01T00:00:00Z",
+                            "model_sha256": f"{side}-model",
+                            "train_ledger": {
+                                "path": str(train),
+                                "sha256": materializer._sha256(train),
+                            },
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    output_dir = tmp_path / "population"
+    manifest = materializer.run(
+        source,
+        output_dir,
+        BaseCandidatePopulationContract(score_col="prediction"),
+        model_manifest_root=outer_root,
+        include_all_columns=True,
+    )
+    output = pd.read_parquet(output_dir / "base_candidate_population.parquet")
+    assert len(output) == 2
+    assert output["oos_fold"].eq("outer_1").all()
+    assert (
+        output["base_fold_fit_scope"]
+        .eq("strict_prior_resolved_labels_side_local")
+        .all()
+    )
+    assert (
+        output["train_decision_cutoff_evidence"]
+        .eq("observed_hashed_train_ledger")
+        .all()
+    )
+    assert output["base_feature_contract_sha256"].nunique() == 2
+    assert (
+        manifest["fold_provenance"]["strict_execution_ev_handoff"]["status"] == "ready"
     )

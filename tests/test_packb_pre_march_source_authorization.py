@@ -212,6 +212,67 @@ def test_population_preflight_aborts_when_resource_checkpoint_fails(
         )
 
 
+def test_population_preflight_uses_guarded_scratch_filesystem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    labels, audit, _sources = _valid_inputs(tmp_path)
+    scratch = tmp_path / "guarded-scratch"
+    scratch.mkdir()
+    original = authorization._open_candidate_index
+    observed: list[Path] = []
+
+    def capture(path: Path):
+        observed.append(path)
+        return original(path)
+
+    monkeypatch.setattr(authorization, "_open_candidate_index", capture)
+    authorization.preflight_pre_march_packb_population(
+        labels_dir=labels,
+        causal_audit_path=audit,
+        batch_rows=1,
+        scratch_dir=scratch,
+    )
+
+    assert len(observed) == 1
+    assert scratch in observed[0].parents
+
+
+def test_passing_current_audit_can_explicitly_exclude_historical_shard(
+    tmp_path: Path,
+) -> None:
+    labels, audit, _sources = _valid_inputs(tmp_path)
+    stale = labels / "train_global_short_7.parquet"
+    _label_rows(
+        "short",
+        candidate_id="historical-only",
+        signal="2026-02-27T22:00:00Z",
+    ).to_parquet(stale, index=False)
+    payload = json.loads(audit.read_text(encoding="utf-8"))
+    payload.update(
+        {
+            "schema": "packb_current_canonical_label_inventory_audit_v1",
+            "status": "PASS",
+            "mode": "streaming_full_audit",
+            "inventory": {
+                "canonical_monthly_files": 2,
+                "excluded_unlisted_monolithic_files": [stale.name],
+            },
+        }
+    )
+    audit.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = authorization.preflight_pre_march_packb_population(
+        labels_dir=labels,
+        causal_audit_path=audit,
+        batch_rows=1,
+        scratch_dir=tmp_path,
+    )
+
+    assert report["label_inventory"]["explicitly_excluded_shards"] == [stale.name]
+    assert report["label_rows_scanned"] == 4
+
+
 @pytest.mark.parametrize("kind", ["extra", "missing"])
 def test_rejects_non_exact_causal_audit_inventory(tmp_path: Path, kind: str) -> None:
     labels, audit, sources = _valid_inputs(tmp_path)

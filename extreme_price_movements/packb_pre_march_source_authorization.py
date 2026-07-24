@@ -147,8 +147,33 @@ def _load_canonical_shards(
         raise PackBSourceAuthorizationError(
             "causal audit contains a duplicate canonical shard name"
         )
+    is_current_audit = (
+        audit.get("schema") == "packb_current_canonical_label_inventory_audit_v1"
+    )
+    if is_current_audit:
+        if audit.get("status") != "PASS" or audit.get("mode") != "streaming_full_audit":
+            raise PackBSourceAuthorizationError(
+                "current canonical label audit must be a passing full streaming audit"
+            )
+        inventory = audit.get("inventory")
+        if not isinstance(inventory, Mapping):
+            raise PackBSourceAuthorizationError(
+                "current canonical label audit has no inventory"
+            )
+        declared_raw = inventory.get("canonical_monthly_files")
+        exclusions_raw = inventory.get("excluded_unlisted_monolithic_files", [])
+        if not isinstance(exclusions_raw, list) or any(
+            not isinstance(value, str) for value in exclusions_raw
+        ):
+            raise PackBSourceAuthorizationError(
+                "current canonical label audit exclusions are invalid"
+            )
+        allowed_exclusions = set(exclusions_raw)
+    else:
+        declared_raw = audit.get("files")
+        allowed_exclusions = set()
     try:
-        declared_count = int(audit.get("files"))
+        declared_count = int(declared_raw)
     except (TypeError, ValueError) as exc:
         raise PackBSourceAuthorizationError(
             "causal audit files count is invalid"
@@ -161,12 +186,20 @@ def _load_canonical_shards(
     actual = {path.name for path in labels_dir.glob("*.parquet") if path.is_file()}
     missing = sorted(expected - actual)
     extras = sorted(actual - expected)
-    if missing or extras:
+    unexpected_extras = sorted(set(extras) - allowed_exclusions)
+    missing_exclusions = sorted(allowed_exclusions - actual)
+    if missing or unexpected_extras or missing_exclusions:
         details: list[str] = []
         if missing:
             details.append("missing canonical shards=" + ", ".join(missing[:8]))
-        if extras:
-            details.append("unlisted parquet shards=" + ", ".join(extras[:8]))
+        if unexpected_extras:
+            details.append(
+                "unlisted parquet shards=" + ", ".join(unexpected_extras[:8])
+            )
+        if missing_exclusions:
+            details.append(
+                "declared exclusions missing=" + ", ".join(missing_exclusions[:8])
+            )
         raise PackBSourceAuthorizationError(
             "label shard inventory is not exact: " + "; ".join(details)
         )
@@ -177,6 +210,7 @@ def _load_canonical_shards(
         "causal_audit_sha256": _sha256_file(causal_audit_path),
         "canonical_shard_count": len(names),
         "canonical_shard_inventory_sha256": _canonical_json_sha256({"shards": names}),
+        "explicitly_excluded_shards": sorted(allowed_exclusions),
     }
 
 
@@ -275,6 +309,7 @@ def _scan_labels(
     cutoff: pd.Timestamp,
     batch_rows: int,
     checkpoint: Callable[[str], None] | None = None,
+    scratch_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Check IDs and timing in bounded Parquet batches.
 
@@ -303,7 +338,8 @@ def _scan_labels(
     total_rows = 0
 
     with tempfile.TemporaryDirectory(
-        prefix="packb-source-authorization-"
+        prefix="packb-source-authorization-",
+        dir=str(scratch_dir) if scratch_dir is not None else None,
     ) as temporary_directory:
         if checkpoint is not None:
             checkpoint("before_duplicate_index")
@@ -449,6 +485,7 @@ def preflight_pre_march_packb_population(
     resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
     batch_rows: int = DEFAULT_BATCH_ROWS,
     checkpoint: Callable[[str], None] | None = None,
+    scratch_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Authorize exact label populations before any learned artifact exists."""
 
@@ -462,6 +499,7 @@ def preflight_pre_march_packb_population(
         cutoff=cutoff,
         batch_rows=batch_rows,
         checkpoint=checkpoint,
+        scratch_dir=Path(scratch_dir) if scratch_dir is not None else None,
     )
     return {
         "schema": POPULATION_PREFLIGHT_SCHEMA,
@@ -500,6 +538,7 @@ def authorize_pre_march_packb_sources(
     resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
     batch_rows: int = DEFAULT_BATCH_ROWS,
     checkpoint: Callable[[str], None] | None = None,
+    scratch_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Return a compact, fail-closed authorization report for Pack-B sources.
 
@@ -516,6 +555,7 @@ def authorize_pre_march_packb_sources(
         resolution_cutoff_utc=resolution_cutoff_utc,
         batch_rows=batch_rows,
         checkpoint=checkpoint,
+        scratch_dir=scratch_dir,
     )
     side_report = verify_pre_march_side_artifacts(
         side_sources=side_sources,

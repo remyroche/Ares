@@ -135,6 +135,17 @@ base_label_end = decision_timestamp + 24 hours
 eligible_train_signal < validation_start - 25 hours
 ```
 
+The locked inner calendar is fixed before this new search:
+
+- side-local AE/GMM reference: authorized beginning/middle/end samples from
+  January 1 through November 1, 2025, with every 24-hour label resolution
+  strictly before November 1;
+- feature-selection validation: November 1 through December 1, 2025;
+- HPO validation: December 2025, January 2026, and February 2026 as three
+  chronological folds;
+- every inner training row must resolve strictly before its validation start;
+- no silent feature-selection or model fallback is allowed.
+
 Use the label manifest or causal path audit as the authoritative shard
 inventory. Do not glob every Parquet file in the labels directory: the current
 directory contains an overlapping stale `train_global_short_7.parquet` file

@@ -47,6 +47,21 @@ def test_fold_calendar_precedes_buffer_and_untouched_replay() -> None:
     )
     assert "comparator-only" in decision["historical_packb_state_policy"]
     assert "reject missing shards" in decision["label_shard_authority"]
+    inner = decision["packb_pre_march_inner_calendar"]
+    assert inner["ae_gmm_reference_signal_interval"] == [
+        "2025-01-01T00:00:00Z",
+        "2025-11-01T00:00:00Z",
+    ]
+    assert inner["feature_selection_validation_interval"] == [
+        "2025-11-01T00:00:00Z",
+        "2025-12-01T00:00:00Z",
+    ]
+    assert inner["hpo_validation_intervals"] == [
+        ["2025-12-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+        ["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"],
+        ["2026-02-01T00:00:00Z", "2026-03-01T00:00:00Z"],
+    ]
+    assert "no silent fallback" in inner["selection_policy"]
 
 
 def test_timing_failure_retains_enter_now_without_blocking_e1() -> None:

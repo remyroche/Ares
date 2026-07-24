@@ -115,6 +115,33 @@
       "universe_signal_cutoff_utc": "2026-07-20T16:00:00Z",
       "feature_selection_hpo_resolution_cutoff_utc": "2026-03-01T00:00:00Z",
       "feature_selection_hpo_authorization": "actual Pack-B label resolution timestamp < feature_selection_hpo_resolution_cutoff_utc; applies independently to side-local AE/GMM reference-state fitting, feature selection, HPO and every inner validation row",
+      "packb_pre_march_inner_calendar": {
+        "ae_gmm_reference_signal_interval": [
+          "2025-01-01T00:00:00Z",
+          "2025-11-01T00:00:00Z"
+        ],
+        "ae_gmm_reference_authorization": "decision_timestamp + 24 hours < 2025-11-01T00:00:00Z; beginning/middle/end time-spread sample independently per side",
+        "feature_selection_validation_interval": [
+          "2025-11-01T00:00:00Z",
+          "2025-12-01T00:00:00Z"
+        ],
+        "hpo_validation_intervals": [
+          [
+            "2025-12-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ],
+          [
+            "2026-01-01T00:00:00Z",
+            "2026-02-01T00:00:00Z"
+          ],
+          [
+            "2026-02-01T00:00:00Z",
+            "2026-03-01T00:00:00Z"
+          ]
+        ],
+        "inner_train_authorization": "decision_timestamp < validation_start AND decision_timestamp + 24 hours < validation_start",
+        "selection_policy": "freeze side-local AE/GMM after its reference interval; select features on the fixed November validation interval; select HPO parameters across all three fixed chronological validation intervals; no silent fallback"
+      },
       "historical_packb_state_policy": "June/July recovered AE/GMM state, 55-long/37-short feature contracts and promoted parameters are comparator-only and cannot seed or constrain canonical selection",
       "post_cutoff_recovery_exception": false,
       "label_shard_authority": "manifest_or_causal_audit_exact_inventory; reject missing shards, unlisted extras, and duplicate candidate_id before fitting",

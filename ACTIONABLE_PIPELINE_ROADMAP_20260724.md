@@ -635,6 +635,12 @@ Tasks:
   by side on the authorized pre-March reference interval, then run feature
   selection and HPO independently for long and short using only labels whose
   actual 24-hour resolution is strictly before `2026-03-01 00:00 UTC`.
+- Use the immutable DEC-09 inner calendar: fit each side's AE/GMM on
+  beginning/middle/end samples from authorized rows before November 1, use
+  November as the feature-selection validation interval, and use December,
+  January, and February as the three chronological HPO validation intervals.
+  Apply the strict 24-hour resolution boundary at every inner split and permit
+  no silent selector/model fallback.
 - Freeze each side's newly selected feature contract, parameters, and AE/GMM
   state before scoring any outer fold. Regenerate four canonical Pack-B OOF
   folds using the locked half-open April, May, June, and July 1–11 signal

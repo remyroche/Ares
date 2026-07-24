@@ -296,6 +296,7 @@ def run(
             side_root = stage_root / side
             bundle = write_loader_evidence_bundle(
                 output_dir=side_root / "loader_evidence",
+                published_output_dir=destination / side / "loader_evidence",
                 universe=universe,
                 feature_contract=contract,
                 coverage_profile=coverage,
@@ -324,6 +325,7 @@ def run(
                 feature_loader=feature_loader,
                 input_features=list(contract.feature_columns),
                 output_dir=side_root / "ae_gmm",
+                published_output_dir=destination / side / "ae_gmm",
                 source_hashes=source_hashes,
                 source_revision=revision,
                 fixed_calendar_sha256=calendar_sha256,

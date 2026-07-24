@@ -95,6 +95,7 @@ def _run(
     ledger: pd.DataFrame | None = None,
     loader=None,
     fake_state: dict[str, object] | None = None,
+    published_output_dir: Path | None = None,
 ) -> tuple[dict[str, object], dict[str, object], _RecordingGuard]:
     seen: dict[str, object] = {}
     guard = _RecordingGuard()
@@ -160,6 +161,7 @@ def _run(
         feature_loader=active_loader,
         input_features=["observable_a", "observable_b"],
         output_dir=tmp_path / "out",
+        published_output_dir=published_output_dir,
         source_hashes=source_hashes,
         source_revision=SOURCE_REVISION,
         fixed_calendar_sha256=CALENDAR_SHA256,
@@ -169,6 +171,36 @@ def _run(
         resource_guard=guard,
     )
     return report, seen, guard
+
+
+def test_published_paths_survive_atomic_directory_relocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = tmp_path / "published"
+    report, _seen, _guard = _run(
+        tmp_path,
+        monkeypatch,
+        published_output_dir=published,
+    )
+    (tmp_path / "out").rename(published)
+
+    for key in (
+        "state_path",
+        "metadata_path",
+        "side_stage_manifest_path",
+        "candidate_stream_evidence_path",
+    ):
+        assert Path(str(report[key])).is_file()
+        assert str(report[key]).startswith(str(published))
+    metadata = json.loads(
+        Path(str(report["metadata_path"])).read_text(encoding="utf-8")
+    )
+    for key in ("state_path", "stage_config_path"):
+        assert Path(str(metadata[key])).is_file()
+        assert str(metadata[key]).startswith(str(published))
+    candidate = metadata["candidate_stream_evidence"]["path"]
+    assert Path(str(candidate)).is_file()
+    assert str(candidate).startswith(str(published))
 
 
 def test_fits_only_authorized_one_side_pre_nov_rows_and_emits_manifest(

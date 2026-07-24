@@ -471,6 +471,7 @@ def fit_side_local_ae_gmm_stage(
     feature_loader: FeatureLoader,
     input_features: Sequence[str],
     output_dir: Path,
+    published_output_dir: Path | None = None,
     source_hashes: Mapping[str, str],
     source_revision: str,
     fixed_calendar_sha256: str,
@@ -504,6 +505,9 @@ def fit_side_local_ae_gmm_stage(
     if int(min_reference_rows) < 2:
         raise PackBSideLocalAEStageError("min_reference_rows must be at least two")
     destination = Path(output_dir)
+    published_destination = (
+        Path(published_output_dir) if published_output_dir is not None else destination
+    )
     if destination.exists() and any(destination.iterdir()):
         raise PackBSideLocalAEStageError(
             f"output directory must be empty: {destination}"
@@ -670,7 +674,7 @@ def fit_side_local_ae_gmm_stage(
     metadata = {
         "schema": AE_STAGE_SCHEMA,
         "side": normalized_side,
-        "state_path": str(state_path),
+        "state_path": str(published_destination / state_path.name),
         "state_sha256": state_sha256,
         "cycle_state_hash": str(state["cycle_state_hash"]),
         "input_feature_order_sha256": input_hash,
@@ -692,13 +696,13 @@ def fit_side_local_ae_gmm_stage(
             "sha256": population_sha256,
         },
         "candidate_stream_evidence": {
-            "path": str(candidate_stream_path),
+            "path": str(published_destination / candidate_stream_path.name),
             "sha256": candidate_stream_sha256,
         },
         "source_hashes": source_evidence,
         "source_revision": revision,
         "fixed_calendar_sha256": calendar_hash,
-        "stage_config_path": str(stage_config_path),
+        "stage_config_path": str(published_destination / stage_config_path.name),
         "stage_config_sha256": str(state["stage_config_sha256"]),
     }
     metadata_path = destination / "ae_gmm_state_metadata.json"
@@ -741,10 +745,10 @@ def fit_side_local_ae_gmm_stage(
         "schema": AE_STAGE_SCHEMA,
         "status": "FROZEN_SIDE_LOCAL_AE_GMM_STATE",
         "side": normalized_side,
-        "state_path": str(state_path),
+        "state_path": str(published_destination / state_path.name),
         "state_sha256": state_sha256,
-        "metadata_path": str(metadata_path),
-        "side_stage_manifest_path": str(manifest_path),
+        "metadata_path": str(published_destination / metadata_path.name),
+        "side_stage_manifest_path": str(published_destination / manifest_path.name),
         "side_stage_manifest_sha256": manifest_sha256,
         "cycle_state_hash": str(state["cycle_state_hash"]),
         "reference_rows_available": int(len(reference)),
@@ -752,7 +756,9 @@ def fit_side_local_ae_gmm_stage(
         "sample_identity_sha256": sample_hash,
         "source_candidate_stream_sha256": reference_stream["sha256"],
         "sampled_candidate_stream_sha256": sampled_stream["sha256"],
-        "candidate_stream_evidence_path": str(candidate_stream_path),
+        "candidate_stream_evidence_path": str(
+            published_destination / candidate_stream_path.name
+        ),
         "candidate_stream_evidence_sha256": candidate_stream_sha256,
         "input_feature_order_sha256": input_hash,
         "feature_contract_sha256": loader_evidence["feature_contract_sha256"],

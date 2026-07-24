@@ -277,6 +277,7 @@ def test_segment_filters_prune_not_abort_and_evidence_binds_callback_and_matrix(
     universe, profile, contract = _contract(root, ledger, segments=True)
     bundle = loader.write_loader_evidence_bundle(
         output_dir=tmp_path / "evidence",
+        published_output_dir=tmp_path / "published_evidence",
         universe=universe,
         coverage_profile=profile,
         feature_contract=contract,
@@ -304,6 +305,12 @@ def test_segment_filters_prune_not_abort_and_evidence_binds_callback_and_matrix(
     assert callback.packb_static_feature_matrix_sha256(ledger, changed) != first_hash
     assert (tmp_path / "evidence" / "raw_feature_universe.json").is_file()
     assert (tmp_path / "evidence" / "loader_evidence.json").is_file()
+    evidence = json.loads(
+        (tmp_path / "evidence" / "loader_evidence.json").read_text(encoding="utf-8")
+    )
+    assert evidence["path"] == str(
+        tmp_path / "published_evidence" / "loader_evidence.json"
+    )
 
 
 def test_weak_segment_feature_is_pruned_before_joint_complete_gate(

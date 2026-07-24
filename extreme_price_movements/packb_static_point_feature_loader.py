@@ -2024,6 +2024,7 @@ def _loader_contract_digest(
 def write_loader_evidence_bundle(
     *,
     output_dir: str | Path,
+    published_output_dir: str | Path | None = None,
     universe: CandidateFeatureUniverse,
     feature_contract: FrozenFeatureContract | Mapping[str, Any],
     coverage_profile: FeatureCoverageProfile | None = None,
@@ -2055,6 +2056,9 @@ def write_loader_evidence_bundle(
             "feature contract coverage hash does not match supplied coverage evidence"
         )
     destination = Path(output_dir)
+    published_destination = (
+        Path(published_output_dir) if published_output_dir is not None else destination
+    )
     if destination.exists():
         raise PackBStaticPointFeatureLoaderError(
             f"refusing to overwrite loader evidence directory: {destination}"
@@ -2089,7 +2093,7 @@ def write_loader_evidence_bundle(
         loader_module_sha256=_sha256_file(Path(__file__).resolve()),
         source_schema_sha256=universe.source_schema_sha256,
         source_revision=revision,
-        path=str(destination / "loader_evidence.json"),
+        path=str(published_destination / "loader_evidence.json"),
     )
     evidence_payload = {
         **bundle.to_dict(),

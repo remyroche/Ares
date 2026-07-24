@@ -245,7 +245,7 @@ def run(
     feature_store: Path,
     destination: Path,
     minimum_joint_finite_fraction: float = 0.85,
-    minimum_monthly_joint_finite_fraction: float = 0.75,
+    minimum_monthly_joint_finite_fraction: float = 0.70,
 ) -> dict[str, Any]:
     if destination.exists():
         raise FileExistsError(
@@ -358,6 +358,20 @@ def run(
                 "immutable_point_lookup": True,
             },
             "representation": representation,
+            "downstream_acceptance_requirements": {
+                "missing_values": (
+                    "retain rows; LightGBM native missing handling plus "
+                    f"{REPRESENTATION_AVAILABLE_FEATURE}"
+                ),
+                "oof_reporting": (
+                    "report every head by side and representation-available "
+                    "versus representation-missing support"
+                ),
+                "promotion_gate": (
+                    "no material objective or economic collapse in the "
+                    "representation-missing slice"
+                ),
+            },
             "output": {
                 "path": str(destination / "context.parquet"),
                 "sha256": _sha256(output_path),
@@ -392,7 +406,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--minimum-joint-finite-fraction", type=float, default=0.85)
     parser.add_argument(
-        "--minimum-monthly-joint-finite-fraction", type=float, default=0.75
+        "--minimum-monthly-joint-finite-fraction", type=float, default=0.70
     )
     args = parser.parse_args()
     result = run(

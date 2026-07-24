@@ -97,3 +97,22 @@ def test_append_side_representation_rejects_different_side_contracts() -> None:
             minimum_joint_finite_fraction=1.0,
             minimum_monthly_joint_finite_fraction=1.0,
         )
+
+
+def test_append_side_representation_enforces_monthly_coverage() -> None:
+    context = _context()
+    context.loc[1, "__ts__"] = pd.Timestamp("2026-05-01T00:00:00Z")
+    with pytest.raises(DownstreamRepresentationError, match="monthly joint finite"):
+        append_side_representation(
+            context,
+            side_frames={
+                "long": pd.DataFrame({"dae_b16_00": [1.0, np.nan]}),
+                "short": pd.DataFrame({"dae_b16_00": [1.0, 2.0]}),
+            },
+            generated_features_by_side={
+                "long": ["dae_b16_00"],
+                "short": ["dae_b16_00"],
+            },
+            minimum_joint_finite_fraction=0.5,
+            minimum_monthly_joint_finite_fraction=0.7,
+        )

@@ -713,6 +713,8 @@ def _prepare_dataset_pair(
     weight_loader: WeightLoader,
     name: str,
     allow_feature_pruning: bool,
+    min_per_feature_finite_fraction: float = MIN_PER_FEATURE_FINITE_FRACTION,
+    allow_native_missing: bool = False,
 ) -> tuple[StageDataset, StageDataset, tuple[str, ...], dict[str, Any]]:
     """Apply the side/window-specific 98% / 95% raw-admission contract.
 
@@ -737,26 +739,34 @@ def _prepare_dataset_pair(
     )
     train_fraction = _finite_fractions(train_raw)
     valid_fraction = _finite_fractions(valid_raw)
+    finite_floor = float(min_per_feature_finite_fraction)
+    if not 0.0 <= finite_floor <= 1.0:
+        raise PackBSideLocalFSHPOStageError(
+            "min_per_feature_finite_fraction must be in [0, 1]"
+        )
     admissible = [
         column
         for column in requested
-        if train_fraction[column] >= MIN_PER_FEATURE_FINITE_FRACTION
-        and valid_fraction[column] >= MIN_PER_FEATURE_FINITE_FRACTION
+        if train_fraction[column] >= finite_floor
+        and valid_fraction[column] >= finite_floor
     ]
     rejected_per_feature = [column for column in requested if column not in admissible]
     if rejected_per_feature and not allow_feature_pruning:
         raise PackBSideLocalFSHPOStageError(
-            f"{name} selected feature coverage is below {MIN_PER_FEATURE_FINITE_FRACTION:.0%} "
+            f"{name} selected feature coverage is below {finite_floor:.0%} "
             "in its own side-local train/validation window; fallback is forbidden"
         )
     if not admissible:
         raise PackBSideLocalFSHPOStageError(
-            f"{name} has no features with >= {MIN_PER_FEATURE_FINITE_FRACTION:.0%} "
+            f"{name} has no features with >= {finite_floor:.0%} "
             "finite coverage in both side-local slices"
         )
     active = list(admissible)
     joint_pruned: list[str] = []
-    while True:
+    if allow_native_missing:
+        train_mask = np.ones(len(train_raw), dtype=bool)
+        valid_mask = np.ones(len(valid_raw), dtype=bool)
+    while not allow_native_missing:
         train_mask = _joint_complete_mask(train_raw, active)
         valid_mask = _joint_complete_mask(valid_raw, active)
         train_joint = float(train_mask.mean())
@@ -802,9 +812,10 @@ def _prepare_dataset_pair(
     valid_filtered_ledger = valid_ledger.loc[valid_mask].reset_index(drop=True)
     train_matrix = train_raw.loc[train_mask, active].reset_index(drop=True)
     valid_matrix = valid_raw.loc[valid_mask, active].reset_index(drop=True)
-    # The row masks are complete by construction; this is a proof check rather
-    # than an imputation path.
-    if (
+    # The default row masks are complete by construction.  The explicit
+    # native-missing contract preserves NaN for learners such as LightGBM and
+    # never fills or imputes it.
+    if not allow_native_missing and (
         not np.isfinite(train_matrix.to_numpy(dtype=np.float32, copy=False)).all()
         or not np.isfinite(valid_matrix.to_numpy(dtype=np.float32, copy=False)).all()
     ):
@@ -825,8 +836,15 @@ def _prepare_dataset_pair(
     )
     coverage = {
         "policy": {
-            "per_feature_min_finite_fraction": MIN_PER_FEATURE_FINITE_FRACTION,
-            "joint_complete_min_fraction": MIN_JOINT_COMPLETE_FRACTION,
+            "per_feature_min_finite_fraction": finite_floor,
+            "joint_complete_min_fraction": (
+                None if allow_native_missing else MIN_JOINT_COMPLETE_FRACTION
+            ),
+            "missing_value_policy": (
+                "lightgbm_native_nan_no_imputation"
+                if allow_native_missing
+                else "joint_complete_rows_no_imputation"
+            ),
             "scope": "per_side_per_fixed_train_validation_window",
             "global_fallback": "FORBIDDEN",
         },
@@ -836,14 +854,18 @@ def _prepare_dataset_pair(
         "rejected_for_joint_complete_pruning": joint_pruned,
         "train": {
             "raw_rows": int(len(train_ledger)),
-            "joint_complete_rows": int(train_mask.sum()),
-            "joint_complete_fraction": float(train_mask.mean()),
+            "joint_complete_rows": int(_joint_complete_mask(train_raw, active).sum()),
+            "joint_complete_fraction": float(
+                _joint_complete_mask(train_raw, active).mean()
+            ),
             "finite_fraction_by_feature": train_fraction,
         },
         "validation": {
             "raw_rows": int(len(valid_ledger)),
-            "joint_complete_rows": int(valid_mask.sum()),
-            "joint_complete_fraction": float(valid_mask.mean()),
+            "joint_complete_rows": int(_joint_complete_mask(valid_raw, active).sum()),
+            "joint_complete_fraction": float(
+                _joint_complete_mask(valid_raw, active).mean()
+            ),
             "finite_fraction_by_feature": valid_fraction,
         },
     }
@@ -1237,6 +1259,8 @@ def fit_side_local_fs_hpo_stages(
     fs_valid_max_rows: int = DEFAULT_FS_VALID_MAX_ROWS,
     hpo_train_max_rows: int = DEFAULT_HPO_TRAIN_MAX_ROWS,
     hpo_valid_max_rows: int = DEFAULT_HPO_VALID_MAX_ROWS,
+    min_per_feature_finite_fraction: float = MIN_PER_FEATURE_FINITE_FRACTION,
+    allow_native_missing: bool = False,
     resource_guard: TrainingResourceGuard | Any | None = None,
 ) -> dict[str, Any]:
     """Run one side's strict November FS and Dec--Feb three-fold HPO stages.
@@ -1449,6 +1473,8 @@ def fit_side_local_fs_hpo_stages(
             weight_loader=weight_loader,
             name="feature-selection November",
             allow_feature_pruning=True,
+            min_per_feature_finite_fraction=min_per_feature_finite_fraction,
+            allow_native_missing=allow_native_missing,
         )
     )
     guard.checkpoint(
@@ -1512,6 +1538,8 @@ def fit_side_local_fs_hpo_stages(
             weight_loader=weight_loader,
             name=fold["name"],
             allow_feature_pruning=False,
+            min_per_feature_finite_fraction=min_per_feature_finite_fraction,
+            allow_native_missing=allow_native_missing,
         )
         if hpo_features != selected_features:  # pragma: no cover - no-pruning proof.
             raise AssertionError("HPO changed the frozen selected feature contract")

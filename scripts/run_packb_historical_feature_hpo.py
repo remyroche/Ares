@@ -643,6 +643,8 @@ def run(
                 fs_valid_max_rows=int(fs_valid_max_rows),
                 hpo_train_max_rows=int(hpo_train_max_rows),
                 hpo_valid_max_rows=int(hpo_valid_max_rows),
+                min_per_feature_finite_fraction=0.95,
+                allow_native_missing=True,
                 resource_guard=guard,
             )
             reports[side] = {

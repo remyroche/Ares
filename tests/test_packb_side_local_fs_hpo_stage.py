@@ -443,3 +443,47 @@ def test_rejects_callback_mutation_before_another_hpo_trial(
             resource_guard=_RecordingGuard(),
         )
     assert not (tmp_path / "out").exists()
+
+
+def test_explicit_native_missing_mode_preserves_nan_without_imputation() -> None:
+    ledger = pd.DataFrame(
+        {
+            "candidate_id": ["a", "b"],
+            "side_name": ["long", "long"],
+            "__ts__": pd.to_datetime(
+                ["2025-01-01T00:00:00Z", "2025-01-01T01:00:00Z"], utc=True
+            ),
+            "__decision_ts__": pd.to_datetime(
+                ["2025-01-01T01:00:00Z", "2025-01-01T02:00:00Z"], utc=True
+            ),
+            "__label_resolution_ts__": pd.to_datetime(
+                ["2025-01-02T01:00:00Z", "2025-01-02T02:00:00Z"], utc=True
+            ),
+            "__symbol__": ["BTCUSDT", "ETHUSDT"],
+        }
+    )
+
+    def feature_loader(_frame, features):
+        assert features == ["a"]
+        return pd.DataFrame({"a": [1.0, np.nan]})
+
+    train, valid, admitted, coverage = stage._prepare_dataset_pair(
+        train_ledger=ledger,
+        valid_ledger=ledger,
+        features=["a"],
+        feature_loader=feature_loader,
+        target_loader=lambda _frame: pd.Series([0.1, 0.2]),
+        weight_loader=lambda _frame, _target: pd.Series([1.0, 1.0]),
+        name="native missing",
+        allow_feature_pruning=False,
+        min_per_feature_finite_fraction=0.5,
+        allow_native_missing=True,
+    )
+    assert admitted == ("a",)
+    assert len(train.ledger) == len(valid.ledger) == 2
+    assert train.features["a"].isna().sum() == 1
+    assert valid.features["a"].isna().sum() == 1
+    assert coverage["policy"]["missing_value_policy"] == (
+        "lightgbm_native_nan_no_imputation"
+    )
+    assert coverage["train"]["joint_complete_fraction"] == pytest.approx(0.5)

@@ -416,7 +416,7 @@ def _precompute_outer_representations(
     ledgers: Sequence[pd.DataFrame],
     generated_features: Sequence[str],
     *,
-    batch_rows: int = 50_000,
+    batch_rows: int = 350_000,
 ) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any], pd.DataFrame]:
     if batch_rows < 1:
         raise PackBOuterOOFRunnerError("representation batch_rows must be positive")

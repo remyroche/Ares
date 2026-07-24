@@ -413,6 +413,7 @@ def configured_auxiliary_feature_universe(
             "reconstruction_error",
             "AE_reconstruction_error",
             "mahalanobis_distance",
+            "expected_mahalanobis",
         }
     ]
     base_archetype_labels = [

@@ -28,6 +28,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 
 AUTHORIZATION_SCHEMA = "packb_pre_march_source_authorization_v1"
+POPULATION_PREFLIGHT_SCHEMA = "packb_pre_march_population_preflight_v1"
 CANONICAL_SIDES = ("long", "short")
 DECISION_LAG = pd.Timedelta(hours=1)
 BASE_LABEL_RESOLUTION_HORIZON = pd.Timedelta(hours=24)
@@ -421,6 +422,60 @@ def _scan_labels(
     return {"label_rows_scanned": total_rows, "authorized_population_by_side": by_side}
 
 
+def _locked_resolution_cutoff(value: Any) -> pd.Timestamp:
+    cutoff = _utc(value, name="pre-March resolution cutoff")
+    if cutoff != DEFAULT_RESOLUTION_CUTOFF_UTC:
+        raise PackBSourceAuthorizationError(
+            "Pack-B canonical source authorization requires the locked "
+            "2026-03-01T00:00:00Z cutoff"
+        )
+    return cutoff
+
+
+def preflight_pre_march_packb_population(
+    *,
+    labels_dir: Path,
+    causal_audit_path: Path,
+    resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
+    batch_rows: int = DEFAULT_BATCH_ROWS,
+) -> dict[str, Any]:
+    """Authorize exact label populations before any learned artifact exists."""
+
+    cutoff = _locked_resolution_cutoff(resolution_cutoff_utc)
+    shards, inventory = _load_canonical_shards(
+        Path(labels_dir),
+        Path(causal_audit_path),
+    )
+    label_report = _scan_labels(shards, cutoff=cutoff, batch_rows=batch_rows)
+    return {
+        "schema": POPULATION_PREFLIGHT_SCHEMA,
+        "status": "AUTHORIZED_PRE_MARCH_POPULATION",
+        "resolution_cutoff_utc": cutoff.isoformat(),
+        "actual_label_resolution_contract": (
+            "__decision_ts__ must equal __ts__ + 1h; authorized only when "
+            "__decision_ts__ + 24h < resolution_cutoff_utc"
+        ),
+        "label_inventory": inventory,
+        **label_report,
+        "streaming_contract": {
+            "batch_rows": batch_rows,
+            "duplicate_id_index": "short_lived_sqlite_candidate_id_primary_key",
+            "feature_or_target_columns_loaded": False,
+        },
+    }
+
+
+def verify_pre_march_side_artifacts(
+    *,
+    side_sources: Mapping[str, SideSourceAuthorization],
+    resolution_cutoff_utc: Any = DEFAULT_RESOLUTION_CUTOFF_UTC,
+) -> dict[str, dict[str, Any]]:
+    """Verify distinct side-local AE, feature, and HPO artifacts after fitting."""
+
+    cutoff = _locked_resolution_cutoff(resolution_cutoff_utc)
+    return _validate_side_artifacts(side_sources, cutoff=cutoff)
+
+
 def authorize_pre_march_packb_sources(
     *,
     labels_dir: Path,
@@ -438,30 +493,26 @@ def authorize_pre_march_packb_sources(
     such a fit may consume.
     """
 
-    cutoff = _utc(resolution_cutoff_utc, name="pre-March resolution cutoff")
-    if cutoff != DEFAULT_RESOLUTION_CUTOFF_UTC:
-        raise PackBSourceAuthorizationError(
-            "Pack-B canonical source authorization requires the locked 2026-03-01T00:00:00Z cutoff"
-        )
-    shards, inventory = _load_canonical_shards(
-        Path(labels_dir), Path(causal_audit_path)
+    population = preflight_pre_march_packb_population(
+        labels_dir=labels_dir,
+        causal_audit_path=causal_audit_path,
+        resolution_cutoff_utc=resolution_cutoff_utc,
+        batch_rows=batch_rows,
     )
-    side_report = _validate_side_artifacts(side_sources, cutoff=cutoff)
-    label_report = _scan_labels(shards, cutoff=cutoff, batch_rows=batch_rows)
+    side_report = verify_pre_march_side_artifacts(
+        side_sources=side_sources,
+        resolution_cutoff_utc=resolution_cutoff_utc,
+    )
     return {
         "schema": AUTHORIZATION_SCHEMA,
         "status": "AUTHORIZED_PRE_MARCH_SOURCES",
-        "resolution_cutoff_utc": cutoff.isoformat(),
-        "actual_label_resolution_contract": (
-            "__decision_ts__ must equal __ts__ + 1h; authorized only when "
-            "__decision_ts__ + 24h < resolution_cutoff_utc"
-        ),
-        "label_inventory": inventory,
-        **label_report,
+        "resolution_cutoff_utc": population["resolution_cutoff_utc"],
+        "actual_label_resolution_contract": population[
+            "actual_label_resolution_contract"
+        ],
+        "label_inventory": population["label_inventory"],
+        "label_rows_scanned": population["label_rows_scanned"],
+        "authorized_population_by_side": population["authorized_population_by_side"],
         "side_source_artifacts": side_report,
-        "streaming_contract": {
-            "batch_rows": batch_rows,
-            "duplicate_id_index": "short_lived_sqlite_candidate_id_primary_key",
-            "feature_or_target_columns_loaded": False,
-        },
+        "streaming_contract": population["streaming_contract"],
     }

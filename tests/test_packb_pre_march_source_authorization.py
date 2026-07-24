@@ -159,6 +159,25 @@ def test_authorizes_exact_inventory_and_reports_only_actual_pre_march_rows(
         }
 
 
+def test_pre_fit_population_and_post_fit_artifact_checks_are_separate(
+    tmp_path: Path,
+) -> None:
+    labels, audit, sources = _valid_inputs(tmp_path)
+
+    population = authorization.preflight_pre_march_packb_population(
+        labels_dir=labels,
+        causal_audit_path=audit,
+        batch_rows=1,
+    )
+    artifacts = authorization.verify_pre_march_side_artifacts(
+        side_sources=sources,
+    )
+
+    assert population["status"] == "AUTHORIZED_PRE_MARCH_POPULATION"
+    assert set(population["authorized_population_by_side"]) == {"long", "short"}
+    assert set(artifacts) == {"long", "short"}
+
+
 @pytest.mark.parametrize("kind", ["extra", "missing"])
 def test_rejects_non_exact_causal_audit_inventory(tmp_path: Path, kind: str) -> None:
     labels, audit, sources = _valid_inputs(tmp_path)

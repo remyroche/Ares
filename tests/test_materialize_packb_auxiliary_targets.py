@@ -64,6 +64,7 @@ def test_exact_population_is_retained_with_side_normalized_targets() -> None:
 
     assert len(result) == len(population)
     assert result["candidate_id"].is_unique
+    assert result["side"].equals(result["side_name"])
     assert result["__path_auxiliary_target_valid__"].eq(1).all()
     assert result[INVALID_REASON_COLUMN].eq("valid").all()
     assert result["__label_end_ts__"].eq(pd.Timestamp("2026-04-01T13:00:00")).all()

@@ -38,6 +38,8 @@ def default_auxiliary_lgbm_n_jobs() -> int:
     # GiB per worker.  This retains three workers on the 16-GiB production host.
     usable_gib = max(1, int(available_bytes // (1024**3)) - 4)
     return max(1, min(cpu_count, 3, usable_gib // 4 or 1))
+
+
 TARGET_COLUMNS = {
     "time_to_first_meaningful_mfe": "__log1p_time_to_first_meaningful_mfe_hours_12h__",
     "peak_mfe_12h_atr": "__log1p_peak_mfe_atr_12h__",
@@ -121,9 +123,7 @@ def auxiliary_reference_split(
     resolved = pd.to_datetime(pd.Series(label_resolved_at), utc=True, errors="coerce")
     if len(decision) != len(resolved):
         raise ValueError("timestamps and label_resolved_at must have identical length")
-    reference_mask = (
-        decision.lt(cutoff) & resolved.lt(cutoff)
-    ).to_numpy(dtype=bool)
+    reference_mask = (decision.lt(cutoff) & resolved.lt(cutoff)).to_numpy(dtype=bool)
     oof_mask = (decision.ge(cutoff) & resolved.notna()).to_numpy(dtype=bool)
     contract: dict[str, Any] = {
         "schema": "path_auxiliary_selection_hpo_reference_split_v1",
@@ -235,9 +235,9 @@ def build_auxiliary_sample_weights(
             _supportive_label(frame, "reaches_1_5atr_within_12h"), nan=0.0
         )
         time_hours = np.expm1(
-            pd.to_numeric(
-                frame[TARGET_COLUMNS[target_name]], errors="coerce"
-            ).to_numpy(dtype=np.float32, copy=False)
+            pd.to_numeric(frame[TARGET_COLUMNS[target_name]], errors="coerce").to_numpy(
+                dtype=np.float32, copy=False
+            )
         )
         front_load = np.clip(1.0 - time_hours / 12.0, 0.0, 1.0)
         weights = np.where(
@@ -252,16 +252,12 @@ def build_auxiliary_sample_weights(
         weights = np.where(reached > 0.5, 1.0, 0.50).astype(np.float32)
         for threshold in ("0_25", "0_50", "0_75", "1_00", "1_50"):
             adverse = np.nan_to_num(
-                _supportive_label(
-                    frame, f"pre_1_5_mfe_mae_ge_{threshold}atr"
-                ),
+                _supportive_label(frame, f"pre_1_5_mfe_mae_ge_{threshold}atr"),
                 nan=0.0,
             )
             weights += 0.10 * (reached > 0.5) * np.clip(adverse, 0.0, 1.0)
     elif target_name == "bars_before_price_stops_decreasing":
-        confirmed_bars = _supportive_label(
-            frame, "bars_to_confirmed_adverse_trough"
-        )
+        confirmed_bars = _supportive_label(frame, "bars_to_confirmed_adverse_trough")
         confirmed = np.isfinite(confirmed_bars).astype(np.float32)
         within_60 = np.nan_to_num(
             _supportive_label(frame, "adverse_trough_within_60m"), nan=0.0
@@ -273,9 +269,7 @@ def build_auxiliary_sample_weights(
             _supportive_label(frame, "trough_before_1_5atr_mfe"), nan=0.0
         )
         opportunity_first = np.nan_to_num(
-            _supportive_label(
-                frame, "reaches_1_5atr_before_trough_confirmation"
-            ),
+            _supportive_label(frame, "reaches_1_5atr_before_trough_confirmation"),
             nan=0.0,
         )
         weights = (
@@ -290,13 +284,9 @@ def build_auxiliary_sample_weights(
         meaningful_bars = _supportive_label(frame, "bars_to_1_5atr")
         realized = np.isfinite(meaningful_bars).astype(np.float32)
         efficiency = 0.5 * (
-            np.nan_to_num(
-                _supportive_label(frame, "path_efficiency_12h"), nan=0.0
-            )
+            np.nan_to_num(_supportive_label(frame, "path_efficiency_12h"), nan=0.0)
             + np.nan_to_num(
-                _supportive_label(
-                    frame, "path_efficiency_to_first_meaningful_mfe"
-                ),
+                _supportive_label(frame, "path_efficiency_to_first_meaningful_mfe"),
                 nan=0.0,
             )
         )
@@ -314,7 +304,9 @@ def fit_base_archetype_label_feature_contract(
 
     sources = list(dict.fromkeys(map(str, source_columns)))
     if canonical_source not in sources:
-        raise ValueError("canonical archetype source must be included in source_columns")
+        raise ValueError(
+            "canonical archetype source must be included in source_columns"
+        )
     missing = [column for column in sources if column not in frame.columns]
     if missing:
         raise ValueError(f"base archetype label sources are missing: {missing}")
@@ -360,7 +352,9 @@ def transform_base_archetype_label_features(
     sources = set(map(str, contract.get("source_columns", [])))
     missing = sorted(source for source in sources if source not in frame.columns)
     if missing:
-        raise ValueError(f"base archetype label transform is missing sources: {missing}")
+        raise ValueError(
+            f"base archetype label transform is missing sources: {missing}"
+        )
     names = list(map(str, definitions))
     output = np.zeros((len(frame), len(names)), dtype=np.float32)
     source_values = {
@@ -422,7 +416,9 @@ def configured_auxiliary_feature_universe(
         }
     ]
     base_archetype_labels = [
-        column for column in available if column.startswith(_BASE_ARCHETYPE_FEATURE_PREFIX)
+        column
+        for column in available
+        if column.startswith(_BASE_ARCHETYPE_FEATURE_PREFIX)
     ]
     identity_context = [
         column for column in _IDENTITY_CONTEXT_COLUMNS if column in available_set
@@ -474,9 +470,7 @@ def configured_auxiliary_feature_universe(
         "configured_requested_count": int(len(configured)),
         "generated_ae_gmm_available": generated_state,
         "base_archetype_label_features_available": base_archetype_labels,
-        "candidate_model_context_required": list(
-            _CANDIDATE_MODEL_CONTEXT_FEATURES
-        ),
+        "candidate_model_context_required": list(_CANDIDATE_MODEL_CONTEXT_FEATURES),
         "candidate_model_context_available": candidate_model_context,
         "candidate_model_context_missing": [
             feature
@@ -583,10 +577,7 @@ def expanding_monthly_oos_folds(
         valid_idx = np.flatnonzero(valid_mask.to_numpy())
         if not len(valid_idx):
             continue
-        train_mask = (
-            decision.lt(valid_start)
-            & resolved.lt(valid_start)
-        )
+        train_mask = decision.lt(valid_start) & resolved.lt(valid_start)
         train_idx = np.flatnonzero(train_mask.to_numpy())
         train_decision = decision.iloc[train_idx].dropna()
         folds.append(
@@ -614,7 +605,9 @@ def _fitted_model_sha256(model: Any) -> str:
     elif hasattr(model, "get_params"):
         payload = json.dumps(model.get_params(), sort_keys=True, default=str)
     else:  # pragma: no cover - production LightGBM always exposes a booster.
-        payload = json.dumps(getattr(model, "__dict__", {}), sort_keys=True, default=str)
+        payload = json.dumps(
+            getattr(model, "__dict__", {}), sort_keys=True, default=str
+        )
     return hashlib.sha256(str(payload).encode("utf-8")).hexdigest()
 
 
@@ -654,16 +647,12 @@ def auxiliary_hpo_objective(
             - 0.20
             * metrics.get("mae_before_meaningful_mfe_atr_natural_mae", 99.0)
             / 10.0
-            - 0.25
-            * metrics.get("mae_before_meaningful_mfe_atr_natural_huber", 99.0)
-            + 0.50
-            * metrics.get("mae_before_meaningful_mfe_atr_spearman_ic", 0.0)
+            - 0.25 * metrics.get("mae_before_meaningful_mfe_atr_natural_huber", 99.0)
+            + 0.50 * metrics.get("mae_before_meaningful_mfe_atr_spearman_ic", 0.0)
         )
         return float(score), metrics
     if target_name == "bars_before_price_stops_decreasing":
-        metrics = bars_before_price_stops_decreasing_regression_metrics(
-            y_true, y_pred
-        )
+        metrics = bars_before_price_stops_decreasing_regression_metrics(y_true, y_pred)
         accuracy = np.mean(
             [
                 metrics.get(
@@ -678,8 +667,7 @@ def auxiliary_hpo_objective(
             - 0.25
             * metrics.get("bars_before_price_stops_decreasing_mae_bars", 99.0)
             / 12.0
-            + 0.50
-            * metrics.get("bars_before_price_stops_decreasing_spearman_ic", 0.0)
+            + 0.50 * metrics.get("bars_before_price_stops_decreasing_spearman_ic", 0.0)
             + 0.10 * float(accuracy)
         )
         return float(score), metrics
@@ -687,13 +675,9 @@ def auxiliary_hpo_objective(
         metrics = future_slope_atr_per_hour_regression_metrics(y_true, y_pred)
         score = (
             -metrics.get("future_slope_atr_per_hour_log_mae", 99.0)
-            - 0.20
-            * metrics.get("future_slope_atr_per_hour_natural_mae", 99.0)
-            / 10.0
-            - 0.25
-            * metrics.get("future_slope_atr_per_hour_natural_huber", 99.0)
-            + 0.50
-            * metrics.get("future_slope_atr_per_hour_spearman_ic", 0.0)
+            - 0.20 * metrics.get("future_slope_atr_per_hour_natural_mae", 99.0) / 10.0
+            - 0.25 * metrics.get("future_slope_atr_per_hour_natural_huber", 99.0)
+            + 0.50 * metrics.get("future_slope_atr_per_hour_spearman_ic", 0.0)
         )
         return float(score), metrics
     raise ValueError(f"unknown auxiliary target: {target_name}")
@@ -713,7 +697,7 @@ def select_features_with_current_pipeline(
     random_state: int = 42,
     cfg: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run global prescreening followed by independent side-local MDA.
+    """Run the complete selector independently inside each directional side.
 
     Every staged selector decision uses the auxiliary regression objective:
     normalized MAE/RMSE plus signed Spearman IC on the requested target.
@@ -794,52 +778,69 @@ def select_features_with_current_pipeline(
     archetype_values = np.asarray(archetypes).astype(str)
     if len(side_values) != len(target) or len(archetype_values) != len(target):
         raise ValueError("side/archetype context must align with the target")
-    side_archetypes = np.char.add(np.char.add(side_values, "__"), archetype_values)
-    result = train_lgbm_stability_candidate(
-        X_candidate,
-        selector_target,
-        sample_weight=weights,
-        random_state=int(random_state),
-        mode="regressor",
-        timestamps=timestamps,
-        assets=assets,
-        returns=selector_target,
-        hpo_objective_mode="auxiliary_regression",
-        preset_best_params=base_params,
-        preset_source=f"{MODEL_SCHEMA}:{target_name}:selection_only",
-        cfg=local_cfg,
-        label_context={
-            "feature_selection_archetype": side_archetypes,
-            "archetype": side_archetypes,
-            "side_name": side_values,
-            "side": side_values,
-            # Do not apply target-derived weights to side-wide MDA.
-            "side_mda_sample_weight": np.ones(len(target), dtype=np.float32),
-        },
-    )
-    if not result:
-        raise RuntimeError(f"feature selection failed for {target_name}")
-    result_metrics = dict(result.get("metrics") or {})
-    selected_by_side = {
-        str(side): list(map(str, features))
-        for side, features in dict(
-            result_metrics.get("per_side_feature_selection_selected_features") or {}
-        ).items()
-    }
     mandatory_by_side = {
         side: [
             feature
-            for feature in map(
-                str, (mandatory_features_by_side or {}).get(side, ())
-            )
+            for feature in map(str, (mandatory_features_by_side or {}).get(side, ()))
             if feature in X_candidate.columns
         ]
         for side in ("long", "short")
     }
+    timestamp_values = np.asarray(timestamps)
+    asset_values = np.asarray(assets)
+    selected_by_side: dict[str, list[str]] = {}
+    metrics_by_side: dict[str, dict[str, Any]] = {}
     for side in ("long", "short"):
-        selected_by_side[side] = list(
-            dict.fromkeys([*selected_by_side.get(side, []), *mandatory_by_side[side]])
+        side_idx = np.flatnonzero(side_values == side)
+        if not len(side_idx):
+            raise RuntimeError(
+                f"auxiliary feature selection has no {side} rows for {target_name}"
+            )
+        side_archetypes = np.char.add(
+            np.char.add(side_values[side_idx], "__"), archetype_values[side_idx]
         )
+        result = train_lgbm_stability_candidate(
+            X_candidate.iloc[side_idx].reset_index(drop=True),
+            selector_target[side_idx],
+            sample_weight=weights[side_idx],
+            random_state=int(random_state) + (1009 if side == "long" else 2017),
+            mode="regressor",
+            timestamps=timestamp_values[side_idx],
+            assets=asset_values[side_idx],
+            returns=selector_target[side_idx],
+            hpo_objective_mode="auxiliary_regression",
+            preset_best_params=base_params,
+            preset_source=f"{MODEL_SCHEMA}:{target_name}:{side}:selection_only",
+            cfg=local_cfg,
+            label_context={
+                "feature_selection_archetype": side_archetypes,
+                "archetype": side_archetypes,
+                "side_name": side_values[side_idx],
+                "side": side_values[side_idx],
+                # Do not apply target-derived weights to side-wide MDA.
+                "side_mda_sample_weight": np.ones(len(side_idx), dtype=np.float32),
+            },
+        )
+        if not result:
+            raise RuntimeError(f"feature selection failed for {target_name}/{side}")
+        side_metrics = dict(result.get("metrics") or {})
+        side_selected = list(
+            map(
+                str,
+                dict(
+                    side_metrics.get("per_side_feature_selection_selected_features")
+                    or {}
+                ).get(side, ()),
+            )
+        )
+        if not side_selected:
+            raise RuntimeError(
+                f"feature selection returned no features for {target_name}/{side}"
+            )
+        selected_by_side[side] = list(
+            dict.fromkeys([*side_selected, *mandatory_by_side[side]])
+        )
+        metrics_by_side[side] = side_metrics
     if set(selected_by_side) != {"long", "short"}:
         raise RuntimeError(
             "auxiliary feature selection did not produce independent long/short contracts"
@@ -858,7 +859,10 @@ def select_features_with_current_pipeline(
     return {
         "selected_features": selected,
         "selected_features_by_side": selected_by_side,
-        "selection_metrics": result_metrics,
+        "selection_metrics": {
+            "contract": "strict_independent_side_selector_runs_v1",
+            "by_side": metrics_by_side,
+        },
         "feature_universe_report": universe_report,
         "selection_target_orientation": TARGET_COLUMNS[target_name].strip("_"),
         "mandatory_base_archetype_features_by_side": mandatory_by_side,
@@ -867,7 +871,9 @@ def select_features_with_current_pipeline(
             "supportive_target_weights_training_loss_only; "
             "feature_selection_mda_is_unweighted"
         ),
-        "prescreen_contract": "global_univariate_relief_then_side_local_mda_v1",
+        "prescreen_contract": (
+            "strict_side_local_full_pipeline_univariate_relief_mda_v1"
+        ),
         "correlation_pruning_threshold": 0.88,
     }
 
@@ -937,9 +943,13 @@ def fit_hpo_oof_model(
         selection_hpo_reference_end=selection_hpo_reference_end,
     )
     if not bool(reference_mask.any()):
-        raise ValueError("no rows satisfy the auxiliary selection/HPO reference contract")
+        raise ValueError(
+            "no rows satisfy the auxiliary selection/HPO reference contract"
+        )
     if not bool(oof_mask.any()):
-        raise ValueError("no rows at or after the reference end are available for auxiliary OOF emission")
+        raise ValueError(
+            "no rows at or after the reference end are available for auxiliary OOF emission"
+        )
     x = X.loc[:, features].astype(np.float32, copy=False)
     reference_idx = np.flatnonzero(reference_mask)
     reference_x = x.iloc[reference_idx].reset_index(drop=True)
@@ -964,7 +974,9 @@ def fit_hpo_oof_model(
         )
         hpo_trial_count = int((resume_hpo or {}).get("hpo_trial_count", 0))
         if progress_callback is not None:
-            progress_callback("hpo_reused", {"n_jobs": n_jobs, "hpo_trial_count": hpo_trial_count})
+            progress_callback(
+                "hpo_reused", {"n_jobs": n_jobs, "hpo_trial_count": hpo_trial_count}
+            )
     else:
         import optuna
 
@@ -994,13 +1006,23 @@ def fit_hpo_oof_model(
             if progress_callback is not None:
                 progress_callback("hpo_trial_start", {"trial": int(trial.number)})
             params = {
-                "objective": trial.suggest_categorical("objective", ["regression", "huber", "fair"]),
+                "objective": trial.suggest_categorical(
+                    "objective", ["regression", "huber", "fair"]
+                ),
                 "n_estimators": 3000,
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.06, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.06, log=True
+                ),
                 "max_depth": trial.suggest_int("max_depth", 3, 7),
-                "num_leaves": trial.suggest_categorical("num_leaves", [8, 16, 24, 32, 48, 64]),
-                "min_child_samples": trial.suggest_int("min_child_samples", 100, 1600, log=True),
-                "min_split_gain": trial.suggest_float("min_split_gain", 1e-4, 0.05, log=True),
+                "num_leaves": trial.suggest_categorical(
+                    "num_leaves", [8, 16, 24, 32, 48, 64]
+                ),
+                "min_child_samples": trial.suggest_int(
+                    "min_child_samples", 100, 1600, log=True
+                ),
+                "min_split_gain": trial.suggest_float(
+                    "min_split_gain", 1e-4, 0.05, log=True
+                ),
                 "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
                 "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 40.0, log=True),
                 "subsample": trial.suggest_float("subsample", 0.60, 1.0),
@@ -1015,15 +1037,15 @@ def fit_hpo_oof_model(
             fold_iterations: list[int] = []
             for fold_i, fold in enumerate(hpo_folds):
                 if progress_callback is not None:
-                    progress_callback("hpo_fold_start", {"trial": int(trial.number), "fold": fold_i})
+                    progress_callback(
+                        "hpo_fold_start", {"trial": int(trial.number), "fold": fold_i}
+                    )
                 model = lgb.LGBMRegressor(**params)
                 model.fit(
                     hpo_x.iloc[fold.train_idx],
                     hpo_target[fold.train_idx],
                     sample_weight=hpo_weight[fold.train_idx],
-                    eval_set=[
-                        (hpo_x.iloc[fold.valid_idx], hpo_target[fold.valid_idx])
-                    ],
+                    eval_set=[(hpo_x.iloc[fold.valid_idx], hpo_target[fold.valid_idx])],
                     callbacks=[lgb.early_stopping(150, verbose=False)],
                 )
                 pred = model.predict(hpo_x.iloc[fold.valid_idx])
@@ -1037,7 +1059,11 @@ def fit_hpo_oof_model(
                 if progress_callback is not None:
                     progress_callback(
                         "hpo_fold_complete",
-                        {"trial": int(trial.number), "fold": fold_i, "score": float(score)},
+                        {
+                            "trial": int(trial.number),
+                            "fold": fold_i,
+                            "score": float(score),
+                        },
                     )
                 trial.report(float(np.mean(fold_scores)), step=fold_i)
                 if trial.should_prune():
@@ -1063,7 +1089,10 @@ def fit_hpo_oof_model(
             """Stop only after 30 completed/pruned trials without a new best."""
 
             nonlocal best_completed_value, non_improving_trials
-            if trial.state == optuna.trial.TrialState.COMPLETE and trial.value is not None:
+            if (
+                trial.state == optuna.trial.TrialState.COMPLETE
+                and trial.value is not None
+            ):
                 value = float(trial.value)
                 if value > best_completed_value + 1e-12:
                     best_completed_value = value
@@ -1115,17 +1144,23 @@ def fit_hpo_oof_model(
         oos_start=selection_hpo_reference_end,
     )
     if not oos_folds:
-        raise ValueError("no monthly OOS folds are available at or after the reference end")
+        raise ValueError(
+            "no monthly OOS folds are available at or after the reference end"
+        )
     oof = np.full(len(target), np.nan, dtype=np.float32)
     oof_fold_ids = np.full(len(target), -1, dtype=np.int16)
     resolved = pd.to_datetime(pd.Series(label_resolved_at), utc=True, errors="coerce")
     decision = pd.to_datetime(pd.Series(timestamp_values), utc=True, errors="coerce")
     fold_metrics: list[dict[str, Any]] = []
-    cached_oof_folds = {int(key): value for key, value in (resume_oof_folds or {}).items()}
+    cached_oof_folds = {
+        int(key): value for key, value in (resume_oof_folds or {}).items()
+    }
     for fold_i, fold in enumerate(oos_folds):
         train_idx = fold.train_idx[np.isfinite(target[fold.train_idx])]
         if not len(train_idx):
-            raise ValueError(f"monthly OOS fold {fold.fold_month} has no resolved training rows")
+            raise ValueError(
+                f"monthly OOS fold {fold.fold_month} has no resolved training rows"
+            )
         cached = cached_oof_folds.get(fold_i)
         expected_valid_idx = np.asarray(fold.valid_idx, dtype=np.int64)
         if cached is not None:
@@ -1143,10 +1178,14 @@ def fit_hpo_oof_model(
             oof_fold_ids[expected_valid_idx] = int(fold_i)
             fold_metrics.append(dict(cached_metric))
             if progress_callback is not None:
-                progress_callback("oof_fold_reused", {"fold": fold_i, "fold_month": fold.fold_month})
+                progress_callback(
+                    "oof_fold_reused", {"fold": fold_i, "fold_month": fold.fold_month}
+                )
             continue
         if progress_callback is not None:
-            progress_callback("oof_fold_start", {"fold": fold_i, "fold_month": fold.fold_month})
+            progress_callback(
+                "oof_fold_start", {"fold": fold_i, "fold_month": fold.fold_month}
+            )
         model = lgb.LGBMRegressor(**final_params)
         model.fit(
             x.iloc[train_idx],
@@ -1162,20 +1201,24 @@ def fit_hpo_oof_model(
             target_name, target[fold.valid_idx], prediction
         )
         fold_metric = {
-                "fold": fold_i,
-                "fold_month": fold.fold_month,
-                "train_start": fold.train_start.isoformat() if fold.train_start else None,
-                "train_end": fold.train_end.isoformat() if fold.train_end else None,
-                "valid_start": fold.valid_start.isoformat(),
-                "valid_end": fold.valid_end.isoformat(),
-                "training_rows": int(len(train_idx)),
-                "validation_rows": int(len(fold.valid_idx)),
-                "training_label_resolved_bounds": _timestamp_bounds(resolved.iloc[train_idx]),
-                "validation_decision_bounds": _timestamp_bounds(decision.iloc[fold.valid_idx]),
-                "oos_model_sha256": _fitted_model_sha256(model),
-                "validation_weighted": False,
-                **metrics,
-            }
+            "fold": fold_i,
+            "fold_month": fold.fold_month,
+            "train_start": fold.train_start.isoformat() if fold.train_start else None,
+            "train_end": fold.train_end.isoformat() if fold.train_end else None,
+            "valid_start": fold.valid_start.isoformat(),
+            "valid_end": fold.valid_end.isoformat(),
+            "training_rows": int(len(train_idx)),
+            "validation_rows": int(len(fold.valid_idx)),
+            "training_label_resolved_bounds": _timestamp_bounds(
+                resolved.iloc[train_idx]
+            ),
+            "validation_decision_bounds": _timestamp_bounds(
+                decision.iloc[fold.valid_idx]
+            ),
+            "oos_model_sha256": _fitted_model_sha256(model),
+            "validation_weighted": False,
+            **metrics,
+        }
         fold_metrics.append(fold_metric)
         if progress_callback is not None:
             progress_callback(
@@ -1195,7 +1238,10 @@ def fit_hpo_oof_model(
     if resume_final_model is not None:
         final_model = resume_final_model.get("model")
         inference_fit_contract = dict(resume_final_model.get("contract") or {})
-        if final_model is None or inference_fit_contract.get("rows") != expected_final_rows:
+        if (
+            final_model is None
+            or inference_fit_contract.get("rows") != expected_final_rows
+        ):
             raise ValueError("invalid cached auxiliary final model")
         if progress_callback is not None:
             progress_callback("final_model_reused", {"rows": expected_final_rows})
@@ -1212,7 +1258,9 @@ def fit_hpo_oof_model(
             "fit_row_rule": "all rows with resolved labels; excluded from OOS metrics",
             "rows": expected_final_rows,
             "decision_bounds": _timestamp_bounds(decision.loc[final_inference_mask]),
-            "label_resolved_bounds": _timestamp_bounds(resolved.loc[final_inference_mask]),
+            "label_resolved_bounds": _timestamp_bounds(
+                resolved.loc[final_inference_mask]
+            ),
             "model_sha256": _fitted_model_sha256(final_model),
         }
         if progress_callback is not None:
@@ -1303,9 +1351,13 @@ def fit_side_aware_auxiliary_models(
         selection_hpo_reference_end=selection_hpo_reference_end,
     )
     if not bool(reference_mask.any()):
-        raise ValueError("no rows satisfy the auxiliary selection/HPO reference contract")
+        raise ValueError(
+            "no rows satisfy the auxiliary selection/HPO reference contract"
+        )
     if not bool(oof_mask.any()):
-        raise ValueError("no rows at or after the reference end are available for auxiliary OOF emission")
+        raise ValueError(
+            "no rows at or after the reference end are available for auxiliary OOF emission"
+        )
     oof = np.full(len(target), np.nan, dtype=np.float32)
     oof_fold_ids = np.full(len(target), -1, dtype=np.int16)
     bundles: dict[str, dict[str, Any]] = {}
@@ -1316,7 +1368,10 @@ def fit_side_aware_auxiliary_models(
         features = list(map(str, selected_features_by_side.get(side, [])))
         if not features:
             raise ValueError(f"no selected auxiliary features for side {side}")
-        def side_progress(event: str, payload: Mapping[str, Any], *, _side: str = side) -> None:
+
+        def side_progress(
+            event: str, payload: Mapping[str, Any], *, _side: str = side
+        ) -> None:
             if progress_callback is not None:
                 progress_callback(event, _side, payload)
 
@@ -1341,16 +1396,12 @@ def fit_side_aware_auxiliary_models(
             progress_callback=side_progress,
         )
         side_oof = np.asarray(bundle.pop("oof_predictions"), dtype=np.float32)
-        side_fold_ids = np.asarray(
-            bundle.pop("oof_fold_ids"), dtype=np.int16
-        )
+        side_fold_ids = np.asarray(bundle.pop("oof_fold_ids"), dtype=np.int16)
         oof[idx] = side_oof
         oof_fold_ids[idx] = side_fold_ids
         bundles[side] = bundle
     valid = np.isfinite(oof) & np.isfinite(target)
-    _, overall_metrics = auxiliary_hpo_objective(
-        target_name, target[valid], oof[valid]
-    )
+    _, overall_metrics = auxiliary_hpo_objective(target_name, target[valid], oof[valid])
     return {
         "schema": MODEL_SCHEMA,
         "target_name": target_name,

@@ -83,9 +83,7 @@ def test_auxiliary_sample_weights_are_head_specific_and_bounded():
 
 def test_auxiliary_hpo_sample_is_15k_per_temporal_third():
     timestamps = pd.date_range("2025-01-01", periods=90_000, freq="min", tz="UTC")
-    selected = auxiliary_hpo_sample_indices(
-        timestamps, max_rows=45_000, random_state=7
-    )
+    selected = auxiliary_hpo_sample_indices(timestamps, max_rows=45_000, random_state=7)
     assert len(selected) == 45_000
     assert len(np.unique(selected)) == 45_000
     assert [
@@ -118,7 +116,9 @@ def test_auxiliary_reference_split_is_strict_and_persists_bounds() -> None:
     )
     np.testing.assert_array_equal(reference, [True, False, False, False])
     np.testing.assert_array_equal(oof, [False, False, True, True])
-    assert contract["reference_decision_bounds"]["max_utc"] == "2026-01-01T00:00:00+00:00"
+    assert (
+        contract["reference_decision_bounds"]["max_utc"] == "2026-01-01T00:00:00+00:00"
+    )
     assert contract["oof_decision_bounds"]["min_utc"] == "2026-01-01T02:00:00+00:00"
     assert contract["contract_sha256"]
     with pytest.raises(ValueError, match="timezone-aware UTC"):
@@ -154,7 +154,9 @@ def test_monthly_oos_folds_train_only_on_labels_resolved_before_fold_start():
 def test_auxiliary_objectives_are_better_for_exact_predictions():
     y_time = np.log1p(np.array([1.0, 2.0, 4.0, 8.0, 12.0]))
     exact, _ = auxiliary_hpo_objective("time_to_first_meaningful_mfe", y_time, y_time)
-    poor, _ = auxiliary_hpo_objective("time_to_first_meaningful_mfe", y_time, y_time[::-1])
+    poor, _ = auxiliary_hpo_objective(
+        "time_to_first_meaningful_mfe", y_time, y_time[::-1]
+    )
     assert exact > poor
     for target_name in (
         "mae_before_meaningful_mfe_atr",
@@ -163,9 +165,7 @@ def test_auxiliary_objectives_are_better_for_exact_predictions():
     ):
         target = np.log1p(np.array([0.0, 0.5, 1.0, 2.0, 4.0]))
         exact, _ = auxiliary_hpo_objective(target_name, target, target)
-        reversed_score, _ = auxiliary_hpo_objective(
-            target_name, target, target[::-1]
-        )
+        reversed_score, _ = auxiliary_hpo_objective(target_name, target, target[::-1])
         assert exact > reversed_score
 
 
@@ -227,9 +227,7 @@ def test_configured_universe_contains_base_meta_and_generated_state_features():
     assert set(report["meta_available_by_head"]) == set(
         report["meta_requested_by_head"]
     )
-    assert set(report["meta_missing_by_head"]) == set(
-        report["meta_requested_by_head"]
-    )
+    assert set(report["meta_missing_by_head"]) == set(report["meta_requested_by_head"])
     assert report["configured_requested_count"] > 0
 
 
@@ -252,7 +250,9 @@ def test_base_archetype_labels_have_a_frozen_non_catboost_onehot_contract():
     assert encoded.iloc[2][contract["canonical_features"]].sum() == 0.0
     selected, report = configured_auxiliary_feature_universe(encoded.columns)
     assert set(encoded.columns).issubset(selected)
-    assert set(encoded.columns) == set(report["base_archetype_label_features_available"])
+    assert set(encoded.columns) == set(
+        report["base_archetype_label_features_available"]
+    )
 
 
 def test_shared_pipeline_auxiliary_objective_uses_regression_error_and_ic():
@@ -289,7 +289,9 @@ def test_auxiliary_univariate_skips_unused_topk_metric_pack(monkeypatch):
     )
 
     def fail_metric_pack(*_args, **_kwargs):
-        raise AssertionError("auxiliary regression must not compute unused top-k metrics")
+        raise AssertionError(
+            "auxiliary regression must not compute unused top-k metrics"
+        )
 
     monkeypatch.setattr(lgbm_pipeline, "_metric_pack", fail_metric_pack)
     selected, stats = lgbm_pipeline._univariate_directional_filter(
@@ -307,9 +309,7 @@ def test_auxiliary_univariate_skips_unused_topk_metric_pack(monkeypatch):
 def test_auxiliary_mda_uses_regression_error_and_rank_not_topk_precision():
     target = np.linspace(0.05, 2.0, 200, dtype=np.float32)
     cfg = {"objective": "auxiliary_regression", "use_sample_weight": True}
-    exact = _topk_mda_score(
-        target, target, sample_weight=np.ones(len(target)), cfg=cfg
-    )
+    exact = _topk_mda_score(target, target, sample_weight=np.ones(len(target)), cfg=cfg)
     reversed_score = _topk_mda_score(
         target, target[::-1], sample_weight=np.ones(len(target)), cfg=cfg
     )
@@ -317,21 +317,27 @@ def test_auxiliary_mda_uses_regression_error_and_rank_not_topk_precision():
     assert exact["regression_mae"] == 0.0
 
 
-def test_auxiliary_selector_uses_global_prescreens_and_lower_correlation_threshold(
+def test_auxiliary_selector_runs_full_pipeline_independently_per_side(
     monkeypatch,
 ):
     rows = 240
-    seen = {}
+    seen = []
 
     def fake_train(X, y, **kwargs):
-        seen["cfg"] = kwargs["cfg"]
-        seen["weights"] = kwargs["sample_weight"]
-        seen["label_context"] = kwargs["label_context"]
+        side = str(kwargs["label_context"]["side_name"][0])
+        seen.append(
+            {
+                "side": side,
+                "rows": len(X),
+                "cfg": kwargs["cfg"],
+                "weights": kwargs["sample_weight"],
+                "label_context": kwargs["label_context"],
+            }
+        )
         return {
             "metrics": {
                 "per_side_feature_selection_selected_features": {
-                    "long": ["ret1h"],
-                    "short": ["score"],
+                    side: ["ret1h" if side == "long" else "score"],
                 }
             }
         }
@@ -356,20 +362,25 @@ def test_auxiliary_selector_uses_global_prescreens_and_lower_correlation_thresho
         target_name="peak_mfe_12h_atr",
         sample_weight=weights,
     )
-    mda = seen["cfg"]["mda_config"]
-    assert seen["cfg"]["archetype_univariate_prescreen_enabled"] is False
-    assert seen["cfg"]["archetype_relief_prescreen_enabled"] is False
+    assert [record["side"] for record in seen] == ["long", "short"]
+    assert [record["rows"] for record in seen] == [120, 120]
+    mda = seen[0]["cfg"]["mda_config"]
+    assert seen[0]["cfg"]["archetype_univariate_prescreen_enabled"] is False
+    assert seen[0]["cfg"]["archetype_relief_prescreen_enabled"] is False
     assert mda["archetype_univariate_prescreen_enabled"] is False
     assert mda["archetype_relief_prescreen_enabled"] is False
     assert mda["correlation_pruning_threshold"] == 0.88
     assert mda["correlation_threshold"] == 0.88
     assert mda["use_sample_weight"] is False
-    np.testing.assert_array_equal(seen["weights"], weights)
-    np.testing.assert_array_equal(
-        seen["label_context"]["side_mda_sample_weight"], np.ones(rows, dtype=np.float32)
-    )
+    np.testing.assert_array_equal(seen[0]["weights"], weights[::2])
+    np.testing.assert_array_equal(seen[1]["weights"], weights[1::2])
+    for record in seen:
+        np.testing.assert_array_equal(
+            record["label_context"]["side_mda_sample_weight"],
+            np.ones(120, dtype=np.float32),
+        )
     assert "training_loss_only" in result["sample_weight_contract"]
-    assert result["prescreen_contract"].startswith("global_univariate_relief")
+    assert result["prescreen_contract"].startswith("strict_side_local")
 
 
 def test_hpo_keeps_weights_in_training_but_not_early_stopping_or_oof(monkeypatch):
@@ -466,4 +477,6 @@ def test_hpo_keeps_weights_in_training_but_not_early_stopping_or_oof(monkeypatch
     assert result["final_inference_fit_contract"]["model_sha256"]
     assert result["fold_metrics"]
     assert all(metric["oos_model_sha256"] for metric in result["fold_metrics"])
-    assert all(metric["validation_weighted"] is False for metric in result["fold_metrics"])
+    assert all(
+        metric["validation_weighted"] is False for metric in result["fold_metrics"]
+    )

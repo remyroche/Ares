@@ -610,7 +610,9 @@ def _selection_hpo_fingerprint(
             "hpo_trials": int(n_trials),
             "seed": int(seed),
             "purge_hours": float(purge_hours),
-            "selection_contract": "global_prescreen_side_local_mda_unweighted_v1",
+            "selection_contract": (
+                "strict_side_local_full_pipeline_univariate_relief_mda_unweighted_v1"
+            ),
             "hpo_validation_contract": "unweighted_purged_reference_folds_v1",
         },
     }
@@ -2902,8 +2904,9 @@ def run(
         "model_input_contract": "config base+meta universe plus frozen pre-entry base-archetype labels; CatBoost path labels excluded",
         "base_archetype_label_feature_contract": archetype_feature_contract,
         "selection_contract": (
-            "target-specific global univariate and Relief prescreen, 0.88 "
-            "redundancy pruning, independent long/short MDA, then side-local HPO"
+            "target-specific full selector run independently inside long and short; "
+            "0.88 redundancy pruning, side-local univariate/Relief/MDA, then "
+            "side-local HPO"
         ),
         "supportive_label_columns": list(ALL_SUPPORTIVE_LABEL_COLUMNS),
         "sample_weight_contract": (

@@ -356,6 +356,7 @@ def build_target_frame(
     ].copy()
     frame["__ts__"] = pd.to_datetime(frame["__ts__"], utc=True, errors="raise")
     frame["side_name"] = frame["side_name"].astype(str).str.lower()
+    frame["side"] = frame["side_name"]
     frame["candidate_id"] = frame["candidate_id"].astype(str)
     frame["__symbol__"] = frame["__symbol__"].astype(str)
     frame[ATR_COLUMN] = np.asarray(atr_values, dtype=np.float32)

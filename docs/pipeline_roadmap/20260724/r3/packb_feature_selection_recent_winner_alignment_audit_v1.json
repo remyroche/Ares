@@ -1,0 +1,60 @@
+{
+  "action": {
+    "canonical_replacement_output": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v2",
+    "historical_feature_lists_reused": false,
+    "replacement_contract": "packb_pre_march_recent_winner_archetype_prescreen_side_mda_corrfirst_v1",
+    "replacement_required_before_outer_oof": true,
+    "v1_disposition": "comparator_only_do_not_promote"
+  },
+  "audited_candidate": {
+    "artifact": "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1",
+    "long": {
+      "candidate_features": 319,
+      "mda_candidates_after_prescreen": 96,
+      "positive_mda_features": 20,
+      "positive_mass_99pct_count": 12,
+      "selected_features": 16,
+      "selection_rule": "smallest tested MDA prefix within 0.005 objective of best"
+    },
+    "short": {
+      "candidate_features": 319,
+      "mda_candidates_after_prescreen": 96,
+      "positive_mda_features": 31,
+      "positive_mass_99pct_count": 23,
+      "selected_features": 8,
+      "selection_rule": "smallest tested MDA prefix within 0.005 objective of best"
+    },
+    "summary_sha256": "2dde53f16e7d5e49e7cddf04616a4b9d0eaee5c193c8830f3ffd2f2215289fa7"
+  },
+  "findings": [
+    "The v1 selector is side-local and leakage-bounded, but it does not match the selector family that produced the recent strongest Pack-B pair.",
+    "The v1 96-feature MDA cap is materially narrower than the reference correlation-first floor of 300 features.",
+    "The v1 fixed prefix grid and absolute 0.005 tolerance are not the reference iterative-MDA automatic stopping rule.",
+    "Therefore 16 long and 8 short features are not yet justified as canonical merely by the v1 November objective."
+  ],
+  "reference_recent_winner": {
+    "feature_contract": "data_perp/reports/weighted_packb_july_frozen_oos_scoring_validation_20260721_v1/base_fold_models/columns.json",
+    "feature_contract_sha256": "0032336a9733e442e2fd9cba8e4669e76ee9589b458932c83e4fe133924043c0",
+    "process": {
+      "archetype_aware_prescreens": [
+        "univariate",
+        "relief"
+      ],
+      "automatic_stopping": "iterative_mda",
+      "correlation_first": true,
+      "correlation_pruning_floor_count": 300,
+      "correlation_pruning_floor_ratio": 0.5,
+      "mda_scope": "independent_per_side",
+      "mda_weighting": "uniform_across_archetypes",
+      "method": "archetype_prescreen_side_mda_corrfirst"
+    },
+    "process_manifest": "data_perp/reports/s59_h5_signalclose_causal_stagec_packb_sliding365_wf30_20260721_v1/manifest.json",
+    "process_manifest_sha256": "9c944de65e16b45d09699c9635460755b214a50708d291a5e3480043cce0726b",
+    "selected_features": {
+      "long": 55,
+      "short": 37
+    }
+  },
+  "schema": "packb_feature_selection_recent_winner_alignment_audit_v1",
+  "status": "FAIL_V1_PROCESS_MISMATCH_REPLACEMENT_REQUIRED"
+}

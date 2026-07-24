@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.packb_side_local_fs_hpo_stage import (
+    FeatureSelectionInput,
     HPOTrialEvaluation,
+    StageDataset,
 )
 from extreme_price_movements.packb_static_point_feature_loader import (
     LoaderEvidenceBundle,
@@ -32,6 +34,10 @@ def _labels() -> pd.DataFrame:
             runner.TARGET_COLUMN: [0.1, 0.9, 0.4],
             runner.WEIGHT_COLUMN: [0.5, 1.0, 0.8],
             runner.ECONOMIC_COLUMN: [-0.01, 0.03, 0.005],
+            runner.ARCHETYPE_COLUMN: ["mixed", "breakout_impulse", "mixed"],
+            runner.NET_POSITIVE_COLUMN: [0.0, 1.0, 1.0],
+            runner.MAE_TO_SL_COLUMN: [0.8, 0.2, 0.4],
+            runner.TIMEOUT_COLUMN: [0.0, 0.0, 1.0],
         }
     )
 
@@ -118,6 +124,109 @@ def test_economic_objective_rewards_correct_ranking_and_net_lift() -> None:
     assert good["objective"] > bad["objective"]
     assert good["weighted_rank_ic"] == pytest.approx(1.0)
     assert good["top10_mean_net_return"] == pytest.approx(0.04)
+
+
+def test_recent_winner_selector_is_side_local_and_preserves_process_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    columns = [f"feature_{index}" for index in range(10)]
+    train_ledger = pd.DataFrame(
+        {
+            "candidate_id": ["t0", "t1", "t2"],
+            "side_name": ["short"] * 3,
+            "__symbol__": ["A", "B", "C"],
+            "__ts__": pd.to_datetime(
+                [
+                    "2025-10-01T00:00:00Z",
+                    "2025-10-01T01:00:00Z",
+                    "2025-10-01T02:00:00Z",
+                ]
+            ),
+        }
+    )
+    valid_ledger = pd.DataFrame(
+        {
+            "candidate_id": ["v0", "v1"],
+            "side_name": ["short"] * 2,
+            "__symbol__": ["A", "B"],
+            "__ts__": pd.to_datetime(["2025-11-01T00:00:00Z", "2025-11-01T01:00:00Z"]),
+        }
+    )
+    train_features = pd.DataFrame(
+        np.arange(30, dtype=np.float32).reshape(3, 10), columns=columns
+    )
+    valid_features = pd.DataFrame(
+        np.arange(20, dtype=np.float32).reshape(2, 10), columns=columns
+    )
+
+    class Labels:
+        @staticmethod
+        def selection_context(ledger: pd.DataFrame) -> pd.DataFrame:
+            rows = len(ledger)
+            return pd.DataFrame(
+                {
+                    runner.ARCHETYPE_COLUMN: ["mixed"] * rows,
+                    runner.NET_POSITIVE_COLUMN: np.arange(rows) % 2,
+                    runner.MAE_TO_SL_COLUMN: np.full(rows, 0.5),
+                    runner.TIMEOUT_COLUMN: np.zeros(rows),
+                    runner.ECONOMIC_COLUMN: np.linspace(-0.01, 0.02, rows),
+                }
+            )
+
+    captured: dict[str, object] = {}
+
+    def fake_train(features: pd.DataFrame, target: np.ndarray, **kwargs: object):
+        captured["features"] = features.copy()
+        captured["target"] = target.copy()
+        captured.update(kwargs)
+        return {
+            "selected_feature_names": columns[:8],
+            "feature_stats": pd.DataFrame(
+                {
+                    "feature": columns,
+                    "feature_score": np.linspace(1.0, 0.1, len(columns)),
+                    "hard_drop": [False] * 8 + [True] * 2,
+                }
+            ),
+            "metrics": {"J_final": 0.42},
+            "selection_history": [{"round": 1}],
+        }
+
+    import extreme_price_movements.lgbm_pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "train_lgbm_stability_candidate", fake_train)
+    selector = runner.RecentWinnerSideFeatureSelector(
+        side="short",
+        labels=Labels(),  # type: ignore[arg-type]
+        seed=7,
+    )
+    result = selector(
+        FeatureSelectionInput(
+            side="short",
+            candidate_features=tuple(columns),
+            train=StageDataset(
+                ledger=train_ledger,
+                features=train_features,
+                target=pd.Series([0.1, 0.2, 0.3]),
+                weights=pd.Series([1.0, 2.0, 3.0]),
+            ),
+            validation=StageDataset(
+                ledger=valid_ledger,
+                features=valid_features,
+                target=pd.Series([0.4, 0.5]),
+                weights=pd.Series([4.0, 5.0]),
+            ),
+        )
+    )
+
+    assert result["selected_features"] == columns[:8]
+    assert result["selection_scope"] == "side_local"
+    assert result["fallback_used"] is False
+    assert "mda" in result["selection_methods"]
+    assert len(captured["features"]) == 5  # type: ignore[arg-type]
+    assert np.array_equal(captured["sample_weight"], np.ones(5, dtype=np.float32))
+    assert captured["cfg"]["mda_config"]["correlation_pruning_floor_count"] == 300
+    assert set(captured["label_context"]["side_name"]) == {"short"}
 
 
 def test_top_fraction_is_per_timestamp_with_symbol_tie_break() -> None:

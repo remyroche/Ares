@@ -6,14 +6,14 @@ raw feature contracts frozen by ``run_packb_pre_march_side_ae.py``, and the
 canonical label inventory to ``packb_side_local_fs_hpo_stage``.  It deliberately
 fits long then short so only one side's matrices and models are resident.
 
-Feature selection is supervised but fixed-calendar:
+Feature selection is supervised but fixed-calendar.  It reuses the recent
+winning Pack-B selector family independently for each side:
 
-* November is the only selector validation month;
-* univariate, mutual-information, and regression-Relief screens form a bounded
-  candidate union;
-* correlation pruning precedes side-local, multi-repeat permutation MDA; and
-* prefix confirmation selects the smallest feature set within a declared
-  objective tolerance of the best MDA prefix.
+* pre-November fit rows and the fixed November selector rows are the only
+  supervised selector population;
+* correlation-first pruning retains the recent-winner 300-feature floor;
+* archetype-aware univariate and Relief screens precede iterative MDA; and
+* MDA and automatic stopping are fitted independently for long and short.
 
 HPO evaluates 150 explicit, deterministic LightGBM arms on December, January,
 and February.  The objective combines rank IC, top-decile executable net-return
@@ -85,7 +85,7 @@ DEFAULT_LABELS = (
     ROOT / "data_perp/artifacts/"
     "20260720_s59_h5_signalclose_causal_trailing_cost100bps_labels_v2/labels"
 )
-DEFAULT_OUTPUT = ROOT / "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v1"
+DEFAULT_OUTPUT = ROOT / "data_perp/artifacts/packb_side_local_fs_hpo_20260724_v2"
 DEFAULT_TRIALS = 150
 POINT_LOADER_MAX_ROWS_PER_BATCH = 2_048
 POINT_LOADER_MAX_COLUMNS_PER_READ = 64
@@ -93,6 +93,23 @@ POINT_LOADER_MAX_OUTPUT_BYTES = 512 * 1024**2
 TARGET_COLUMN = "__first_touch_target_soft__"
 WEIGHT_COLUMN = "__w__"
 ECONOMIC_COLUMN = "__first_touch_capture_net__"
+ARCHETYPE_COLUMN = "__archetype_label_family__"
+NET_POSITIVE_COLUMN = "__first_touch_net_positive__"
+MAE_TO_SL_COLUMN = "__first_touch_mae_to_sl__"
+TIMEOUT_COLUMN = "__first_touch_timeout__"
+RECENT_WINNER_SELECTOR_CONTRACT = (
+    "packb_pre_march_recent_winner_archetype_prescreen_side_mda_corrfirst_v1"
+)
+RECENT_WINNER_PROCESS_MANIFEST = (
+    ROOT / "data_perp/reports/"
+    "s59_h5_signalclose_causal_stagec_packb_sliding365_wf30_20260721_v1/"
+    "manifest.json"
+)
+RECENT_WINNER_FEATURE_CONTRACT = (
+    ROOT / "data_perp/reports/"
+    "weighted_packb_july_frozen_oos_scoring_validation_20260721_v1/"
+    "base_fold_models/columns.json"
+)
 LABEL_IDENTITY_COLUMNS = (
     "candidate_id",
     "side_name",
@@ -229,6 +246,10 @@ def _canonical_label_files(
                     TARGET_COLUMN,
                     WEIGHT_COLUMN,
                     ECONOMIC_COLUMN,
+                    ARCHETYPE_COLUMN,
+                    NET_POSITIVE_COLUMN,
+                    MAE_TO_SL_COLUMN,
+                    TIMEOUT_COLUMN,
                 }
                 - set(parquet.schema.names)
             )
@@ -288,7 +309,11 @@ class ExactLabelLoader:
                         l.__ts__,
                         l.__first_touch_target_soft__,
                         l.__w__,
-                        l.__first_touch_capture_net__
+                        l.__first_touch_capture_net__,
+                        l.__archetype_label_family__,
+                        l.__first_touch_net_positive__,
+                        l.__first_touch_mae_to_sl__,
+                        l.__first_touch_timeout__
                     FROM requested AS r
                     INNER JOIN read_parquet(?, union_by_name=true) AS l
                     USING (candidate_id)
@@ -329,7 +354,14 @@ class ExactLabelLoader:
             raise PackBSideFSHPORunnerError(
                 "candidate_id label join disagrees on side, symbol, or signal timestamp"
             )
-        for column in (TARGET_COLUMN, WEIGHT_COLUMN, ECONOMIC_COLUMN):
+        for column in (
+            TARGET_COLUMN,
+            WEIGHT_COLUMN,
+            ECONOMIC_COLUMN,
+            NET_POSITIVE_COLUMN,
+            MAE_TO_SL_COLUMN,
+            TIMEOUT_COLUMN,
+        ):
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
             if not np.isfinite(frame[column].to_numpy(dtype=np.float64)).all():
                 raise PackBSideFSHPORunnerError(
@@ -337,8 +369,23 @@ class ExactLabelLoader:
                 )
         if (frame[WEIGHT_COLUMN] < 0.0).any() or frame[WEIGHT_COLUMN].sum() <= 0.0:
             raise PackBSideFSHPORunnerError("label weights must be non-negative")
+        archetype = frame[ARCHETYPE_COLUMN].astype("string").str.strip()
+        if archetype.isna().any() or archetype.eq("").any():
+            raise PackBSideFSHPORunnerError(
+                "feature-selection archetype labels must be complete"
+            )
+        frame[ARCHETYPE_COLUMN] = archetype.astype(str)
         keep = frame.loc[
-            :, [TARGET_COLUMN, WEIGHT_COLUMN, ECONOMIC_COLUMN]
+            :,
+            [
+                TARGET_COLUMN,
+                WEIGHT_COLUMN,
+                ECONOMIC_COLUMN,
+                ARCHETYPE_COLUMN,
+                NET_POSITIVE_COLUMN,
+                MAE_TO_SL_COLUMN,
+                TIMEOUT_COLUMN,
+            ],
         ].reset_index(drop=True)
         self._key = candidate_ids
         self._frame = keep
@@ -352,6 +399,22 @@ class ExactLabelLoader:
 
     def economic(self, ledger: pd.DataFrame) -> np.ndarray:
         return self.load(ledger)[ECONOMIC_COLUMN].to_numpy(dtype=np.float64, copy=True)
+
+    def selection_context(self, ledger: pd.DataFrame) -> pd.DataFrame:
+        return (
+            self.load(ledger)
+            .loc[
+                :,
+                [
+                    ARCHETYPE_COLUMN,
+                    NET_POSITIVE_COLUMN,
+                    MAE_TO_SL_COLUMN,
+                    TIMEOUT_COLUMN,
+                    ECONOMIC_COLUMN,
+                ],
+            ]
+            .copy()
+        )
 
 
 def _active_ae_gmm_columns(state: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1141,6 +1204,273 @@ class SideFeatureSelector:
         }
 
 
+class RecentWinnerSideFeatureSelector:
+    """Re-run the selector family that produced the recent 55/37 Pack-B pair.
+
+    The historical fitted feature lists are not reused: they were selected
+    after the DEC-09 cutoff.  Only the process is reused, on the fixed
+    pre-March population and the matching side-local AE/GMM representation.
+    Each callback contains one side only, so every prescreen, redundancy
+    decision, MDA fit, and automatic stop is side-local by construction.
+    """
+
+    _MODEL_PARAMS = {
+        "n_estimators": 180,
+        "learning_rate": 0.035,
+        "num_leaves": 31,
+        "max_depth": 6,
+        "min_child_samples": 60,
+        "subsample": 0.85,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.10,
+        "reg_lambda": 3.0,
+        "min_split_gain": 0.0,
+        "objective": "cross_entropy",
+        "verbosity": -1,
+        "n_jobs": 4,
+    }
+
+    def __init__(
+        self,
+        *,
+        side: str,
+        labels: ExactLabelLoader,
+        seed: int,
+        resource_guard: TrainingResourceGuard | Any | None = None,
+    ) -> None:
+        self.side = str(side)
+        self.labels = labels
+        self.seed = int(seed)
+        self.resource_guard = resource_guard
+
+    @staticmethod
+    def _finite_metric_snapshot(metrics: Mapping[str, Any]) -> dict[str, Any]:
+        keep = (
+            "J_final",
+            "J_base",
+            "J_meta",
+            "feature_selection_candidate_count",
+            "feature_selection_selected_count",
+            "feature_selection_cluster_count",
+            "archetype_univariate_prescreen_enabled",
+            "archetype_relief_prescreen_enabled",
+            "correlation_pruning_before_prescreen",
+            "per_side_feature_selection_reason",
+        )
+        result: dict[str, Any] = {}
+        for key in keep:
+            value = metrics.get(key)
+            if isinstance(value, (bool, str, int)):
+                result[key] = value
+            elif isinstance(value, (float, np.floating)) and np.isfinite(value):
+                result[key] = float(value)
+        return result
+
+    @staticmethod
+    def _feature_stats_snapshot(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, pd.DataFrame) or value.empty:
+            return []
+        columns = [
+            column
+            for column in (
+                "feature",
+                "feature_score",
+                "mda_mean",
+                "mda_std",
+                "hard_drop",
+                "selected_by_sides",
+                "selection_side",
+            )
+            if column in value.columns
+        ]
+        rows: list[dict[str, Any]] = []
+        for record in value.loc[:, columns].to_dict(orient="records"):
+            clean: dict[str, Any] = {}
+            for key, raw in record.items():
+                if pd.isna(raw):
+                    continue
+                if isinstance(raw, (bool, np.bool_)):
+                    clean[str(key)] = bool(raw)
+                elif isinstance(raw, (int, np.integer)):
+                    clean[str(key)] = int(raw)
+                elif isinstance(raw, (float, np.floating)):
+                    if np.isfinite(raw):
+                        clean[str(key)] = float(raw)
+                else:
+                    clean[str(key)] = str(raw)
+            rows.append(clean)
+        return rows
+
+    def __call__(self, value: FeatureSelectionInput) -> dict[str, Any]:
+        if value.side != self.side:
+            raise PackBSideFSHPORunnerError(
+                "recent-winner selector received the wrong side"
+            )
+        if self.resource_guard is not None:
+            self.resource_guard.checkpoint(
+                f"packb_side_fs_hpo:{self.side}:recent_winner_selector_start"
+            )
+
+        # The fixed November cohort is the declared selector-validation
+        # population.  Joining it to the legal pre-November fit rows gives the
+        # old selector its internal selection/evaluation split without making
+        # any December-or-later label available.
+        features = pd.concat(
+            [value.train.features, value.validation.features],
+            ignore_index=True,
+            copy=False,
+        ).loc[:, list(value.candidate_features)]
+        target = pd.concat(
+            [value.train.target, value.validation.target],
+            ignore_index=True,
+        ).to_numpy(dtype=np.float32, copy=False)
+        ledger = pd.concat(
+            [value.train.ledger, value.validation.ledger],
+            ignore_index=True,
+            copy=False,
+        )
+        context = pd.concat(
+            [
+                self.labels.selection_context(value.train.ledger),
+                self.labels.selection_context(value.validation.ledger),
+            ],
+            ignore_index=True,
+            copy=False,
+        )
+        side_names = np.full(len(ledger), self.side, dtype=object)
+        returns = context[ECONOMIC_COLUMN].to_numpy(dtype=np.float32, copy=False)
+        hard = context[NET_POSITIVE_COLUMN].to_numpy(dtype=np.float32, copy=False)
+        label_context = {
+            "feature_selection_archetype": context[ARCHETYPE_COLUMN]
+            .astype(str)
+            .to_numpy(),
+            "side_name": side_names,
+            "side": side_names,
+            "y_ret": returns,
+            "y_bin": hard,
+            "bad_mae_1r": context[MAE_TO_SL_COLUMN].to_numpy(
+                dtype=np.float32, copy=False
+            ),
+            "is_timeout": context[TIMEOUT_COLUMN].to_numpy(
+                dtype=np.float32, copy=False
+            ),
+        }
+
+        from extreme_price_movements.lgbm_pipeline import (
+            train_lgbm_stability_candidate,
+        )
+
+        result = train_lgbm_stability_candidate(
+            features,
+            target,
+            # The recent winning per-side tail deliberately removed
+            # cross-archetype weighting before MDA.
+            sample_weight=np.ones(len(features), dtype=np.float32),
+            random_state=self.seed,
+            mode="classifier",
+            timestamps=pd.to_datetime(
+                ledger["__ts__"], utc=True, errors="raise"
+            ).astype("int64"),
+            assets=ledger["__symbol__"].astype(str).to_numpy(),
+            returns=returns,
+            hard_labels=hard,
+            hpo_objective_mode="train_base",
+            preset_best_params=dict(self._MODEL_PARAMS),
+            preset_source=RECENT_WINNER_SELECTOR_CONTRACT,
+            cfg={
+                "mda_config": {
+                    "archetype_conditioned_enabled": False,
+                    "side_tail_across_archetypes_unweighted": True,
+                    "correlation_pruning_before_prescreen": True,
+                    "correlation_pruning_floor_ratio": 0.50,
+                    "correlation_pruning_floor_count": 300,
+                },
+                "lgbm_joint_complete_case_filter_enabled": False,
+            },
+            label_context=label_context,
+        )
+        if not result:
+            raise PackBSideFSHPORunnerError(
+                f"{self.side} recent-winner selector returned no fitted result"
+            )
+        selected = [
+            str(feature)
+            for feature in result.get("selected_feature_names", ())
+            if str(feature) in value.candidate_features
+        ]
+        if len(selected) < 8:
+            raise PackBSideFSHPORunnerError(
+                f"{self.side} recent-winner selector retained fewer than eight features"
+            )
+        if len(selected) != len(set(selected)):
+            raise PackBSideFSHPORunnerError(
+                f"{self.side} recent-winner selector returned duplicate features"
+            )
+        stats = self._feature_stats_snapshot(result.get("feature_stats"))
+        history = result.get(
+            "pruning_history",
+            result.get("selection_history", result.get("history", ())),
+        )
+        history_count = len(history) if isinstance(history, Sequence) else 0
+        metrics = (
+            dict(result.get("metrics", {}))
+            if isinstance(result.get("metrics"), Mapping)
+            else {}
+        )
+        if self.resource_guard is not None:
+            self.resource_guard.checkpoint(
+                f"packb_side_fs_hpo:{self.side}:recent_winner_selector_complete"
+            )
+        return {
+            "side": self.side,
+            "selected_features": selected,
+            "selection_scope": "side_local",
+            "fallback_used": False,
+            "selection_methods": [
+                "correlation_pruning",
+                "archetype_univariate",
+                "archetype_relief",
+                "mda",
+                "automatic_iterative_stopping",
+            ],
+            "search_breadth": int(
+                len(value.candidate_features) + len(stats) + history_count
+            ),
+            "target_contract": {
+                "column": TARGET_COLUMN,
+                "economic_validation_column": ECONOMIC_COLUMN,
+                "hard_label_column": NET_POSITIVE_COLUMN,
+                "archetype_column": ARCHETYPE_COLUMN,
+                "weighting_for_side_mda": "uniform_across_archetypes",
+            },
+            "recent_winner_alignment": {
+                "contract": RECENT_WINNER_SELECTOR_CONTRACT,
+                "historical_feature_lists_reused": False,
+                "historical_fitted_state_reused": False,
+                "correlation_first": True,
+                "correlation_pruning_floor_ratio": 0.50,
+                "correlation_pruning_floor_count": 300,
+                "archetype_aware_prescreens": ["univariate", "relief"],
+                "mda_scope": self.side,
+                "mda_weighting": "uniform_across_archetypes",
+                "automatic_stopping": "iterative_mda",
+                "selector_model_params": dict(self._MODEL_PARAMS),
+                "reference_process_manifest": (
+                    str(RECENT_WINNER_PROCESS_MANIFEST.relative_to(ROOT))
+                ),
+                "reference_feature_contract": (
+                    str(RECENT_WINNER_FEATURE_CONTRACT.relative_to(ROOT))
+                ),
+                "reference_selected_counts": {"long": 55, "short": 37},
+                "selector_population": (
+                    "legal_pre_november_fit_plus_fixed_november_validation"
+                ),
+            },
+            "selector_metrics": self._finite_metric_snapshot(metrics),
+            "feature_stats": stats,
+        }
+
+
 def make_hpo_trials(*, side: str, count: int = DEFAULT_TRIALS) -> tuple[HPOTrial, ...]:
     """Return a predeclared deterministic random design with no default arm."""
 
@@ -1430,6 +1760,14 @@ def run(
         raise PackBSideFSHPORunnerError(
             f"refusing to overwrite production FS/HPO output: {destination}"
         )
+    for reference in (
+        RECENT_WINNER_PROCESS_MANIFEST,
+        RECENT_WINNER_FEATURE_CONTRACT,
+    ):
+        if not reference.is_file():
+            raise PackBSideFSHPORunnerError(
+                f"recent-winner feature-selection reference is missing: {reference}"
+            )
     revision = _git_revision()
     ae_summary = _json(Path(ae_root) / "summary.json")
     ae_revision = str(ae_summary.get("source_revision") or "")
@@ -1565,7 +1903,7 @@ def run(
                     state=state,
                     generated_features=generated_features,
                 ),
-                feature_selection_callback=SideFeatureSelector(
+                feature_selection_callback=RecentWinnerSideFeatureSelector(
                     side=side,
                     labels=label_loader,
                     seed=seed,
@@ -1602,6 +1940,12 @@ def run(
                     ),
                     "fs_hpo_raw_subset_loading_contract_sha256": str(
                         raw_feature_loader.fs_hpo_subset_loading_contract_sha256
+                    ),
+                    "recent_winner_process_manifest_sha256": (
+                        stage_manifest.sha256_file(RECENT_WINNER_PROCESS_MANIFEST)
+                    ),
+                    "recent_winner_feature_contract_sha256": (
+                        stage_manifest.sha256_file(RECENT_WINNER_FEATURE_CONTRACT)
                     ),
                 },
                 fs_train_max_rows=60_000,
@@ -1649,6 +1993,11 @@ def run(
                     "derived subset for raw-only selected features"
                 ),
                 "feature_selection_validation": "2025-11",
+                "feature_selection_contract": RECENT_WINNER_SELECTOR_CONTRACT,
+                "feature_selection_process_reference": (
+                    "recent 55-long/37-short Pack-B winner; process only, "
+                    "historical fitted features and state are not reused"
+                ),
                 "hpo_validation_months": ["2025-12", "2026-01", "2026-02"],
                 "explicit_trials_per_side": int(hpo_trials),
                 "fallback": "FORBIDDEN",

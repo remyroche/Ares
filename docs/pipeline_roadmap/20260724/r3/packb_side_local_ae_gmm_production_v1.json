@@ -1,0 +1,63 @@
+{
+  "artifact_root": "/Users/remyroche/Documents/Ares/data_perp/artifacts/packb_side_local_ae_20260724_v1",
+  "checks": {
+    "all_manifest_artifact_hashes_match": true,
+    "all_manifest_contracts_valid": true,
+    "all_published_paths_exist": true,
+    "all_resource_events_ok": true,
+    "both_sides_distinct_cycle_states": true,
+    "both_sides_distinct_fitted_artifacts": true,
+    "joint_complete_fraction_at_least_0_98": true,
+    "outcome_free_representation_selection": true,
+    "row_independent_temporal_contract": true,
+    "staging_reference_count": 0
+  },
+  "schema": "packb_side_local_ae_gmm_production_evidence_v1",
+  "sides": {
+    "long": {
+      "cycle_state_hash": "f9ca434fdb507c86e7e61920e7331e8391220134fe61a06862786263c1d1a8b2",
+      "feature_contract_sha256": "0a0ed1ca67e4f8f3a7dd28de169abfca68b096345f1223bbd2eb6a237689fc49",
+      "gmm_n_components": 12,
+      "input_feature_order_hash": "ba2f241a737b3bc4eb4df982332d9f67b4db89fab01707679faddb34c8b6a924",
+      "joint_complete_fraction": {
+        "beginning": 0.995469668011609,
+        "end": 0.9957226762002043,
+        "middle": 0.9922311841258845
+      },
+      "manifest_sha256": "c9ee3184537762e4eca6ea026c67240af5655dc52ef1860c86b953bcfa93237e",
+      "reference_rows_sampled": 50000,
+      "state_sha256": "13bbdf2f3d2d4acd23ccc859d1f98cd87323decd4c498aaca7f8a752447de4c9"
+    },
+    "short": {
+      "cycle_state_hash": "9672d371d7f6bcf0b79f53f7242d8ec1d53be4d6ed050ed78659aa54f371a0d6",
+      "feature_contract_sha256": "aa48407c45184b0247e7e6082d7bb41dde4957dd84914dbceb16ea1cc6642a5d",
+      "gmm_n_components": 12,
+      "input_feature_order_hash": "32a2b2f91e1691c8926308119375f8dfe18da3f8ea1d4f452cf6e40171e3dd95",
+      "joint_complete_fraction": {
+        "beginning": 0.9958164929447635,
+        "end": 0.997444089456869,
+        "middle": 0.9882451721242653
+      },
+      "manifest_sha256": "ce72e1b4972379a409184e2c698d68cafc49f4c981fe84d3207e9162c0ce05d8",
+      "reference_rows_sampled": 50000,
+      "state_sha256": "1bcf7048e542392b1ae02aac5cd09991e9d897e3137b6e954b75dff04de1d5cb"
+    }
+  },
+  "source_revision": "e9e00a464395544fa73276adb4ca9e828ec924da",
+  "status": "VALIDATED_PRODUCTION_SIDE_LOCAL_AE_GMM",
+  "summary_sha256": "b26a69ca1e789aa586de9b303307be55f050293e7816bbf2a2d7175a3350d219",
+  "telemetry": {
+    "events": 1071,
+    "limits": {
+      "max_process_rss_bytes": 12884901888,
+      "min_free_disk_bytes": 10737418240,
+      "min_free_ram_bytes": 2147483648
+    },
+    "max_process_rss_bytes": 3129294848,
+    "min_available_ram_bytes": 10222403584,
+    "min_free_disk_bytes": 83526103040,
+    "statuses": [
+      "ok"
+    ]
+  }
+}

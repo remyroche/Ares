@@ -114,6 +114,10 @@
       "name": "Fold calendar, purge, embargo and untouched replay",
       "universe_signal_cutoff_utc": "2026-07-20T16:00:00Z",
       "feature_selection_hpo_resolution_cutoff_utc": "2026-03-01T00:00:00Z",
+      "feature_selection_hpo_authorization": "actual Pack-B label resolution timestamp < feature_selection_hpo_resolution_cutoff_utc; applies independently to side-local AE/GMM reference-state fitting, feature selection, HPO and every inner validation row",
+      "historical_packb_state_policy": "June/July recovered AE/GMM state, 55-long/37-short feature contracts and promoted parameters are comparator-only and cannot seed or constrain canonical selection",
+      "post_cutoff_recovery_exception": false,
+      "label_shard_authority": "manifest_or_causal_audit_exact_inventory; reject missing shards, unlisted extras, and duplicate candidate_id before fitting",
       "outer_folds": [
         ["2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z"],
         ["2026-05-01T00:00:00Z", "2026-06-01T00:00:00Z"],
@@ -125,7 +129,7 @@
         "packb_directional_base": "decision_timestamp + 24 hours (96 x 15-minute causal path bars)",
         "auxiliary_catboost_execution_ev_and_timing": "decision_timestamp + 12 hours"
       },
-      "train_authorization": "decision_timestamp < validation_start AND actual_stage_label_end <= validation_start AND decision_timestamp <= validation_start - 24 hours",
+      "train_authorization": "decision_timestamp < validation_start AND actual_stage_label_end < validation_start AND decision_timestamp < validation_start - 24 hours",
       "signal_timestamp_purge_hours": 25,
       "purge_hours": 12,
       "post_label_embargo_hours": 12,

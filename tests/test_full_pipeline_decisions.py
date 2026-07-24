@@ -37,7 +37,16 @@ def test_fold_calendar_precedes_buffer_and_untouched_replay() -> None:
     assert "24 hours" in horizons["packb_directional_base"]
     assert "96 x 15-minute" in horizons["packb_directional_base"]
     assert "12 hours" in horizons["auxiliary_catboost_execution_ev_and_timing"]
-    assert "actual_stage_label_end" in decision["train_authorization"]
+    assert (
+        "actual_stage_label_end < validation_start" in decision["train_authorization"]
+    )
+    assert decision["post_cutoff_recovery_exception"] is False
+    assert (
+        "actual Pack-B label resolution timestamp <"
+        in decision["feature_selection_hpo_authorization"]
+    )
+    assert "comparator-only" in decision["historical_packb_state_policy"]
+    assert "reject missing shards" in decision["label_shard_authority"]
 
 
 def test_timing_failure_retains_enter_now_without_blocking_e1() -> None:

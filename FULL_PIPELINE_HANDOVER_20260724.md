@@ -110,16 +110,36 @@ run's shared HPO parameter block.
 
 The saved seven fold models do not match the locked DEC-09 four-fold calendar,
 and their manifests do not prove the required train cutoffs and row-level label
-resolution. They may be rescored only as a historical comparator. Canonical
-R3 evidence requires fresh April, May, June, and July 1–11 half-open OOF folds
-using the frozen 55/37 feature/parameter contracts and recovered exact AE/GMM
-state. For this Pack-B target:
+resolution. They may be rescored only as a historical comparator.
+
+The recovered Pack-B fitted-state contracts are also historical-only:
+
+- feature selection and HPO both used calibration fold
+  `2026-06-30_2026-07-30`;
+- the recovered AE/GMM state used cycle reference fold
+  `2026-06-26_2026-07-26`, ending `2026-06-25 23:00 UTC`;
+- DEC-09 requires every feature-selection/HPO label to resolve strictly before
+  `2026-03-01 00:00 UTC`.
+
+Consequently, the 55-long/37-short feature lists, promoted parameters, and
+recovered AE/GMM state cannot be frozen into canonical April–July OOF. They
+remain useful comparator evidence only. Canonical R3 requires a fresh,
+side-local pre-March reference process that independently fits AE/GMM state,
+feature selection, and HPO for long and short, freezes those artifacts, and
+then produces the April, May, June, and July 1–11 half-open OOF folds. For this
+Pack-B target:
 
 ```text
 decision_timestamp = signal_timestamp + 1 hour
 base_label_end = decision_timestamp + 24 hours
 eligible_train_signal < validation_start - 25 hours
 ```
+
+Use the label manifest or causal path audit as the authoritative shard
+inventory. Do not glob every Parquet file in the labels directory: the current
+directory contains an overlapping stale `train_global_short_7.parquet` file
+that is absent from the 38-file causal audit. Canonical preflight must reject
+unlisted or missing shards and duplicate candidate IDs before fitting.
 
 The downstream path, auxiliary, execution-EV, and timing targets remain
 12-hour contracts. Every manifest must bind the horizon of its own target
@@ -1898,7 +1918,7 @@ The current implementation audit is:
 
 | Component | Side-local now? | Roadmap action |
 |---|---:|---|
-| Directional/alpha base | Yes | Preserve the current Pack-B independent long/short contracts |
+| Directional/alpha base | Historical model is per-side, but its FS/HPO/AE provenance is post-cutoff/pooled | Preserve as comparator; rebuild pre-March side-local AE, FS, HPO, models, and OOF |
 | Residual alpha experts | Yes | Refit each expert on its matching side-local base OOF stream |
 | CatBoost archetypes | No | Replace with independent long/short feature selection, geometry sweep, model HPO, and class-balance mini-HPO |
 | Five auxiliary heads | Partial | Move global pre-screening inside each side; require ten final models and ten OOF streams |

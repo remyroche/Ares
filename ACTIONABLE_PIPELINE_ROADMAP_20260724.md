@@ -80,7 +80,7 @@ A side column in a shared fitted model does not meet this requirement.
 
 | Component | Status | Roadmap treatment |
 |---|---|---|
-| Pack-B directional base | Available, per-side manifest | Preserve; audit serialized side-local provenance |
+| Pack-B directional base | Available, per-side manifest | Historical comparator only; rebuild pre-March AE/FS/HPO state before canonical OOF |
 | Shared-store base/top-40 | Available | Benchmark/research source only; invalid as final population |
 | Residual alpha | Available, `canonical: false` | Preserve benchmark; audit/refit against matching Pack-B side |
 | Path labels | Materialized | Verify causal/schema/hash contract |
@@ -489,8 +489,13 @@ Hard requirements already fixed and not subject to tuning:
   generic “current path horizon” is not sufficient provenance.
 - With the one-hour decision delay, the locked Pack-B outer-fold signal purge
   is 25 hours: `signal_timestamp < validation_start - 25 hours`, equivalently
-  `decision_timestamp <= validation_start - 24 hours`. The final accepted
-  Pack-B training label must resolve no later than the validation boundary.
+  `decision_timestamp < validation_start - 24 hours`. The final accepted
+  Pack-B training label must resolve strictly before the validation boundary.
+- Pack-B AE/GMM fitting, feature selection, and HPO must use only labels whose
+  actual 24-hour resolution timestamp is strictly before
+  `2026-03-01 00:00 UTC`. The recovered June/July state, 55/37 feature
+  contracts, and promoted parameters are comparator inputs, not canonical
+  fitted state.
 - Exact join key is `__ts__, __symbol__, side_name`.
 - OOF assessment cannot use a final-refit prediction.
 - Costs are recorded once.
@@ -582,7 +587,8 @@ Tasks:
   - absence of abandoned transforms, memberships, and weighting fields;
   - exact one-time cost application;
   - strict OOF provenance and no outcome inputs;
-  - frozen AE/GMM input order and serialized-state reuse;
+  - authorized pre-March side-local AE/GMM input order and serialized-state
+    reuse within each side's outer folds;
   - purge and embargo across overlapping label paths.
 
 Deliverables:
@@ -621,10 +627,22 @@ Tasks:
   residual lineage.
 - Treat the seven saved monthly Pack-B fold models as a historical comparator
   only. Their windows and train-cutoff evidence do not match DEC-09.
-- Regenerate four canonical Pack-B OOF folds using the locked half-open April,
-  May, June, and July 1–11 signal windows. Freeze the recovered exact AE/GMM
-  state and promoted 55-feature long / 37-feature short contracts; perform no
-  new FS or HPO in this recovery run.
+- Preserve the recovered exact AE/GMM state, promoted 55-feature long /
+  37-feature short contracts, and parameters only as historical comparator
+  evidence. Their June/July selection/reference windows cross the locked
+  pre-March resolution cutoff and are ineligible for canonical OOF.
+- Build a fresh pre-March authorization ledger. Fit AE/GMM state independently
+  by side on the authorized pre-March reference interval, then run feature
+  selection and HPO independently for long and short using only labels whose
+  actual 24-hour resolution is strictly before `2026-03-01 00:00 UTC`.
+- Freeze each side's newly selected feature contract, parameters, and AE/GMM
+  state before scoring any outer fold. Regenerate four canonical Pack-B OOF
+  folds using the locked half-open April, May, June, and July 1–11 signal
+  windows without consulting outer-fold outcomes.
+- Resolve the canonical label shard list from the label manifest or 38-file
+  causal audit. Reject missing or extra Parquet shards, including the stale
+  overlapping `train_global_short_7.parquet`, and reject duplicate candidate
+  IDs before any fitting.
 - Stream folds, sides, and bounded symbol batches sequentially. Do not persist
   raw or AE-transformed fold caches. Preflight and checkpoint RAM, process RSS,
   and free disk with JSONL telemetry.
@@ -639,10 +657,17 @@ Deliverables:
 - Four-fold DEC-09 Pack-B OOF ledger with row-level signal, decision,
   24-hour label-resolution, fold, cutoff, side-model, feature-contract,
   parameter, AE/GMM-state, source, and score hashes
+- Pre-March per-side AE/GMM, feature-selection, and HPO authorization ledger,
+  including resolved-label keys, reference/inner folds, search breadth, and
+  immutable artifact hashes
+- Authoritative label-shard inventory and duplicate-key audit
 
 Gate R3:
 
 - No fitted selector, parameter, model, prior, calibrator, or OOF outcome crosses sides.
+- Every AE/GMM, selector, and HPO input is authorized by an actual label
+  resolution strictly before the DEC-09 pre-March cutoff.
+- No unlisted label shard or duplicate candidate ID enters the run.
 - Top-40 masks reproduce exactly from the corresponding source OOF ledger.
 - Current shared-store top-40 is absent from canonical downstream manifests.
 - Residual alpha meets locked DEC-02 per side.
@@ -1118,7 +1143,7 @@ Stop the affected run immediately for:
 - failed causal path invariant, purge, or embargo;
 - outcome/support labels in inference inputs;
 - same-fold upstream predictions or final-refit predictions in OOF evidence;
-- AE/GMM refit outside the frozen cycle contract;
+- AE/GMM refit outside the authorized pre-March side-local cycle contract;
 - shared fitted selector/model/calibrator before the portfolio layer;
 - class-order drift or CatBoost collapse;
 - unexplained handoff attrition;
@@ -1156,7 +1181,7 @@ Track this table in the repository and update it only with linked evidence.
 | R0 Migration | IN PROGRESS | Data/provenance | No comparison baseline; six active Pack-B lineage paths missing | `docs/pipeline_roadmap/20260724/r0/`; `r0_missing_path_triage.md` |  |
 | R1 Source durability | IN PROGRESS | Roadmap + Data/provenance | Remote recovery requires explicit publication authorization | `config/pipeline_stage_manifest_repository_20260724.json`; schema v1 |  |
 | R2 Contracts | IN PROGRESS | Validation | P0 artifact-level hash reconciliation and stage-specific horizon reconciliation pending | `docs/pipeline_roadmap/20260724/r2_test_log.md`: 138 focused + 149 broader pass; DEC-01…10 locked |  |
-| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Saved seven-fold Pack-B models are historical-only; canonical four-fold regeneration required | Exact recovered AE/GMM state `6521f981…`; resource guards committed in `ac6a116305` |  |
+| R3 Alpha/top-40 | IN PROGRESS | Alpha + Data/provenance | Existing seven-fold models and June/July AE/FS/HPO state are historical-only; fresh pre-March side-local AE/FS/HPO plus four-fold OOF required | Leakage blocker proven from Pack-B and AE manifests; stale unlisted short shard identified; resource guards committed in `ac6a116305` |  |
 | C1 CatBoost long | BLOCKED BY R3 |  |  |  |  |
 | C2 CatBoost short | BLOCKED BY R3 |  |  |  |  |
 | A1 Auxiliary long | BLOCKED BY R3 |  |  |  |  |
@@ -1178,10 +1203,12 @@ Execute in this order:
 2. Complete R0 checksums, read-only loads, disk/environment, and process audit.
 3. Make the dirty/untracked source recoverable under R1.
 4. Run R2 deterministic and broader contract suites.
-5. Finish the four-fold DEC-09 Pack-B regeneration runner and smoke it under
-   the fail-closed resource guard.
-6. Run the canonical Pack-B OOF regeneration sequentially only if the measured
-   memory preflight is safe, then derive top-40 per timestamp × side.
+5. Implement and smoke a fail-closed pre-March Pack-B authorization phase:
+   authoritative label-shard inventory, duplicate-key rejection, side-local
+   AE/GMM fitting, feature selection, and HPO.
+6. Run the four canonical Pack-B OOF folds sequentially only after the
+   pre-March artifact ledger and measured memory/disk envelope pass, then
+   derive top-40 per timestamp × side.
 7. Decide whether the existing alpha execution OOF can prove canonical lineage;
    regenerate it if not.
 8. Start C1/C2 and A1/A2 in parallel using new output directories.

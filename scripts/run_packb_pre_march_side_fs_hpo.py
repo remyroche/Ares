@@ -175,6 +175,61 @@ def _canonical_label_files(
         raise PackBSideFSHPORunnerError(
             "unlisted label shards are forbidden: " + ", ".join(extras[:8])
         )
+    audit_path = Path(
+        str(population_manifest.get("input", {}).get("causal_audit_path") or "")
+    )
+    if not audit_path.is_absolute():
+        audit_path = ROOT / audit_path
+    expected_audit_hash = str(
+        population_manifest.get("input", {}).get("causal_audit_sha256") or ""
+    )
+    if (
+        not audit_path.is_file()
+        or stage_manifest.sha256_file(audit_path) != expected_audit_hash
+    ):
+        raise PackBSideFSHPORunnerError(
+            "bound causal label audit is missing or has changed"
+        )
+    audit = _json(audit_path)
+    if audit.get("status") != "PASS" or audit.get("failures"):
+        raise PackBSideFSHPORunnerError("bound causal label audit did not pass")
+    audited_rows = {
+        str(item["file"]): int(item["rows"])
+        for item in audit.get("per_file", [])
+        if isinstance(item, Mapping) and item.get("file") is not None
+    }
+    if set(audited_rows) != set(map(str, names)):
+        raise PackBSideFSHPORunnerError(
+            "causal audit and canonical label inventory disagree"
+        )
+    try:
+        import pyarrow.parquet as pq
+
+        for path in paths:
+            parquet = pq.ParquetFile(path)
+            if int(parquet.metadata.num_rows) != audited_rows[path.name]:
+                raise PackBSideFSHPORunnerError(
+                    f"label shard row count changed since audit: {path.name}"
+                )
+            missing_columns = sorted(
+                {
+                    *LABEL_IDENTITY_COLUMNS,
+                    TARGET_COLUMN,
+                    WEIGHT_COLUMN,
+                    ECONOMIC_COLUMN,
+                }
+                - set(parquet.schema.names)
+            )
+            if missing_columns:
+                raise PackBSideFSHPORunnerError(
+                    f"label shard {path.name} lacks columns: {missing_columns}"
+                )
+    except PackBSideFSHPORunnerError:
+        raise
+    except Exception as exc:
+        raise PackBSideFSHPORunnerError(
+            f"cannot validate canonical label metadata: {exc}"
+        ) from exc
     return paths
 
 

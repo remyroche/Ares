@@ -166,3 +166,42 @@ def test_feature_provenance_binds_feature_and_loader_contract() -> None:
     assert all(
         len(value) == 64 for entry in provenance.values() for value in entry.values()
     )
+
+
+def test_canonical_label_files_require_bound_audit_and_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    labels_dir = tmp_path / "labels"
+    labels_dir.mkdir()
+    labels = _labels()
+    shard = labels_dir / "train_global_long_5_2025_11.parquet"
+    labels.to_parquet(shard, index=False)
+    audit_path = tmp_path / "audit.json"
+    audit = {
+        "status": "PASS",
+        "failures": {},
+        "per_file": [{"file": shard.name, "rows": len(labels)}],
+    }
+    audit_path.write_text(json.dumps(audit, sort_keys=True) + "\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    manifest = {
+        "input": {
+            "canonical_shards": [shard.name],
+            "causal_audit_path": str(audit_path),
+            "causal_audit_sha256": runner.stage_manifest.sha256_file(audit_path),
+        },
+        "population_preflight": {"label_inventory": {"explicitly_excluded_shards": []}},
+    }
+
+    assert runner._canonical_label_files(labels_dir, manifest) == (shard,)
+
+    changed = dict(audit)
+    changed["per_file"] = [{"file": shard.name, "rows": len(labels) + 1}]
+    audit_path.write_text(json.dumps(changed, sort_keys=True) + "\n", encoding="utf-8")
+    manifest["input"]["causal_audit_sha256"] = runner.stage_manifest.sha256_file(
+        audit_path
+    )
+    with pytest.raises(
+        runner.PackBSideFSHPORunnerError, match="row count changed since audit"
+    ):
+        runner._canonical_label_files(labels_dir, manifest)

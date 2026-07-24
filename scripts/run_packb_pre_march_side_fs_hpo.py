@@ -29,6 +29,7 @@ import hashlib
 import json
 import math
 import os
+import pickle
 import subprocess
 import sys
 import uuid
@@ -44,6 +45,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from extreme_price_movements import packb_side_stage_manifest as stage_manifest
+from extreme_price_movements.features_gmm_ae import (
+    AE_GMM_LATENT_DIM,
+    ae_gmm_input_feature_order_hash,
+    ae_gmm_learned_transform_hash,
+    transform_ae_gmm_features,
+)
 from extreme_price_movements.packb_side_local_fs_hpo_stage import (
     FeatureSelectionInput,
     HPOFoldInput,
@@ -340,6 +347,139 @@ class ExactLabelLoader:
 
     def economic(self, ledger: pd.DataFrame) -> np.ndarray:
         return self.load(ledger)[ECONOMIC_COLUMN].to_numpy(dtype=np.float64, copy=True)
+
+
+def _active_ae_gmm_columns(state: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the non-temporal generated representation contract."""
+
+    components = int(state.get("gmm_n_components", 0) or 0)
+    if components < 1:
+        raise PackBSideFSHPORunnerError("AE/GMM state has no fitted components")
+    return tuple(
+        [
+            *(f"dae_b16_{index:02d}" for index in range(AE_GMM_LATENT_DIM)),
+            *(f"gmm_cluster_posterior_{index}" for index in range(components)),
+            *(f"gmm_dist_center_{index}" for index in range(components)),
+            *(f"gmm_mahal_{index}" for index in range(components)),
+            "gmm_cluster_id",
+            "gmm_posterior_max",
+            "gmm_posterior_margin",
+            "gmm_unknown_probability",
+            "gmm_ood_score",
+            "gmm_entropy",
+            "cluster_entropy_norm",
+            "mahalanobis_distance",
+            "expected_mahalanobis",
+            "dae_reconstruction_error",
+            "dae_reconstruction_error_zscore",
+        ]
+    )
+
+
+def _load_side_ae_state(
+    state_path: Path,
+    *,
+    expected_side: str,
+    expected_sha256: str,
+    raw_features: Sequence[str],
+) -> dict[str, Any]:
+    if (
+        not state_path.is_file()
+        or stage_manifest.sha256_file(state_path) != expected_sha256
+    ):
+        raise PackBSideFSHPORunnerError(
+            f"{expected_side} AE/GMM state is missing or changed"
+        )
+    try:
+        with state_path.open("rb") as handle:
+            state = pickle.load(handle)
+    except Exception as exc:
+        raise PackBSideFSHPORunnerError(
+            f"cannot load {expected_side} AE/GMM state: {exc}"
+        ) from exc
+    if (
+        not isinstance(state, dict)
+        or not bool(state.get("enabled", False))
+        or state.get("packb_side_scope") != expected_side
+        or state.get("representation_selection_outcome_free") is not True
+        or state.get("temporal_feature_contract") != "row_independent_v1"
+    ):
+        raise PackBSideFSHPORunnerError(
+            f"{expected_side} AE/GMM state violates its outcome-free side contract"
+        )
+    feature_columns = tuple(map(str, state.get("feature_columns", [])))
+    if feature_columns != tuple(map(str, raw_features)):
+        raise PackBSideFSHPORunnerError(
+            f"{expected_side} AE/GMM input features differ from the raw contract"
+        )
+    expected_input_hash = ae_gmm_input_feature_order_hash(feature_columns)
+    if state.get("input_feature_order_hash") != expected_input_hash:
+        raise PackBSideFSHPORunnerError(
+            f"{expected_side} AE/GMM input-order hash is invalid"
+        )
+    if state.get("cycle_state_hash") != ae_gmm_learned_transform_hash(state):
+        raise PackBSideFSHPORunnerError(
+            f"{expected_side} AE/GMM learned-transform hash is invalid"
+        )
+    _active_ae_gmm_columns(state)
+    return state
+
+
+class SideRepresentationFeatureLoader:
+    """Append frozen side-local AE/GMM outputs to exact raw point features."""
+
+    def __init__(
+        self,
+        *,
+        raw_loader: Any,
+        raw_features: Sequence[str],
+        state: Mapping[str, Any],
+        generated_features: Sequence[str],
+    ) -> None:
+        self.raw_loader = raw_loader
+        self.raw_features = tuple(map(str, raw_features))
+        self.raw_set = set(self.raw_features)
+        self.state = dict(state)
+        self.generated_features = tuple(map(str, generated_features))
+        self.generated_set = set(self.generated_features)
+        if self.raw_set.intersection(self.generated_set):
+            raise PackBSideFSHPORunnerError(
+                "raw and generated feature contracts overlap"
+            )
+
+    def __call__(
+        self, ledger: pd.DataFrame, requested_features: Sequence[str]
+    ) -> pd.DataFrame:
+        requested = tuple(map(str, requested_features))
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(
+                feature not in self.raw_set and feature not in self.generated_set
+                for feature in requested
+            )
+        ):
+            raise PackBSideFSHPORunnerError(
+                "representation loader received an invalid feature subset"
+            )
+        requested_generated = [
+            feature for feature in requested if feature in self.generated_set
+        ]
+        raw_request = (
+            self.raw_features
+            if requested_generated
+            else tuple(feature for feature in requested if feature in self.raw_set)
+        )
+        raw = self.raw_loader(ledger, list(raw_request))
+        if not requested_generated:
+            return raw.loc[:, list(requested)].reset_index(drop=True)
+        generated = transform_ae_gmm_features(
+            raw.loc[:, list(self.raw_features)],
+            self.state,
+            index=raw.index,
+        ).loc[:, requested_generated]
+        joined = pd.concat([raw, generated], axis=1, copy=False)
+        return joined.loc[:, list(requested)].reset_index(drop=True)
 
 
 def _weighted_mean(values: np.ndarray, weights: np.ndarray) -> float:
@@ -1031,6 +1171,9 @@ def _load_loader_contract(
 def _feature_provenance(
     contract: Mapping[str, Any],
     bundle: LoaderEvidenceBundle,
+    *,
+    state: Mapping[str, Any] | None = None,
+    generated_features: Sequence[str] = (),
 ) -> dict[str, dict[str, str]]:
     result: dict[str, dict[str, str]] = {}
     for feature in contract["feature_columns"]:
@@ -1064,6 +1207,46 @@ def _feature_provenance(
                 }
             ),
         }
+    if generated_features:
+        if state is None:
+            raise PackBSideFSHPORunnerError(
+                "generated features require an AE/GMM state"
+            )
+        state_hash = str(state["cycle_state_hash"])
+        transform_module_sha256 = stage_manifest.sha256_file(
+            ROOT / "extreme_price_movements/features_gmm_ae.py"
+        )
+        for feature in generated_features:
+            result[str(feature)] = {
+                "causal_definition_sha256": _canonical_sha256(
+                    {
+                        "feature": feature,
+                        "transform": (
+                            "frozen_side_local_outcome_free_ae_gmm_row_independent_v1"
+                        ),
+                        "cycle_state_hash": state_hash,
+                        "transform_module_sha256": transform_module_sha256,
+                    }
+                ),
+                "inference_availability_sha256": _canonical_sha256(
+                    {
+                        "feature": feature,
+                        "raw_input_feature_order_hash": state[
+                            "input_feature_order_hash"
+                        ],
+                        "cycle_state_hash": state_hash,
+                        "inference_transform": "transform_ae_gmm_features",
+                    }
+                ),
+                "units_contract_sha256": _canonical_sha256(
+                    {
+                        "feature": feature,
+                        "training_dtype": "float32",
+                        "units": "frozen_ae_gmm_representation_native_units",
+                        "temporal_feature_contract": "row_independent_v1",
+                    }
+                ),
+            }
     return result
 
 
@@ -1175,7 +1358,7 @@ def run(
             contract, bundle, extra_hashes = _load_loader_contract(
                 loader_root, source_revision=ae_revision
             )
-            feature_loader = make_packb_static_feature_loader(
+            raw_feature_loader = make_packb_static_feature_loader(
                 feature_store_dir=feature_store,
                 feature_contract=contract,
                 max_rows_per_batch=2_048,
@@ -1183,6 +1366,35 @@ def run(
                 max_output_bytes=512 * 1024**2,
                 evidence_bundle=bundle,
                 resource_guard=guard,
+            )
+            ae_manifest_path = (
+                Path(ae_root) / side / "ae_gmm" / "side_stage_manifest.json"
+            )
+            ae_manifest = stage_manifest.validate_side_stage_manifest(
+                ae_manifest_path,
+                expected_side=side,
+                expected_stage="ae_gmm",
+                expected_source_hashes=source_hashes,
+                expected_fixed_calendar_sha256=calendar_sha256,
+            )
+            state_path = (
+                Path(ae_root) / side / "ae_gmm" / str(ae_manifest["artifact"]["path"])
+            )
+            state = _load_side_ae_state(
+                state_path,
+                expected_side=side,
+                expected_sha256=str(ae_manifest["artifact"]["sha256"]),
+                raw_features=contract["feature_columns"],
+            )
+            generated_features = _active_ae_gmm_columns(state)
+            candidate_features = tuple(
+                [*contract["feature_columns"], *generated_features]
+            )
+            feature_loader = SideRepresentationFeatureLoader(
+                raw_loader=raw_feature_loader,
+                raw_features=contract["feature_columns"],
+                state=state,
+                generated_features=generated_features,
             )
             label_loader = ExactLabelLoader(label_files, resource_guard=guard)
             fs_train, fs_train_path = _cohort(
@@ -1208,8 +1420,13 @@ def run(
                 feature_loader=feature_loader,
                 target_loader=label_loader.target,
                 weight_loader=label_loader.weights,
-                candidate_features=list(contract["feature_columns"]),
-                feature_provenance=_feature_provenance(contract, bundle),
+                candidate_features=list(candidate_features),
+                feature_provenance=_feature_provenance(
+                    contract,
+                    bundle,
+                    state=state,
+                    generated_features=generated_features,
+                ),
                 feature_selection_callback=SideFeatureSelector(
                     side=side,
                     labels=label_loader,
@@ -1233,7 +1450,17 @@ def run(
                         Path(ae_root) / "summary.json"
                     ),
                     "side_ae_manifest_sha256": stage_manifest.sha256_file(
-                        Path(ae_root) / side / "ae_gmm" / "side_stage_manifest.json"
+                        ae_manifest_path
+                    ),
+                    "side_ae_state_sha256": stage_manifest.sha256_file(state_path),
+                    "side_ae_transform_contract_sha256": _canonical_sha256(
+                        {
+                            "cycle_state_hash": state["cycle_state_hash"],
+                            "generated_features": list(generated_features),
+                            "temporal_feature_contract": (
+                                state["temporal_feature_contract"]
+                            ),
+                        }
                     ),
                 },
                 fs_train_max_rows=60_000,
@@ -1244,7 +1471,8 @@ def run(
             )
             reports[side] = report
             del report, trials, folds, fs_valid, fs_train
-            del label_loader, feature_loader, bundle, contract
+            del label_loader, feature_loader, raw_feature_loader
+            del state, bundle, contract
             _release_memory()
             guard.checkpoint(f"packb_side_fs_hpo:{side}:released")
         summary = {
@@ -1270,6 +1498,11 @@ def run(
             "search_contract": {
                 "side_local": True,
                 "shared_selector_or_study": False,
+                "representation": (
+                    "raw causal point features plus matching frozen "
+                    "side-local outcome-free AE/GMM outputs"
+                ),
+                "ae_gmm_temporal_contract": "row_independent_v1",
                 "feature_selection_validation": "2025-11",
                 "hpo_validation_months": ["2025-12", "2026-01", "2026-02"],
                 "explicit_trials_per_side": int(hpo_trials),

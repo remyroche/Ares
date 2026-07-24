@@ -209,6 +209,95 @@ def test_feature_provenance_binds_feature_and_loader_contract() -> None:
     )
 
 
+def test_representation_loader_materializes_frozen_side_outputs_only_when_needed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def raw_loader(_ledger: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+        calls.append(columns)
+        values = {
+            "raw_a": np.asarray([1.0, 2.0], dtype=np.float32),
+            "raw_b": np.asarray([3.0, 4.0], dtype=np.float32),
+        }
+        return pd.DataFrame({column: values[column] for column in columns})
+
+    def transform(
+        raw: pd.DataFrame, _state: dict[str, object], *, index: pd.Index
+    ) -> pd.DataFrame:
+        assert list(raw.columns) == ["raw_a", "raw_b"]
+        return pd.DataFrame(
+            {
+                "dae_b16_00": [0.1, 0.2],
+                "gmm_ood_score": [0.3, 0.4],
+            },
+            index=index,
+        )
+
+    monkeypatch.setattr(runner, "transform_ae_gmm_features", transform)
+    loader = runner.SideRepresentationFeatureLoader(
+        raw_loader=raw_loader,
+        raw_features=["raw_a", "raw_b"],
+        state={"enabled": True},
+        generated_features=["dae_b16_00", "gmm_ood_score"],
+    )
+    ledger = pd.DataFrame({"candidate_id": ["a", "b"]})
+
+    represented = loader(ledger, ["raw_b", "gmm_ood_score"])
+    raw_only = loader(ledger, ["raw_a"])
+
+    assert represented.to_dict("list") == {
+        "raw_b": [3.0, 4.0],
+        "gmm_ood_score": [0.3, 0.4],
+    }
+    assert raw_only.to_dict("list") == {"raw_a": [1.0, 2.0]}
+    assert calls == [["raw_a", "raw_b"], ["raw_a"]]
+
+
+def test_active_ae_contract_excludes_row_order_temporal_outputs() -> None:
+    columns = runner._active_ae_gmm_columns({"gmm_n_components": 3})
+
+    assert len(columns) == runner.AE_GMM_LATENT_DIM + 3 * 3 + 11
+    assert "gmm_cluster_posterior_2" in columns
+    assert "gmm_posterior_delta_1" not in columns
+    assert "dae_reconstruction_error_delta_1" not in columns
+
+
+def test_generated_feature_provenance_binds_learned_state() -> None:
+    contract = {
+        "feature_columns": ["raw_a"],
+        "generator_registry_sha256": "a" * 64,
+        "raw_allowlist_sha256": "b" * 64,
+        "selection_provenance": "causal",
+        "source_schema_sha256": "c" * 64,
+        "store_scan_manifest_sha256": "d" * 64,
+        "feature_contract_sha256": "e" * 64,
+    }
+    bundle = LoaderEvidenceBundle(
+        raw_universe_sha256="f" * 64,
+        coverage_profile_sha256="0" * 64,
+        feature_contract_sha256="e" * 64,
+        loader_contract_sha256="1" * 64,
+        loader_module_sha256="2" * 64,
+        source_schema_sha256="c" * 64,
+        source_revision="3" * 40,
+    )
+    state = {
+        "cycle_state_hash": "4" * 64,
+        "input_feature_order_hash": "5" * 64,
+    }
+
+    provenance = runner._feature_provenance(
+        contract,
+        bundle,
+        state=state,
+        generated_features=["dae_b16_00"],
+    )
+
+    assert set(provenance) == {"raw_a", "dae_b16_00"}
+    assert all(len(value) == 64 for value in provenance["dae_b16_00"].values())
+
+
 def test_canonical_label_files_require_bound_audit_and_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

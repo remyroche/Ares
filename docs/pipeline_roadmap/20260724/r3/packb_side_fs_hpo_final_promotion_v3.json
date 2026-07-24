@@ -1,0 +1,54 @@
+{
+  "schema": "packb_side_fs_hpo_final_promotion_v3",
+  "status": "FROZEN_31_8_AFTER_PAIRED_OUTER_OOF_GATE",
+  "decision": "RETAIN_FRESH31_8_HIGHER_PAIRED_METRICS",
+  "fixed_calendar_sha256": "47a20a372d14490878006dddc942bda60eea2a62b6a7b072ae6a2afa92ceea19",
+  "outer_population_manifest_sha256": "7644c610d5f0a59557c297c43fb153c5d2959b1e0358076cf5384d0a23a845fd",
+  "selection_rule": "The user-approved 55/37 feature-name timing exception is the default only unless the fresh 31/8 route is higher on the exact paired outer-OOF aggregate objective, weighted rank IC, top-10 net-return lift, and relative RMSE gain.",
+  "historical_exception_honored": true,
+  "historical_post_cutoff_hpo_parameters_reused": false,
+  "final_refit_predictions_used_in_gate": false,
+  "canonical": {
+    "promotion_contract": "docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v1.json",
+    "promotion_contract_sha256": "37b9226c3fb0706dba5c39d5cc04a25c5b4a0351f69eb61d8c8827e472cf4b3f",
+    "outer_oof_root": "data_perp/artifacts/packb_side_local_outer_oof_20260724_v1_31_8",
+    "outer_oof_summary_sha256": "ebff737758a4e0db65592296476b3a02cfb574bc668c0e73a9038c564df9165f",
+    "outer_oof_predictions_sha256": "fda2e9463310b472a54eef6e1788de053fd9f5e6d5370d656d08312d42a90ae5",
+    "oof_rows": 744251,
+    "sides": {
+      "long": {
+        "feature_count": 31,
+        "selected_trial_id": "trial_141",
+        "paired_rows": 348527,
+        "paired_objective": 0.3290009429166019,
+        "paired_weighted_rank_ic": 0.18605125513517803,
+        "paired_top10_net_return_lift": 0.006473030817817721,
+        "paired_relative_rmse_gain": 0.02332911795553339
+      },
+      "short": {
+        "feature_count": 8,
+        "selected_trial_id": "trial_084",
+        "paired_rows": 395724,
+        "paired_objective": 0.3117720934665913,
+        "paired_weighted_rank_ic": 0.18783886456285626,
+        "paired_top10_net_return_lift": 0.005858785496522054,
+        "paired_relative_rmse_gain": 0.021746896834126016
+      }
+    }
+  },
+  "historical_comparator": {
+    "promotion_contract": "docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_promotion_v2.json",
+    "outer_oof_root": "data_perp/artifacts/packb_side_local_outer_oof_20260724_v2_hist55_37",
+    "outer_oof_summary_sha256": "c20b6591884f6b287b60a0b5dbbca4016b5810c593bd3c6aaf3f0396782934d2",
+    "outer_oof_predictions_sha256": "4ff61d5817bfacfe3029b16e96c6bc6c1cc9025ed3e26397b0a0781df6693376",
+    "oof_rows": 793933,
+    "disposition": "COMPARISON_EVIDENCE_NOT_PROMOTED",
+    "reason": "55/37 loses all four paired aggregate gate metrics on both sides and loses the aggregate objective in three of four outer folds on each side. Its narrow July objective wins do not offset the aggregate losses."
+  },
+  "paired_gate": {
+    "path": "docs/pipeline_roadmap/20260724/r3/packb_55_37_vs_31_8_outer_oof_gate_v1.json",
+    "sha256": "e0353a3063524299c0cd819bfdf80cecb347970b3f0a9e3fd802df78a3f6fa08",
+    "comparison_contract": "Exact candidate-ID intersection with exact side, timestamp, symbol, fold, target, weight, and cost-aware net-return equality; ranking is recomputed within UTC timestamp and side."
+  },
+  "next_gate": "Materialize the side-local top-40 handoff from the canonical 31/8 OOF ledger, reproduce its rank and mask exactly, and refit the long and short residual-alpha experts on their matching side streams."
+}

@@ -1478,6 +1478,43 @@ Gate:
   training population.
 - The residual-alpha stage improves each matching side's base stream OOS.
 
+Execution status on 2026-07-24:
+
+- The approved feature-name timing exception was applied to the historical
+  55-long/37-short lists. Their post-cutoff HPO parameters were not reused:
+  both sides received fresh 150-trial HPO on the fixed December-February
+  calendar, followed by full April-July strict outer OOF regeneration.
+- The historical route and fresh 31-long/8-short route were compared on exact
+  candidate-ID intersections with identical side, timestamp, symbol, fold,
+  target, sample weight, and cost-aware net-return labels. Final-refit
+  predictions were excluded.
+- The canonical route is **31 long / 8 short**. On 348,527 paired long rows it
+  beats 55 features on objective (`0.329001` versus `0.229413`), weighted rank
+  IC (`0.186051` versus `0.138630`), top-10 net-return lift (`0.006473` versus
+  `0.004120`), and relative RMSE gain (`0.023329` versus `0.015353`). On
+  395,724 paired short rows it beats 37 features on the same four metrics:
+  `0.311772` versus `0.195566`, `0.187839` versus `0.125387`, `0.005859`
+  versus `0.003187`, and `0.021747` versus `0.015739`.
+- The 55/37 route wins the July objective narrowly on both sides but loses the
+  aggregate objective in the other three folds and loses every aggregate
+  promotion metric. It remains reproducible comparison evidence, not the
+  production route.
+- The authoritative final contract is
+  `docs/pipeline_roadmap/20260724/r3/packb_side_fs_hpo_final_promotion_v3.json`;
+  the reproducible paired gate is
+  `docs/pipeline_roadmap/20260724/r3/packb_55_37_vs_31_8_outer_oof_gate_v1.json`.
+
+Immediate next action:
+
+1. Source both side streams from
+   `data_perp/artifacts/packb_side_local_outer_oof_20260724_v1_31_8`.
+2. Recompute deterministic ranks within UTC timestamp and side and materialize
+   the independent long and short top-40 masks.
+3. Bind the handoff to the canonical prediction, feature-contract, HPO, AE/GMM,
+   calendar, population, and source hashes.
+4. Refit and validate the residual-alpha experts independently on those
+   matching side-local handoffs before starting CatBoost or auxiliary models.
+
 ### Phase 3: Finish the Seven-Class CatBoost Classifier
 
 Goal: produce leakage-safe OOF predictions and an inference-ready final model.

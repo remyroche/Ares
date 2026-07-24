@@ -291,6 +291,7 @@ def test_segment_filters_prune_not_abort_and_evidence_binds_callback_and_matrix(
         max_rows_per_batch=2,
         max_columns_per_read=1,
         evidence_bundle=bundle,
+        evidence_validation_path=tmp_path / "evidence" / "loader_evidence.json",
     )
     matrix = callback(ledger, list(contract.feature_columns))
     assert list(matrix.columns) == list(contract.feature_columns)
@@ -299,6 +300,9 @@ def test_segment_filters_prune_not_abort_and_evidence_binds_callback_and_matrix(
     assert callback.packb_static_feature_loader_evidence["loader_contract_sha256"] == (
         bundle.loader_contract_sha256
     )
+    assert callback.packb_static_feature_loader_evidence[
+        "evidence_validation_path"
+    ] == str(tmp_path / "evidence" / "loader_evidence.json")
     first_hash = callback.packb_static_feature_matrix_sha256(ledger, matrix)
     changed = matrix.copy()
     changed.iloc[0, 0] += np.float32(1.0)

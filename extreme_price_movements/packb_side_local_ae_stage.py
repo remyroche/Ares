@@ -323,13 +323,20 @@ def _validate_feature_loader_binding(
         raise PackBSideLocalAEStageError(
             "feature-loader source revision does not match the AE stage source revision"
         )
-    evidence_path = Path(str(evidence.get("evidence_path") or ""))
-    if not evidence_path.is_file():
+    published_evidence_path = Path(str(evidence.get("evidence_path") or ""))
+    validation_evidence_path = Path(
+        str(
+            evidence.get("evidence_validation_path")
+            or evidence.get("evidence_path")
+            or ""
+        )
+    )
+    if not validation_evidence_path.is_file():
         raise PackBSideLocalAEStageError(
             "feature-loader immutable evidence file does not exist"
         )
     try:
-        persisted = json.loads(evidence_path.read_text(encoding="utf-8"))
+        persisted = json.loads(validation_evidence_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise PackBSideLocalAEStageError(
             "feature-loader immutable evidence file is unreadable"
@@ -346,8 +353,10 @@ def _validate_feature_loader_binding(
     normalized.update(
         {
             "source_revision": loader_revision,
-            "evidence_path": str(evidence_path),
-            "evidence_file_sha256": stage_manifest.sha256_file(evidence_path),
+            "evidence_path": str(published_evidence_path),
+            "evidence_file_sha256": stage_manifest.sha256_file(
+                validation_evidence_path
+            ),
             "requested_feature_policy": str(
                 evidence.get("requested_feature_policy") or ""
             ),

@@ -312,6 +312,9 @@ def run(
                 max_columns_per_read=64,
                 max_output_bytes=512 * 1024**2,
                 evidence_bundle=bundle,
+                evidence_validation_path=(
+                    side_root / "loader_evidence" / "loader_evidence.json"
+                ),
                 resource_guard=guard,
             )
             report = fit_side_local_ae_gmm_stage(

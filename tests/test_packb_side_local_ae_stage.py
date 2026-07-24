@@ -96,6 +96,7 @@ def _run(
     loader=None,
     fake_state: dict[str, object] | None = None,
     published_output_dir: Path | None = None,
+    published_loader_evidence_path: Path | None = None,
 ) -> tuple[dict[str, object], dict[str, object], _RecordingGuard]:
     seen: dict[str, object] = {}
     guard = _RecordingGuard()
@@ -131,7 +132,8 @@ def _run(
     )
     active_loader.packb_static_feature_loader_evidence = {
         **loader_hashes,
-        "evidence_path": str(loader_evidence_path),
+        "evidence_path": str(published_loader_evidence_path or loader_evidence_path),
+        "evidence_validation_path": str(loader_evidence_path),
         "requested_feature_policy": "unique_ordered_subset_of_frozen_contract",
     }
     active_loader.packb_static_feature_contract = {
@@ -181,8 +183,10 @@ def test_published_paths_survive_atomic_directory_relocation(
         tmp_path,
         monkeypatch,
         published_output_dir=published,
+        published_loader_evidence_path=published / "loader_evidence.json",
     )
     (tmp_path / "out").rename(published)
+    (tmp_path / "loader_evidence.json").replace(published / "loader_evidence.json")
 
     for key in (
         "state_path",
@@ -201,6 +205,13 @@ def test_published_paths_survive_atomic_directory_relocation(
     candidate = metadata["candidate_stream_evidence"]["path"]
     assert Path(str(candidate)).is_file()
     assert str(candidate).startswith(str(published))
+    stage_config = json.loads(
+        Path(str(metadata["stage_config_path"])).read_text(encoding="utf-8")
+    )
+    assert stage_config["feature_loader_evidence"]["evidence_path"] == str(
+        published / "loader_evidence.json"
+    )
+    assert Path(stage_config["feature_loader_evidence"]["evidence_path"]).is_file()
 
 
 def test_fits_only_authorized_one_side_pre_nov_rows_and_emits_manifest(

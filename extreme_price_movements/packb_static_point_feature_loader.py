@@ -2166,6 +2166,7 @@ def make_packb_static_feature_loader(
     max_columns_per_read: int = DEFAULT_MAX_COLUMNS_PER_READ,
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
     evidence_bundle: LoaderEvidenceBundle | None = None,
+    evidence_validation_path: str | Path | None = None,
     resource_guard: TrainingResourceGuard | Any | None = None,
 ):
     """Return the strict callback shape required by ``packb_side_local_ae_stage``.
@@ -2236,6 +2237,11 @@ def make_packb_static_feature_loader(
         else None,
         "requested_feature_policy": "unique_ordered_subset_of_frozen_contract",
         "evidence_path": evidence_bundle.path if evidence_bundle is not None else None,
+        "evidence_validation_path": (
+            str(evidence_validation_path)
+            if evidence_validation_path is not None
+            else (evidence_bundle.path if evidence_bundle is not None else None)
+        ),
     }
     _loader.packb_static_feature_contract = contract.to_dict()
     _loader.packb_static_feature_matrix_sha256 = (

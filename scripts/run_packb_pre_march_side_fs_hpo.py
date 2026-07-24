@@ -359,14 +359,22 @@ class ExactLabelLoader:
             WEIGHT_COLUMN,
             ECONOMIC_COLUMN,
             NET_POSITIVE_COLUMN,
-            MAE_TO_SL_COLUMN,
-            TIMEOUT_COLUMN,
         ):
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
             if not np.isfinite(frame[column].to_numpy(dtype=np.float64)).all():
                 raise PackBSideFSHPORunnerError(
                     f"label column {column!r} contains non-finite values"
                 )
+        # These are optional selector context diagnostics, not training
+        # targets.  The recent winning selector's adapter used
+        # ``_safe_numeric(...).fillna(0.0)`` for both fields.
+        for column in (MAE_TO_SL_COLUMN, TIMEOUT_COLUMN):
+            numeric = pd.to_numeric(frame[column], errors="coerce")
+            if np.isinf(numeric.to_numpy(dtype=np.float64)).any():
+                raise PackBSideFSHPORunnerError(
+                    f"selector context column {column!r} contains infinite values"
+                )
+            frame[column] = numeric.fillna(0.0)
         if (frame[WEIGHT_COLUMN] < 0.0).any() or frame[WEIGHT_COLUMN].sum() <= 0.0:
             raise PackBSideFSHPORunnerError("label weights must be non-negative")
         archetype = frame[ARCHETYPE_COLUMN].astype("string").str.strip()

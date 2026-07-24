@@ -44,6 +44,7 @@ def _labels() -> pd.DataFrame:
 
 def test_exact_label_loader_preserves_order_and_all_exact_keys(tmp_path: Path) -> None:
     labels = _labels()
+    labels.loc[2, runner.MAE_TO_SL_COLUMN] = np.nan
     path = tmp_path / "labels.parquet"
     labels.to_parquet(path, index=False)
     ledger = labels.loc[
@@ -60,6 +61,10 @@ def test_exact_label_loader_preserves_order_and_all_exact_keys(tmp_path: Path) -
         0.5,
     ]
     assert loader.economic(ledger).tolist() == [0.005, -0.01]
+    assert loader.selection_context(ledger)[runner.MAE_TO_SL_COLUMN].tolist() == [
+        0.0,
+        0.8,
+    ]
 
 
 def test_exact_label_loader_rejects_candidate_identity_disagreement(

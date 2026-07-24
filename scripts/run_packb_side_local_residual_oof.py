@@ -266,7 +266,7 @@ def _active_features(
     minimum_finite_fraction: float,
 ) -> list[str]:
     selected: list[str] = []
-    for feature in candidates:
+    for feature in dict.fromkeys(map(str, candidates)):
         values = pd.to_numeric(matrix[feature], errors="coerce").to_numpy(np.float64)
         finite = np.isfinite(values)
         if finite.mean() < minimum_finite_fraction:

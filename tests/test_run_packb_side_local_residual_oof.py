@@ -8,6 +8,7 @@ from scripts.run_packb_side_local_residual_oof import (
     ECONOMIC_COLUMN,
     FOLDS,
     WEIGHT_COLUMN,
+    _active_features,
     _bounded_position_indices,
     _development_split,
     _metrics,
@@ -81,6 +82,23 @@ def test_bounded_positions_preserve_original_identity_after_sampler_reset() -> N
 
     assert positions.tolist() == [1, 0]
     assert frame.iloc[positions]["candidate_id"].tolist() == ["early", "late"]
+
+
+def test_active_features_deduplicates_anchor_names_present_in_raw_contract() -> None:
+    matrix = pd.DataFrame(
+        {
+            "hour_sin": np.arange(10, dtype=float),
+            "raw_feature": np.arange(10, dtype=float) * 2,
+        }
+    )
+
+    selected = _active_features(
+        matrix,
+        ["hour_sin", "raw_feature", "hour_sin"],
+        minimum_finite_fraction=0.95,
+    )
+
+    assert selected == ["hour_sin", "raw_feature"]
 
 
 def test_metrics_pass_economic_weight_and_net_return_in_correct_order() -> None:

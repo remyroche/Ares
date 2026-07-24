@@ -1246,6 +1246,16 @@ The `+` denotes parallel branches fed by the same side-local base stream, not a
 serial dependency. Each branch performs its own side-local FS, HPO, fitting,
 OOF scoring, and final refit as applicable.
 
+Architecture verification gate:
+
+- Reject any implementation or diagram in which residual alpha is an input to
+  CatBoost or to the five auxiliary heads.
+- Require the residual-alpha, CatBoost, and five auxiliary-head branches to
+  consume the same causally eligible side-local base handoff in parallel.
+- Join their strictly OOF/OOF-equivalent predictions only at the side-local
+  execution-EV handoff. Final-refit predictions are inference artifacts, not
+  admissible training inputs for execution EV or entry timing.
+
 Long and short rows must not share a fitted feature selector, HPO study, model,
 probability calibrator, EV curve, geometry search, admission estimate, or sizing
 model. A side indicator inside one shared model does not satisfy this contract.
@@ -1804,6 +1814,21 @@ price and remaining executable path under the frozen side-local geometry.
 Costs must use the same unit as execution EV, with fee, entry spread, and exit
 spread reconciled exactly once.
 
+The evaluation must keep the three competing effects separate rather than
+hiding them in one aggregate timing score:
+
+1. **Better-price benefit:** conditional executable net-EV improvement after a
+   fill, including the changed entry price and remaining path.
+2. **Adverse-movement risk:** probability and severity of adverse-first
+   movement after entry, plus post-entry MAE and stop-proximity diagnostics.
+3. **Lost-opportunity risk:** probability of no fill or expiry while enter-now
+   EV was positive, missed profitable trades, and regret versus entering now.
+
+Report all three by side, action, outer fold, week, month, liquidity regime,
+and volatility regime. A wait action is eligible only when its conservative
+OOF utility remains above enter-now after costs and uncertainty while
+missed-opportunity and adverse-risk limits both pass.
+
 The timing head may recommend an action of the form “wait up to N minutes for
 an adverse move of K ATR.” A separate deterministic target-price layer above
 the ML model must translate it into:
@@ -1819,6 +1844,20 @@ benefit after incremental costs and queue/fill assumptions, enforce liquidity
 and staleness limits, attach a fixed expiry, and emit the exact suggested price,
 expiry, fallback action, and reason codes. The target-price formula and gates
 are deterministic policy logic, not extra fitted ML outputs.
+
+For every accepted wait action, persist and replay:
+
+- decision price, decision-time ATR, selected `K`, raw target price, rounded
+  suggested limit, maximum wait, expiry timestamp, and fallback action;
+- calibrated fill probability, conditional better-price EV, adverse-first
+  probability/severity, missed-opportunity penalty, all cost components, and
+  final conservative action utility;
+- a reason-coded fallback to enter-now or skip when the suggested price becomes
+  stale, unfillable, uneconomic, crossed, or unsupported by current liquidity.
+
+Search `K`, maximum-wait, and fallback rules per side using inner training data
+only. The outer OOF row receives the frozen action and deterministic suggested
+price; it must never help choose its own price offset or expiry.
 
 Promotion is relative to the enter-now baseline on paired OOF rows. It requires
 positive risk-adjusted utility uplift, controlled missed-positive-EV and

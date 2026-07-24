@@ -18,8 +18,10 @@ alpha stack, then add three downstream sources of execution information:
 3. A direct-versus-residual execution-EV model that combines alpha, auxiliary
    predictions, and CatBoost outputs.
 
-The base model, top-30/top-40 handoffs, residual-alpha OOF predictions, path
-labels, execution-EV labels, and alpha-to-execution OOF stream exist.
+The strict side-local 31/8 base OOF stream, its canonical top-40 handoff,
+regenerated path labels, and the rebuilt residual-alpha OOF stream now exist.
+Historical execution-EV labels and alpha-to-execution streams also exist, but
+they are not yet canonical for this lineage.
 
 The downstream work is not complete:
 
@@ -31,17 +33,18 @@ The downstream work is not complete:
 - None of the new path/execution models has been promoted to replay, policy, or
   production inference.
 
-All training processes were stopped. No CatBoost, auxiliary-head, or related
-test process should be assumed to be running.
+The residual-alpha rebuild completed on 2026-07-24. No CatBoost,
+auxiliary-head, execution-EV, or timing training process should be assumed to
+be running unless a later checkpoint explicitly says otherwise.
 
 ### Critical Migration Warning
 
 A Git clone is not sufficient to resume this work.
 
-The worktree contains a large number of modified files and the new path,
-CatBoost, and execution-EV implementation is currently untracked by Git. The
-feature store, fitted models, OOF predictions, label artifacts, HPO studies, and
-checkpoints are also outside Git.
+The strict Pack-B base, top-40, path-label, and residual roadmap changes are
+committed. The feature store, fitted models, OOF predictions, label artifacts,
+HPO studies, and checkpoints remain outside Git and must still be transferred
+with the working tree.
 
 Transfer the complete working tree and the required `data_perp` paths listed in
 Section 7. Preserve the same absolute path if possible:
@@ -62,12 +65,12 @@ replacement inside binary joblib, pickle, SQLite, or Parquet files.
 |---|---|---|---|
 | Shared feature store | Materialized | `data_perp/features/20260711_070000` | Required input, not a model |
 | Frozen cycle AE/GMM | Materialized and used by base | Base run `_feature_selection_phase/ae_gmm_states` | Yes for its associated base cycle |
-| Base alpha model | Per-side Pack-B models trained with historical OOS windows and final refit | `s59_h5_signalclose_causal_stagec_packb_wf30_20260721_v1` | Preserve as historical evidence; regenerate locked DEC-09 OOF |
+| Base alpha model | Strict per-side Pack-B outer OOF plus separate final refits | `packb_side_local_outer_oof_20260724_v1_31_8` | Canonical downstream base stream |
 | Shared-store reference/handoff source | Trained, monthly OOS generated, final refit saved | `s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1` | Historical comparator and current materialized handoff source |
 | Top-30 meta handoff | Materialized | Shared-store reference run `meta_handoff_top30` | Valid existing input; regenerate from per-side base when downstream pipeline is resumed |
-| Top-40 path-head handoff | Materialized | Shared-store reference run `meta_handoff_top40` | Existing CatBoost/aux population; regenerate per side for the final contract |
-| Residual meta alpha | Trained with expanding OOS and final refit | `...20260722_residual_only_hpo150_wf30_v1` | Research-ready, not marked canonical |
-| 12h path-archetype labels | Materialized | `20260722_path_archetype_labels_v8...` | Label-only |
+| Top-40 path-head handoff | Materialized from strict 31/8 outer OOF | `packb_side_local_top40_20260724_v1_31_8` | Canonical downstream population |
+| Residual meta alpha | Strict side-local May-July OOF plus separate final refits | `packb_side_local_residual_oof_20260724_v1_31_8` | Promoted independently for both sides |
+| 12h path-archetype labels | Regenerated from canonical 31/8 top-40 IDs | `20260724_path_archetype_labels_v9_packb31_8_top40` | Canonical label-only artifact |
 | CatBoost feature selection/HPO | Complete | `catboost_path_shape_base_top40_fs75_hpo...v3` | Contract only, no final classifier |
 | CatBoost geometry search | Complete enough to select geometry | `catboost_path_geometry_4m4m_train70k...v2` | Evidence only |
 | Seven-class CatBoost final refit | Stopped before persistence | Empty `...geometry_e33_raw7_uniform...v1` | No |
@@ -292,8 +295,32 @@ predictions.
 Important status:
 
 - The manifest says `canonical: false`.
-- It is nevertheless the current alpha input for the new execution-EV work.
-- Preserve it unchanged until the execution-EV ablation is complete.
+- It is historical evidence only and is not the current execution-EV input.
+- Preserve it only as a comparator until the execution-EV ablation is complete.
+
+R3 canonical replacement, completed 2026-07-24:
+
+- Root:
+  `data_perp/artifacts/packb_side_local_residual_oof_20260724_v1_31_8`.
+- Input: the exact canonical 31/8 side-local top-40 population.
+- April is development-only. OOF scoring covers May, June, and July 1-10 with
+  prior-resolved-label cutoffs.
+- Long and short use independent feature selection, HPO, baseline isotonic EV
+  maps, residual models, correction strengths, folds, and final refits.
+- Both side promotion gates passed on 195,931 unique OOF candidate IDs.
+- Long cost-aware objective improved from `0.197479` to `0.324685`; weighted
+  rank IC improved from `0.126060` to `0.168594`; top-10 net-return lift
+  improved from `43.22` to `92.53` bps.
+- Short cost-aware objective improved from `0.213851` to `0.380132`; weighted
+  rank IC improved from `0.139669` to `0.155049`; top-10 net-return lift
+  improved from `43.80` to `107.56` bps.
+- Long HPO stopped after 35 trials and short after 39 under patience 20, so the
+  configured 75-trial ceiling did not add unnecessary completed trials.
+- The guarded run peaked at 3,462,103,040 bytes RSS, retained at least
+  10,080,534,528 bytes available RAM and 82,979,606,528 bytes free disk, and
+  recorded no guard violations.
+- The authoritative evidence is
+  `docs/pipeline_roadmap/20260724/r3/packb_residual_rebuild_contract_v1.json`.
 
 ### 2.4 Causal Timing Contract
 
@@ -943,28 +970,30 @@ The following broader work remains:
 
 ### Blocking Work
 
-1. Secure the worktree and all required artifacts on the new laptop.
-2. Validate the migrated environment and absolute paths.
-3. Validate and preserve the existing per-side directional base and
-   residual-alpha foundations.
-4. Complete the final side-local seven-class CatBoost classifiers, per-side
+1. Preserve the now-validated canonical 31/8 base, top-40, path-label, and
+   residual-alpha artifacts unchanged.
+2. Complete the final side-local seven-class CatBoost classifiers, per-side
    geometry, per-side HPO, class-balance mini-HPO, and OOF predictions.
-5. Complete all five auxiliary-head selections, HPO, monthly OOS predictions,
+3. Complete all five auxiliary-head selections, HPO, monthly OOS predictions,
    and final refits.
-6. Materialize the auxiliary and CatBoost execution OOF streams per side.
-7. Build strict long and short execution-EV handoffs.
-8. Train and compare direct versus residual execution-EV models per side.
-9. Run input-family ablations.
-10. Select winners using side-local OOS execution-EV, ranking, and stability
-    evidence.
-11. Only then join sides in portfolio management and consider policy/replay
-    integration.
+4. Materialize the auxiliary and CatBoost execution OOF streams per side.
+5. Build strict long and short execution-EV handoffs.
+6. Train and compare direct versus residual execution-EV models per side.
+7. Run input-family ablations.
+8. Select winners using side-local OOS execution-EV, ranking, and stability
+   evidence.
+9. Train the optional cost-aware entry-timing head strictly from OOF upstream
+   predictions, including adverse-movement risk, better-price benefit,
+   opportunity-loss risk, and the separate suggested-wait-price layer.
+10. Only then join sides in portfolio management and integrate the winning
+   execution-EV outputs into `simple_policy_optimiser` and replay.
 
 ### Non-Blocking but Important Work
 
 - Persist exact command/provenance in every future checkpoint.
 - Add a repository-level stage manifest joining all hashes and row identities.
-- Commit or otherwise archive the currently untracked implementation.
+- Commit each new stage implementation before fitting production artifacts so
+  every manifest binds a clean source revision.
 - Recompute complete seven-class CatBoost probability/economic diagnostics.
 - Add a clear common-unit mapping for execution-EV predictions if required by
   the downstream portfolio auction.
@@ -975,10 +1004,7 @@ The following broader work remains:
 - Policy geometry optimization using the new models.
 - Portfolio optimization using the new models.
 - Live inference integration.
-- Entry wait/delay optimization.
 - Any predictive regime model not required by the current execution-EV goal.
-- Promoting the side-local base or residual-alpha replacements over the current
-  benchmark before identical-row OOS validation is complete.
 
 ## 4. Relevant Artifacts and Data
 
@@ -986,9 +1012,12 @@ The following broader work remains:
 
 | Priority | Path | Approximate size | Why |
 |---|---|---:|---|
-| P0 | Entire dirty repository source tree | Source-dependent | New implementation is not fully tracked |
+| P0 | Entire repository source tree including `.git` | Source-dependent | Required to preserve exact manifest-bound revisions |
 | P0 | `data_perp/features/20260711_070000` | 24 GB | Canonical shared feature store |
-| P0 | Per-side Pack-B base `...stagec_packb_wf30_20260721_v1` | Size varies | Current long/short base models, features, OOS and final refit |
+| P0 | `packb_side_local_outer_oof_20260724_v1_31_8` | Size varies | Canonical strict long/short base OOF and final refits |
+| P0 | `packb_side_local_top40_20260724_v1_31_8` | Size varies | Canonical downstream candidate population |
+| P0 | `packb_side_local_residual_oof_20260724_v1_31_8` | 15 MB | Canonical strict residual OOF and final refits |
+| P0 | `20260724_path_archetype_labels_v9_packb31_8_top40` | Size varies | Canonical path-label identities |
 | P0 | Shared-store reference `...20260722_v1` | 8.3 GB | Historical comparator, frozen AE/GMM and existing top-30/top-40 handoffs |
 | P0 | Residual run `...residual_only_hpo150_wf30_v1` | 78 MB | Current residual alpha, OOS, final refit |
 | P0 | `20260722_path_archetype_labels_v8...` | 578 MB | CatBoost/path labels |

@@ -1,6 +1,6 @@
 {
   "schema": "packb_residual_rebuild_contract_v1",
-  "status": "FROZEN_IMPLEMENTATION_CONTRACT_NOT_YET_TRAINED",
+  "status": "PRODUCTION_OOF_PROMOTED_BOTH_SIDES",
   "canonical_population": {
     "path": "data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8/base_candidate_population.parquet",
     "sha256": "54cf57e3718ba8315d7197bb83f0f26f15ad251ae0b9a529ec8796da53631630",
@@ -55,5 +55,46 @@
     "process_order": "one side and one fold at a time",
     "staging_policy": "atomic publish; remove failed staging directories"
   },
-  "promotion_gate": "On exact May-July OOF rows, corrected residual EV must improve the matching side-local base EV on the cost-aware objective and preserve acceptable month stability; otherwise retain base passthrough for that side."
+  "production_result": {
+    "root": "data_perp/artifacts/packb_side_local_residual_oof_20260724_v1_31_8",
+    "manifest_sha256": "de67ed692e15f889acdc892d1ff54de2166d89a53fd6274a5964b2a43552692d",
+    "oof_predictions_sha256": "525ec1e6209fa7ec3c60f6973cfdd1c292dbb5833bf7b8942a3a2dedd2c2ee19",
+    "source_revision": "294f95d9f7369a63b3bff0bd3b2a43e5d8bb2998",
+    "oof_rows": 195931,
+    "oof_calendar": "May, June, and July 1-10; April is development-only",
+    "long": {
+      "selected_features": 69,
+      "hpo_trials_completed": 35,
+      "hpo_rounds": 524,
+      "correction_alpha": 1.25,
+      "base_objective": 0.19747911594489087,
+      "residual_objective": 0.3246849502434995,
+      "base_weighted_rank_ic": 0.12605956207769892,
+      "residual_weighted_rank_ic": 0.16859358889722145,
+      "base_top10_net_return_lift": 0.004321598068970879,
+      "residual_top10_net_return_lift": 0.009252852389500866,
+      "promotion_gate_passed": true
+    },
+    "short": {
+      "selected_features": 69,
+      "hpo_trials_completed": 39,
+      "hpo_rounds": 642,
+      "correction_alpha": 0.75,
+      "base_objective": 0.21385066639991554,
+      "residual_objective": 0.38013222027903126,
+      "base_weighted_rank_ic": 0.1396688512724481,
+      "residual_weighted_rank_ic": 0.15504895106157002,
+      "base_top10_net_return_lift": 0.0043800114789585625,
+      "residual_top10_net_return_lift": 0.010756049711662817,
+      "promotion_gate_passed": true
+    },
+    "resource_evidence": {
+      "peak_process_rss_bytes": 3462103040,
+      "minimum_available_ram_bytes": 10080534528,
+      "minimum_free_disk_bytes": 82979606528,
+      "guard_violations": 0
+    },
+    "validation": "Parquet hash, unique candidate identity, side/fold membership, per-row availability, and strict train-resolution cutoffs verified."
+  },
+  "promotion_gate": "Passed independently for both sides on exact May-July OOF rows. Corrected residual EV improved the matching side-local base EV on the cost-aware objective and retained acceptable fold stability."
 }

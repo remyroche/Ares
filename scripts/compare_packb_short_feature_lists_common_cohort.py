@@ -55,6 +55,11 @@ DEFAULT_OUTPUT = (
     ROOT / "docs/pipeline_roadmap/20260724/r3/"
     "packb_short_feature_list_common_cohort_gate_v1.json"
 )
+DEFAULT_TELEMETRY = (
+    ROOT / "data_perp/artifacts/"
+    "packb_short_feature_list_common_cohort_gate_20260724_v1/"
+    "training_resource_telemetry.jsonl"
+)
 
 
 class CommonCohortGateError(RuntimeError):
@@ -159,10 +164,16 @@ def run(
     feature_store: Path = DEFAULT_FEATURE_STORE,
     feature_inventory_path: Path = DEFAULT_FEATURE_INVENTORY,
     decisions_path: Path = DEFAULT_DECISIONS,
+    telemetry_path: Path = DEFAULT_TELEMETRY,
 ) -> dict[str, Any]:
     output = Path(output_path)
     if output.exists():
         raise CommonCohortGateError(f"refusing to overwrite gate: {output}")
+    telemetry_path = Path(telemetry_path)
+    if telemetry_path.exists():
+        raise CommonCohortGateError(
+            f"refusing to overwrite gate telemetry: {telemetry_path}"
+        )
     candidates = {
         "v1_short_8": _candidate(Path(v1_root)),
         "v2_short_36": _candidate(Path(v2_root)),
@@ -228,10 +239,8 @@ def run(
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
+    telemetry_path.parent.mkdir(parents=True, exist_ok=True)
     stage_path = output.parent / f".{output.name}.staging-{uuid.uuid4().hex}"
-    telemetry_path = output.parent / (
-        f".{output.stem}.telemetry-{uuid.uuid4().hex}.jsonl"
-    )
     guard = TrainingResourceGuard(
         limits=TrainingResourceLimits(
             min_free_ram_bytes=2 * 1024**3,
@@ -340,6 +349,7 @@ def run(
     report = {
         "schema": "packb_short_feature_list_common_cohort_gate_v1",
         "status": "PASS_COMMON_COHORT_MODEL_SELECTION",
+        "source_revision": production._git_revision(),
         "selection_scope": "short_side_only",
         "selection_metric": (
             "mean_three_fold_cost_aware_economic_objective_then_"

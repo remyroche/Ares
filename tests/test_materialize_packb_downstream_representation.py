@@ -47,11 +47,14 @@ def test_append_side_representation_preserves_order_and_side_scope() -> None:
             side: list(frame.columns) for side, frame in side_frames.items()
         },
         minimum_joint_finite_fraction=1.0,
+        minimum_monthly_joint_finite_fraction=1.0,
     )
 
     assert result["candidate_id"].tolist() == context["candidate_id"].tolist()
     assert result["dae_b16_00"].tolist() == [1.0, 2.0, -1.0, -2.0]
     assert report["generated_feature_count"] == 2
+    assert report["availability_feature"] == "gmm_representation_available"
+    assert result["gmm_representation_available"].eq(1.0).all()
     assert report["coverage_by_side"]["long"]["joint_finite_fraction"] == 1.0
     assert all(
         result[column].dtype == np.float32
@@ -74,6 +77,7 @@ def test_append_side_representation_fails_closed_on_sparse_generated_rows() -> N
                 side: list(frame.columns) for side, frame in side_frames.items()
             },
             minimum_joint_finite_fraction=0.75,
+            minimum_monthly_joint_finite_fraction=0.75,
         )
 
 
@@ -91,4 +95,5 @@ def test_append_side_representation_rejects_different_side_contracts() -> None:
                 "short": ["gmm_entropy"],
             },
             minimum_joint_finite_fraction=1.0,
+            minimum_monthly_joint_finite_fraction=1.0,
         )

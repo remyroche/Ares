@@ -46,6 +46,7 @@ DEFAULT_OUTPUT = (
     ROOT / "data_perp/artifacts/packb_downstream_context_20260725_v2_31_8_frozen_ae_gmm"
 )
 RESOURCE_TELEMETRY_FILENAME = "training_resource_telemetry.jsonl"
+REPRESENTATION_AVAILABLE_FEATURE = "gmm_representation_available"
 
 
 class DownstreamRepresentationError(RuntimeError):
@@ -134,12 +135,20 @@ def append_side_representation(
     side_frames: Mapping[str, pd.DataFrame],
     generated_features_by_side: Mapping[str, Sequence[str]],
     minimum_joint_finite_fraction: float,
+    minimum_monthly_joint_finite_fraction: float,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Append already aligned per-side representations with strict coverage gates."""
 
     if not 0.0 < minimum_joint_finite_fraction <= 1.0:
         raise ValueError("minimum_joint_finite_fraction must be in (0, 1]")
+    if not 0.0 < minimum_monthly_joint_finite_fraction <= 1.0:
+        raise ValueError("minimum_monthly_joint_finite_fraction must be in (0, 1]")
     output = context.copy()
+    if REPRESENTATION_AVAILABLE_FEATURE in output:
+        raise DownstreamRepresentationError(
+            f"context already contains {REPRESENTATION_AVAILABLE_FEATURE}"
+        )
+    output[REPRESENTATION_AVAILABLE_FEATURE] = np.float32(0.0)
     generated_contract: tuple[str, ...] | None = None
     reports: dict[str, Any] = {}
     for side in SIDES:
@@ -179,7 +188,27 @@ def append_side_representation(
                 f"{side} joint finite representation coverage "
                 f"{joint_fraction:.6f} is below {minimum_joint_finite_fraction:.6f}"
             )
+        month = pd.to_datetime(
+            output.loc[side_mask, "__ts__"], utc=True, errors="raise"
+        ).dt.strftime("%Y-%m")
+        monthly_coverage = {
+            str(key): float(joint[month.to_numpy() == key].mean())
+            for key in sorted(month.unique())
+        }
+        failing_months = {
+            key: value
+            for key, value in monthly_coverage.items()
+            if value < minimum_monthly_joint_finite_fraction
+        }
+        if failing_months:
+            raise DownstreamRepresentationError(
+                f"{side} monthly joint finite representation coverage is below "
+                f"{minimum_monthly_joint_finite_fraction:.6f}: {failing_months}"
+            )
         output.loc[side_mask, list(features)] = values
+        output.loc[side_mask, REPRESENTATION_AVAILABLE_FEATURE] = joint.astype(
+            np.float32
+        )
         reports[side] = {
             "rows": int(len(generated)),
             "joint_finite_rows": int(joint.sum()),
@@ -190,6 +219,7 @@ def append_side_representation(
             "maximum_feature_finite_fraction": float(
                 finite.mean(axis=0).max(initial=0.0)
             ),
+            "monthly_joint_finite_fraction": monthly_coverage,
         }
     if generated_contract is None:
         raise DownstreamRepresentationError("no generated representation was appended")
@@ -198,8 +228,13 @@ def append_side_representation(
     return output, {
         "generated_features": list(generated_contract),
         "generated_feature_count": len(generated_contract),
+        "availability_feature": REPRESENTATION_AVAILABLE_FEATURE,
+        "model_feature_count": len(generated_contract) + 1,
         "coverage_by_side": reports,
         "minimum_joint_finite_fraction": float(minimum_joint_finite_fraction),
+        "minimum_monthly_joint_finite_fraction": float(
+            minimum_monthly_joint_finite_fraction
+        ),
     }
 
 
@@ -209,7 +244,8 @@ def run(
     ae_root: Path,
     feature_store: Path,
     destination: Path,
-    minimum_joint_finite_fraction: float = 0.95,
+    minimum_joint_finite_fraction: float = 0.85,
+    minimum_monthly_joint_finite_fraction: float = 0.75,
 ) -> dict[str, Any]:
     if destination.exists():
         raise FileExistsError(
@@ -279,6 +315,9 @@ def run(
             side_frames=side_frames,
             generated_features_by_side=generated_by_side,
             minimum_joint_finite_fraction=minimum_joint_finite_fraction,
+            minimum_monthly_joint_finite_fraction=(
+                minimum_monthly_joint_finite_fraction
+            ),
         )
         if (
             len(output) != len(context)
@@ -351,7 +390,10 @@ def main() -> None:
     parser.add_argument("--ae-root", type=Path, default=DEFAULT_AE_ROOT)
     parser.add_argument("--feature-store", type=Path, default=DEFAULT_FEATURE_STORE)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--minimum-joint-finite-fraction", type=float, default=0.95)
+    parser.add_argument("--minimum-joint-finite-fraction", type=float, default=0.85)
+    parser.add_argument(
+        "--minimum-monthly-joint-finite-fraction", type=float, default=0.75
+    )
     args = parser.parse_args()
     result = run(
         context_root=args.context_root,
@@ -359,6 +401,9 @@ def main() -> None:
         feature_store=args.feature_store,
         destination=args.output_dir,
         minimum_joint_finite_fraction=args.minimum_joint_finite_fraction,
+        minimum_monthly_joint_finite_fraction=(
+            args.minimum_monthly_joint_finite_fraction
+        ),
     )
     print(json.dumps(_jsonable(result), sort_keys=True))
 

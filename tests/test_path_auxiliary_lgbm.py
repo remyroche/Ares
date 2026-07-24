@@ -191,6 +191,7 @@ def test_configured_universe_contains_base_meta_and_generated_state_features():
         "ret1h",
         "mkt_rv_ratio",
         "gmm_entropy",
+        "gmm_representation_available",
         "dae_b16_00",
         "expected_mahalanobis",
         "score",
@@ -204,6 +205,7 @@ def test_configured_universe_contains_base_meta_and_generated_state_features():
     assert "ret1h" in selected
     assert "mkt_rv_ratio" in selected
     assert "gmm_entropy" in selected
+    assert "gmm_representation_available" in selected
     assert "dae_b16_00" in selected
     assert "expected_mahalanobis" in selected
     assert "score" in selected

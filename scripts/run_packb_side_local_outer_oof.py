@@ -415,7 +415,11 @@ def _precompute_outer_representations(
     representation_loader: SideRepresentationFeatureLoader,
     ledgers: Sequence[pd.DataFrame],
     generated_features: Sequence[str],
+    *,
+    batch_rows: int = 50_000,
 ) -> tuple[CachedRepresentationFeatureLoader, dict[str, Any], pd.DataFrame]:
+    if batch_rows < 1:
+        raise PackBOuterOOFRunnerError("representation batch_rows must be positive")
     union = (
         pd.concat(list(ledgers), ignore_index=True, copy=False)
         .drop_duplicates("candidate_id", keep="first")
@@ -423,7 +427,17 @@ def _precompute_outer_representations(
         .reset_index(drop=True)
     )
     generated = tuple(map(str, generated_features))
-    values = representation_loader(union, generated)
+    values = pd.concat(
+        [
+            representation_loader(
+                union.iloc[start : start + int(batch_rows)].reset_index(drop=True),
+                generated,
+            )
+            for start in range(0, len(union), int(batch_rows))
+        ],
+        ignore_index=True,
+        copy=False,
+    )
     cache = CachedRepresentationFeatureLoader(union, values)
     return (
         cache,
@@ -431,6 +445,8 @@ def _precompute_outer_representations(
             "schema": "packb_outer_representation_union_cache_v1",
             "union_rows": int(len(union)),
             "generated_features": list(generated),
+            "batch_rows": int(batch_rows),
+            "batch_count": int((len(union) + int(batch_rows) - 1) // int(batch_rows)),
             "candidate_stream_sha256": hashlib.sha256(
                 "\n".join(union["candidate_id"].astype(str)).encode("utf-8")
             ).hexdigest(),

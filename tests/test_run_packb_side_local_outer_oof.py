@@ -107,6 +107,28 @@ def test_native_missing_admission_rejects_feature_below_floor() -> None:
         )
 
 
+def test_outer_representation_union_is_loaded_in_bounded_batches() -> None:
+    ledger = pd.concat([_ledger(), _ledger()], ignore_index=True)
+    ledger["candidate_id"] = [f"id-{index}" for index in range(len(ledger))]
+    calls: list[int] = []
+
+    def loader(batch: pd.DataFrame, features: tuple[str, ...]) -> pd.DataFrame:
+        calls.append(len(batch))
+        assert features == ("dae_b16_06",)
+        return pd.DataFrame({"dae_b16_06": np.arange(len(batch), dtype=np.float32)})
+
+    cache, evidence, union = runner._precompute_outer_representations(
+        loader,
+        [ledger],
+        ["dae_b16_06"],
+        batch_rows=2,
+    )
+
+    assert calls == [2, 2]
+    assert evidence["batch_count"] == 2
+    assert cache(union, ["dae_b16_06"]).shape == (4, 1)
+
+
 def test_metrics_are_cost_aware_and_timestamp_ranked() -> None:
     ledger = _ledger()
     ledger.loc[1, "__ts__"] = ledger.loc[0, "__ts__"]

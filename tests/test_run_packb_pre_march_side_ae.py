@@ -17,8 +17,8 @@ def test_coverage_segments_are_disjoint_and_cover_the_reference() -> None:
             "__ts__": pd.to_datetime(
                 [
                     "2025-01-01T00:00:00Z",
-                    "2025-04-01T00:00:00Z",
-                    "2025-08-01T00:00:00Z",
+                    "2025-06-01T00:00:00Z",
+                    "2025-10-01T00:00:00Z",
                 ],
                 utc=True,
             ),

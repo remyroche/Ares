@@ -1827,6 +1827,7 @@ def build_fresh_causal_feature_contract(
     min_non_null_feature_coverage: float = 0.99,
     max_feature_columns: int | None = 256,
     max_profile_feature_columns: int | None = 512,
+    reprofile_survivors: bool = True,
     coverage_segments: Mapping[str, pd.DataFrame] | None = None,
     min_segment_exact_key_coverage: float | None = None,
     min_segment_non_null_feature_coverage: float | None = None,
@@ -1881,6 +1882,13 @@ def build_fresh_causal_feature_contract(
             preliminary.coverage_admission_rejections
         ),
     )
+    if not reprofile_survivors:
+        if min_segment_joint_complete_coverage is not None:
+            raise PackBStaticPointFeatureLoaderError(
+                "survivor joint coverage requires reprofile_survivors=True; "
+                "otherwise enforce it on the exact downstream matrix"
+            )
+        return universe, profile, interim
     survivor_profile = profile_point_feature_coverage(
         identity_ledger,
         feature_store_dir=feature_store_dir,

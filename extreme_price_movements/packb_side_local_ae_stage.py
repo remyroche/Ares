@@ -36,6 +36,20 @@ AE_REFERENCE_END_UTC = pd.Timestamp("2025-11-01T00:00:00Z")
 RESOLUTION_CUTOFF_UTC = pd.Timestamp("2026-03-01T00:00:00Z")
 DECISION_LAG = pd.Timedelta(hours=1)
 LABEL_RESOLUTION_HORIZON = pd.Timedelta(hours=24)
+AE_JOINT_COVERAGE_SEGMENTS = {
+    "beginning": (
+        pd.Timestamp("2025-01-01T00:00:00Z"),
+        pd.Timestamp("2025-04-01T00:00:00Z"),
+    ),
+    "middle": (
+        pd.Timestamp("2025-04-01T00:00:00Z"),
+        pd.Timestamp("2025-08-01T00:00:00Z"),
+    ),
+    "end": (
+        pd.Timestamp("2025-08-01T00:00:00Z"),
+        pd.Timestamp("2025-11-01T00:00:00Z"),
+    ),
+}
 CANONICAL_SIDES = ("long", "short")
 REQUIRED_LEDGER_COLUMNS = (
     "candidate_id",
@@ -348,7 +362,8 @@ def _load_reference_matrix(
     sampled_ledger: pd.DataFrame,
     input_features: Sequence[str],
     matrix_hasher: Callable[[pd.DataFrame, pd.DataFrame], str],
-) -> tuple[pd.DataFrame, dict[str, float], str]:
+    min_joint_complete_fraction: float,
+) -> tuple[pd.DataFrame, dict[str, float], str, dict[str, Any]]:
     loaded = feature_loader(sampled_ledger.copy(), list(input_features))
     if not isinstance(loaded, pd.DataFrame):
         raise PackBSideLocalAEStageError(
@@ -373,6 +388,38 @@ def _load_reference_matrix(
         matrix_hasher(sampled_ledger.copy(), matrix.copy()),
         name="feature_loader matrix SHA-256",
     )
+    threshold = float(min_joint_complete_fraction)
+    if not 0.0 <= threshold <= 1.0:
+        raise PackBSideLocalAEStageError(
+            "min_joint_complete_fraction must be in [0, 1]"
+        )
+    signal = _utc_series(sampled_ledger, "__ts__")
+    finite = np.isfinite(matrix.to_numpy(dtype=np.float32, copy=False))
+    complete = finite.all(axis=1)
+    joint_evidence: dict[str, Any] = {
+        "policy": "exact_final_ae_matrix_per_beginning_middle_end_segment",
+        "minimum_fraction": threshold,
+        "segments": {},
+    }
+    for name, (start, end) in AE_JOINT_COVERAGE_SEGMENTS.items():
+        mask = signal.ge(start) & signal.lt(end)
+        rows = int(mask.sum())
+        if rows < 1:
+            raise PackBSideLocalAEStageError(
+                f"final AE matrix has no sampled rows in {name!r}"
+            )
+        complete_rows = int(complete[mask.to_numpy()].sum())
+        fraction = complete_rows / rows
+        joint_evidence["segments"][name] = {
+            "rows": rows,
+            "joint_complete_rows": complete_rows,
+            "joint_complete_fraction": fraction,
+        }
+        if fraction < threshold:
+            raise PackBSideLocalAEStageError(
+                f"final AE matrix joint-complete coverage for {name} is "
+                f"{fraction:.6f}, below {threshold:.6f}"
+            )
     fill_values = matrix.median(numeric_only=True).reindex(input_features).fillna(0.0)
     matrix = matrix.fillna(fill_values).astype(np.float32, copy=False)
     values = matrix.to_numpy(dtype=np.float32, copy=False)
@@ -384,6 +431,7 @@ def _load_reference_matrix(
         matrix,
         {name: float(fill_values[name]) for name in input_features},
         matrix_sha256,
+        joint_evidence,
     )
 
 
@@ -431,6 +479,7 @@ def fit_side_local_ae_gmm_stage(
     gmm_max_train_rows: int = 50_000,
     ae_max_iter: int = 80,
     min_reference_rows: int = 200,
+    min_joint_complete_fraction: float = 0.98,
     resource_guard: TrainingResourceGuard | Any | None = None,
 ) -> dict[str, Any]:
     """Fit one frozen outcome-free AE/GMM state from one side-local cohort.
@@ -510,11 +559,12 @@ def fit_side_local_ae_gmm_stage(
         source_revision=revision,
     )
     guard.checkpoint(f"packb_side_local_ae:{normalized_side}:before_feature_load")
-    matrix, fill_values, feature_matrix_sha256 = _load_reference_matrix(
+    matrix, fill_values, feature_matrix_sha256, joint_coverage = _load_reference_matrix(
         feature_loader=feature_loader,
         sampled_ledger=sampled,
         input_features=features,
         matrix_hasher=matrix_hasher,
+        min_joint_complete_fraction=min_joint_complete_fraction,
     )
     guard.checkpoint(f"packb_side_local_ae:{normalized_side}:before_fit")
     state = fit_ae_gmm_state(
@@ -559,6 +609,7 @@ def fit_side_local_ae_gmm_stage(
         "input_feature_order_sha256": input_hash,
         "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
         "feature_matrix_sha256": feature_matrix_sha256,
+        "joint_complete_coverage": joint_coverage,
         "feature_loader_evidence": loader_evidence,
         "seed": int(seed),
         "max_train_rows": int(max_train_rows),
@@ -591,6 +642,7 @@ def fit_side_local_ae_gmm_stage(
             "cycle_reference_sampled_candidate_stream": sampled_stream,
             "cycle_input_fill_values": fill_values,
             "cycle_input_matrix_sha256": feature_matrix_sha256,
+            "cycle_input_joint_complete_coverage": joint_coverage,
             "feature_loader_evidence": loader_evidence,
             "input_feature_order_hash": input_hash,
             "representation_selection_outcome_free": True,
@@ -624,6 +676,7 @@ def fit_side_local_ae_gmm_stage(
         "input_feature_order_sha256": input_hash,
         "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
         "feature_matrix_sha256": feature_matrix_sha256,
+        "joint_complete_coverage": joint_coverage,
         "feature_loader_evidence": loader_evidence,
         "cycle_input_fill_values": fill_values,
         "cycle_reference_sample_identity_sha256": sample_hash,
@@ -704,6 +757,7 @@ def fit_side_local_ae_gmm_stage(
         "input_feature_order_sha256": input_hash,
         "feature_contract_sha256": loader_evidence["feature_contract_sha256"],
         "feature_matrix_sha256": feature_matrix_sha256,
+        "joint_complete_coverage": joint_coverage,
         "feature_loader_evidence_sha256": loader_evidence["evidence_file_sha256"],
         "stage_config_sha256": str(state["stage_config_sha256"]),
     }

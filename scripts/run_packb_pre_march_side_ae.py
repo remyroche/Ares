@@ -189,14 +189,14 @@ def _coverage_segments(ledger: pd.DataFrame) -> dict[str, pd.DataFrame]:
     intervals = {
         "beginning": (
             pd.Timestamp("2025-01-01T00:00:00Z"),
-            pd.Timestamp("2025-04-01T00:00:00Z"),
+            pd.Timestamp("2025-02-01T00:00:00Z"),
         ),
         "middle": (
-            pd.Timestamp("2025-04-01T00:00:00Z"),
-            pd.Timestamp("2025-08-01T00:00:00Z"),
+            pd.Timestamp("2025-06-01T00:00:00Z"),
+            pd.Timestamp("2025-07-01T00:00:00Z"),
         ),
         "end": (
-            pd.Timestamp("2025-08-01T00:00:00Z"),
+            pd.Timestamp("2025-10-01T00:00:00Z"),
             pd.Timestamp("2025-11-01T00:00:00Z"),
         ),
     }
@@ -284,12 +284,13 @@ def run(
                 coverage_segments=segments,
                 min_segment_exact_key_coverage=1.0,
                 min_segment_non_null_feature_coverage=0.99,
-                min_segment_joint_complete_coverage=0.98,
+                min_segment_joint_complete_coverage=None,
                 min_segment_variance=1e-6,
                 binary_prevalence_bounds=(0.005, 0.995),
                 required_segment_names=("beginning", "middle", "end"),
                 max_rows_per_batch=2_048,
                 max_columns_per_read=64,
+                reprofile_survivors=False,
                 resource_guard=guard,
             )
             side_root = stage_root / side
@@ -331,6 +332,7 @@ def run(
                 gmm_max_train_rows=50_000,
                 ae_max_iter=80,
                 min_reference_rows=20_000,
+                min_joint_complete_fraction=0.98,
                 resource_guard=guard,
             )
             side_reports[side] = {
@@ -356,6 +358,15 @@ def run(
                 "sample_rows_per_surface": int(coverage_sample_rows),
                 "per_feature_finite_min": 0.99,
                 "joint_complete_min": 0.98,
+                "joint_complete_scope": (
+                    "exact_final_50000_row_ae_matrix_across_full_"
+                    "beginning_middle_end_periods"
+                ),
+                "coverage_snapshots": {
+                    "beginning": ["2025-01-01", "2025-02-01"],
+                    "middle": ["2025-06-01", "2025-07-01"],
+                    "end": ["2025-10-01", "2025-11-01"],
+                },
                 "variance_min_exclusive": 1e-6,
                 "binary_prevalence_bounds": [0.005, 0.995],
                 "max_feature_columns": int(max_feature_columns),

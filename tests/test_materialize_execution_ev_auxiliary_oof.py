@@ -25,6 +25,7 @@ def _args(head_dir: Path, output: Path, **overrides: object) -> SimpleNamespace:
         "target_kind": "timing",
         "output": output,
         "manifest": output.with_suffix(".manifest.json"),
+        "allow_research_ablation": False,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -167,10 +168,16 @@ def _write_canonical_head_bundle(
             "__label_end_ts__": times + pd.Timedelta(hours=13),
         }
     )
+    for index, column in enumerate(spec.canonical_vector_prediction_columns, start=1):
+        bundle[column] = [np.nan, 0.10 * index, 0.15 * index, 0.20 * index]
     bundle_path = head_dir / "oof_bundle.parquet"
     bundle.to_parquet(bundle_path, index=False)
+    declared_predictions = [
+        spec.canonical_prediction_column,
+        *spec.canonical_vector_prediction_columns,
+    ]
     deployable = (
-        [spec.canonical_prediction_column]
+        declared_predictions
         if promotion_status == "ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER"
         else []
     )
@@ -197,7 +204,7 @@ def _write_canonical_head_bundle(
             "path": str(gate_path.resolve()),
             "sha256": adapter._sha256(gate_path),
         },
-        "prediction_columns": [spec.canonical_prediction_column],
+        "prediction_columns": declared_predictions,
         "deployable_prediction_columns": deployable,
         "target_columns_are_audit_only": True,
         "final_refit_excluded_from_oof": True,
@@ -443,6 +450,40 @@ def test_canonical_composed_heads_bind_manifest_identity_and_exact_may_july_oof(
         emitted["source"]["promotion_gate"]["status"]
         == "ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER"
     )
+    interpretation = emitted["source"]["promotion_interpretation"]
+    assert interpretation["legacy_gate_interpreted_as_research_only"] is True
+    assert interpretation["production_ready"] is False
+    assert emitted["source"]["materialization_purpose"] == (
+        "execution_ev_research_ablation_only"
+    )
+
+
+def test_canonical_timing_preserves_monotone_cdf_feature_vector(
+    tmp_path: Path,
+) -> None:
+    head_dir, _bundle = _write_canonical_head_bundle(tmp_path, target_kind="timing")
+    paths = adapter.run(
+        _args(head_dir, tmp_path / "timing.parquet", target_kind="timing")
+    )
+
+    materialized = pd.read_parquet(paths["output"])
+    cdf_columns = [
+        "prediction_p_hit_by_2h",
+        "prediction_p_hit_by_4h",
+        "prediction_p_hit_by_8h",
+        "prediction_p_hit_by_12h",
+    ]
+    assert set(cdf_columns).issubset(materialized.columns)
+    cdf = materialized.loc[:, cdf_columns].to_numpy(dtype=float)
+    assert np.all(np.diff(cdf, axis=1) >= 0.0)
+    emitted = json.loads(paths["manifest"].read_text())
+    for column in cdf_columns:
+        assert emitted["prediction_columns"][column] == {
+            "role": "pre_entry_auxiliary_timing_cdf_probability_oof",
+            "target": False,
+            "head": "timing",
+            "source_prediction_column": f"pred_{column.removeprefix('prediction_')}",
+        }
 
 
 @pytest.mark.parametrize(
@@ -464,10 +505,39 @@ def test_canonical_diagnostic_heads_cannot_enter_execution_ev_before_promotion(
         tmp_path, target_kind=target_kind, promotion_status=promotion_status
     )
 
-    with pytest.raises(ValueError, match="not promotable"):
+    with pytest.raises(ValueError, match="allow-research-ablation"):
         adapter.run(
             _args(head_dir, tmp_path / "blocked.parquet", target_kind=target_kind)
         )
+
+
+@pytest.mark.parametrize(
+    "target_kind",
+    ["bars_before_price_stops_decreasing", "future_slope_atr_per_hour"],
+)
+def test_canonical_diagnostic_heads_require_explicit_research_ablation_override(
+    tmp_path: Path,
+    target_kind: str,
+) -> None:
+    head_dir, _bundle = _write_canonical_head_bundle(
+        tmp_path,
+        target_kind=target_kind,
+        promotion_status="DIAGNOSTIC_ONLY_PENDING_INCREMENTAL_VALUE_GATE",
+    )
+    paths = adapter.run(
+        _args(
+            head_dir,
+            tmp_path / f"{target_kind}.parquet",
+            target_kind=target_kind,
+            allow_research_ablation=True,
+        )
+    )
+    emitted = json.loads(paths["manifest"].read_text())
+    assert (
+        emitted["source"]["promotion_interpretation"]["research_ablation_override_used"]
+        is True
+    )
+    assert emitted["source"]["promotion_interpretation"]["production_ready"] is False
 
 
 def test_canonical_bundle_rejects_fold_month_outside_the_fixed_outer_oof_calendar(

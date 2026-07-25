@@ -85,8 +85,18 @@ from scripts.run_path_auxiliary_lgbm_models import (  # noqa: E402
 
 RUNNER_SCHEMA = "run_path_auxiliary_role_bundles_v1"
 CHECKPOINT_SCHEMA = "path_auxiliary_role_bundle_checkpoint_v1"
+PROMOTION_GATE_SCHEMA = "path_auxiliary_promotion_gate_v2"
 CANONICAL_REFERENCE_END = pd.Timestamp("2026-05-01T00:00:00Z")
 SIDES: tuple[str, ...] = ("long", "short")
+
+# The q80 component is an optional upside diagnostic, not an input required to
+# form the peak hurdle mean.  A broad tolerance is deliberate: it allows a
+# finite OOF sample some sampling error while refusing a clearly saturated or
+# materially under-covering quantile.  Only well-supported side x
+# representation slices participate; a tiny slice cannot promote a component.
+Q80_COVERAGE_TARGET = 0.80
+Q80_COVERAGE_TOLERANCE = 0.10
+Q80_MIN_SUPPORTED_SLICE_ROWS = 100
 
 DEFAULT_LABELS = (
     ROOT
@@ -723,6 +733,272 @@ def _representation_role_metrics(
     return report
 
 
+def _metric_slice_evidence(
+    report: Mapping[str, Mapping[str, Mapping[str, Any]]],
+    *,
+    metric_names: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Return compact, JSON-safe per-side representation evidence.
+
+    Promotion must not silently collapse a material representation-missing
+    population into an aggregate score.  This deliberately preserves every
+    evaluated side x availability slice alongside the particular metrics used
+    by the component gate.
+    """
+
+    evidence: list[dict[str, Any]] = []
+    for side in SIDES:
+        for availability in ("available", "missing"):
+            slice_report = report.get(side, {}).get(availability, {})
+            metrics = slice_report.get("metrics", {})
+            values = {
+                name: metrics.get(name) for name in metric_names if name in metrics
+            }
+            evidence.append(
+                {
+                    "side": side,
+                    "representation": availability,
+                    "metric_rows": int(slice_report.get("metric_rows", 0)),
+                    "status": str(slice_report.get("status", "missing")),
+                    "metrics": values,
+                }
+            )
+    return evidence
+
+
+def _q80_component_quality(
+    report: Mapping[str, Mapping[str, Mapping[str, Any]]],
+) -> dict[str, Any]:
+    """Gate peak q80 on its declared empirical-coverage estimand.
+
+    This is intentionally a component gate rather than a whole-head gate:
+    the hurdle probability and conditional mean can still be investigated
+    while a miscalibrated optional q80 column is withheld.
+    """
+
+    evidence = _metric_slice_evidence(
+        report,
+        metric_names=(
+            "empirical_coverage_alpha_0_8",
+            "pinball_loss_alpha_0_8",
+            "bias",
+            "spearman_ic",
+        ),
+    )
+    lower = Q80_COVERAGE_TARGET - Q80_COVERAGE_TOLERANCE
+    upper = Q80_COVERAGE_TARGET + Q80_COVERAGE_TOLERANCE
+    supported: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for row in evidence:
+        coverage = row["metrics"].get("empirical_coverage_alpha_0_8")
+        if row["metric_rows"] < Q80_MIN_SUPPORTED_SLICE_ROWS:
+            continue
+        if coverage is None or not np.isfinite(float(coverage)):
+            failures.append({**row, "failure": "non_finite_coverage"})
+            continue
+        checked = {**row, "coverage": float(coverage)}
+        supported.append(checked)
+        if not lower <= float(coverage) <= upper:
+            failures.append({**checked, "failure": "coverage_outside_tolerance"})
+    if not supported:
+        status = "WITHHELD_INSUFFICIENT_SUPPORTED_Q80_EVIDENCE"
+    elif failures:
+        status = "WITHHELD_MISCALIBRATED_Q80"
+    else:
+        status = "RESEARCH_ABLATION_CANDIDATE_Q80"
+    return {
+        "status": status,
+        "estimand": "conditional_q80_peak_mfe_atr",
+        "target_coverage": Q80_COVERAGE_TARGET,
+        "accepted_coverage_interval": [lower, upper],
+        "minimum_supported_slice_rows": Q80_MIN_SUPPORTED_SLICE_ROWS,
+        "supported_slices": supported,
+        "failing_slices": failures,
+        "all_slice_evidence": evidence,
+    }
+
+
+def _promotion_contract(
+    head_name: str,
+    role_metrics: Mapping[str, Mapping[str, Mapping[str, Any]]],
+) -> dict[str, Any]:
+    """Build a fail-closed research-vs-production promotion contract.
+
+    Auxiliary OOF columns may be consumed by an execution-EV *research*
+    ablation.  That is not production promotion.  All production paths remain
+    pending an identical-row, per-side, cost-aware execution-EV comparison.
+    """
+
+    if head_name == "peak_mfe_12h_atr":
+        q80 = _q80_component_quality(role_metrics["peak_mfe_12h_atr.conditional_q80"])
+        research_columns = [
+            "pred_p_meaningful_mfe_12h",
+            "pred_peak_mfe_if_hit_mean_atr",
+            "pred_expected_peak_mfe_atr",
+        ]
+        components = {
+            "meaningful_mfe_probability": {
+                "status": "RESEARCH_ABLATION_CANDIDATE",
+                "evidence": _metric_slice_evidence(
+                    role_metrics[MEANINGFUL_EVENT_ROLE],
+                    metric_names=("roc_auc", "brier", "log_loss", "ece", "mce"),
+                ),
+            },
+            "conditional_mean": {
+                "status": "RESEARCH_ABLATION_CANDIDATE",
+                "evidence": _metric_slice_evidence(
+                    role_metrics["peak_mfe_12h_atr.conditional_mean"],
+                    metric_names=("bias", "mae", "rmse", "spearman_ic"),
+                ),
+            },
+            "conditional_q80": q80,
+        }
+        production_status = (
+            "PRODUCTION_PENDING_Q80_CALIBRATION_AND_EXECUTION_EV_ABLATION"
+        )
+        production_required = [
+            "Recalibrate or retrain q80 with train-only calibration until every supported side x representation slice has empirical coverage inside the declared interval.",
+            "Show an identical-row, per-side cost-aware execution-EV ablation with positive aggregate and non-negative worst complete month before production promotion.",
+        ]
+    elif head_name == "time_to_first_meaningful_mfe":
+        research_columns = [
+            "pred_p_hit_by_2h",
+            "pred_p_hit_by_4h",
+            "pred_p_hit_by_8h",
+            "pred_p_hit_by_12h",
+            "pred_expected_censored_time_hours",
+        ]
+        components = {
+            "early_cdf_probabilities": {
+                "status": "RESEARCH_ABLATION_CANDIDATE",
+                "columns": ["pred_p_hit_by_2h", "pred_p_hit_by_4h", "pred_p_hit_by_8h"],
+                "evidence": {
+                    role: _metric_slice_evidence(
+                        role_metrics[role],
+                        metric_names=("roc_auc", "brier", "log_loss", "ece", "mce"),
+                    )
+                    for role in (
+                        "time_to_first_meaningful_mfe.hit_by_2h",
+                        "time_to_first_meaningful_mfe.hit_by_4h",
+                        "time_to_first_meaningful_mfe.hit_by_8h",
+                    )
+                },
+            },
+            "expected_censored_time": {
+                "status": "WEAK_RESEARCH_ONLY",
+                "column": "pred_expected_censored_time_hours",
+                "reason": "A composed censored-time estimate has no direct production quality pass; retain only for research ablation alongside the separately materialized CDF probabilities.",
+            },
+        }
+        production_status = (
+            "PRODUCTION_PENDING_TIMING_CALIBRATION_AND_EXECUTION_EV_ABLATION"
+        )
+        production_required = [
+            "Keep the monotone CDF horizons separately in the identical-row execution-EV ablation; do not treat expected censored time as a validated production feature by itself.",
+            "Demonstrate positive aggregate and non-negative worst complete-month cost-aware execution EV per side before production promotion.",
+        ]
+    elif head_name == "mae_before_meaningful_mfe_atr":
+        research_columns = [
+            "pred_p_meaningful_mfe_12h",
+            "pred_mae_if_hit_atr",
+            "pred_mae_if_no_hit_atr",
+            "pred_expected_mae_atr",
+        ]
+        components = {
+            "conditional_mae_mixture": {
+                "status": "WEAK_RESEARCH_ONLY",
+                "evidence": {
+                    role: _metric_slice_evidence(
+                        role_metrics[role],
+                        metric_names=("bias", "mae", "rmse", "spearman_ic"),
+                    )
+                    for role in (
+                        "mae_before_meaningful_mfe_atr.if_hit",
+                        "mae_before_meaningful_mfe_atr.if_no_hit",
+                    )
+                },
+                "reason": "Conditional-risk learnability and incremental execution value must be demonstrated; raw OOF availability alone is not a production gate.",
+            }
+        }
+        production_status = (
+            "PRODUCTION_PENDING_MAE_LEARNABILITY_AND_EXECUTION_EV_ABLATION"
+        )
+        production_required = [
+            "Demonstrate stable side-local conditional-risk learnability and an identical-row cost-aware execution-EV increment before production promotion.",
+        ]
+    elif head_name == "bars_before_price_stops_decreasing":
+        research_columns = [
+            "pred_legacy_adverse_extreme_bars",
+            "pred_confirmed_adverse_trough_bars",
+            "diag_confirmed_minus_legacy_bars",
+        ]
+        components = {
+            "confirmed_adverse_trough": {
+                "status": "TARGET_COMPLETION_AND_LEARNABILITY_REQUIRED",
+                "evidence": _metric_slice_evidence(
+                    role_metrics[
+                        "bars_before_price_stops_decreasing.confirmed_adverse_trough"
+                    ],
+                    metric_names=("bias", "mae", "rmse", "spearman_ic"),
+                ),
+                "reason": "The confirmed-trough timing is conditionally missing; model occurrence/censoring before asking a timing value to improve execution EV.",
+            }
+        }
+        production_status = "PRODUCTION_PENDING_TARGET_COMPLETION_LEARNABILITY_AND_EXECUTION_EV_ABLATION"
+        production_required = [
+            "Add an explicit confirmed-trough occurrence/censoring model, pass a learnability gate, then show an identical-row cost-aware execution-EV ablation per side.",
+        ]
+    elif head_name == "future_slope_atr_per_hour":
+        research_columns = ["diag_pred_future_slope_atr_per_hour"]
+        components = {
+            "future_slope": {
+                "status": "WEAK_DIAGNOSTIC_ONLY",
+                "evidence": _metric_slice_evidence(
+                    role_metrics["future_slope_atr_per_hour.diagnostic"],
+                    metric_names=("bias", "mae", "rmse", "spearman_ic"),
+                ),
+                "reason": "A diagnostic path-shape target has no demonstrated incremental economic value.",
+            }
+        }
+        production_status = "PRODUCTION_PENDING_SLOPE_LEARNABILITY_AND_INCREMENTAL_EXECUTION_EV_ABLATION"
+        production_required = [
+            "Pass an incremental identical-row ablation of peak+timing versus peak+timing+slope with positive aggregate and non-negative worst complete month per side.",
+        ]
+    else:  # pragma: no cover - callers enumerate HEAD_ROLE_KEYS.
+        raise ValueError(f"unknown auxiliary head for promotion contract: {head_name}")
+
+    research_status = (
+        "ELIGIBLE_FOR_EXECUTION_EV_RESEARCH_ABLATION"
+        if head_name
+        in {
+            "peak_mfe_12h_atr",
+            "time_to_first_meaningful_mfe",
+            "mae_before_meaningful_mfe_atr",
+        }
+        else "EXPLICIT_RESEARCH_ABLATION_OVERRIDE_REQUIRED"
+    )
+    return {
+        "schema": PROMOTION_GATE_SCHEMA,
+        "status": production_status,
+        # Retain this legacy-shaped field as production-empty.  New consumers
+        # must use research_ablation explicitly; old artifacts are interpreted
+        # in the adapter as research-only rather than production-ready.
+        "deployable_prediction_columns": [],
+        "research_ablation": {
+            "status": research_status,
+            "prediction_columns": research_columns,
+            "purpose": "execution_ev_research_ablation_only",
+        },
+        "production_promotion": {
+            "status": production_status,
+            "production_ready": False,
+            "prediction_columns": [],
+            "required": production_required,
+        },
+        "component_quality": components,
+    }
+
+
 def _head_fold_provenance(
     labels: pd.DataFrame,
     role_result: Mapping[str, Any],
@@ -855,43 +1131,13 @@ def _persist_head(
     role_metrics["derived_head_output"] = head_output_slices
     metrics_path = output_dir / head_name / "representation_metrics.json"
     _write_json(metrics_path, role_metrics)
-    deployable = [
-        column
-        for column in HEAD_PREDICTION_RENAMES[head_name].values()
-        if not column.startswith("diag_")
-    ]
-    if head_name in {
-        "bars_before_price_stops_decreasing",
-        "future_slope_atr_per_hour",
-    }:
-        deployable = []
-    if head_name == "bars_before_price_stops_decreasing":
-        promotion_gate = {
-            "status": "BLOCKED_PENDING_IDENTICAL_ROW_EXECUTION_EV_ABLATION",
-            "deployable_prediction_columns": [],
-            "reason": (
-                "legacy and confirmed targets are different clocks; their "
-                "separate target losses cannot select a production winner"
-            ),
-            "required": (
-                "confirmed trough must improve aggregate and worst-month "
-                "cost-aware execution EV per side on identical OOF IDs"
-            ),
-        }
-    elif head_name == "future_slope_atr_per_hour":
-        promotion_gate = {
-            "status": "DIAGNOSTIC_ONLY_PENDING_INCREMENTAL_VALUE_GATE",
-            "deployable_prediction_columns": [],
-            "required": (
-                "identical-row per-side execution-EV ablation of peak+timing "
-                "versus peak+timing+slope must improve aggregate and worst month"
-            ),
-        }
-    else:
-        promotion_gate = {
-            "status": "ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER",
-            "deployable_prediction_columns": deployable,
-        }
+    promotion_gate = _promotion_contract(head_name, role_metrics)
+    research_ablation_columns = list(
+        promotion_gate["research_ablation"]["prediction_columns"]
+    )
+    production_columns = list(
+        promotion_gate["production_promotion"]["prediction_columns"]
+    )
     promotion_path = output_dir / head_name / "promotion_gate.json"
     _write_json(promotion_path, promotion_gate)
     head_manifest = {
@@ -909,10 +1155,14 @@ def _persist_head(
         ),
         "promotion_gate": _artifact_record(promotion_path, kind="promotion_gate"),
         "prediction_columns": list(HEAD_PREDICTION_RENAMES[head_name].values()),
-        "deployable_prediction_columns": deployable,
+        "deployable_prediction_columns": production_columns,
+        "research_ablation_prediction_columns": research_ablation_columns,
+        "production_prediction_columns": production_columns,
         "target_columns_are_audit_only": True,
         "final_refit_excluded_from_oof": True,
         "promotion_status": promotion_gate["status"],
+        "production_status": promotion_gate["production_promotion"]["status"],
+        "production_ready": False,
     }
     manifest_path = output_dir / head_name / "manifest.json"
     _write_json(manifest_path, head_manifest)

@@ -51,6 +51,7 @@ class TargetSpec(NamedTuple):
     unit: str
     natural_prediction_columns: tuple[str, ...]
     canonical_prediction_column: str
+    canonical_vector_prediction_columns: tuple[str, ...] = ()
 
 
 TARGET_SPECS = (
@@ -72,6 +73,12 @@ TARGET_SPECS = (
             "pred_time_to_mfe_12h",
         ),
         canonical_prediction_column="pred_expected_censored_time_hours",
+        canonical_vector_prediction_columns=(
+            "pred_p_hit_by_2h",
+            "pred_p_hit_by_4h",
+            "pred_p_hit_by_8h",
+            "pred_p_hit_by_12h",
+        ),
     ),
     TargetSpec(
         kind="peak_mfe",
@@ -337,9 +344,120 @@ def _verified_artifact_path(
     return path
 
 
+def _research_ablation_permission(
+    *,
+    gate: Mapping[str, Any],
+    declared_predictions: Sequence[str],
+    selected_columns: Sequence[str],
+    allow_research_ablation_override: bool,
+    source: str,
+) -> dict[str, Any]:
+    """Interpret a head gate as research eligibility, never production approval.
+
+    The immutable completed auxiliary artifact predates the explicit
+    research-vs-production contract and labels its first three heads
+    ``ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER``.  That historical label means
+    only that the OOF feature can be materialized for a controlled ablation;
+    it must never be read as a production promotion.
+    """
+
+    research = gate.get("research_ablation")
+    production = gate.get("production_promotion")
+    legacy = not isinstance(research, Mapping)
+    if legacy:
+        status = str(gate.get("status", ""))
+        if status == "ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER":
+            allowed = gate.get("deployable_prediction_columns")
+            if not isinstance(allowed, list):
+                raise ValueError(
+                    f"{source}: legacy eligible gate lacks deployable prediction columns"
+                )
+            research_status = "ELIGIBLE_FOR_EXECUTION_EV_RESEARCH_ABLATION"
+            override_required = False
+        else:
+            # The historical diagnostic gates intentionally had no deployable
+            # columns.  Permit their exact OOF feature only under a CLI opt-in
+            # so their required identical-row ablations are possible without
+            # being mistaken for production use.
+            allowed = list(declared_predictions)
+            research_status = "EXPLICIT_RESEARCH_ABLATION_OVERRIDE_REQUIRED"
+            override_required = True
+        production_status = (
+            "PRODUCTION_PENDING_IDENTICAL_ROW_COST_AWARE_EXECUTION_EV_ABLATION"
+        )
+        production_ready = False
+    else:
+        status = str(research.get("status", ""))
+        allowed = research.get("prediction_columns")
+        if not isinstance(allowed, list):
+            raise ValueError(
+                f"{source}: research-ablation gate lacks prediction columns"
+            )
+        research_status = status
+        override_required = status == "EXPLICIT_RESEARCH_ABLATION_OVERRIDE_REQUIRED"
+        if status not in {
+            "ELIGIBLE_FOR_EXECUTION_EV_RESEARCH_ABLATION",
+            "EXPLICIT_RESEARCH_ABLATION_OVERRIDE_REQUIRED",
+        }:
+            raise ValueError(
+                f"{source}: unsupported research-ablation gate status {status!r}"
+            )
+        production_status = (
+            str(production.get("status", gate.get("status", "PRODUCTION_PENDING")))
+            if isinstance(production, Mapping)
+            else str(gate.get("status", "PRODUCTION_PENDING"))
+        )
+        production_ready = (
+            bool(production.get("production_ready", False))
+            if isinstance(production, Mapping)
+            else False
+        )
+
+    missing_declared = sorted(set(selected_columns).difference(declared_predictions))
+    if missing_declared:
+        raise ValueError(
+            f"{source}: requested canonical prediction columns are not declared: {missing_declared}"
+        )
+    missing_allowed = sorted(set(selected_columns).difference(allowed))
+    if missing_allowed:
+        raise ValueError(
+            f"{source}: requested prediction columns are not research-ablation gated: {missing_allowed}"
+        )
+    if override_required and not allow_research_ablation_override:
+        raise ValueError(
+            f"{source}: canonical head requires --allow-research-ablation for its "
+            "diagnostic identical-row execution-EV test"
+        )
+    if production_ready:
+        # The adapter intentionally cannot turn an OOF materialization into a
+        # production release. A production-ready flag in a source gate is
+        # therefore treated as an invalid category error, not as permission.
+        raise ValueError(
+            f"{source}: execution-EV OOF materialization is research-only; production "
+            "promotion must use its separately verified inference contract"
+        )
+    return {
+        "legacy_gate_interpreted_as_research_only": legacy,
+        "research_ablation_status": research_status,
+        "research_ablation_override_used": bool(override_required),
+        "production_status": production_status,
+        "production_ready": False,
+        "selected_prediction_columns": list(selected_columns),
+    }
+
+
+def _timing_vector_output_name(source_column: str) -> str:
+    prefix = "pred_"
+    if not source_column.startswith(prefix):  # pragma: no cover - fixed spec.
+        raise ValueError(f"unexpected timing prediction column: {source_column}")
+    return f"prediction_{source_column[len(prefix) :]}"
+
+
 def _canonical_head_bundle(
     head_dir: Path,
     spec: TargetSpec,
+    *,
+    allow_research_ablation_override: bool,
 ) -> tuple[pd.DataFrame, Path, dict[str, Any]] | None:
     """Load and validate the canonical composed-head OOF contract when present.
 
@@ -376,13 +494,17 @@ def _canonical_head_bundle(
     if manifest.get("final_refit_excluded_from_oof") is not True:
         raise ValueError(f"{source}: head manifest must exclude final refit from OOF")
     declared_predictions = manifest.get("prediction_columns")
-    if (
-        not isinstance(declared_predictions, list)
-        or spec.canonical_prediction_column not in declared_predictions
-    ):
+    if not isinstance(declared_predictions, list):
+        raise ValueError(f"{source}: head manifest must declare prediction columns")
+    selected_prediction_columns = [spec.canonical_prediction_column]
+    selected_prediction_columns.extend(spec.canonical_vector_prediction_columns)
+    missing_declared = sorted(
+        set(selected_prediction_columns).difference(declared_predictions)
+    )
+    if missing_declared:
         raise ValueError(
             f"{source}: head manifest does not declare canonical prediction "
-            f"{spec.canonical_prediction_column!r}"
+            f"columns {missing_declared!r}"
         )
 
     gate_path = _verified_artifact_path(
@@ -401,16 +523,13 @@ def _canonical_head_bundle(
         raise ValueError(
             f"{source}: promotion gate deployable columns disagree with manifest"
         )
-    if promotion_status != "ELIGIBLE_FOR_EXECUTION_EV_OOF_CONSUMER":
-        raise ValueError(
-            f"{source}: canonical head {expected_head!r} is not promotable for "
-            f"execution EV ({promotion_status!r}); complete its required identical-row ablation first"
-        )
-    if spec.canonical_prediction_column not in declared_deployable:
-        raise ValueError(
-            f"{source}: canonical prediction {spec.canonical_prediction_column!r} "
-            "is not promotion-gated as deployable"
-        )
+    promotion_interpretation = _research_ablation_permission(
+        gate=gate,
+        declared_predictions=declared_predictions,
+        selected_columns=selected_prediction_columns,
+        allow_research_ablation_override=allow_research_ablation_override,
+        source=source,
+    )
 
     raw = pd.read_parquet(bundle_path)
     if raw.empty:
@@ -426,7 +545,7 @@ def _canonical_head_bundle(
         "validation_start",
         "train_label_resolution_max",
         "prediction_available_at",
-        spec.canonical_prediction_column,
+        *selected_prediction_columns,
     }
     missing = sorted(required.difference(raw.columns))
     if missing:
@@ -476,6 +595,7 @@ def _canonical_head_bundle(
             "manifest": manifest,
             "promotion_gate_path": gate_path,
             "promotion_gate": gate,
+            "promotion_interpretation": promotion_interpretation,
             "available_mask": available,
         },
     )
@@ -584,6 +704,7 @@ def materialize(
     target_kind: str,
     output: Path,
     manifest: Path,
+    allow_research_ablation_override: bool = False,
 ) -> dict[str, Path]:
     """Materialize one auxiliary head into the execution-EV OOF contract."""
 
@@ -593,8 +714,13 @@ def materialize(
         raise ValueError(f"refusing to overwrite existing output parquet: {output}")
     if manifest.exists():
         raise ValueError(f"refusing to overwrite existing manifest JSON: {manifest}")
-    canonical = _canonical_head_bundle(head_dir, spec)
+    canonical = _canonical_head_bundle(
+        head_dir,
+        spec,
+        allow_research_ablation_override=allow_research_ablation_override,
+    )
     canonical_metadata: dict[str, Any] | None = None
+    vector_prediction_outputs: dict[str, np.ndarray] = {}
     if canonical is not None:
         raw, source_path, canonical_metadata = canonical
         source = str(source_path)
@@ -610,7 +736,31 @@ def materialize(
                 f"{source}: canonical oof_available rows require finite "
                 f"{prediction_column!r} predictions"
             )
+        for vector_column in spec.canonical_vector_prediction_columns:
+            vector = pd.to_numeric(raw[vector_column], errors="coerce").to_numpy(
+                dtype=float
+            )
+            if not np.isfinite(vector[available_mask]).all():
+                raise ValueError(
+                    f"{source}: canonical oof_available rows require finite "
+                    f"{vector_column!r} predictions"
+                )
+            if np.any((vector[available_mask] < 0.0) | (vector[available_mask] > 1.0)):
+                raise ValueError(
+                    f"{source}: canonical timing CDF probability {vector_column!r} "
+                    "must be inside [0, 1]"
+                )
         finite_prediction = available_mask
+        for vector_column in spec.canonical_vector_prediction_columns:
+            vector_prediction_outputs[_timing_vector_output_name(vector_column)] = (
+                np.clip(
+                    pd.to_numeric(raw[vector_column], errors="coerce").to_numpy(
+                        dtype=float
+                    )[finite_prediction],
+                    0.0,
+                    1.0,
+                )
+            )
         # No decision outside the immutable May--July outer-OOF calendar may
         # enter the execution-EV training handoff.
         fold_month = raw.loc[finite_prediction, "oof_fold_month"].astype("string")
@@ -736,12 +886,16 @@ def materialize(
         )
 
     output_frame = work.loc[:, OUTPUT_COLUMNS].copy()
+    for output_column, values in vector_prediction_outputs.items():
+        output_frame[output_column] = values
     feature_columns = set(output_frame.columns).difference(
         {*IDENTITY_COLUMNS, CANDIDATE_ID_COLUMN, *EVIDENCE_COLUMNS, "available_at"}
     )
     if any(
         any(token in column.lower() for token in LEAKAGE_TOKENS)
-        for column in feature_columns
+        for column in feature_columns.difference(
+            {"prediction", *vector_prediction_outputs}
+        )
     ):
         raise ValueError("output column contract includes a target/leakage column")
     _assert_unique(output_frame, IDENTITY_COLUMNS, source="materialized auxiliary OOF")
@@ -821,6 +975,12 @@ def materialize(
             "status": canonical_metadata["promotion_gate"]["status"],
             "selected_prediction_column": prediction_column,
         }
+        payload["source"]["promotion_interpretation"] = dict(
+            canonical_metadata["promotion_interpretation"]
+        )
+        payload["source"]["materialization_purpose"] = (
+            "execution_ev_research_ablation_only"
+        )
     payload["prediction_role"] = PREDICTION_ROLES[spec.kind]
     payload["source_artifact_sha256"] = _sha256(output)
     payload["prediction_columns"] = {
@@ -828,8 +988,16 @@ def materialize(
             "role": "pre_entry_auxiliary_oof_prediction",
             "target": False,
             "head": spec.kind,
+            "source_prediction_column": prediction_column,
         }
     }
+    for output_column in vector_prediction_outputs:
+        payload["prediction_columns"][output_column] = {
+            "role": "pre_entry_auxiliary_timing_cdf_probability_oof",
+            "target": False,
+            "head": spec.kind,
+            "source_prediction_column": f"pred_{output_column.removeprefix('prediction_')}",
+        }
     payload["prediction_role_manifest_sha256"] = _canonical_json_hash(payload)
     manifest.parent.mkdir(parents=True, exist_ok=True)
     _write_json(manifest, payload)
@@ -844,6 +1012,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         target_kind=args.target_kind,
         output=output,
         manifest=manifest,
+        allow_research_ablation_override=bool(
+            getattr(args, "allow_research_ablation", False)
+        ),
     )
 
 
@@ -853,6 +1024,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-kind", required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument(
+        "--allow-research-ablation",
+        action="store_true",
+        help=(
+            "Permit a diagnostic head into an identical-row execution-EV research "
+            "ablation. This never grants production promotion."
+        ),
+    )
     return parser.parse_args()
 
 

@@ -12,6 +12,7 @@ from scripts.run_path_auxiliary_role_bundles import (
     MEANINGFUL_EVENT_ROLE,
     _load_checkpoint,
     _persist_head,
+    _promotion_contract,
     _representation_role_metrics,
     _timing_role_results,
 )
@@ -154,6 +155,61 @@ def test_peak_bundle_retains_all_rows_and_shared_event_prediction(
         np.asarray(event["oof_predictions"]) * 2.0,
     )
     assert manifest["final_refit_excluded_from_oof"] is True
+    gate = json.loads(Path(manifest["promotion_gate"]["path"]).read_text())
+    assert gate["research_ablation"]["status"] == (
+        "ELIGIBLE_FOR_EXECUTION_EV_RESEARCH_ABLATION"
+    )
+    assert gate["production_promotion"]["production_ready"] is False
+    assert (
+        "pred_peak_mfe_if_hit_q80_atr"
+        not in gate["research_ablation"]["prediction_columns"]
+    )
+    assert manifest["production_ready"] is False
+
+
+def test_peak_q80_quality_gate_withholds_materially_miscalibrated_slice() -> None:
+    def report(coverage: float) -> dict[str, object]:
+        return {
+            side: {
+                availability: {
+                    "metric_rows": 1_000
+                    if (side, availability) == ("long", "available")
+                    else 0,
+                    "status": "evaluated"
+                    if (side, availability) == ("long", "available")
+                    else "not_evaluable_zero_missing_support",
+                    "metrics": {
+                        "empirical_coverage_alpha_0_8": coverage
+                        if (side, availability) == ("long", "available")
+                        else np.nan,
+                        "pinball_loss_alpha_0_8": 1.0,
+                        "bias": 0.0,
+                        "spearman_ic": 0.1,
+                    },
+                }
+                for availability in ("available", "missing")
+            }
+            for side in ("long", "short")
+        }
+
+    generic = report(0.80)
+    gate = _promotion_contract(
+        "peak_mfe_12h_atr",
+        {
+            MEANINGFUL_EVENT_ROLE: generic,
+            "peak_mfe_12h_atr.conditional_mean": generic,
+            "peak_mfe_12h_atr.conditional_q80": report(0.989),
+        },
+    )
+
+    q80 = gate["component_quality"]["conditional_q80"]
+    assert q80["status"] == "WITHHELD_MISCALIBRATED_Q80"
+    assert q80["failing_slices"][0]["coverage"] == pytest.approx(0.989)
+    assert (
+        "pred_peak_mfe_if_hit_q80_atr"
+        not in gate["research_ablation"]["prediction_columns"]
+    )
+    assert gate["production_promotion"]["production_ready"] is False
 
 
 def test_representation_report_emits_zero_support_slice_explicitly() -> None:

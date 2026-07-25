@@ -1821,7 +1821,8 @@ Selection contract:
   December-March rows available for training. The base selector's 365-day
   burn-in is replaced by its chronological short-history fallback for binary
   roles; shuffled fallback is forbidden. Regression roles use one April
-  validation month rather than the impossible six-month default.
+  validation month rather than the impossible six-month default and require at
+  least 250 validation rows per selector fold.
 - Refactor the current global pre-screen before resuming; a global pre-screen or
   global selected-feature union does not satisfy this contract.
 - No global selected-feature union and no shared fitted selector.

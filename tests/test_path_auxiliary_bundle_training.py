@@ -6,6 +6,7 @@ import pandas as pd
 from extreme_price_movements.path_auxiliary_bundle_training import (
     HEAD_ROLE_KEYS,
     MEANINGFUL_EVENT_ROLE,
+    SELECTION_ROLE_SOURCES,
     canonical_role_targets,
     compose_head_oof,
     fit_role_by_side,
@@ -112,6 +113,66 @@ def test_selection_runs_once_per_unique_target_and_conditioning_mask(
     rows_by_group = {group: rows for group, rows, _task in calls}
     assert rows_by_group[MEANINGFUL_EVENT_ROLE] == 800
     assert rows_by_group["peak_conditional_magnitude"] == 400
+
+
+def test_selection_resume_skips_completed_groups_and_checkpoints_each_new_group(
+    monkeypatch,
+) -> None:
+    labels = _labels(800)
+    calls: list[str] = []
+    checkpoints: list[tuple[str, tuple[str, ...]]] = []
+
+    def fake_select(
+        _X: pd.DataFrame,
+        _target: np.ndarray,
+        **kwargs,
+    ) -> dict[str, object]:
+        calls.append(str(kwargs["role_name"]))
+        return {
+            "selected_features_by_side": {
+                "long": ["efficiency_ratio_20"],
+                "short": ["prog_eff_24"],
+            }
+        }
+
+    monkeypatch.setattr(
+        "extreme_price_movements.path_auxiliary_bundle_training."
+        "select_auxiliary_role_features",
+        fake_select,
+    )
+    existing = {
+        MEANINGFUL_EVENT_ROLE: {
+            "source_role": SELECTION_ROLE_SOURCES[MEANINGFUL_EVENT_ROLE],
+            "selected_features_by_side": {
+                "long": ["efficiency_ratio_20"],
+                "short": ["prog_eff_24"],
+            },
+        }
+    }
+    timestamps = pd.date_range("2026-04-01", periods=800, freq="h", tz="UTC")
+    selections = select_bundle_feature_contracts(
+        pd.DataFrame(
+            {
+                "efficiency_ratio_20": np.ones(800),
+                "prog_eff_24": np.ones(800),
+            }
+        ),
+        labels,
+        timestamps=timestamps,
+        assets=np.repeat(["AAA", "BBB"], 400),
+        sides=np.repeat(["long", "short"], 400),
+        archetypes=np.repeat("base", 800),
+        existing_contracts=existing,
+        contract_callback=lambda group, _contract, current: checkpoints.append(
+            (group, tuple(current))
+        ),
+    )
+
+    assert MEANINGFUL_EVENT_ROLE not in calls
+    assert len(calls) == 9
+    assert len(checkpoints) == 9
+    assert checkpoints[-1][1] == tuple(SELECTION_ROLE_SOURCES)
+    assert set(selections) == set(SELECTION_ROLE_SOURCES)
 
 
 def test_role_training_is_scattered_back_to_independent_sides(monkeypatch) -> None:

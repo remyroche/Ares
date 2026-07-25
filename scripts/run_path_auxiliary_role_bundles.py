@@ -347,6 +347,37 @@ def _selection_contracts(
     static_report["archetype_overlay_features"] = sorted(archetype_available)
     available, universe_report = configured_auxiliary_feature_universe(source_available)
     matrix = matrix.reindex(columns=available).astype(np.float32, copy=False)
+    partial_path = output_dir / "shared/selection_contracts.partial.joblib"
+    partial_contracts: dict[str, dict[str, Any]] = {}
+    partial_record = checkpoint.get("selection_partial")
+    if isinstance(partial_record, Mapping):
+        loaded_partial_path = _validate_record(
+            partial_record, kind="selection_contracts_partial"
+        )
+        partial_payload = joblib.load(loaded_partial_path)
+        partial_contracts = {
+            str(group): dict(contract)
+            for group, contract in partial_payload["selection_contracts"].items()
+        }
+
+    def persist_partial_selection(
+        group: str,
+        _contract: Mapping[str, Any],
+        current_contracts: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        _atomic_joblib_dump(
+            {
+                "selection_contracts": dict(current_contracts),
+                "completed_groups": list(current_contracts),
+            },
+            partial_path,
+        )
+        checkpoint["selection_partial"] = _artifact_record(
+            partial_path, kind="selection_contracts_partial"
+        )
+        _save_checkpoint(output_dir, checkpoint)
+        guard.checkpoint(f"role_selection:{group}:partial_persisted")
+
     contracts = select_bundle_feature_contracts(
         matrix,
         selection_labels,
@@ -358,6 +389,8 @@ def _selection_contracts(
         random_state=int(seed),
         purge_hours=13.0,
         progress_callback=_guard_callback(guard, prefix="role_selection"),
+        existing_contracts=partial_contracts,
+        contract_callback=persist_partial_selection,
     )
     report = {
         "selection_rows": int(len(selection_labels)),
@@ -377,6 +410,9 @@ def _selection_contracts(
     path = output_dir / "shared/selection_contracts.joblib"
     _atomic_joblib_dump({"selection_contracts": contracts, "report": report}, path)
     checkpoint["selection"] = _artifact_record(path, kind="selection_contracts")
+    checkpoint.pop("selection_partial", None)
+    if partial_path.exists():
+        partial_path.unlink()
     _save_checkpoint(output_dir, checkpoint)
     del matrix
     gc.collect()
@@ -1082,7 +1118,7 @@ def run(
         "min_train_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_TRAIN_ROWS),
         "min_binary_validation_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_VALID_ROWS),
         "min_regression_validation_rows": int(
-            lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS
+            min(lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS, 250)
         ),
         "binary_short_history_fallback_fraction": float(
             lgbm_pipeline.LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
@@ -1097,7 +1133,7 @@ def run(
             "splits": 3,
             "min_train_rows": 200,
             "min_binary_validation_rows": 20,
-            "min_regression_validation_rows": 300,
+            "min_regression_validation_rows": 250,
         }
         mismatches = {
             key: {

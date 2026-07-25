@@ -161,6 +161,7 @@ def test_binary_role_feature_selection_is_independent_per_side(
         lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
     )
     original_aux_validation_months = lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
+    original_aux_min_valid_rows = lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS
     original_purge_hours = lgbm_pipeline.LGBM_PURGE_HOURS
 
     def fake_selector(
@@ -216,6 +217,9 @@ def test_binary_role_feature_selection_is_independent_per_side(
         ]["auxiliary_validation_months"]
         == 1
     )
+    assert result["selection_metrics"]["by_side"]["long"][
+        "auxiliary_selection_cv_contract"
+    ]["auxiliary_min_validation_rows"] == min(original_aux_min_valid_rows, 250)
     assert (
         result["selection_metrics"]["by_side"]["long"][
             "auxiliary_selection_cv_contract"
@@ -230,4 +234,5 @@ def test_binary_role_feature_selection_is_independent_per_side(
         lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
         == original_aux_validation_months
     )
+    assert lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS == original_aux_min_valid_rows
     assert lgbm_pipeline.LGBM_PURGE_HOURS == original_purge_hours

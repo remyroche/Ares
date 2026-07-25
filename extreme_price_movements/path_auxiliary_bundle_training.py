@@ -137,12 +137,29 @@ def select_bundle_feature_contracts(
     random_state: int = 42,
     purge_hours: float = 13.0,
     progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
+    existing_contracts: Mapping[str, Mapping[str, Any]] | None = None,
+    contract_callback: (
+        Callable[
+            [str, Mapping[str, Any], Mapping[str, Mapping[str, Any]]],
+            None,
+        ]
+        | None
+    ) = None,
 ) -> dict[str, dict[str, Any]]:
     """Select features once per unique target-and-conditioning contract."""
 
     targets = canonical_role_targets(labels)
-    result: dict[str, dict[str, Any]] = {}
+    result: dict[str, dict[str, Any]] = {
+        str(group): dict(contract)
+        for group, contract in (existing_contracts or {}).items()
+    }
     for group_index, (group, source_role) in enumerate(SELECTION_ROLE_SOURCES.items()):
+        if group in result:
+            if result[group].get("source_role") != source_role:
+                raise ValueError(
+                    f"resumed selection contract source mismatch for {group}"
+                )
+            continue
         role = targets[
             MEANINGFUL_EVENT_ROLE
             if source_role == "peak_mfe_12h_atr.p_hit"
@@ -181,6 +198,8 @@ def select_bundle_feature_contracts(
         selection["eligible_rows"] = int(eligible.sum())
         selection["reuse_contract"] = "same target vector and conditioning mask only"
         result[group] = selection
+        if contract_callback is not None:
+            contract_callback(group, selection, result)
         if progress_callback is not None:
             progress_callback(
                 "selection_complete",

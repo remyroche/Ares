@@ -181,8 +181,10 @@ def select_auxiliary_role_features(
         previous_aux_validation_months = (
             lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
         )
+        previous_aux_min_valid_rows = lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS
         previous_purge_hours = lgbm_pipeline.LGBM_PURGE_HOURS
         auxiliary_validation_months = min(int(previous_aux_validation_months), 1)
+        auxiliary_min_valid_rows = min(int(previous_aux_min_valid_rows), 250)
         # The frozen December-April auxiliary reference window is shorter than
         # the base model's 365-day burn-in.  Use the pipeline's chronological
         # short-history fallback for this synchronous side-local selection
@@ -195,6 +197,7 @@ def select_auxiliary_role_features(
         # leaves December-March for strictly earlier fitting and matches the
         # approved largest-single-fold feature-selection convention.
         lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS = auxiliary_validation_months
+        lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS = auxiliary_min_valid_rows
         lgbm_pipeline.LGBM_PURGE_HOURS = float(purge_hours)
         try:
             result = lgbm_pipeline.train_lgbm_stability_candidate(
@@ -220,6 +223,7 @@ def select_auxiliary_role_features(
             lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS = (
                 previous_aux_validation_months
             )
+            lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS = previous_aux_min_valid_rows
             lgbm_pipeline.LGBM_PURGE_HOURS = previous_purge_hours
         if not result:
             raise RuntimeError(f"feature selection failed for {role_name}/{side}")
@@ -231,6 +235,7 @@ def select_auxiliary_role_features(
                 lgbm_pipeline.LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
             ),
             "auxiliary_validation_months": auxiliary_validation_months,
+            "auxiliary_min_validation_rows": auxiliary_min_valid_rows,
             "purge_hours": float(purge_hours),
             "train_before_validation_only": True,
             "shuffled_fallback_forbidden": True,

@@ -192,6 +192,9 @@ def test_ablation_plan_and_oos_metric_table_show_family_contributions() -> None:
     provenance = _provenance()
     plan = execution_ev_ablation_plan(provenance)
     assert plan["alpha_only"] == ("score_existing_alpha",)
+    assert "alpha_context" in plan
+    assert "alpha_context_plus_aux" in plan
+    assert "alpha_context_plus_catboost" in plan
     assert "without_catboost_entropy" in plan
     assert "catboost_entropy" not in plan["without_catboost_entropy"]
     assert (
@@ -214,6 +217,18 @@ def test_ablation_plan_and_oos_metric_table_show_family_contributions() -> None:
     assert indexed.loc["alpha_only", "input_group"] == "all_non_alpha_features"
     assert indexed.loc["alpha_only", "all_features_advantage__mae"] > 0.0
     assert indexed.loc["alpha_only", "all_features_contribution"] == "helps"
+
+
+def test_ablation_plan_excludes_research_only_features() -> None:
+    provenance = _provenance()
+    provenance["pred_mae_before_meaningful_mfe_atr"] = FeatureProvenance(
+        "mae_before_meaningful_mfe",
+        "research-only adverse-depth head",
+        available_at_col="available_at",
+        model_input=False,
+    )
+    plan = execution_ev_ablation_plan(provenance)
+    assert "pred_mae_before_meaningful_mfe_atr" not in plan["all_features"]
 
     comparison = timing_slope_ablation_comparison(
         [

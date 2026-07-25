@@ -405,6 +405,22 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
         for source in provenance["handoff"]["source_artifacts"].values()
     )
     assert provenance["features"]["catboost_archetype"]["model_input"] is False
+    assert (
+        provenance["features"]["pred_time_to_first_meaningful_MFE"]["model_input"]
+        is True
+    )
+    assert (
+        provenance["features"]["pred_mae_before_meaningful_mfe_atr"]["model_input"]
+        is False
+    )
+    assert (
+        provenance["features"]["pred_bars_before_price_stops_decreasing"]["model_input"]
+        is False
+    )
+    assert (
+        provenance["features"]["pred_favorable_path_slope_atr_per_hour"]["model_input"]
+        is False
+    )
     alignment = provenance["handoff"]["population_alignment"]
     assert alignment["mode"] == "explicit_common_identity_intersection_one_to_one"
     assert alignment["common_rows"] == len(handoff)
@@ -477,6 +493,10 @@ def test_ingests_complete_signed_timing_cdf_vector_as_model_inputs(
         assert feature["model_input"] is True
         assert feature["oof_or_frozen"] is True
         assert feature["pre_entry"] is True
+    assert (
+        provenance["features"]["pred_time_to_first_meaningful_MFE"]["model_input"]
+        is False
+    )
 
     feature_provenance, payload = runner._load_provenance(result["provenance"])
     assert set(expected_columns).issubset(feature_provenance)

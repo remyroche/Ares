@@ -1065,6 +1065,10 @@ def _provenance(
     population_alignment: Mapping[str, Any],
     alpha_cost_basis: Mapping[str, Any],
 ) -> dict[str, Any]:
+    timing_cdf_present = any(
+        column in joined.columns
+        for column in TIMING_CDF_JOINED_FEATURE_COLUMNS.values()
+    )
     availability = {
         source.spec.name: f"{source.spec.name}_available_at"
         for source in sources
@@ -1101,7 +1105,11 @@ def _provenance(
             "pre_entry": True,
             "oof_or_frozen": True,
             "available_at_col": availability["time_to_mfe"],
-            "model_input": True,
+            "model_input": not timing_cdf_present,
+            "promotion_status": (
+                "legacy scalar fallback only when a signed timing-CDF vector is "
+                "absent; timing-CDF probabilities are the initial admissible inputs"
+            ),
         },
         "pred_peak_MFE_12h_ATR": {
             "family": "peak_mfe",
@@ -1117,7 +1125,8 @@ def _provenance(
             "pre_entry": True,
             "oof_or_frozen": True,
             "available_at_col": availability["mae_before_mfe"],
-            "model_input": True,
+            "model_input": False,
+            "promotion_status": "blocked_after_learnability_audit",
         },
         "pred_bars_before_price_stops_decreasing": {
             "family": "adverse_turn_timing",
@@ -1125,7 +1134,8 @@ def _provenance(
             "pre_entry": True,
             "oof_or_frozen": True,
             "available_at_col": availability["adverse_turn"],
-            "model_input": True,
+            "model_input": False,
+            "promotion_status": "blocked_pending_competing_risk_rework",
         },
         "pred_favorable_path_slope_atr_per_hour": {
             "family": "favorable_path_slope",
@@ -1133,7 +1143,8 @@ def _provenance(
             "pre_entry": True,
             "oof_or_frozen": True,
             "available_at_col": availability["path_slope"],
-            "model_input": True,
+            "model_input": False,
+            "promotion_status": "diagnostic_only_pending_incremental_value_gate",
         },
         "catboost_entropy": {
             "family": "catboost_entropy",
@@ -1253,7 +1264,12 @@ def _provenance(
             },
             "population_alignment": dict(population_alignment),
             "catboost_class_contract": dict(catboost_class_contract),
-            "availability_contract": "All model features are OOF/frozen pre-entry predictions with source availability at or before the UTC signal timestamp. Realized execution columns are retained only for target accounting and diagnostics.",
+            "availability_contract": (
+                "All model features are OOF/frozen pre-entry predictions with "
+                "source availability at or before execution_decision_utc "
+                "(UTC signal timestamp + one hour). Realized execution columns "
+                "are retained only for target accounting and diagnostics."
+            ),
             "cost_basis": {
                 "source_alpha_cost_return": float(
                     alpha_cost_basis["deducted_cost_return"]

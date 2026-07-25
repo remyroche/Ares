@@ -33,8 +33,12 @@ EXECUTION_EV_FEATURE_FAMILIES: tuple[str, ...] = (
     "mae_before_meaningful_mfe",
     "adverse_turn_timing",
     "favorable_path_slope",
+    "time_to_meaningful_mfe_cdf_probability",
     "catboost_probabilities",
     "catboost_entropy",
+    "catboost_probability_confidence",
+    "catboost_probability_uncertainty",
+    "catboost_path_role_mass",
     "prediction_uncertainty",
     "leaf_support",
     "alpha_score",
@@ -457,7 +461,9 @@ def execution_ev_ablation_plan(
 
     by_family = {
         family: tuple(
-            name for name, spec in provenance.items() if spec.family == family
+            name
+            for name, spec in provenance.items()
+            if spec.family == family and spec.model_input
         )
         for family in EXECUTION_EV_FEATURE_FAMILIES
     }
@@ -469,7 +475,40 @@ def execution_ev_ablation_plan(
     full = tuple(
         name for family in EXECUTION_EV_FEATURE_FAMILIES for name in by_family[family]
     )
-    plan: dict[str, tuple[str, ...]] = {"alpha_only": alpha, "all_features": full}
+    context_families = (
+        "alpha_score",
+        "prediction_uncertainty",
+        "leaf_support",
+        "base_archetype_labels",
+    )
+    auxiliary_families = (
+        "peak_mfe",
+        "time_to_mfe",
+        "time_to_meaningful_mfe_cdf_probability",
+    )
+    catboost_families = (
+        "catboost_probabilities",
+        "catboost_entropy",
+        "catboost_probability_confidence",
+        "catboost_probability_uncertainty",
+        "catboost_path_role_mass",
+    )
+
+    def features(families: Sequence[str]) -> tuple[str, ...]:
+        return tuple(name for family in families for name in by_family[family])
+
+    alpha_context = features(context_families)
+    plan: dict[str, tuple[str, ...]] = {
+        "alpha_only": alpha,
+        "alpha_context": alpha_context,
+        "alpha_context_plus_aux": tuple(
+            dict.fromkeys((*alpha_context, *features(auxiliary_families)))
+        ),
+        "alpha_context_plus_catboost": tuple(
+            dict.fromkeys((*alpha_context, *features(catboost_families)))
+        ),
+        "all_features": full,
+    }
     if include_leave_one_family_out:
         for family in EXECUTION_EV_FEATURE_FAMILIES:
             if family == "alpha_score" or not by_family[family]:
@@ -777,11 +816,8 @@ def validate_execution_ev_training_contract(
         for family in EXECUTION_EV_FEATURE_FAMILIES
     }
     required = (
-        "time_to_mfe",
         "peak_mfe",
-        "mae_before_meaningful_mfe",
-        "adverse_turn_timing",
-        "favorable_path_slope",
+        "catboost_probabilities",
         "catboost_entropy",
         "prediction_uncertainty",
         "leaf_support",
@@ -793,6 +829,17 @@ def validate_execution_ev_training_contract(
         raise ValueError(
             "Execution-EV trainer missing required feature families: "
             + ", ".join(missing)
+        )
+    timing_families = {
+        provenance[name].family
+        for name in names
+        if provenance[name].family
+        in {"time_to_mfe", "time_to_meaningful_mfe_cdf_probability"}
+    }
+    if not timing_families:
+        raise ValueError(
+            "Execution-EV trainer requires an OOF timing input: either the scalar "
+            "timing head or promotion-audited timing-CDF probabilities"
         )
     archetype_spec = provenance.get(predicted_path_archetype_col)
     if (

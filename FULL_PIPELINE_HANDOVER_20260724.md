@@ -2197,6 +2197,42 @@ This completes only the alpha branch; CatBoost, promotion-audited auxiliary
 streams, labels, and their exact intersection still have to pass the joined
 handoff gate.
 
+#### 2026-07-25 canonical auxiliary execution-OOF adapters
+
+All five auxiliary streams are now normalized on the same `195,931` exact
+May-July OOF identities as alpha:
+
+```text
+data_perp/artifacts/execution_ev_auxiliary_oof_20260725_v1
+```
+
+Their signed Parquet hashes are:
+
+| Stream | SHA-256 | Initial model-input status |
+|---|---|---|
+| Expected peak MFE | `e34f6825a49f8a3e7b07b8e725a4f267c34e45007185af522623da89de6ec356` | Admissible research ablation |
+| Timing scalar + 2h/4h/8h/12h CDF | `d5a903de33f062f106d981754b08cf7aca3c61d9548c1290018c84e77f6174c3` | CDF probabilities admissible; weak scalar is fallback/diagnostic |
+| Expected MAE mixture | `2840b9b94efcbf95e0185c73ad2d9e96eae34f9447410ba999cb1a81ecf5f157` | Withheld after learnability audit |
+| Confirmed adverse-trough clock | `377b24905816666e61f9eaa6f3303b190b25d17220d17d8f263d5460ddf31f55` | Explicit research-only override |
+| Favorable slope | `991a3b87a823fd7fd7a1f6a605a9854b8df5c93969a803fef12a0680efa09b1d` | Explicit research-only override |
+
+The joined-handoff provenance now marks MAE, adverse-turn, slope, and the weak
+scalar timing expectation as non-model inputs whenever the signed timing-CDF
+vector is present. The execution trainer ignores all `model_input=false`
+features and predeclares paired staged arms:
+
+1. alpha only;
+2. alpha plus frozen context;
+3. alpha/context plus peak and timing CDF;
+4. alpha/context plus CatBoost;
+5. all admissible features.
+
+This directly tests whether CatBoost adds value over alpha plus the admissible
+auxiliary heads. Feature selection remains side-local and train-only inside
+each outer fold; model HPO is performed once per direct/residual target and
+side, then the named arms inherit the frozen selection/HPO contract so the
+comparison is paired and does not multiply search cost.
+
 ### Phase 6: Train Direct and Residual Execution-EV Models
 
 Goal: determine whether execution EV should be predicted directly or as a

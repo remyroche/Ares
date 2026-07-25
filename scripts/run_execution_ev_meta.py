@@ -76,16 +76,13 @@ REQUIRED_EXECUTION_AUDIT_COLUMNS = (
     "alpha_source_cost_return",
 )
 REQUIRED_FAMILIES = (
-    "time_to_mfe",
     "peak_mfe",
-    "mae_before_meaningful_mfe",
-    "adverse_turn_timing",
-    "favorable_path_slope",
     "catboost_probabilities",
     "catboost_entropy",
     "prediction_uncertainty",
     "leaf_support",
     "alpha_score",
+    "base_archetype_labels",
 )
 
 
@@ -132,7 +129,9 @@ def _parquet_row_count(path: Path) -> int:
     try:
         import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover - pandas parquet dependency
-        raise RuntimeError("pyarrow is required to preflight the smoke row cap") from exc
+        raise RuntimeError(
+            "pyarrow is required to preflight the smoke row cap"
+        ) from exc
     return int(pq.ParquetFile(path).metadata.num_rows)
 
 
@@ -165,10 +164,16 @@ def _load_provenance(path: Path) -> tuple[dict[str, FeatureProvenance], dict[str
             raise ValueError(f"feature {column!r} requires a non-empty family")
         if not isinstance(raw.get("source"), str) or not raw["source"].strip():
             raise ValueError(f"feature {column!r} requires a non-empty source")
-        if not isinstance(raw.get("pre_entry"), bool) or not isinstance(raw.get("oof_or_frozen"), bool):
-            raise ValueError(f"feature {column!r} must declare boolean pre_entry and oof_or_frozen")
+        if not isinstance(raw.get("pre_entry"), bool) or not isinstance(
+            raw.get("oof_or_frozen"), bool
+        ):
+            raise ValueError(
+                f"feature {column!r} must declare boolean pre_entry and oof_or_frozen"
+            )
         if "model_input" in raw and not isinstance(raw["model_input"], bool):
-            raise ValueError(f"feature {column!r} model_input must be boolean when supplied")
+            raise ValueError(
+                f"feature {column!r} model_input must be boolean when supplied"
+            )
         if not raw.get("available_at_col"):
             raise ValueError(
                 f"strict provenance requires available_at_col for feature {column!r}"
@@ -193,7 +198,9 @@ def _load_provenance(path: Path) -> tuple[dict[str, FeatureProvenance], dict[str
                 ),
             )
         except KeyError as exc:
-            raise ValueError(f"feature {column!r} is missing provenance field {exc.args[0]!r}") from exc
+            raise ValueError(
+                f"feature {column!r} is missing provenance field {exc.args[0]!r}"
+            ) from exc
     return parsed, payload
 
 
@@ -217,20 +224,32 @@ def _validate_handoff(
     max_span_days: float,
 ) -> pd.DataFrame:
     if timestamp_col not in id_columns or side_col not in id_columns:
-        raise ValueError("joined handoff identity must include both timestamp and side columns")
-    required = list(dict.fromkeys([
-        *id_columns,
-        timestamp_col,
-        side_col,
-        archetype_col,
-        *REQUIRED_TARGET_COLUMNS,
-        *REQUIRED_EXECUTION_AUDIT_COLUMNS,
-        *provenance.keys(),
-        *[spec.available_at_col for spec in provenance.values() if spec.available_at_col],
-    ]))
+        raise ValueError(
+            "joined handoff identity must include both timestamp and side columns"
+        )
+    required = list(
+        dict.fromkeys(
+            [
+                *id_columns,
+                timestamp_col,
+                side_col,
+                archetype_col,
+                *REQUIRED_TARGET_COLUMNS,
+                *REQUIRED_EXECUTION_AUDIT_COLUMNS,
+                *provenance.keys(),
+                *[
+                    spec.available_at_col
+                    for spec in provenance.values()
+                    if spec.available_at_col
+                ],
+            ]
+        )
+    )
     missing = [column for column in required if column not in frame.columns]
     if missing:
-        raise ValueError("joined handoff is missing required columns: " + ", ".join(missing))
+        raise ValueError(
+            "joined handoff is missing required columns: " + ", ".join(missing)
+        )
     declared_keys = list(provenance_payload["handoff"]["join_keys"])
     if list(id_columns) != declared_keys:
         raise ValueError(
@@ -248,7 +267,9 @@ def _validate_handoff(
     if work.duplicated(list(id_columns)).any():
         raise ValueError("joined handoff violates exact one-to-one identity uniqueness")
     if max_span_days > 0:
-        span_days = (work[timestamp_col].max() - work[timestamp_col].min()).total_seconds() / 86_400.0
+        span_days = (
+            work[timestamp_col].max() - work[timestamp_col].min()
+        ).total_seconds() / 86_400.0
         if span_days > max_span_days:
             raise ValueError(
                 f"smoke date cap exceeded: {span_days:.3f} days > {max_span_days:.3f}; "
@@ -256,19 +277,27 @@ def _validate_handoff(
             )
     decision = _utc(work["execution_decision_utc"], column="execution_decision_utc")
     if not (decision == work[timestamp_col] + pd.Timedelta(hours=1)).all():
-        raise ValueError("execution decision timestamps must equal signal timestamp + one hour")
+        raise ValueError(
+            "execution decision timestamps must equal signal timestamp + one hour"
+        )
     work["execution_decision_utc"] = decision
     if label_end_time_col:
         if label_end_time_col not in work.columns:
             raise ValueError(f"label-end column {label_end_time_col!r} is missing")
-        work[label_end_time_col] = _utc(work[label_end_time_col], column=label_end_time_col)
+        work[label_end_time_col] = _utc(
+            work[label_end_time_col], column=label_end_time_col
+        )
         if not (work[label_end_time_col] == decision + pd.Timedelta(hours=12)).all():
-            raise ValueError("execution label-end timestamps must equal decision timestamp + 12 hours")
+            raise ValueError(
+                "execution label-end timestamps must equal decision timestamp + 12 hours"
+            )
 
     for column in REQUIRED_TARGET_COLUMNS:
         values = pd.to_numeric(work[column], errors="coerce")
         if not np.isfinite(values.to_numpy(dtype=float)).all():
-            raise ValueError(f"joined handoff has non-finite required target/baseline {column!r}")
+            raise ValueError(
+                f"joined handoff has non-finite required target/baseline {column!r}"
+            )
         work[column] = values.astype("float64")
     for column in (
         "execution_gross_ev_12h",
@@ -278,24 +307,36 @@ def _validate_handoff(
     ):
         values = pd.to_numeric(work[column], errors="coerce")
         if not np.isfinite(values.to_numpy(dtype=float)).all():
-            raise ValueError(f"joined handoff has non-finite execution accounting column {column!r}")
+            raise ValueError(
+                f"joined handoff has non-finite execution accounting column {column!r}"
+            )
         work[column] = values.astype("float64")
-    if float(
-        (
-            work["execution_gross_ev_12h"]
-            - work["execution_cost_return"]
-            - work["execution_net_ev_12h"]
-        ).abs().max()
-    ) > 1e-6:
+    if (
+        float(
+            (
+                work["execution_gross_ev_12h"]
+                - work["execution_cost_return"]
+                - work["execution_net_ev_12h"]
+            )
+            .abs()
+            .max()
+        )
+        > 1e-6
+    ):
         raise ValueError("execution gross-cost-net accounting identity is inconsistent")
-    if float(
-        (
-            work["existing_alpha_ev_source_basis"]
-            + work["alpha_source_cost_return"]
-            - work["execution_cost_return"]
-            - work["existing_alpha_ev"]
-        ).abs().max()
-    ) > 1e-6:
+    if (
+        float(
+            (
+                work["existing_alpha_ev_source_basis"]
+                + work["alpha_source_cost_return"]
+                - work["execution_cost_return"]
+                - work["existing_alpha_ev"]
+            )
+            .abs()
+            .max()
+        )
+        > 1e-6
+    ):
         raise ValueError("alpha EV cost-basis reconciliation is inconsistent")
     if set(work[side_col].astype(str).str.lower()) - {"long", "short"}:
         raise ValueError(f"{side_col!r} must contain only canonical long/short values")
@@ -315,19 +356,33 @@ def _validate_handoff(
             raise ValueError(f"joined handoff has null calibration context {column!r}")
         available = _utc(work[spec.available_at_col], column=spec.available_at_col)
         if (available > work[timestamp_col]).any():
-            raise ValueError(f"feature {column!r} was available after the decision timestamp")
-    missing_families = [family for family, columns in family_columns.items() if not columns]
+            raise ValueError(
+                f"feature {column!r} was available after the decision timestamp"
+            )
+    missing_families = [
+        family for family, columns in family_columns.items() if not columns
+    ]
     if missing_families:
-        raise ValueError("provenance is missing feature families: " + ", ".join(missing_families))
+        raise ValueError(
+            "provenance is missing feature families: " + ", ".join(missing_families)
+        )
     if len(family_columns["catboost_probabilities"]) < 2:
-        raise ValueError("joined handoff requires the complete CatBoost probability vector (at least two columns)")
+        raise ValueError(
+            "joined handoff requires the complete CatBoost probability vector (at least two columns)"
+        )
     if "existing_alpha_ev" not in family_columns["alpha_score"]:
-        raise ValueError("existing_alpha_ev must be the declared frozen alpha_score baseline feature")
+        raise ValueError(
+            "existing_alpha_ev must be the declared frozen alpha_score baseline feature"
+        )
 
     declared_rows = provenance_payload["handoff"].get("row_count")
     if declared_rows is not None and int(declared_rows) != len(work):
-        raise ValueError(f"handoff.row_count={declared_rows} does not match joined rows={len(work)}")
-    work = work.sort_values([timestamp_col, *id_columns[1:]], kind="stable").reset_index(drop=True)
+        raise ValueError(
+            f"handoff.row_count={declared_rows} does not match joined rows={len(work)}"
+        )
+    work = work.sort_values(
+        [timestamp_col, *id_columns[1:]], kind="stable"
+    ).reset_index(drop=True)
     # Reuse the trainer's complete semantic contract during dry runs too.  In
     # particular, this rejects outcome-like feature names and non-frozen inputs.
     validate_execution_ev_training_contract(
@@ -384,10 +439,14 @@ def _oof_ledger(
         output[f"{column}__is_oof"] = predictions[column].notna().to_numpy()
     if oof_provenance is not None:
         if not oof_provenance.index.equals(frame.index):
-            raise ValueError("OOF provenance index does not match the exact joined handoff")
+            raise ValueError(
+                "OOF provenance index does not match the exact joined handoff"
+            )
         for column in oof_provenance.columns:
             if column in output.columns:
-                raise ValueError(f"OOF provenance column conflicts with ledger column {column!r}")
+                raise ValueError(
+                    f"OOF provenance column conflicts with ledger column {column!r}"
+                )
             output[column] = oof_provenance[column].to_numpy()
     return output
 
@@ -398,11 +457,17 @@ def _winner_table(
     *,
     timestamp_col: str,
 ) -> pd.DataFrame:
-    actual = pd.to_numeric(frame["execution_net_ev_12h"], errors="coerce").to_numpy(dtype=float)
-    weeks = frame[timestamp_col].dt.floor("D") - pd.to_timedelta(frame[timestamp_col].dt.weekday, unit="D")
+    actual = pd.to_numeric(frame["execution_net_ev_12h"], errors="coerce").to_numpy(
+        dtype=float
+    )
+    weeks = frame[timestamp_col].dt.floor("D") - pd.to_timedelta(
+        frame[timestamp_col].dt.weekday, unit="D"
+    )
     rows: list[dict[str, Any]] = []
     for column in predictions.columns:
-        predicted = pd.to_numeric(predictions[column], errors="coerce").to_numpy(dtype=float)
+        predicted = pd.to_numeric(predictions[column], errors="coerce").to_numpy(
+            dtype=float
+        )
         valid = np.isfinite(actual) & np.isfinite(predicted)
         if not valid.any():
             continue
@@ -411,13 +476,23 @@ def _winner_table(
         tail = np.argsort(score, kind="stable")[-tail_count:]
         residual = score - y
         weekly_tail: list[float] = []
-        for _, positions in pd.Series(np.flatnonzero(valid)).groupby(weeks.iloc[np.flatnonzero(valid)].to_numpy()):
+        for _, positions in pd.Series(np.flatnonzero(valid)).groupby(
+            weeks.iloc[np.flatnonzero(valid)].to_numpy()
+        ):
             local = positions.to_numpy(dtype=int)
-            local_tail = local[np.argsort(predicted[local], kind="stable")[-max(1, int(np.ceil(len(local) * 0.10))):]]
+            local_tail = local[
+                np.argsort(predicted[local], kind="stable")[
+                    -max(1, int(np.ceil(len(local) * 0.10))) :
+                ]
+            ]
             weekly_tail.append(float(np.mean(actual[local_tail])))
         rank_y = pd.Series(y).rank(method="average").to_numpy(dtype=float)
         rank_score = pd.Series(score).rank(method="average").to_numpy(dtype=float)
-        ic = float(np.corrcoef(rank_y, rank_score)[0, 1]) if len(y) > 1 and np.std(rank_y) and np.std(rank_score) else float("nan")
+        ic = (
+            float(np.corrcoef(rank_y, rank_score)[0, 1])
+            if len(y) > 1 and np.std(rank_y) and np.std(rank_score)
+            else float("nan")
+        )
         mode, arm = column.split("__", maxsplit=1)
         rows.append(
             {
@@ -440,17 +515,33 @@ def _winner_table(
         )
     if not rows:
         raise ValueError("trainer emitted no finite OOF predictions")
-    return pd.DataFrame(rows).sort_values(
-        ["top10_mean_net_ev", "positive_week_fraction", "worst_week_top10_mean_net_ev", "mae"],
-        ascending=[False, False, False, True],
-        kind="stable",
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(
+            [
+                "top10_mean_net_ev",
+                "positive_week_fraction",
+                "worst_week_top10_mean_net_ev",
+                "mae",
+            ],
+            ascending=[False, False, False, True],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Exact joined handoff parquet.")
-    parser.add_argument("--provenance-json", type=Path, required=True, help="Strict joined-handoff provenance JSON.")
+    parser.add_argument(
+        "--input", type=Path, required=True, help="Exact joined handoff parquet."
+    )
+    parser.add_argument(
+        "--provenance-json",
+        type=Path,
+        required=True,
+        help="Strict joined-handoff provenance JSON.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--id-cols",
@@ -465,8 +556,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--side-col", default="side_name")
     parser.add_argument("--archetype-col", default="catboost_archetype")
     parser.add_argument("--label-end-time-col", default="execution_label_end_utc")
-    parser.add_argument("--max-rows", type=int, default=5_000, help="Hard smoke cap, checked from parquet metadata before loading.")
-    parser.add_argument("--max-span-days", type=float, default=31.0, help="Hard smoke date-span cap after UTC normalization.")
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=5_000,
+        help="Hard smoke cap, checked from parquet metadata before loading.",
+    )
+    parser.add_argument(
+        "--max-span-days",
+        type=float,
+        default=31.0,
+        help="Hard smoke date-span cap after UTC normalization.",
+    )
     parser.add_argument("--n-splits", type=int, default=2)
     parser.add_argument("--min-train-rows", type=int, default=50)
     parser.add_argument("--hpo-trials", type=int, default=0)
@@ -479,13 +580,19 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip the side-local 12h timing plus loss-risk companion ablation.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Validate and persist the input manifest without fitting.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and persist the input manifest without fitting.",
+    )
     return parser
 
 
 def run(args: argparse.Namespace) -> dict[str, Path]:
     if args.max_rows < 1 or args.max_span_days < 0:
-        raise ValueError("max-rows must be positive and max-span-days must be non-negative")
+        raise ValueError(
+            "max-rows must be positive and max-span-days must be non-negative"
+        )
     if args.n_splits < 1 or args.min_train_rows < 4 or args.n_estimators < 1:
         raise ValueError("invalid trainer size arguments")
     if not args.input.is_file() or args.input.suffix.lower() not in {".parquet", ".pq"}:
@@ -548,9 +655,20 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     args.output_dir.mkdir(parents=True, exist_ok=False)
     manifest: dict[str, Any] = {
         "schema": "execution_ev_meta_runner_v1",
-        "input": {"path": str(args.input), "sha256": _sha256(args.input), "rows": int(len(frame))},
-        "provenance": {"path": str(args.provenance_json), "sha256": _sha256(args.provenance_json), "payload": provenance_payload},
-        "timestamp_range_utc": {"start": frame[args.timestamp_col].min(), "end": frame[args.timestamp_col].max()},
+        "input": {
+            "path": str(args.input),
+            "sha256": _sha256(args.input),
+            "rows": int(len(frame)),
+        },
+        "provenance": {
+            "path": str(args.provenance_json),
+            "sha256": _sha256(args.provenance_json),
+            "payload": provenance_payload,
+        },
+        "timestamp_range_utc": {
+            "start": frame[args.timestamp_col].min(),
+            "end": frame[args.timestamp_col].max(),
+        },
         "identity_columns": id_columns,
         "trainer_config": asdict(config),
         "timing_risk_head_enabled": timing_risk_enabled,
@@ -562,7 +680,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         return {"manifest": manifest_path}
 
     bundle = train_execution_ev_meta(frame, provenance, config=config)
-    bundle_path = save_execution_ev_bundle(bundle, args.output_dir / "execution_ev_bundle.joblib")
+    bundle_path = save_execution_ev_bundle(
+        bundle, args.output_dir / "execution_ev_bundle.joblib"
+    )
     report_paths = write_execution_ev_report(bundle, args.output_dir)
     ledger = _oof_ledger(
         frame,
@@ -573,7 +693,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     )
     oof_path = args.output_dir / "joined_execution_ev_oof.parquet"
     ledger.to_parquet(oof_path, index=False, compression="zstd")
-    leaderboard = _winner_table(frame, bundle.oof_predictions, timestamp_col=args.timestamp_col)
+    leaderboard = _winner_table(
+        frame, bundle.oof_predictions, timestamp_col=args.timestamp_col
+    )
     leaderboard_path = args.output_dir / "oof_leaderboard.csv"
     leaderboard.to_csv(leaderboard_path, index=False)
     model_mode_leaderboard = leaderboard.loc[
@@ -636,7 +758,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             "status": "completed",
             "bundle": bundle_path.name,
             "oof_ledger": oof_path.name,
-            "module_report_paths": {key: value.name for key, value in report_paths.items()},
+            "module_report_paths": {
+                key: value.name for key, value in report_paths.items()
+            },
             "leaderboard": leaderboard_path.name,
             "winner": winner,
             "oof_contract": bundle.report["oof_contract"],

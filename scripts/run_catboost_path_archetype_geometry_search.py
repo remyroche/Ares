@@ -331,7 +331,11 @@ def _canonical_context_provenance(manifest_path: Path, *, side: str) -> dict[str
     payload = _read_json(manifest_path)
     if not isinstance(payload, Mapping):
         raise ValueError("canonical context manifest must contain an object")
-    context = payload.get("context", payload.get("output"))
+    # Materialized downstream-context manifests retain the pre-AE source under
+    # ``context`` and bind the actual geometry input under ``output``.  Prefer
+    # the latter; ``context`` remains a compatibility fallback for older
+    # manifests that did not publish an output block.
+    context = payload.get("output", payload.get("context"))
     loader_evidence = payload.get("ae_gmm", {}).get("loader_evidence_by_side", {})
     if not isinstance(context, Mapping) or not isinstance(loader_evidence, Mapping):
         raise ValueError(

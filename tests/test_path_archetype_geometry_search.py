@@ -285,6 +285,30 @@ def _write_side_geometry_contract_inputs(
     )
 
 
+def test_canonical_context_provenance_prefers_materialized_output_hash(
+    tmp_path: Path,
+) -> None:
+    runner = _geometry_runner()
+    manifest = tmp_path / "canonical_context_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "context": {"sha256": "1" * 64},
+                "output": {"sha256": "2" * 64},
+                "ae_gmm": {
+                    "loader_evidence_by_side": {"long": {"ae_state_sha256": "3" * 64}}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    provenance = runner._canonical_context_provenance(manifest, side="long")
+
+    assert provenance["canonical_context_sha256"] == "2" * 64
+    assert provenance["side_ae_state_sha256"] == "3" * 64
+
+
 def test_dynamic_precedence_uses_raw_paths_not_fixed_summary_thresholds() -> None:
     labels = label_path_geometry(_frame())
     assert labels["path_geometry_label"].tolist() == [

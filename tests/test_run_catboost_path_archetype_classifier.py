@@ -223,6 +223,9 @@ def _write_frozen_ae_gmm_sidecar(
             "__ts__": pd.to_datetime(frame["__ts__"], utc=True),
             "__symbol__": frame["__symbol__"].astype(str),
             "side": np.int8(1),
+            runner.REPRESENTATION_AVAILABLE_FEATURE: np.ones(
+                len(frame), dtype=np.float32
+            ),
             **{
                 column: np.arange(len(frame), dtype=np.float32) + index
                 for index, column in enumerate(AE_GMM_FEATURE_COLUMNS)
@@ -290,8 +293,8 @@ def _write_canonical_side_bindings(
     }
 
 
-@pytest.mark.parametrize("failure", ["missing", "duplicate", "nonfinite"])
-def test_frozen_ae_gmm_sidecar_rejects_missing_duplicate_and_nonfinite_rows(
+@pytest.mark.parametrize("failure", ["missing", "duplicate", "infinite"])
+def test_frozen_ae_gmm_sidecar_rejects_missing_duplicate_and_infinite_rows(
     tmp_path: Path,
     failure: str,
 ) -> None:
@@ -307,9 +310,9 @@ def test_frozen_ae_gmm_sidecar_rejects_missing_duplicate_and_nonfinite_rows(
         )
         message = "duplicate timestamp/symbol/side"
     else:
-        values.loc[0, AE_GMM_FEATURE_COLUMNS[0]] = np.nan
+        values.loc[0, AE_GMM_FEATURE_COLUMNS[0]] = np.inf
         values.to_parquet(sidecar, index=False)
-        message = "non-finite generated outputs"
+        message = "infinite generated outputs"
     with pytest.raises(ValueError, match=message):
         runner._validate_frozen_ae_gmm_sidecar(
             frame,
@@ -345,6 +348,116 @@ def test_frozen_ae_gmm_sidecar_load_preserves_full_label_order_and_alignment(
     np.testing.assert_allclose(
         loaded[AE_GMM_FEATURE_COLUMNS[1]], np.arange(len(frame)) + 1
     )
+
+
+def test_frozen_ae_gmm_sidecar_preserves_native_nan_values(
+    tmp_path: Path,
+) -> None:
+    frame = _frame(40)
+    sidecar = tmp_path / "frozen.parquet"
+    values = _write_frozen_ae_gmm_sidecar(sidecar, frame)
+    values.loc[[0, 3], AE_GMM_FEATURE_COLUMNS[0]] = np.nan
+    values.loc[[0, 3], runner.REPRESENTATION_AVAILABLE_FEATURE] = 0.0
+    values.to_parquet(sidecar, index=False)
+
+    contract = runner._validate_frozen_ae_gmm_sidecar(
+        frame,
+        sidecar_path=sidecar,
+        manifest_path=None,
+        timestamp_column="__ts__",
+        side_column="side",
+    )
+    loaded = runner._load_frozen_ae_gmm_matrix(
+        frame,
+        [AE_GMM_FEATURE_COLUMNS[0]],
+        sidecar_contract=contract,
+        timestamp_column="__ts__",
+        side_column="side",
+    )
+
+    assert contract["missing_value_policy"] == (
+        "preserve_native_nan_only_when_availability_is_zero_reject_infinite"
+    )
+    assert contract["native_missing_rows"] == 2
+    assert loaded[AE_GMM_FEATURE_COLUMNS[0]].isna().tolist() == [
+        True,
+        False,
+        False,
+        True,
+        *([False] * 36),
+    ]
+
+
+def test_frozen_ae_gmm_sidecar_normalizes_string_side_and_rejects_false_available(
+    tmp_path: Path,
+) -> None:
+    frame = _frame(40)
+    sidecar = tmp_path / "frozen.parquet"
+    values = _write_frozen_ae_gmm_sidecar(sidecar, frame)
+    values["side"] = "long"
+    values.loc[0, AE_GMM_FEATURE_COLUMNS[0]] = np.nan
+    values.to_parquet(sidecar, index=False)
+
+    with pytest.raises(ValueError, match="marks rows available despite missing"):
+        runner._validate_frozen_ae_gmm_sidecar(
+            frame,
+            sidecar_path=sidecar,
+            manifest_path=None,
+            timestamp_column="__ts__",
+            side_column="side",
+        )
+
+    values.loc[0, runner.REPRESENTATION_AVAILABLE_FEATURE] = 0.0
+    values.to_parquet(sidecar, index=False)
+    contract = runner._validate_frozen_ae_gmm_sidecar(
+        frame,
+        sidecar_path=sidecar,
+        manifest_path=None,
+        timestamp_column="__ts__",
+        side_column="side",
+    )
+    assert contract["matched_rows"] == len(frame)
+
+
+def test_strict_development_oos_routing_excludes_late_labels_from_selection_hpo() -> (
+    None
+):
+    frame = pd.DataFrame(
+        {
+            "__ts__": pd.to_datetime(
+                [
+                    "2026-04-30T22:00:00Z",
+                    "2026-04-30T23:00:00Z",
+                    "2026-05-01T00:00:00Z",
+                    "2026-05-02T00:00:00Z",
+                ],
+                utc=True,
+            ),
+            "__label_end_ts__": pd.to_datetime(
+                [
+                    "2026-04-30T23:00:00Z",
+                    "2026-05-01T04:00:00Z",
+                    "2026-05-01T04:00:00Z",
+                    "2026-05-02T04:00:00Z",
+                ],
+                utc=True,
+            ),
+        }
+    )
+
+    development, report = runner._development_oos_routing(
+        frame,
+        timestamp_column="__ts__",
+        label_end_column="__label_end_ts__",
+        development_end="2026-05-01T00:00:00Z",
+    )
+
+    assert development.tolist() == [True, False, False, False]
+    assert report["enabled"] is True
+    assert report["development_rows"] == 1
+    assert report["oos_decision_rows"] == 2
+    assert report["boundary_unassigned_rows"] == 1
+    assert "label_end_is_strictly_before" in report["development_contract"]
 
 
 def test_canonical_side_binding_rejects_cross_side_ae_state(tmp_path: Path) -> None:
@@ -468,6 +581,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         features: pd.DataFrame, *args: object, **kwargs: object
     ) -> archetype.FastSelectorResult:
         captured["selector_calls"] = int(captured["selector_calls"]) + 1
+        captured["selector_rows"] = len(features)
         captured["selector_labels"] = set(pd.Series(args[0]).astype(str))
         return archetype.FastSelectorResult(
             selected_features=("base_x", "meta_x"),
@@ -483,6 +597,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         captured["hpo_calls"] = int(captured["hpo_calls"]) + 1
         captured["hpo_trials"] = kwargs["n_trials"]
         captured["structural_only_hpo"] = kwargs["structural_only_hpo"]
+        captured["hpo_timestamps"] = pd.to_datetime(args[2], utc=True)
         return SimpleNamespace(
             best_params={"iterations": 4},
             report=lambda: {"best_params": {"iterations": 4}},
@@ -555,6 +670,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         frame,
         output,
         discovery_end="2026-01-05T00:00:00Z",
+        development_end="2026-01-06T00:00:00Z",
         config_mapping=_config(),
         mandatory_features=["base_x"],
         hpo_trials=9,
@@ -571,9 +687,13 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     assert captured["structural_only_hpo"] is True
     assert captured["stages"] == runner.SMOKE_PERMUTATION_STAGES
     assert captured["selector_calls"] == 1
+    assert captured["selector_rows"] < runner.SMOKE_MAX_ROWS
     assert "fast_realization_winner" in captured["selector_labels"]
     assert not set(runner.LEGACY_FAST_CLASSES).intersection(captured["selector_labels"])
     assert captured["hpo_calls"] == 1
+    assert captured["hpo_timestamps"].max() < pd.Timestamp("2026-01-06T00:00:00Z")
+    assert manifest["development_oos_routing"]["enabled"] is True
+    assert manifest["development_oos_routing"]["oos_decision_rows"] > 0
     assert not (output / "path_archetype_discovery.joblib").exists()
     assert (output / "path_archetype_classifier.joblib").exists()
     assert (output / "feature_selection_manifest.json").exists()
@@ -703,13 +823,15 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         "permutation_feature_selection",
         "side_local_geometry_selected_between_selection_and_hpo",
         "structural_hpo_on_frozen_selected_features",
-        "four_arm_full_population_oof_economic_balance_sweep",
-        "final_refit_from_economic_oof_selected_arm",
+        "four_arm_development_only_oof_economic_balance_sweep",
+        "fixed_monthly_may_june_july_outer_oof_with_frozen_choices",
+        "final_refit_after_outer_oof",
     ]
     reused = runner.run_pipeline(
         frame,
         tmp_path / "reused_artifacts",
         discovery_end="2026-01-05T00:00:00Z",
+        development_end="2026-01-06T00:00:00Z",
         config_mapping=_config(),
         mandatory_features=["base_x"],
         hpo_trials=9,
@@ -968,8 +1090,9 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
         "permutation_feature_selection",
         "side_local_geometry_selected_between_selection_and_hpo",
         "structural_hpo_on_frozen_selected_features",
-        "four_arm_full_population_oof_economic_balance_sweep",
-        "final_refit_from_economic_oof_selected_arm",
+        "four_arm_development_only_oof_economic_balance_sweep",
+        "fixed_monthly_may_june_july_outer_oof_with_frozen_choices",
+        "final_refit_after_outer_oof",
     ]
     assert report["effective_model_params"]["iterations"] == 3_000
     assert report["effective_model_params"]["od_wait"] == 150
@@ -1629,17 +1752,34 @@ def test_canonical_runner_lets_frozen_aegmm_compete_without_forcing_them(
         captured["selector"].append((len(features), tuple(features.columns)))
         captured_mandatory.append(tuple(kwargs["mandatory_features"]))
         return archetype.FastSelectorResult(
-            selected_features=("base_x", *AE_GMM_FEATURE_COLUMNS),
-            candidate_features=("base_x", *AE_GMM_FEATURE_COLUMNS),
-            mandatory_features=tuple(AE_GMM_FEATURE_COLUMNS),
+            selected_features=(
+                "base_x",
+                *AE_GMM_FEATURE_COLUMNS,
+                runner.REPRESENTATION_AVAILABLE_FEATURE,
+            ),
+            candidate_features=(
+                "base_x",
+                *AE_GMM_FEATURE_COLUMNS,
+                runner.REPRESENTATION_AVAILABLE_FEATURE,
+            ),
+            mandatory_features=(runner.REPRESENTATION_AVAILABLE_FEATURE,),
             availability={
                 "base_x": 1.0,
                 **{name: 1.0 for name in AE_GMM_FEATURE_COLUMNS},
+                runner.REPRESENTATION_AVAILABLE_FEATURE: 1.0,
             },
-            scores=pd.DataFrame({"mi": 1.0}, index=["base_x", *AE_GMM_FEATURE_COLUMNS]),
+            scores=pd.DataFrame(
+                {"mi": 1.0},
+                index=[
+                    "base_x",
+                    *AE_GMM_FEATURE_COLUMNS,
+                    runner.REPRESENTATION_AVAILABLE_FEATURE,
+                ],
+            ),
             correlation_clusters=(
                 ("base_x",),
                 *[(name,) for name in AE_GMM_FEATURE_COLUMNS],
+                (runner.REPRESENTATION_AVAILABLE_FEATURE,),
             ),
             proxy_backend="test_proxy",
         )
@@ -1673,18 +1813,18 @@ def test_canonical_runner_lets_frozen_aegmm_compete_without_forcing_them(
     def fake_permutation(
         *args: object, **kwargs: object
     ) -> tuple[list[str], pd.DataFrame]:
-        return list(AE_GMM_FEATURE_COLUMNS), pd.DataFrame(
-            [
-                {"stage": 32, "feature": name, "selected": True}
-                for name in AE_GMM_FEATURE_COLUMNS
-            ]
+        selected = [*AE_GMM_FEATURE_COLUMNS, runner.REPRESENTATION_AVAILABLE_FEATURE]
+        return selected, pd.DataFrame(
+            [{"stage": 32, "feature": name, "selected": True} for name in selected]
         )
 
     def fake_final(
         *args: object, **kwargs: object
     ) -> archetype.PathArchetypeClassifier:
         return archetype.PathArchetypeClassifier(
-            tuple(AE_GMM_FEATURE_COLUMNS), ("a", "b", "c", "d"), _PickleModel()
+            (*AE_GMM_FEATURE_COLUMNS, runner.REPRESENTATION_AVAILABLE_FEATURE),
+            ("a", "b", "c", "d"),
+            _PickleModel(),
         )
 
     monkeypatch.setattr(runner, "read_static_features", fake_static_reader)
@@ -1731,13 +1871,30 @@ def test_canonical_runner_lets_frozen_aegmm_compete_without_forcing_them(
     )
 
     assert captured["selector"] == [
-        (240, ("base_x", "meta_x", *AE_GMM_FEATURE_COLUMNS))
+        (
+            240,
+            (
+                "base_x",
+                "meta_x",
+                *AE_GMM_FEATURE_COLUMNS,
+                runner.REPRESENTATION_AVAILABLE_FEATURE,
+            ),
+        )
     ]
-    assert captured_mandatory == [()]
+    assert captured_mandatory == [(runner.REPRESENTATION_AVAILABLE_FEATURE,)]
     # The staged selector removes base_x, so HPO is restricted to the frozen
     # AE/GMM-only final contract rather than the wider preselection contract.
     assert captured["hpo"] == []
-    assert captured["oof"] == [(240, ("base_x", *AE_GMM_FEATURE_COLUMNS))]
+    assert captured["oof"] == [
+        (
+            240,
+            (
+                runner.REPRESENTATION_AVAILABLE_FEATURE,
+                "base_x",
+                *AE_GMM_FEATURE_COLUMNS,
+            ),
+        )
+    ]
     assert captured["static"] == [(2, ("base_x", "meta_x"))]
     checkpoint = json.loads((output / "feature_selection_checkpoint.json").read_text())
     assert checkpoint["side"] == "long"

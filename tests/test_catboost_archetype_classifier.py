@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from extreme_price_movements import catboost_archetype_classifier as archetype
 from extreme_price_movements.catboost_archetype_classifier import (
     CatBoostUnavailableError,
     OOFPathArchetypeResult,
@@ -31,6 +32,17 @@ from extreme_price_movements.catboost_archetype_classifier import (
 )
 from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
 from extreme_price_movements.path_archetype_support import MERGED_PATH_ARCHETYPE_CLASSES
+
+
+def test_catboost_matrix_preserves_nan_and_rejects_infinity() -> None:
+    frame = pd.DataFrame({"x": [1.0, np.nan], "y": [2.0, 3.0]})
+    values = archetype._catboost_matrix(frame, ["x", "y"])
+    assert np.isnan(values[1, 0])
+    assert values[0, 0] == 1.0
+
+    frame.loc[0, "x"] = np.inf
+    with pytest.raises(ValueError, match="infinite"):
+        archetype._catboost_matrix(frame, ["x", "y"])
 
 
 def test_future_path_summary_has_required_path_signatures() -> None:
@@ -1613,6 +1625,207 @@ def test_chronological_folds_purge_open_labels_and_apply_embargo() -> None:
         valid_start = ts[fold.validation_indices[0]]
         assert (ends[fold.train_indices] < valid_start).all()
         assert (ts[fold.train_indices] < valid_start - pd.Timedelta(hours=3)).all()
+
+
+def test_fixed_monthly_outer_oof_uses_exact_may_june_july_boundaries_and_train_only_weights(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import extreme_price_movements.catboost_archetype_classifier as module
+
+    timestamps = pd.date_range(
+        "2026-04-01",
+        "2026-07-07",
+        freq="D",
+        tz="UTC",
+        inclusive="left",
+    )
+    label_end = timestamps + pd.Timedelta(hours=12)
+    # This row is before the May decision boundary but is unresolved exactly
+    # at it, so it must never reach the May fold's training loss or weights.
+    label_end = pd.Series(label_end)
+    label_end.loc[timestamps == pd.Timestamp("2026-04-29", tz="UTC")] = pd.Timestamp(
+        "2026-05-01", tz="UTC"
+    )
+    labels = np.where(np.arange(len(timestamps)) % 5 == 0, "b", "a")
+    features = pd.DataFrame({"pre_x": np.arange(len(timestamps), dtype=float)})
+    row_ids = [f"candidate-{index}" for index in range(len(features))]
+    plan = module.build_fixed_monthly_outer_oof_plan(
+        timestamps,
+        label_end=label_end,
+        row_ids=row_ids,
+    )
+    expected_starts = pd.DatetimeIndex(
+        [
+            "2026-05-01 00:00:00+00:00",
+            "2026-06-01 00:00:00+00:00",
+            "2026-07-01 00:00:00+00:00",
+        ]
+    )
+    assert [window.validation_start for window in plan.windows] == list(expected_starts)
+    assert plan.report()["final_validation_month_may_be_partial"] is True
+    expected_validation = np.flatnonzero(
+        (timestamps >= expected_starts[0])
+        & (timestamps < pd.Timestamp("2026-08-01", tz="UTC"))
+    )
+    assert np.array_equal(
+        np.sort(np.concatenate([window.validation_indices for window in plan.windows])),
+        expected_validation,
+    )
+    for window in plan.windows:
+        assert np.all(timestamps[window.validation_indices] >= window.validation_start)
+        assert np.all(
+            timestamps[window.validation_indices] < window.validation_end_exclusive
+        )
+        assert np.all(label_end.iloc[window.train_indices] < window.validation_start)
+        assert np.all(
+            timestamps[window.train_indices]
+            < window.validation_start - pd.Timedelta(hours=24)
+        )
+    may_window = plan.windows[0]
+    assert not np.any(
+        timestamps[may_window.train_indices] == pd.Timestamp("2026-04-29", tz="UTC")
+    )
+    assert not np.any(
+        timestamps[may_window.train_indices] == pd.Timestamp("2026-04-30", tz="UTC")
+    )
+    assert (
+        len(plan.windows[-1].validation_indices) < 31
+    )  # July is intentionally partial.
+
+    init_calls: list[dict[str, object]] = []
+
+    class FakeCatBoost:
+        classes_ = np.array([0, 1])
+        tree_count_ = 7
+
+        def __init__(self, **kwargs: object) -> None:
+            init_calls.append(kwargs)
+
+        def fit(
+            self, _x: np.ndarray, _y: np.ndarray, **_kwargs: object
+        ) -> "FakeCatBoost":
+            return self
+
+        def predict_proba(self, values: np.ndarray) -> np.ndarray:
+            return np.tile(np.array([[0.7, 0.3]]), (len(values), 1))
+
+        def get_best_iteration(self) -> int:
+            return 5
+
+    monkeypatch.setattr(module, "_require_catboost", lambda: FakeCatBoost)
+    params = {
+        "iterations": 20,
+        "od_wait": 4,
+        "class_balance_arm": "frequency_power_0.75",
+    }
+    frozen = {
+        "schema": module.FIXED_MONTHLY_OUTER_OOF_FROZEN_PARAMS_SCHEMA,
+        "selection_scope": "pre_first_outer_validation_month_development_only",
+        "development_label_end_exclusive": "2026-05-01T00:00:00Z",
+        "params_sha256": module._canonical_json_sha256(params),
+        "final_refit_used_for_selection": False,
+        "class_balance_selection_scope": (
+            "pre_first_outer_validation_month_development_only"
+        ),
+    }
+    callback_events: list[tuple[int, int]] = []
+    result = module.fit_fixed_monthly_outer_oof_catboost(
+        features,
+        labels,
+        timestamps,
+        label_end=label_end,
+        params=params,
+        frozen_params_provenance=frozen,
+        row_ids=row_ids,
+        plan=plan,
+        config=PathArchetypeConfig(class_order=("a", "b")),
+        fold_callback=lambda window, _probabilities, fold_ids: callback_events.append(
+            (window.fold_id, int(np.sum(fold_ids >= 0)))
+        ),
+    )
+    assert callback_events == [
+        (0, len(plan.windows[0].validation_indices)),
+        (
+            1,
+            len(plan.windows[0].validation_indices)
+            + len(plan.windows[1].validation_indices),
+        ),
+        (2, len(expected_validation)),
+    ]
+    assert np.array_equal(np.flatnonzero(result.oof.fold_ids >= 0), expected_validation)
+    reports = result.oof.diagnostics["fold_fit_reports"]
+    assert [report["fold_id"] for report in reports] == [0, 1, 2]
+    assert all(
+        report["class_balance"]["weight_estimation_scope"]
+        == "fixed_monthly_outer_oof_fold_train_only"
+        for report in reports
+    )
+    assert all(
+        report["fixed_monthly_outer_oof_window"]["latest_train_label_end_ts"]
+        < report["fixed_monthly_outer_oof_window"]["validation_start_utc"]
+        for report in reports
+    )
+    assert len(init_calls) == 3
+    assert all(
+        np.max(call["class_weights"]) / np.min(call["class_weights"]) <= 4.0
+        for call in init_calls
+    )
+    assert (
+        result.report()["outer_oof_plan"]["windows"][2]["validation_end_exclusive_utc"]
+        == "2026-08-01 00:00:00+00:00"
+    )
+
+    original = plan.windows[0]
+    tampered_plan = module.FixedMonthlyOuterOOFPlan(
+        windows=(
+            module.FixedMonthlyOuterOOFWindow(
+                fold_id=original.fold_id,
+                validation_start=original.validation_start,
+                validation_end_exclusive=original.validation_end_exclusive,
+                train_indices=original.train_indices[1:],
+                validation_indices=original.validation_indices,
+                latest_train_decision_ts=original.latest_train_decision_ts,
+                latest_train_label_end_ts=original.latest_train_label_end_ts,
+            ),
+            *plan.windows[1:],
+        ),
+        embargo=plan.embargo,
+        input_rows=plan.input_rows,
+        input_row_identity_sha256=plan.input_row_identity_sha256,
+        input_min_timestamp=plan.input_min_timestamp,
+        input_max_timestamp=plan.input_max_timestamp,
+    )
+    with pytest.raises(
+        ValueError, match="does not match the supplied ordered temporal rows"
+    ):
+        module.fit_fixed_monthly_outer_oof_catboost(
+            features,
+            labels,
+            timestamps,
+            label_end=label_end,
+            params=params,
+            frozen_params_provenance=frozen,
+            row_ids=row_ids,
+            plan=tampered_plan,
+            config=PathArchetypeConfig(class_order=("a", "b")),
+        )
+
+    invalid_frozen = {
+        **frozen,
+        "development_label_end_exclusive": "2026-05-02T00:00:00Z",
+    }
+    with pytest.raises(ValueError, match="development cutoff exceeds"):
+        module.fit_fixed_monthly_outer_oof_catboost(
+            features,
+            labels,
+            timestamps,
+            label_end=label_end,
+            params=params,
+            frozen_params_provenance=invalid_frozen,
+            row_ids=row_ids,
+            plan=plan,
+            config=PathArchetypeConfig(class_order=("a", "b")),
+        )
 
 
 def test_catboost_requirement_is_clean_when_dependency_is_absent(

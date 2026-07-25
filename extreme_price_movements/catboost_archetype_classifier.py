@@ -595,6 +595,22 @@ def _finite_matrix(
     return values
 
 
+def _catboost_matrix(
+    frame: pd.DataFrame,
+    columns: Sequence[str],
+) -> np.ndarray:
+    """Materialize CatBoost inputs while preserving native missing values."""
+
+    values = (
+        frame.loc[:, list(columns)]
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=np.float32, copy=True)
+    )
+    if np.isinf(values).any():
+        raise ValueError("CatBoost inputs contain infinite values")
+    return values
+
+
 def _mutual_information(x: np.ndarray, y: np.ndarray, bins: int = 12) -> float:
     valid = np.isfinite(x)
     x, y = x[valid], y[valid]
@@ -948,6 +964,277 @@ class PurgedFold:
     train_indices: np.ndarray
     validation_indices: np.ndarray
     fold_id: int
+
+
+FIXED_MONTHLY_OUTER_OOF_SCHEMA = "catboost_path_archetype_fixed_monthly_outer_oof_v1"
+FIXED_MONTHLY_OUTER_OOF_FROZEN_PARAMS_SCHEMA = (
+    "catboost_path_archetype_fixed_monthly_outer_oof_frozen_params_v1"
+)
+DEFAULT_FIXED_MONTHLY_OUTER_OOF_MONTH_STARTS: tuple[str, ...] = (
+    "2026-05-01T00:00:00Z",
+    "2026-06-01T00:00:00Z",
+    "2026-07-01T00:00:00Z",
+)
+
+
+@dataclass(frozen=True)
+class FixedMonthlyOuterOOFWindow:
+    """One exact calendar-month validation window in an outer OOF plan."""
+
+    fold_id: int
+    validation_start: pd.Timestamp
+    validation_end_exclusive: pd.Timestamp
+    train_indices: np.ndarray
+    validation_indices: np.ndarray
+    latest_train_decision_ts: pd.Timestamp
+    latest_train_label_end_ts: pd.Timestamp
+
+    @property
+    def fold(self) -> PurgedFold:
+        return PurgedFold(
+            self.train_indices,
+            self.validation_indices,
+            self.fold_id,
+        )
+
+    def report(self) -> dict[str, Any]:
+        return _json_ready(
+            {
+                "fold_id": int(self.fold_id),
+                "validation_start_utc": self.validation_start,
+                "validation_end_exclusive_utc": self.validation_end_exclusive,
+                "train_rows": int(len(self.train_indices)),
+                "validation_rows": int(len(self.validation_indices)),
+                "latest_train_decision_ts": self.latest_train_decision_ts,
+                "latest_train_label_end_ts": self.latest_train_label_end_ts,
+            }
+        )
+
+
+@dataclass(frozen=True)
+class FixedMonthlyOuterOOFPlan:
+    """Auditable exact-month expanding OOF plan with immutable input binding."""
+
+    windows: tuple[FixedMonthlyOuterOOFWindow, ...]
+    embargo: pd.Timedelta
+    input_rows: int
+    input_row_identity_sha256: str
+    input_min_timestamp: pd.Timestamp
+    input_max_timestamp: pd.Timestamp
+
+    @property
+    def folds(self) -> tuple[PurgedFold, ...]:
+        return tuple(window.fold for window in self.windows)
+
+    @property
+    def first_validation_start(self) -> pd.Timestamp:
+        return self.windows[0].validation_start
+
+    def report(self) -> dict[str, Any]:
+        return _json_ready(
+            {
+                "schema": FIXED_MONTHLY_OUTER_OOF_SCHEMA,
+                "evaluation_scope": "fixed_exact_calendar_month_outer_oof",
+                "input_rows": int(self.input_rows),
+                "input_row_identity_sha256": self.input_row_identity_sha256,
+                "input_min_timestamp": self.input_min_timestamp,
+                "input_max_timestamp": self.input_max_timestamp,
+                "embargo": self.embargo,
+                "train_row_rule": (
+                    "decision_ts < validation_start - embargo AND "
+                    "label_end < validation_start"
+                ),
+                "validation_row_rule": (
+                    "validation_start <= decision_ts < validation_end_exclusive"
+                ),
+                "balance_selection_rule": (
+                    "class_balance_mini_sweep_and_economic_arm_selection_must_use_"
+                    "pre_first_validation_month_development_only_or_be_nested_within_"
+                    "each_outer_train_fold"
+                ),
+                "final_validation_month_may_be_partial": True,
+                "windows": [window.report() for window in self.windows],
+            }
+        )
+
+
+def _strict_outer_oof_utc_series(
+    values: Sequence[Any],
+    *,
+    name: str,
+    expected_rows: int | None = None,
+) -> pd.Series:
+    series = pd.to_datetime(pd.Series(values), utc=True, errors="raise")
+    if expected_rows is not None and len(series) != expected_rows:
+        raise ValueError(f"{name} must align exactly with timestamps")
+    if series.isna().any():
+        raise ValueError(f"{name} must contain a resolved UTC timestamp for every row")
+    return series
+
+
+def _fixed_monthly_outer_oof_row_identity_sha256(
+    timestamps: pd.Series,
+    label_end: pd.Series,
+    row_ids: Sequence[Any] | None,
+) -> str:
+    """Hash row identity and temporal alignment without storing raw identities."""
+
+    if row_ids is None:
+        identities = pd.Series(np.arange(len(timestamps), dtype=int))
+    else:
+        identities = pd.Series(row_ids)
+        if len(identities) != len(timestamps):
+            raise ValueError("row_ids must align exactly with timestamps")
+        if identities.isna().any() or identities.astype("string").duplicated().any():
+            raise ValueError("outer OOF row_ids must be non-missing and unique")
+    digest = hashlib.sha256()
+    for row_id, decision_ts, resolved_ts in zip(
+        identities,
+        timestamps,
+        label_end,
+        strict=True,
+    ):
+        digest.update(str(row_id).encode("utf-8"))
+        digest.update(b"\x1f")
+        digest.update(pd.Timestamp(decision_ts).isoformat().encode("utf-8"))
+        digest.update(b"\x1f")
+        digest.update(pd.Timestamp(resolved_ts).isoformat().encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _fixed_monthly_outer_oof_window_starts(
+    validation_month_starts: Sequence[Any],
+) -> tuple[pd.Timestamp, ...]:
+    starts = _strict_outer_oof_utc_series(
+        validation_month_starts,
+        name="validation_month_starts",
+    )
+    if (
+        not len(starts)
+        or not starts.is_monotonic_increasing
+        or starts.duplicated().any()
+    ):
+        raise ValueError(
+            "validation_month_starts must be a non-empty, strictly increasing sequence"
+        )
+    normalised: list[pd.Timestamp] = []
+    for value in starts:
+        start = pd.Timestamp(value)
+        if (
+            start.day != 1
+            or start.hour != 0
+            or start.minute != 0
+            or start.second != 0
+            or start.microsecond != 0
+            or start.nanosecond != 0
+        ):
+            raise ValueError(
+                "fixed outer OOF validation windows must start at UTC calendar-month boundaries"
+            )
+        normalised.append(start)
+    return tuple(normalised)
+
+
+def build_fixed_monthly_outer_oof_plan(
+    timestamps: Sequence[Any],
+    *,
+    label_end: Sequence[Any],
+    validation_month_starts: Sequence[Any] = (
+        DEFAULT_FIXED_MONTHLY_OUTER_OOF_MONTH_STARTS
+    ),
+    embargo: pd.Timedelta = pd.Timedelta(hours=24),
+    row_ids: Sequence[Any] | None = None,
+) -> FixedMonthlyOuterOOFPlan:
+    """Build strict May/June/July-style expanding outer OOF validation folds.
+
+    Validation is the exact half-open calendar month.  For each month, train
+    rows must have both their decision timestamp at least ``embargo`` before
+    that month and a resolved label strictly before that month.  The last
+    requested month is intentionally allowed to be partial in the available
+    input; it still retains its fixed calendar end boundary in provenance.
+    """
+
+    if not isinstance(embargo, pd.Timedelta):
+        embargo = pd.Timedelta(embargo)
+    if embargo < pd.Timedelta(0):
+        raise ValueError("outer OOF embargo must be non-negative")
+    ts = _strict_outer_oof_utc_series(timestamps, name="timestamps")
+    if not len(ts) or not ts.is_monotonic_increasing:
+        raise ValueError(
+            "outer OOF timestamps must be non-empty and chronological; sorting breaks alignment"
+        )
+    end = _strict_outer_oof_utc_series(
+        label_end,
+        name="label_end",
+        expected_rows=len(ts),
+    )
+    if bool((end < ts).any()):
+        raise ValueError("outer OOF label_end cannot precede its decision timestamp")
+    starts = _fixed_monthly_outer_oof_window_starts(validation_month_starts)
+    windows: list[FixedMonthlyOuterOOFWindow] = []
+    validation_union: list[np.ndarray] = []
+    for fold_id, start in enumerate(starts):
+        end_exclusive = start + pd.offsets.MonthBegin(1)
+        validation = np.flatnonzero(((ts >= start) & (ts < end_exclusive)).to_numpy())
+        if not len(validation):
+            raise ValueError(
+                "fixed outer OOF requires at least one validation row in "
+                f"{start.strftime('%Y-%m')}"
+            )
+        train = np.flatnonzero(
+            ((ts < start) & (ts < start - embargo) & (end < start)).to_numpy()
+        )
+        if not len(train):
+            raise ValueError(
+                "fixed outer OOF purge/embargo leaves no training rows for "
+                f"{start.strftime('%Y-%m')}"
+            )
+        if np.intersect1d(train, validation).size:
+            raise RuntimeError("fixed outer OOF train/validation rows overlap")
+        if not bool((end.iloc[train] < start).all()) or not bool(
+            (ts.iloc[train] < start - embargo).all()
+        ):
+            raise RuntimeError("fixed outer OOF train boundary construction failed")
+        windows.append(
+            FixedMonthlyOuterOOFWindow(
+                fold_id=fold_id,
+                validation_start=start,
+                validation_end_exclusive=end_exclusive,
+                train_indices=train,
+                validation_indices=validation,
+                latest_train_decision_ts=ts.iloc[train].max(),
+                latest_train_label_end_ts=end.iloc[train].max(),
+            )
+        )
+        validation_union.append(validation)
+    union = np.concatenate(validation_union)
+    expected_union = np.flatnonzero(
+        np.logical_or.reduce(
+            [
+                ((ts >= start) & (ts < start + pd.offsets.MonthBegin(1))).to_numpy()
+                for start in starts
+            ]
+        )
+    )
+    if len(np.unique(union)) != len(union) or not np.array_equal(
+        np.sort(union), expected_union
+    ):
+        raise RuntimeError(
+            "fixed outer OOF validation windows are not an exact disjoint union"
+        )
+    return FixedMonthlyOuterOOFPlan(
+        windows=tuple(windows),
+        embargo=embargo,
+        input_rows=int(len(ts)),
+        input_row_identity_sha256=_fixed_monthly_outer_oof_row_identity_sha256(
+            ts,
+            end,
+            row_ids,
+        ),
+        input_min_timestamp=ts.iloc[0],
+        input_max_timestamp=ts.iloc[-1],
+    )
 
 
 def purged_chronological_folds(
@@ -2255,18 +2542,34 @@ def fit_purged_chronological_oof_catboost(
     fold_callback: Callable[[int, np.ndarray, np.ndarray], None] | None = None,
     staged_matrix_cache: StagedPermutationMatrixCache | None = None,
     force_classes_count: bool = True,
+    predefined_folds: Sequence[PurgedFold] | None = None,
+    require_all_folds: bool = False,
+    balance_provenance_scope: str = "purged_chronological_oof_fold_train_only",
 ) -> OOFPathArchetypeResult:
-    """Fit one CatBoost model per expanding, purged validation fold."""
+    """Fit one CatBoost model per purged validation fold.
+
+    ``predefined_folds`` is for externally audited temporal plans such as the
+    fixed monthly outer-OOF evaluator.  It must already satisfy the relevant
+    purge/embargo contract; ordinary callers keep the chronological builder.
+    """
     feature_columns = validate_preentry_features(features.columns)
     CatBoostClassifier = _require_catboost()
     y_series = _categorical_target(target, features.index, config=config)
     y, classes = y_series.cat.codes.to_numpy(), y_series.cat.categories.to_numpy()
-    folds = purged_chronological_folds(
-        timestamps,
-        label_end=label_end,
-        n_splits=config.oof_folds,
-        embargo=config.embargo,
+    folds = (
+        list(predefined_folds)
+        if predefined_folds is not None
+        else (
+            purged_chronological_folds(
+                timestamps,
+                label_end=label_end,
+                n_splits=config.oof_folds,
+                embargo=config.embargo,
+            )
+        )
     )
+    if not folds:
+        raise ValueError("OOF fitting requires at least one validation fold")
     if staged_matrix_cache is not None and not staged_matrix_cache.supports(
         feature_columns
     ):
@@ -2277,7 +2580,7 @@ def fit_purged_chronological_oof_catboost(
     x = (
         None
         if staged_matrix_cache is not None
-        else _finite_matrix(features, feature_columns)
+        else _catboost_matrix(features, feature_columns)
     )
     probabilities = np.full((len(features), len(classes)), np.nan)
     fold_ids = np.full(len(features), -1, dtype=int)
@@ -2286,6 +2589,11 @@ def fit_purged_chronological_oof_catboost(
     fold_fit_reports: list[dict[str, Any]] = []
     for fold in folds:
         if len(np.unique(y[fold.train_indices])) < 2:
+            if require_all_folds:
+                raise ValueError(
+                    "strict OOF plan has a training fold without at least two classes: "
+                    f"fold_id={fold.fold_id}"
+                )
             continue
         train_matrix = (
             staged_matrix_cache.matrix(fold, feature_columns, training=True)
@@ -2302,7 +2610,7 @@ def fit_purged_chronological_oof_catboost(
             params,
             target_codes=y[fold.train_indices],
             classes=classes,
-            provenance_scope=("purged_chronological_oof_fold_train_only"),
+            provenance_scope=balance_provenance_scope,
         )
         # Ordinary OOF fitting keeps the globally frozen archetype universe
         # explicit.  Staged MDA can opt out to reproduce its historical fold
@@ -2376,6 +2684,224 @@ def fit_purged_chronological_oof_catboost(
         diagnostics,
         staged_matrix_cache,
     )
+
+
+def _fixed_monthly_outer_oof_frozen_params_provenance(
+    params: Mapping[str, Any],
+    provenance: Mapping[str, Any],
+    *,
+    first_validation_start: pd.Timestamp,
+) -> dict[str, Any]:
+    """Validate that all fitted coordinates were frozen before outer OOF."""
+
+    if not isinstance(provenance, Mapping):
+        raise ValueError("fixed outer OOF requires frozen_params_provenance")
+    raw = dict(provenance)
+    if (
+        raw.get("schema") != FIXED_MONTHLY_OUTER_OOF_FROZEN_PARAMS_SCHEMA
+        or raw.get("selection_scope")
+        != "pre_first_outer_validation_month_development_only"
+        or bool(raw.get("final_refit_used_for_selection", True))
+    ):
+        raise ValueError(
+            "fixed outer OOF parameters must be frozen from pre-first-month "
+            "development evidence only"
+        )
+    cutoff = _strict_outer_oof_utc_series(
+        [raw.get("development_label_end_exclusive")],
+        name="frozen parameter development_label_end_exclusive",
+    ).iloc[0]
+    if cutoff > first_validation_start:
+        raise ValueError(
+            "fixed outer OOF frozen-parameter development cutoff exceeds the "
+            "first validation month"
+        )
+    params_sha256 = _validated_sha256_link(
+        raw.get("params_sha256"),
+        field="params_sha256",
+    )
+    if params_sha256 != _canonical_json_sha256(params):
+        raise ValueError(
+            "fixed outer OOF frozen parameter digest does not match supplied params"
+        )
+    balance_scope = raw.get("class_balance_selection_scope")
+    if balance_scope is not None and balance_scope not in {
+        "not_applicable_uniform_or_unselected",
+        "pre_first_outer_validation_month_development_only",
+    }:
+        raise ValueError(
+            "fixed outer OOF balance selection must be pre-first-month development "
+            "only; nested outer selection is a separate evaluation protocol"
+        )
+    return {
+        "schema": FIXED_MONTHLY_OUTER_OOF_FROZEN_PARAMS_SCHEMA,
+        "selection_scope": raw["selection_scope"],
+        "development_label_end_exclusive": cutoff,
+        "params_sha256": params_sha256,
+        "final_refit_used_for_selection": False,
+        "class_balance_selection_scope": balance_scope,
+    }
+
+
+@dataclass(frozen=True)
+class FixedMonthlyOuterOOFResult:
+    """Strict fixed-calendar outer OOF evidence plus its immutable plan."""
+
+    oof: OOFPathArchetypeResult
+    plan: FixedMonthlyOuterOOFPlan
+    frozen_params_provenance: Mapping[str, Any]
+
+    def report(self) -> dict[str, Any]:
+        return _json_ready(
+            {
+                "schema": FIXED_MONTHLY_OUTER_OOF_SCHEMA,
+                "outer_oof_plan": self.plan.report(),
+                "frozen_params_provenance": dict(self.frozen_params_provenance),
+                "oof_diagnostics": self.oof.diagnostics,
+                "final_refit_used_for_selection": False,
+            }
+        )
+
+
+def fit_fixed_monthly_outer_oof_catboost(
+    features: pd.DataFrame,
+    target: Sequence[Any],
+    timestamps: Sequence[Any],
+    *,
+    label_end: Sequence[Any],
+    params: Mapping[str, Any],
+    frozen_params_provenance: Mapping[str, Any],
+    validation_month_starts: Sequence[Any] = (
+        DEFAULT_FIXED_MONTHLY_OUTER_OOF_MONTH_STARTS
+    ),
+    row_ids: Sequence[Any] | None = None,
+    plan: FixedMonthlyOuterOOFPlan | None = None,
+    fold_callback: Callable[[FixedMonthlyOuterOOFWindow, np.ndarray, np.ndarray], None]
+    | None = None,
+    config: PathArchetypeConfig = PathArchetypeConfig(),
+) -> FixedMonthlyOuterOOFResult:
+    """Fit fixed May/June/July-style outer OOF with pre-month frozen params.
+
+    This evaluator is intentionally separate from HPO and balance-arm
+    selection.  It permits only a parameter payload attested as frozen before
+    the first validation month, fits each exact calendar month using train
+    labels resolved strictly before that month, and derives every fold's class
+    weights from that fold's train labels alone.  The final requested month may
+    be partial in the available dataset.
+    """
+
+    if len(features) != len(target) or len(features) != len(timestamps):
+        raise ValueError("outer OOF features, target, and timestamps must align")
+    if len(features) != len(label_end):
+        raise ValueError("outer OOF label_end must align exactly with features")
+    identity = features.index.to_numpy() if row_ids is None else row_ids
+    required_embargo = pd.Timedelta(hours=24)
+    if plan is None:
+        plan = build_fixed_monthly_outer_oof_plan(
+            timestamps,
+            label_end=label_end,
+            validation_month_starts=validation_month_starts,
+            embargo=required_embargo,
+            row_ids=identity,
+        )
+    elif plan.embargo != required_embargo:
+        raise ValueError("fixed monthly outer OOF requires an exact 24h embargo")
+    # Rebuild against the caller's ordered rows, including the immutable row
+    # identity digest, before trusting a supplied persisted plan.
+    expected_plan = build_fixed_monthly_outer_oof_plan(
+        timestamps,
+        label_end=label_end,
+        validation_month_starts=[window.validation_start for window in plan.windows],
+        embargo=required_embargo,
+        row_ids=identity,
+    )
+    exact_fold_match = len(plan.windows) == len(expected_plan.windows) and all(
+        actual.fold_id == expected.fold_id
+        and actual.validation_start == expected.validation_start
+        and actual.validation_end_exclusive == expected.validation_end_exclusive
+        and np.array_equal(actual.train_indices, expected.train_indices)
+        and np.array_equal(actual.validation_indices, expected.validation_indices)
+        for actual, expected in zip(plan.windows, expected_plan.windows, strict=True)
+    )
+    if (
+        plan.input_row_identity_sha256 != expected_plan.input_row_identity_sha256
+        or plan.input_rows != expected_plan.input_rows
+        or not exact_fold_match
+    ):
+        raise ValueError(
+            "fixed outer OOF plan does not match the supplied ordered temporal rows"
+        )
+    frozen = _fixed_monthly_outer_oof_frozen_params_provenance(
+        params,
+        frozen_params_provenance,
+        first_validation_start=plan.first_validation_start,
+    )
+    callback_steps: list[int] = []
+
+    def report_fold(
+        step: int,
+        partial_probabilities: np.ndarray,
+        partial_fold_ids: np.ndarray,
+    ) -> None:
+        if step < 0 or step >= len(plan.windows):
+            raise RuntimeError("fixed outer OOF callback has an invalid fold step")
+        window = plan.windows[step]
+        if not np.all(
+            np.asarray(partial_fold_ids)[window.validation_indices] == window.fold_id
+        ):
+            raise RuntimeError(
+                "fixed outer OOF callback lacks exact validation predictions for "
+                f"fold_id={window.fold_id}"
+            )
+        callback_steps.append(step)
+        if fold_callback is not None:
+            fold_callback(window, partial_probabilities, partial_fold_ids)
+
+    oof = fit_purged_chronological_oof_catboost(
+        features,
+        target,
+        timestamps,
+        label_end=label_end,
+        config=config,
+        params=params,
+        fold_callback=report_fold,
+        predefined_folds=plan.folds,
+        require_all_folds=True,
+        balance_provenance_scope="fixed_monthly_outer_oof_fold_train_only",
+    )
+    if callback_steps != list(range(len(plan.windows))):
+        raise RuntimeError("fixed outer OOF did not complete every required month")
+    expected_validation = np.sort(
+        np.concatenate([window.validation_indices for window in plan.windows])
+    )
+    observed_validation = np.flatnonzero(np.asarray(oof.fold_ids) >= 0)
+    if not np.array_equal(observed_validation, expected_validation):
+        raise RuntimeError(
+            "fixed outer OOF predictions do not cover exactly the requested "
+            "calendar-month validation union"
+        )
+    diagnostics = dict(oof.diagnostics or {})
+    fold_report_by_id = {
+        int(report["fold_id"]): dict(report)
+        for report in diagnostics.get("fold_fit_reports", [])
+        if isinstance(report, Mapping) and "fold_id" in report
+    }
+    if set(fold_report_by_id) != {window.fold_id for window in plan.windows}:
+        raise RuntimeError("fixed outer OOF lacks complete per-month fit provenance")
+    annotated_reports: list[dict[str, Any]] = []
+    for window in plan.windows:
+        report = fold_report_by_id[window.fold_id]
+        report["fixed_monthly_outer_oof_window"] = window.report()
+        annotated_reports.append(report)
+    diagnostics["fold_fit_reports"] = annotated_reports
+    diagnostics["fixed_monthly_outer_oof"] = {
+        "plan": plan.report(),
+        "frozen_params_provenance": frozen,
+        "validation_union_exact": True,
+        "final_refit_used_for_selection": False,
+    }
+    oof.diagnostics = diagnostics
+    return FixedMonthlyOuterOOFResult(oof, plan, frozen)
 
 
 @dataclass(frozen=True)
@@ -3979,7 +4505,7 @@ class PathArchetypeClassifier:
         final_params = _catboost_params(config, fitted_params)
         final_params["use_best_model"] = False
         model = CatBoostClassifier(**final_params)
-        model.fit(_finite_matrix(features, selected), y_series.cat.codes.to_numpy())
+        model.fit(_catboost_matrix(features, selected), y_series.cat.codes.to_numpy())
         training_phase_order = ["fast_feature_selection"]
         if run_permutation_selection:
             training_phase_order.append("permutation_feature_selection")
@@ -4018,7 +4544,7 @@ class PathArchetypeClassifier:
             raise KeyError(f"Missing frozen classifier features: {sorted(missing)}")
         values = np.asarray(
             self.model.predict_proba(
-                _finite_matrix(preentry_features, self.feature_columns)
+                _catboost_matrix(preentry_features, self.feature_columns)
             ),
             dtype=float,
         )

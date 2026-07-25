@@ -565,6 +565,16 @@ unavailable June short slice is materially worse, the next remedy is a new
 training-time representation contract with missingness masks or a smaller
 robust input set—not repeated downloads or synthetic filling.
 
+The complete-label June short audit confirms that the missingness is
+economically non-random. Among 31,284 joined rows, the 5,230 representation-
+unavailable rows averaged `-0.006555` final return net of 1% cost versus
+`-0.000107` for the 26,054 available rows (a `-64.48` bp gap). Their mean
+adverse excursion before meaningful MFE was `2.84R` versus `1.90R`, and their
+meaningful-MFE rate was `70.74%` versus `73.46%`. Treat these as descriptive
+outcome-slice diagnostics, never as feature-selection evidence. They make the
+availability flag and separate OOF reporting mandatory, while the 1.36%
+source-hour recoverability estimate still argues against repeated backfill.
+
 Do **not** median-fill, zero-fill, forward-fill, or interpolate these missing
 AE/GMM inputs into the frozen state. Every candidate has an exact feature-store
 row; the missing state comes from sparse individual rolling inputs, not missing
@@ -1704,11 +1714,13 @@ pipelines:
 ```text
 long CatBoost:  long-only feature selection -> long-only geometry sweep
                 -> long-only structural model HPO
-                -> fixed-parameter four-arm class-balance OOF sweep
+                -> April-only fixed-parameter four-arm balance OOF sweep
+                -> frozen May/June/July outer OOF
 
 short CatBoost: short-only feature selection -> short-only geometry sweep
                 -> short-only structural model HPO
-                -> fixed-parameter four-arm class-balance OOF sweep
+                -> April-only fixed-parameter four-arm balance OOF sweep
+                -> frozen May/June/July outer OOF
 ```
 
 Required side-local sequence:
@@ -1727,16 +1739,22 @@ Required side-local sequence:
    unnecessary 18- and 23-trial post-winner tails.
 4. Freeze the winning structural HPO parameters, then run a separate
    class-balance mini-sweep independently per side. Evaluate every declared
-   balance arm on the exact same purged chronological OOF folds and class order;
-   do not let Optuna jointly confound structural parameters with the balance
-   choice.
+   balance arm on the exact same purged chronological April-development OOF
+   folds and class order; do not let Optuna jointly confound structural
+   parameters with the balance choice. No May-July label or outcome may select
+   the arm.
 5. Select a balance arm only from matched OOF ML and economic evidence. Then
    rematerialize that arm's bounded class weights from the full final
    side-local training labels immediately before the final refit. Never reuse
    fold-local or HPO-subsample weight values in the final model.
-6. Refit only the winning per-side configuration on the larger confirmation
-   sample, persist the final model, and retain the side-local OOF predictions
-   produced before that refit.
+6. Freeze feature, geometry, structural-HPO, and balance choices before
+   2026-05-01. Generate exact May, June, and partial-July outer OOF folds. Each
+   fold trains only on earlier decisions whose labels resolved before the
+   validation month, with an exact 24-hour embargo; fold class weights are
+   rematerialized from that fold's training labels only.
+7. Only after outer OOF is complete, refit the winning per-side configuration
+   on all complete labels, persist the final model, and retain the untouched
+   May-July predictions as the canonical OOF stream.
 
 Class-balance mini-HPO requirements:
 

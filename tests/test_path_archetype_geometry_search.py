@@ -15,6 +15,8 @@ import extreme_price_movements.path_archetype_geometry_search as geometry_search
 from extreme_price_movements.base_candidate_population import candidate_identity_sha256
 from extreme_price_movements.path_archetype_geometry_search import (
     DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
+    GEOMETRY_EVALUATION_MODE_LEGACY,
+    GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
     PATH_GEOMETRY_CLASSES,
     PathGeometryConfig,
     bounded_chronological_training_positions,
@@ -27,6 +29,7 @@ from extreme_price_movements.path_archetype_geometry_search import (
     multiclass_scores,
     reduced_joint_best_two_values,
     reduced_joint_design,
+    short_history_purged_chronological_folds,
     stable_plateau_select,
     staged_geometry_search,
 )
@@ -121,6 +124,16 @@ def _long_frame() -> pd.DataFrame:
     frame["__label_end_ts__"] = frame["__ts__"] + pd.Timedelta(days=1)
     frame["candidate_id"] = [f"candidate_{index}" for index in range(len(frame))]
     frame["frozen_feature"] = np.arange(len(frame), dtype=np.float32)
+    return frame
+
+
+def _short_history_frame() -> pd.DataFrame:
+    """April-only synthetic path rows with resolved labels before the May cut-off."""
+    frame = _long_frame().iloc[:30].copy().reset_index(drop=True)
+    frame["__ts__"] = pd.date_range(
+        "2026-04-01", periods=len(frame), freq="D", tz="UTC"
+    )
+    frame["__label_end_ts__"] = frame["__ts__"] + pd.Timedelta(hours=12)
     return frame
 
 
@@ -705,6 +718,9 @@ def test_staged_and_nested_search_share_the_train_row_sampling_contract(
         "nested_outer_oos_months": 4,
         "oos_row_contract": "all_labelled_oos_rows",
         "default_max_train_rows_per_fold": 70_000,
+        "evaluation_mode": GEOMETRY_EVALUATION_MODE_LEGACY,
+        "short_history_development_end": None,
+        "short_history_subfold_count": 2,
     }
     first_nested = report["nested_oof"][0]
     assert first_nested["inner_train_start"] == "2024-01-01T00:00:00+00:00"
@@ -1215,6 +1231,9 @@ def test_geometry_runner_persists_strict_classifier_input_hashes(
         "max_train_rows_per_fold": 70_000,
         "default_max_train_rows_per_fold": 70_000,
         "oos_row_contract": "all_labelled_oos_rows",
+        "evaluation_mode": GEOMETRY_EVALUATION_MODE_LEGACY,
+        "short_history_development_end": None,
+        "short_history_subfold_count": None,
     }
     geometry_contract = json.loads(
         (side_output_dir / "geometry_contract.json").read_text()
@@ -1258,6 +1277,119 @@ def test_geometry_runner_persists_strict_classifier_input_hashes(
     )
     assert accepted is not None
     assert accepted["status"] == "geometry_complete"
+
+
+def test_geometry_runner_short_history_excludes_may_to_july_before_feature_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _geometry_runner()
+    april = _short_history_frame()
+    future = _long_frame().iloc[:70].copy().reset_index(drop=True)
+    future["__ts__"] = pd.date_range(
+        "2026-05-01", periods=len(future), freq="D", tz="UTC"
+    )
+    future["__label_end_ts__"] = future["__ts__"] + pd.Timedelta(hours=12)
+    labels = pd.concat([april, future], ignore_index=True)
+    labels["side"] = "long"
+    input_path = tmp_path / "labels.parquet"
+    labels.to_parquet(input_path, index=False)
+    (
+        prerequisite,
+        context_manifest,
+        _,
+        _,
+        _,
+        _,
+    ) = _write_side_geometry_contract_inputs(tmp_path, labels, side="long")
+    empty = pd.DataFrame()
+    fold_usage = pd.DataFrame(
+        [{"fold_id": 0, "requested_train_rows": 10, "effective_train_rows": 8}]
+    )
+    observed: dict[str, object] = {}
+
+    def fake_staged(
+        frame: pd.DataFrame,
+        feature_columns: list[str],
+        model_params: dict[str, object],
+        **kwargs: object,
+    ) -> dict[str, object]:
+        del feature_columns, model_params
+        observed["frame"] = frame.copy()
+        observed["kwargs"] = kwargs
+        return {
+            "selected": {},
+            "sweep_results": empty,
+            "fold_reports": fold_usage,
+            "selected_fold_reports": fold_usage,
+            "boundary": empty,
+            "temporal_month_stability": empty,
+            "side_stability": empty,
+            "symbol_stability": empty,
+            "side_support": empty,
+            "symbol_support": empty,
+            "finalist_oos_predictions": [],
+        }
+
+    monkeypatch.setattr(runner, "staged_geometry_search", fake_staged)
+    finalist_path = tmp_path / "finalists.json"
+    monkeypatch.setattr(
+        runner,
+        "_write_finalist_predictions",
+        lambda *args, **kwargs: (finalist_path, {"finalists": []}),
+    )
+
+    output_dir = tmp_path / "geometry"
+    runner.run(
+        input_path,
+        output_dir,
+        geometry_prerequisite=prerequisite,
+        canonical_context_manifest=context_manifest,
+        side="long",
+        evaluation_mode=GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+        resource_min_free_ram_gib=0.0,
+        resource_max_process_rss_gib=1000.0,
+        resource_min_free_disk_gib=0.0,
+    )
+
+    staged_frame = observed["frame"]
+    assert isinstance(staged_frame, pd.DataFrame)
+    assert (
+        staged_frame["__label_end_ts__"] < pd.Timestamp("2026-05-01T00:00:00Z")
+    ).all()
+    staged_kwargs = observed["kwargs"]
+    assert isinstance(staged_kwargs, dict)
+    assert staged_kwargs["evaluation_mode"] == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+    assert staged_kwargs["short_history_development_end"] == pd.Timestamp(
+        "2026-05-01T00:00:00Z"
+    )
+
+    side_dir = output_dir / "side=long"
+    contract = json.loads((side_dir / "geometry_contract.json").read_text())
+    holdout = contract["short_history_holdout"]
+    assert contract["evaluation_mode"] == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+    assert holdout["may_and_later_used_for_geometry_selection"] is False
+    assert holdout["untouched_rows_before_path_validity"] == len(future)
+    assert len(holdout["development_input_sha256"]) == 64
+    assert len(holdout["untouched_input_sha256"]) == 64
+
+
+def test_geometry_runner_short_history_rejects_unverified_inputs(
+    tmp_path: Path,
+) -> None:
+    runner = _geometry_runner()
+    with pytest.raises(
+        ValueError, match="requires a verified frozen geometry prerequisite"
+    ):
+        runner.run(
+            tmp_path / "unused.parquet",
+            tmp_path / "geometry",
+            ["frozen_feature"],
+            {},
+            side="long",
+            evaluation_mode=GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+            unsafe_allow_unverified_inputs=True,
+        )
 
 
 def test_geometry_runner_rejects_pooled_or_cross_side_selection_contracts(
@@ -1460,10 +1592,16 @@ def test_geometry_runner_wires_default_train_row_cap_from_cli(
             "--catboost-params-json",
             str(params_path),
             "--unsafe-allow-unverified-inputs",
+            "--evaluation-mode",
+            GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+            "--resource-min-free-ram-gib",
+            "1.5",
         ],
     )
     runner.main()
     assert seen["max_train_rows_per_fold"] == 70_000
+    assert seen["evaluation_mode"] == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+    assert seen["resource_min_free_ram_gib"] == 1.5
     assert DEFAULT_MAX_TRAIN_ROWS_PER_FOLD == 70_000
 
 
@@ -1900,6 +2038,86 @@ def test_four_month_fold_purges_open_labels() -> None:
     assert folds[1].oos_end == pd.Timestamp("2025-01-01", tz="UTC")
     fixed = fixed_four_month_ablation_fold(timestamps, "2024-01-01", label_end=ends)
     assert fixed.oos_start == folds[0].oos_start
+
+
+def test_short_history_folds_are_purged_and_never_cross_development_cutoff() -> None:
+    frame = _short_history_frame()
+    cutoff = pd.Timestamp("2026-05-01T00:00:00Z")
+    folds = short_history_purged_chronological_folds(
+        frame["__ts__"],
+        label_end=frame["__label_end_ts__"],
+        development_end=cutoff,
+        subfold_count=2,
+    )
+
+    assert len(folds) == 2
+    for fold in folds:
+        assert (
+            frame.loc[fold.train_indices, "__label_end_ts__"] < fold.oos_start
+        ).all()
+        assert (
+            frame.loc[fold.train_indices, "__ts__"]
+            < fold.oos_start - pd.Timedelta(hours=24)
+        ).all()
+        assert (frame.loc[fold.oos_indices, "__ts__"] < cutoff).all()
+        assert fold.oos_end <= cutoff
+
+
+def test_short_history_staged_search_is_april_only_and_checkpoint_mode_locked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = _short_history_frame()
+    monkeypatch.setattr(geometry_search, "GEOMETRY_GRID", {"atr_floor": (1.5,)})
+    checkpoint = tmp_path / "short_history_checkpoint.json"
+    report = staged_geometry_search(
+        frame,
+        ["frozen_feature"],
+        {},
+        predictor=_uniform_predictor,
+        max_joint_trials=0,
+        run_post_search_refits=False,
+        checkpoint_path=checkpoint,
+        evaluation_mode=GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+        short_history_development_end="2026-05-01T00:00:00Z",
+        short_history_subfold_count=2,
+    )
+
+    split = report["search_contract"]["evaluation_split"]
+    assert split["name"] == "purged_chronological_development_only"
+    assert split["evaluation_mode"] == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+    assert split["short_history_development_end"] == "2026-05-01T00:00:00Z"
+    checkpoint_contract = json.loads(checkpoint.read_text())["contract"]
+    assert all(
+        pd.Timestamp(fold["oos_end"]) <= pd.Timestamp("2026-05-01T00:00:00Z")
+        for fold in checkpoint_contract["selection_folds"]
+    )
+
+    with pytest.raises(ValueError, match="checkpoint fingerprint"):
+        staged_geometry_search(
+            frame,
+            ["frozen_feature"],
+            {},
+            predictor=_uniform_predictor,
+            max_joint_trials=0,
+            run_post_search_refits=False,
+            checkpoint_path=checkpoint,
+            evaluation_mode=GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+            short_history_development_end="2026-05-02T00:00:00Z",
+            short_history_subfold_count=2,
+        )
+
+
+def test_short_history_folds_reject_may_label_rows() -> None:
+    frame = _short_history_frame()
+    frame.loc[len(frame) - 1, "__label_end_ts__"] = pd.Timestamp("2026-05-01T00:00:00Z")
+    with pytest.raises(ValueError, match="outside its frozen development boundary"):
+        short_history_purged_chronological_folds(
+            frame["__ts__"],
+            label_end=frame["__label_end_ts__"],
+            development_end="2026-05-01T00:00:00Z",
+            subfold_count=2,
+        )
 
 
 def test_runner_joins_frozen_features_from_separate_parquet(tmp_path: Path) -> None:

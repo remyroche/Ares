@@ -36,6 +36,8 @@ PATH_GEOMETRY_COST_RETURN = 0.01
 GEOMETRY_TRAIN_MONTHS = 4
 GEOMETRY_OOS_MONTHS = 4
 GEOMETRY_NESTED_MONTHS = 12
+GEOMETRY_EVALUATION_MODE_LEGACY = "legacy_4m4m"
+GEOMETRY_EVALUATION_MODE_SHORT_HISTORY = "short_history_purged_april_v1"
 DEFAULT_MAX_TRAIN_ROWS_PER_FOLD = 70_000
 GEOMETRY_EARLY_STOP_VALIDATION_FRACTION = 0.20
 GEOMETRY_EARLY_STOP_EMBARGO = pd.Timedelta(hours=24)
@@ -110,20 +112,33 @@ class PathGeometryConfig:
     cost_return: float = PATH_GEOMETRY_COST_RETURN
 
     def validate(self) -> None:
-        if self.reversal_mode not in {"final_net_nonpositive", "retention_cap", "either"}:
-            raise ValueError("reversal_mode must be final_net_nonpositive, retention_cap, or either")
+        if self.reversal_mode not in {
+            "final_net_nonpositive",
+            "retention_cap",
+            "either",
+        }:
+            raise ValueError(
+                "reversal_mode must be final_net_nonpositive, retention_cap, or either"
+            )
         if not np.isclose(self.cost_return, PATH_GEOMETRY_COST_RETURN):
             raise ValueError("path geometry search has a fixed 1% execution cost")
         if self.peak_fraction not in {0.8, 0.9}:
             raise ValueError("peak_fraction must be one of 0.8 or 0.9")
-        if min(self.atr_floor, self.expansion_floor_r, self.usable_mfe_multiplier) <= 0.0:
+        if (
+            min(self.atr_floor, self.expansion_floor_r, self.usable_mfe_multiplier)
+            <= 0.0
+        ):
             raise ValueError("geometry floors and multipliers must be positive")
         if self.fast_net_margin_atr is not None and self.fast_net_margin_atr <= 0.0:
             raise ValueError("fast_net_margin_atr must be positive when supplied")
 
     @property
     def effective_fast_net_margin_atr(self) -> float:
-        return float(self.net_margin_atr if self.fast_net_margin_atr is None else self.fast_net_margin_atr)
+        return float(
+            self.net_margin_atr
+            if self.fast_net_margin_atr is None
+            else self.fast_net_margin_atr
+        )
 
 
 GEOMETRY_GRID: dict[str, tuple[Any, ...]] = {
@@ -150,7 +165,9 @@ def _numeric(frame: pd.DataFrame, column: str) -> np.ndarray:
     return pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=np.float64)
 
 
-def ensure_risk_fraction(frame: pd.DataFrame, columns: PathGeometryColumns = PathGeometryColumns()) -> pd.DataFrame:
+def ensure_risk_fraction(
+    frame: pd.DataFrame, columns: PathGeometryColumns = PathGeometryColumns()
+) -> pd.DataFrame:
     """Return a copy with valid risk fraction, deriving it when necessary."""
     out = frame.copy()
     if columns.risk_fraction not in out:
@@ -171,20 +188,30 @@ def ensure_risk_fraction(frame: pd.DataFrame, columns: PathGeometryColumns = Pat
     return out
 
 
-def validate_path_summary(frame: pd.DataFrame, columns: PathGeometryColumns = PathGeometryColumns()) -> None:
+def validate_path_summary(
+    frame: pd.DataFrame, columns: PathGeometryColumns = PathGeometryColumns()
+) -> None:
     missing = sorted(set(columns.required()).difference(frame.columns))
     if missing:
-        raise ValueError(f"path summary is missing required dynamic geometry columns: {missing}")
+        raise ValueError(
+            f"path summary is missing required dynamic geometry columns: {missing}"
+        )
     atr = _numeric(frame, columns.atr_fraction)
     if not np.isfinite(atr).all() or (atr <= 0.0).any():
         raise ValueError(f"{columns.atr_fraction!r} must be finite and positive")
 
 
-def _raw_matrix(frame: pd.DataFrame, columns: PathGeometryColumns, kind: str) -> np.ndarray:
-    return np.column_stack([_numeric(frame, columns.raw_column(kind, hour)) for hour in _HOURS])
+def _raw_matrix(
+    frame: pd.DataFrame, columns: PathGeometryColumns, kind: str
+) -> np.ndarray:
+    return np.column_stack(
+        [_numeric(frame, columns.raw_column(kind, hour)) for hour in _HOURS]
+    )
 
 
-def _geometry_values(frame: pd.DataFrame, columns: PathGeometryColumns) -> dict[str, np.ndarray]:
+def _geometry_values(
+    frame: pd.DataFrame, columns: PathGeometryColumns
+) -> dict[str, np.ndarray]:
     validate_path_summary(frame, columns)
     values: dict[str, np.ndarray] = {
         "close_return_r_12h": _numeric(frame, columns.close_return_r_12h),
@@ -202,7 +229,9 @@ def _geometry_values(frame: pd.DataFrame, columns: PathGeometryColumns) -> dict[
     values["cost_r"] = PATH_GEOMETRY_COST_RETURN / values["risk_fraction"]
     values["cost_atr"] = PATH_GEOMETRY_COST_RETURN / values["atr_fraction"]
     values["net_final_r"] = values["close_return_r_12h"] - values["cost_r"]
-    values["net_final_atr"] = values["net_final_r"] * values["risk_fraction"] / values["atr_fraction"]
+    values["net_final_atr"] = (
+        values["net_final_r"] * values["risk_fraction"] / values["atr_fraction"]
+    )
     values["peak_mfe_r"] = values["mfe_r"][:, -1]
     values["peak_mfe_atr"] = values["mfe_atr"][:, -1]
     values["retention_net"] = values["net_final_r"] / np.maximum(
@@ -218,8 +247,12 @@ def _first_crossing(matrix: np.ndarray, thresholds: np.ndarray) -> np.ndarray:
     return first
 
 
-def _dynamic_path_metrics(values: Mapping[str, np.ndarray], config: PathGeometryConfig) -> dict[str, np.ndarray]:
-    meaningful_atr = np.maximum(config.atr_floor, values["cost_atr"] + config.net_margin_atr)
+def _dynamic_path_metrics(
+    values: Mapping[str, np.ndarray], config: PathGeometryConfig
+) -> dict[str, np.ndarray]:
+    meaningful_atr = np.maximum(
+        config.atr_floor, values["cost_atr"] + config.net_margin_atr
+    )
     meaningful_r = meaningful_atr * values["atr_fraction"] / values["risk_fraction"]
     first = _first_crossing(values["mfe_atr"], meaningful_atr)
     peak_fraction_r = config.peak_fraction * values["peak_mfe_r"]
@@ -229,16 +262,24 @@ def _dynamic_path_metrics(values: Mapping[str, np.ndarray], config: PathGeometry
     pre_cross_mfe = np.full(len(first), np.nan)
     row_index = np.arange(len(first))
     clipped_first = np.clip(first, 0, len(_HOURS) - 1)
-    pre_cross_mae[valid_first] = values["mae_r"][row_index[valid_first], clipped_first[valid_first]]
-    pre_cross_mfe[valid_first] = values["mfe_r"][row_index[valid_first], clipped_first[valid_first]]
+    pre_cross_mae[valid_first] = values["mae_r"][
+        row_index[valid_first], clipped_first[valid_first]
+    ]
+    pre_cross_mfe[valid_first] = values["mfe_r"][
+        row_index[valid_first], clipped_first[valid_first]
+    ]
     stopped = np.isfinite(values["time_to_stop_h"])
     safe_stop_time = np.where(stopped, values["time_to_stop_h"], 1.0)
     stop_index = np.clip(np.ceil(safe_stop_time).astype(np.int64) - 1, 0, 11)
     mfe_before_stop_atr = np.full(len(first), np.nan)
-    mfe_before_stop_atr[stopped] = values["mfe_atr"][row_index[stopped], stop_index[stopped]]
+    mfe_before_stop_atr[stopped] = values["mfe_atr"][
+        row_index[stopped], stop_index[stopped]
+    ]
     efficiency = np.divide(
-        values["net_final_r"], values["variation_r"][:, -1],
-        out=np.full(len(first), np.nan), where=values["variation_r"][:, -1] > 0.0,
+        values["net_final_r"],
+        values["variation_r"][:, -1],
+        out=np.full(len(first), np.nan),
+        where=values["variation_r"][:, -1] > 0.0,
     )
     return {
         "meaningful_atr": meaningful_atr,
@@ -246,7 +287,9 @@ def _dynamic_path_metrics(values: Mapping[str, np.ndarray], config: PathGeometry
         "first_meaningful_index": first,
         "first_meaningful_h": np.where(first >= 0, first + 1.0, np.nan),
         "peak_fraction_index": peak_fraction_first,
-        "peak_fraction_h": np.where(peak_fraction_first >= 0, peak_fraction_first + 1.0, np.nan),
+        "peak_fraction_h": np.where(
+            peak_fraction_first >= 0, peak_fraction_first + 1.0, np.nan
+        ),
         "pre_cross_mae_r": pre_cross_mae,
         "pre_cross_mfe_r": pre_cross_mfe,
         "mfe_before_stop_atr": mfe_before_stop_atr,
@@ -293,10 +336,16 @@ def label_path_geometry(
         if any(len(np.asarray(values[name])) != len(frame) for name in required_values):
             raise ValueError("precomputed geometry values do not align with frame rows")
     dynamic = _dynamic_path_metrics(values, config)
-    finite = np.isfinite(values["close_return_r_12h"]) & np.isfinite(values["peak_mfe_r"])
+    finite = np.isfinite(values["close_return_r_12h"]) & np.isfinite(
+        values["peak_mfe_r"]
+    )
     finite &= np.isfinite(values["mfe_r"][:, 3]) & np.isfinite(values["mfe_r"][:, 11])
-    finite &= np.isfinite(values["mae_r"]).all(axis=1) & np.isfinite(values["variation_r"][:, -1])
-    stopped_early = np.isfinite(values["time_to_stop_h"]) & (values["time_to_stop_h"] <= config.early_stop_window)
+    finite &= np.isfinite(values["mae_r"]).all(axis=1) & np.isfinite(
+        values["variation_r"][:, -1]
+    )
+    stopped_early = np.isfinite(values["time_to_stop_h"]) & (
+        values["time_to_stop_h"] <= config.early_stop_window
+    )
     favorable_exempt = dynamic["mfe_before_stop_atr"] >= (
         config.favorable_exemption_multiplier * dynamic["meaningful_atr"]
     )
@@ -317,8 +366,10 @@ def label_path_geometry(
         & (values["net_final_atr"] >= config.effective_fast_net_margin_atr)
     )
     clean_ratio = np.divide(
-        np.abs(dynamic["pre_cross_mae_r"]), dynamic["meaningful_r"],
-        out=np.full(len(frame), np.nan), where=dynamic["meaningful_r"] > 0.0,
+        np.abs(dynamic["pre_cross_mae_r"]),
+        dynamic["meaningful_r"],
+        out=np.full(len(frame), np.nan),
+        where=dynamic["meaningful_r"] > 0.0,
     )
     late = (
         (values["mfe_r"][:, 3] <= config.early_mfe_ceiling_r)
@@ -334,7 +385,11 @@ def label_path_geometry(
     )
     slow = usable_mfe & (values["net_final_r"] > 0.0)
     ordered_rules = (
-        ("immediate_adverse_path", "immediate_adverse", stopped_early & ~favorable_exempt),
+        (
+            "immediate_adverse_path",
+            "immediate_adverse",
+            stopped_early & ~favorable_exempt,
+        ),
         ("early_mfe_full_reversal", "early_reversal", reversal),
         ("fast_realization_winner", "fast_realization", fast),
         ("late_breakout", "late_breakout", late),
@@ -357,18 +412,22 @@ def label_path_geometry(
 
     predicate_margins = {
         "immediate_stop": config.early_stop_window - values["time_to_stop_h"],
-        "favorable_exemption": dynamic["mfe_before_stop_atr"] - config.favorable_exemption_multiplier * dynamic["meaningful_atr"],
+        "favorable_exemption": dynamic["mfe_before_stop_atr"]
+        - config.favorable_exemption_multiplier * dynamic["meaningful_atr"],
         "reversal_meaningful": values["peak_mfe_atr"] - dynamic["meaningful_atr"],
         "reversal_peak_time": config.reversal_peak_limit - dynamic["peak_fraction_h"],
         "reversal_final_net": -values["net_final_r"],
         "reversal_retention": config.reversal_retention_cap - values["retention_net"],
-        "fast_meaningful_time": config.fast_meaningful_time - dynamic["first_meaningful_h"],
+        "fast_meaningful_time": config.fast_meaningful_time
+        - dynamic["first_meaningful_h"],
         "fast_peak_time": config.fast_peak_limit - dynamic["peak_fraction_h"],
-        "fast_net_margin": values["net_final_atr"] - config.effective_fast_net_margin_atr,
+        "fast_net_margin": values["net_final_atr"]
+        - config.effective_fast_net_margin_atr,
         "clean_mae_ratio": config.clean_adverse_ratio - clean_ratio,
         "late_early_ceiling": config.early_mfe_ceiling_r - values["mfe_r"][:, 3],
         "late_late_floor": values["mfe_r"][:, 11] - config.late_mfe_floor_r,
-        "late_expansion": (values["mfe_r"][:, 11] - values["mfe_r"][:, 3]) - config.expansion_floor_r,
+        "late_expansion": (values["mfe_r"][:, 11] - values["mfe_r"][:, 3])
+        - config.expansion_floor_r,
         "late_net_margin": values["net_final_atr"] - config.net_margin_atr,
         "slow_usable_mfe": values["peak_mfe_r"] - usable_floor_r,
         "slow_positive_net": values["net_final_r"],
@@ -389,7 +448,9 @@ def label_path_geometry(
     absolute_margins = np.abs(margin_matrix)
     finite_margin = np.isfinite(absolute_margins).any(axis=1)
     minimum_boundary_distance = np.where(
-        finite_margin, np.where(np.isfinite(absolute_margins), absolute_margins, np.inf).min(axis=1), np.nan
+        finite_margin,
+        np.where(np.isfinite(absolute_margins), absolute_margins, np.inf).min(axis=1),
+        np.nan,
     )
     return pd.DataFrame(
         {
@@ -406,14 +467,25 @@ def label_path_geometry(
             "number_of_matching_archetypes": matching_count,
             "precedence_override_flag": matching_count > 1,
             "minimum_archetype_boundary_distance": minimum_boundary_distance,
-            "boundary_meaningful_atr": values["peak_mfe_atr"] - dynamic["meaningful_atr"],
+            "boundary_meaningful_atr": values["peak_mfe_atr"]
+            - dynamic["meaningful_atr"],
             "boundary_usable_mfe_r": values["peak_mfe_r"] - usable_floor_r,
-            "boundary_reversal_retention": config.reversal_retention_cap - values["retention_net"],
-            "boundary_late_expansion_r": (values["mfe_r"][:, 11] - values["mfe_r"][:, 3]) - config.expansion_floor_r,
-            "net_ev_after_1pct_return": values["close_return_r_12h"] * values["risk_fraction"] - PATH_GEOMETRY_COST_RETURN,
+            "boundary_reversal_retention": config.reversal_retention_cap
+            - values["retention_net"],
+            "boundary_late_expansion_r": (
+                values["mfe_r"][:, 11] - values["mfe_r"][:, 3]
+            )
+            - config.expansion_floor_r,
+            "net_ev_after_1pct_return": values["close_return_r_12h"]
+            * values["risk_fraction"]
+            - PATH_GEOMETRY_COST_RETURN,
             "net_ev_after_1pct_r": values["net_final_r"],
-            "stop_probability": np.isfinite(values["time_to_stop_h"]).astype(np.float32),
-            "trailing_conversion": np.isfinite(values["time_to_trailing_h"]).astype(np.float32),
+            "stop_probability": np.isfinite(values["time_to_stop_h"]).astype(
+                np.float32
+            ),
+            "trailing_conversion": np.isfinite(values["time_to_trailing_h"]).astype(
+                np.float32
+            ),
             **{f"margin_{name}": margin for name, margin in predicate_margins.items()},
         },
         index=frame.index,
@@ -425,11 +497,23 @@ def boundary_diagnostics(labels: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for class_name in PATH_GEOMETRY_CLASSES:
         group = valid.loc[valid["path_geometry_label"].eq(class_name)]
-        row: dict[str, Any] = {"path_geometry_label": class_name, "rows": int(len(group))}
-        for column in ("boundary_meaningful_atr", "boundary_usable_mfe_r", "boundary_reversal_retention", "boundary_late_expansion_r"):
-            data = pd.to_numeric(group.get(column), errors="coerce").to_numpy(dtype=float)
+        row: dict[str, Any] = {
+            "path_geometry_label": class_name,
+            "rows": int(len(group)),
+        }
+        for column in (
+            "boundary_meaningful_atr",
+            "boundary_usable_mfe_r",
+            "boundary_reversal_retention",
+            "boundary_late_expansion_r",
+        ):
+            data = pd.to_numeric(group.get(column), errors="coerce").to_numpy(
+                dtype=float
+            )
             row[f"median_{column}"] = float(np.nanmedian(data)) if len(data) else np.nan
-            row[f"within_0p05_{column}"] = float(np.nanmean(np.abs(data) <= 0.05)) if len(data) else np.nan
+            row[f"within_0p05_{column}"] = (
+                float(np.nanmean(np.abs(data) <= 0.05)) if len(data) else np.nan
+            )
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -447,7 +531,9 @@ def _normalise_probability_rows(probabilities: np.ndarray) -> np.ndarray:
     return values / totals
 
 
-def _align_probabilities(probabilities: np.ndarray, classes: Sequence[str]) -> np.ndarray:
+def _align_probabilities(
+    probabilities: np.ndarray, classes: Sequence[str]
+) -> np.ndarray:
     values = np.asarray(probabilities, dtype=np.float64)
     if values.ndim != 2 or values.shape[1] != len(classes):
         raise ValueError("probability matrix does not match its supplied class order")
@@ -469,25 +555,41 @@ def confidence_metrics(probabilities: np.ndarray, prefix: str) -> dict[str, floa
     return {
         f"{prefix}_mean_max_probability": float(values.max(axis=1).mean()),
         f"{prefix}_entropy": float(entropy.mean()),
-        f"{prefix}_normalized_entropy": float((entropy / np.log(len(PATH_GEOMETRY_CLASSES))).mean()),
-        f"{prefix}_top1_top2_probability_margin": float((ordered[:, -1] - ordered[:, -2]).mean()),
+        f"{prefix}_normalized_entropy": float(
+            (entropy / np.log(len(PATH_GEOMETRY_CLASSES))).mean()
+        ),
+        f"{prefix}_top1_top2_probability_margin": float(
+            (ordered[:, -1] - ordered[:, -2]).mean()
+        ),
     }
 
 
 def _raw_probability_reliability_metrics(
-    y_true: Sequence[str], probabilities: np.ndarray, prefix: str, *, bins: int = CALIBRATION_ECE_BINS
+    y_true: Sequence[str],
+    probabilities: np.ndarray,
+    prefix: str,
+    *,
+    bins: int = CALIBRATION_ECE_BINS,
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """Return raw multiclass Brier/ECE metrics and reliability bins."""
     if bins < 2:
         raise ValueError("probability ECE requires at least two bins")
     values = _normalise_probability_rows(probabilities)
-    labels = np.asarray([PATH_GEOMETRY_CLASSES.index(value) for value in y_true], dtype=np.int64)
+    labels = np.asarray(
+        [PATH_GEOMETRY_CLASSES.index(value) for value in y_true], dtype=np.int64
+    )
     if len(labels) != len(values):
         raise ValueError("probability labels and predictions must have equal length")
     observed = np.eye(len(PATH_GEOMETRY_CLASSES), dtype=float)[labels]
     metrics: dict[str, float] = {
-        f"{prefix}_oos_logloss": float(-np.mean(np.log(np.clip(values[np.arange(len(labels)), labels], 1e-12, 1.0)))),
-        f"{prefix}_multiclass_brier": float(np.mean(np.sum((values - observed) ** 2, axis=1))),
+        f"{prefix}_oos_logloss": float(
+            -np.mean(
+                np.log(np.clip(values[np.arange(len(labels)), labels], 1e-12, 1.0))
+            )
+        ),
+        f"{prefix}_multiclass_brier": float(
+            np.mean(np.sum((values - observed) ** 2, axis=1))
+        ),
     }
     rows: list[dict[str, Any]] = []
     eces: list[float] = []
@@ -501,7 +603,9 @@ def _raw_probability_reliability_metrics(
             support = int(mask.sum())
             mean_probability = float(score[mask].mean()) if support else np.nan
             empirical_frequency = float(truth[mask].mean()) if support else np.nan
-            absolute_error = abs(mean_probability - empirical_frequency) if support else np.nan
+            absolute_error = (
+                abs(mean_probability - empirical_frequency) if support else np.nan
+            )
             if support:
                 ece += (support / len(labels)) * float(absolute_error)
             rows.append(
@@ -529,19 +633,31 @@ def _f1(y: np.ndarray, predicted: np.ndarray, weighted: bool) -> float:
         tp = float(np.sum((y == label) & (predicted == label)))
         fp = float(np.sum((y != label) & (predicted == label)))
         fn = float(np.sum((y == label) & (predicted != label)))
-        scores.append(0.0 if 2.0 * tp + fp + fn == 0.0 else 2.0 * tp / (2.0 * tp + fp + fn))
+        scores.append(
+            0.0 if 2.0 * tp + fp + fn == 0.0 else 2.0 * tp / (2.0 * tp + fp + fn)
+        )
         supports.append(float(np.sum(y == label)))
-    return float(np.average(scores, weights=supports)) if weighted else float(np.mean(scores))
+    return (
+        float(np.average(scores, weights=supports))
+        if weighted
+        else float(np.mean(scores))
+    )
 
 
-def multiclass_scores(y_true: Sequence[str], probabilities: np.ndarray, classes: Sequence[str]) -> dict[str, float]:
+def multiclass_scores(
+    y_true: Sequence[str], probabilities: np.ndarray, classes: Sequence[str]
+) -> dict[str, float]:
     y = np.asarray([PATH_GEOMETRY_CLASSES.index(value) for value in y_true], dtype=int)
     p = _align_probabilities(np.asarray(probabilities, dtype=float), classes)
     predicted = p.argmax(axis=1)
     observed = np.cumsum(np.eye(len(PATH_GEOMETRY_CLASSES))[y], axis=1)
-    rps = np.mean(np.sum((np.cumsum(p, axis=1)[:, :-1] - observed[:, :-1]) ** 2, axis=1) / 7.0)
+    rps = np.mean(
+        np.sum((np.cumsum(p, axis=1)[:, :-1] - observed[:, :-1]) ** 2, axis=1) / 7.0
+    )
     return {
-        "oos_logloss": float(-np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, 1.0)))),
+        "oos_logloss": float(
+            -np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, 1.0)))
+        ),
         "macro_f1": _f1(y, predicted, False),
         "weighted_f1": _f1(y, predicted, True),
         "ranked_probability_score": float(rps),
@@ -551,10 +667,14 @@ def multiclass_scores(y_true: Sequence[str], probabilities: np.ndarray, classes:
 
 def _wasserstein(left: np.ndarray, right: np.ndarray) -> float:
     quantiles = np.linspace(0.0, 1.0, 101)
-    return float(np.mean(np.abs(np.quantile(left, quantiles) - np.quantile(right, quantiles))))
+    return float(
+        np.mean(np.abs(np.quantile(left, quantiles) - np.quantile(right, quantiles)))
+    )
 
 
-def _separation_for_groups(values: Mapping[str, np.ndarray], groups: Sequence[str], prefix: str) -> dict[str, float]:
+def _separation_for_groups(
+    values: Mapping[str, np.ndarray], groups: Sequence[str], prefix: str
+) -> dict[str, float]:
     assigned = np.asarray(groups, dtype=object)
     result: dict[str, float] = {}
     aggregate: list[float] = []
@@ -566,14 +686,24 @@ def _separation_for_groups(values: Mapping[str, np.ndarray], groups: Sequence[st
             first, second = first[np.isfinite(first)], second[np.isfinite(second)]
             if len(first) < 2 or len(second) < 2:
                 continue
-            scale = max(np.sqrt((np.var(first, ddof=1) + np.var(second, ddof=1)) / 2.0), global_scale, 1e-6)
+            scale = max(
+                np.sqrt((np.var(first, ddof=1) + np.var(second, ddof=1)) / 2.0),
+                global_scale,
+                1e-6,
+            )
             effects.append(abs(float(first.mean() - second.mean())) / scale)
             distances.append(_wasserstein(first, second) / scale)
-        result[f"{prefix}{name}_pairwise_effect_size"] = float(np.mean(effects)) if effects else np.nan
-        result[f"{prefix}{name}_standardized_wasserstein"] = float(np.mean(distances)) if distances else np.nan
+        result[f"{prefix}{name}_pairwise_effect_size"] = (
+            float(np.mean(effects)) if effects else np.nan
+        )
+        result[f"{prefix}{name}_standardized_wasserstein"] = (
+            float(np.mean(distances)) if distances else np.nan
+        )
         if effects:
             aggregate.append(float(np.mean(effects)))
-    result[f"{prefix}economic_separation_score"] = float(np.mean(aggregate)) if aggregate else np.nan
+    result[f"{prefix}economic_separation_score"] = (
+        float(np.mean(aggregate)) if aggregate else np.nan
+    )
     return result
 
 
@@ -587,10 +717,13 @@ def economic_separation(
     values = _geometry_values(ensure_risk_fraction(outcomes, columns), columns)
     metrics = {
         "gross_mfe_r": values["peak_mfe_r"],
-        "net_ev_after_1pct_return": values["close_return_r_12h"] * values["risk_fraction"] - PATH_GEOMETRY_COST_RETURN,
+        "net_ev_after_1pct_return": values["close_return_r_12h"]
+        * values["risk_fraction"]
+        - PATH_GEOMETRY_COST_RETURN,
         "mae_r": values["mae_r"][:, -1],
         "stop_probability": np.isfinite(values["time_to_stop_h"]).astype(float),
-        "time_h": _first_crossing(values["mfe_atr"], values["peak_mfe_atr"] * 0.9) + 1.0,
+        "time_h": _first_crossing(values["mfe_atr"], values["peak_mfe_atr"] * 0.9)
+        + 1.0,
         "retention_after_1pct": values["retention_net"],
         "trailing_conversion": np.isfinite(values["time_to_trailing_h"]).astype(float),
     }
@@ -615,11 +748,22 @@ def economic_confusion_diagnostics(
     if len(train_outcomes) != len(train_labels):
         raise ValueError("train outcomes and train classes must have equal length")
     if len(truth) != len(predicted) or not len(truth):
-        raise ValueError("economic confusion requires non-empty equal-length OOS labels")
-    unknown = set(train_labels).union(truth).union(predicted).difference(PATH_GEOMETRY_CLASSES)
+        raise ValueError(
+            "economic confusion requires non-empty equal-length OOS labels"
+        )
+    unknown = (
+        set(train_labels)
+        .union(truth)
+        .union(predicted)
+        .difference(PATH_GEOMETRY_CLASSES)
+    )
     if unknown:
-        raise ValueError(f"economic confusion received unknown geometry classes: {sorted(unknown)}")
-    train_values = _geometry_values(ensure_risk_fraction(train_outcomes, columns), columns)
+        raise ValueError(
+            f"economic confusion received unknown geometry classes: {sorted(unknown)}"
+        )
+    train_values = _geometry_values(
+        ensure_risk_fraction(train_outcomes, columns), columns
+    )
     train_ev = train_values["net_final_r"] * train_values["risk_fraction"]
     if not np.isfinite(train_ev).all():
         raise ValueError("train execution EV priors must be finite")
@@ -636,14 +780,20 @@ def economic_confusion_diagnostics(
                 "class_name": class_name,
                 "train_rows": support,
                 "reference_geometry_net_ev_prior": prior,
-                "prior_source": "class_train_mean" if support else "global_train_mean_fallback_no_class_support",
+                "prior_source": "class_train_mean"
+                if support
+                else "global_train_mean_fallback_no_class_support",
             }
         )
     prior_values = np.asarray(priors, dtype=float)
     class_index = {name: index for index, name in enumerate(PATH_GEOMETRY_CLASSES)}
     actual_index = np.asarray([class_index[value] for value in truth], dtype=np.int64)
-    predicted_index = np.asarray([class_index[value] for value in predicted], dtype=np.int64)
-    counts = np.zeros((len(PATH_GEOMETRY_CLASSES), len(PATH_GEOMETRY_CLASSES)), dtype=float)
+    predicted_index = np.asarray(
+        [class_index[value] for value in predicted], dtype=np.int64
+    )
+    counts = np.zeros(
+        (len(PATH_GEOMETRY_CLASSES), len(PATH_GEOMETRY_CLASSES)), dtype=float
+    )
     np.add.at(counts, (actual_index, predicted_index), 1.0)
     row_normalized = np.divide(
         counts,
@@ -672,7 +822,9 @@ def economic_confusion_diagnostics(
         "metrics": {
             "economic_confusion_total_weighted_cost": float(weighted.sum()),
             "economic_confusion_cost": float(mean_contribution.sum()),
-            "economic_confusion_error_rate": float(np.mean(actual_index != predicted_index)),
+            "economic_confusion_error_rate": float(
+                np.mean(actual_index != predicted_index)
+            ),
         },
         "matrix": pd.DataFrame(
             matrix_rows("count", counts)
@@ -712,41 +864,145 @@ def four_month_walk_forward_folds(
 ) -> tuple[ChronologicalFold, ...]:
     """Build non-overlapping 4-month train -> 4-month OOS folds."""
     ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
-    end = ts if label_end is None else pd.to_datetime(pd.Series(label_end), utc=True, errors="coerce")
-    if ts.isna().any() or end.isna().any() or not ts.is_monotonic_increasing or (end < ts).any():
-        raise ValueError("timestamps/label_end must be sorted valid UTC with non-overlapping direction")
+    end = (
+        ts
+        if label_end is None
+        else pd.to_datetime(pd.Series(label_end), utc=True, errors="coerce")
+    )
+    if (
+        ts.isna().any()
+        or end.isna().any()
+        or not ts.is_monotonic_increasing
+        or (end < ts).any()
+    ):
+        raise ValueError(
+            "timestamps/label_end must be sorted valid UTC with non-overlapping direction"
+        )
     cursor, last, fold_id, folds = ts.iloc[0], ts.iloc[-1], 0, []
     while True:
         train_end = cursor + pd.DateOffset(months=GEOMETRY_TRAIN_MONTHS)
         oos_end = train_end + pd.DateOffset(months=GEOMETRY_OOS_MONTHS)
         if oos_end > last + pd.Timedelta(nanoseconds=1):
             break
-        train = np.flatnonzero((ts >= cursor).to_numpy() & (ts < train_end).to_numpy() & (end < train_end).to_numpy())
+        train = np.flatnonzero(
+            (ts >= cursor).to_numpy()
+            & (ts < train_end).to_numpy()
+            & (end < train_end).to_numpy()
+        )
         oos = np.flatnonzero((ts >= train_end).to_numpy() & (ts < oos_end).to_numpy())
         if len(train) and len(oos):
-            folds.append(ChronologicalFold(fold_id, train, oos, train_end, train_end, oos_end))
+            folds.append(
+                ChronologicalFold(fold_id, train, oos, train_end, train_end, oos_end)
+            )
             fold_id += 1
         cursor += pd.DateOffset(months=GEOMETRY_TRAIN_MONTHS)
     if not folds:
-        raise ValueError("need at least 8 calendar months for a 4m train -> 4m OOS fold")
+        raise ValueError(
+            "need at least 8 calendar months for a 4m train -> 4m OOS fold"
+        )
     return tuple(folds)
 
 
 def fixed_four_month_ablation_fold(
-    timestamps: Sequence[object], start_date: str | pd.Timestamp, *, label_end: Sequence[object] | None = None
+    timestamps: Sequence[object],
+    start_date: str | pd.Timestamp,
+    *,
+    label_end: Sequence[object] | None = None,
 ) -> ChronologicalFold:
     """Build one explicit 4-month train then next 4-month OOS ablation split."""
     ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
-    end = ts if label_end is None else pd.to_datetime(pd.Series(label_end), utc=True, errors="coerce")
+    end = (
+        ts
+        if label_end is None
+        else pd.to_datetime(pd.Series(label_end), utc=True, errors="coerce")
+    )
     start = pd.Timestamp(start_date)
-    start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+    start = (
+        start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+    )
     train_end = start + pd.DateOffset(months=GEOMETRY_TRAIN_MONTHS)
     oos_end = train_end + pd.DateOffset(months=GEOMETRY_OOS_MONTHS)
-    train = np.flatnonzero((ts >= start).to_numpy() & (ts < train_end).to_numpy() & (end < train_end).to_numpy())
+    train = np.flatnonzero(
+        (ts >= start).to_numpy()
+        & (ts < train_end).to_numpy()
+        & (end < train_end).to_numpy()
+    )
     oos = np.flatnonzero((ts >= train_end).to_numpy() & (ts < oos_end).to_numpy())
     if not len(train) or not len(oos):
-        raise ValueError("requested ablation start does not contain a complete 4m train -> 4m OOS split")
+        raise ValueError(
+            "requested ablation start does not contain a complete 4m train -> 4m OOS split"
+        )
     return ChronologicalFold(0, train, oos, train_end, train_end, oos_end)
+
+
+def short_history_purged_chronological_folds(
+    timestamps: Sequence[object],
+    *,
+    label_end: Sequence[object],
+    development_end: str | pd.Timestamp,
+    subfold_count: int = 2,
+    embargo: pd.Timedelta = pd.Timedelta(hours=24),
+) -> tuple[ChronologicalFold, ...]:
+    """Build bounded purged subfolds entirely inside a frozen short history.
+
+    This is deliberately not a shorter version of the 4m/4m validation rule.
+    It is an explicitly named development-only mode for the April v9 labels:
+    callers must remove every row whose resolved label reaches the fixed May
+    boundary before invoking it.  The resulting folds are expanding,
+    chronology-preserving and purge both unresolved labels and the embargo.
+    """
+    if subfold_count < 1:
+        raise ValueError("short-history geometry requires at least one subfold")
+    ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
+    end = pd.to_datetime(pd.Series(label_end), utc=True, errors="coerce")
+    cutoff = pd.Timestamp(development_end)
+    cutoff = (
+        cutoff.tz_localize("UTC") if cutoff.tzinfo is None else cutoff.tz_convert("UTC")
+    )
+    if (
+        ts.isna().any()
+        or end.isna().any()
+        or not ts.is_monotonic_increasing
+        or (end < ts).any()
+    ):
+        raise ValueError(
+            "short-history folds require sorted valid UTC timestamps/label ends"
+        )
+    if not bool((end < cutoff).all()) or not bool((ts < cutoff).all()):
+        raise ValueError(
+            "short-history geometry received rows outside its frozen development boundary"
+        )
+    if len(ts) < subfold_count + 2:
+        raise ValueError(
+            "too few development rows for requested short-history subfolds"
+        )
+    chunks = np.array_split(np.arange(len(ts), dtype=np.int64), subfold_count + 1)
+    folds: list[ChronologicalFold] = []
+    for fold_id, valid in enumerate(chunks[1:]):
+        if not len(valid):
+            continue
+        validation_start = ts.iloc[int(valid[0])]
+        prior = np.arange(int(valid[0]), dtype=np.int64)
+        train = prior[
+            (end.iloc[prior] < validation_start).to_numpy()
+            & (ts.iloc[prior] < validation_start - embargo).to_numpy()
+        ]
+        if not len(train):
+            continue
+        validation_end = ts.iloc[int(valid[-1])] + pd.Timedelta(nanoseconds=1)
+        folds.append(
+            ChronologicalFold(
+                fold_id,
+                train,
+                valid,
+                validation_start,
+                validation_start,
+                validation_end,
+            )
+        )
+    if not folds:
+        raise ValueError("purge/embargo leaves no short-history geometry subfold")
+    return tuple(folds)
 
 
 @dataclass(frozen=True)
@@ -773,20 +1029,30 @@ class GeometryPredictorContext:
             "early_stop_fit_rows": int(len(self.early_stop_fit_indices)),
             "early_stop_validation_rows": int(len(self.early_stop_validation_indices)),
             "early_stop_fit_source_rows": int(len(self.early_stop_fit_positions)),
-            "early_stop_validation_source_rows": int(len(self.early_stop_validation_positions)),
+            "early_stop_validation_source_rows": int(
+                len(self.early_stop_validation_positions)
+            ),
         }
 
 
 PredictionOutput = tuple[np.ndarray, Sequence[str], Mapping[str, Any]]
 Predictor = Callable[
-    [pd.DataFrame, pd.Series, pd.DataFrame, Mapping[str, Any], GeometryPredictorContext],
+    [
+        pd.DataFrame,
+        pd.Series,
+        pd.DataFrame,
+        Mapping[str, Any],
+        GeometryPredictorContext,
+    ],
     PredictionOutput,
 ]
 ProgressReporter = Callable[[str, Mapping[str, Any]], None]
 
 _CHECKPOINT_SCHEMA = "catboost_path_archetype_geometry_search_checkpoint_v1"
 _FINALIST_SIDECAR_SCHEMA = "path_archetype_geometry_checkpoint_finalist_predictions_v1"
-_EXACT_GEOMETRY_EXPORT_SCHEMA = "catboost_path_archetype_exact_geometry_raw_oos_export_v1"
+_EXACT_GEOMETRY_EXPORT_SCHEMA = (
+    "catboost_path_archetype_exact_geometry_raw_oos_export_v1"
+)
 _EXACT_GEOMETRY_SIDECAR_SCHEMA = "path_archetype_exact_geometry_raw7_sidecar_v1"
 _EXACT_GEOMETRY_CLASS_MERGE = {
     "merged_class": "fast_realization_winner",
@@ -889,7 +1155,9 @@ def _json_ready(value: Any) -> Any:
 
 
 def _checkpoint_fingerprint(contract: Mapping[str, Any]) -> str:
-    encoded = json.dumps(_json_ready(contract), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    encoded = json.dumps(
+        _json_ready(contract), sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -898,7 +1166,9 @@ def _atomic_json_write(path: Path, payload: Mapping[str, Any]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    encoded = json.dumps(_json_ready(payload), indent=2, sort_keys=True, allow_nan=False).encode("utf-8")
+    encoded = json.dumps(
+        _json_ready(payload), indent=2, sort_keys=True, allow_nan=False
+    ).encode("utf-8")
     with temporary.open("wb") as handle:
         handle.write(encoded)
         handle.flush()
@@ -917,7 +1187,9 @@ def _file_sha256(path: Path) -> str:
 def _prediction_identity_sha256(frame: pd.DataFrame) -> str:
     identity = frame.loc[:, list(_FINALIST_SIDECAR_IDENTITY_COLUMNS)].copy()
     for column in ("__ts__",):
-        identity[column] = pd.to_datetime(identity[column], utc=True, errors="raise").astype(str)
+        identity[column] = pd.to_datetime(
+            identity[column], utc=True, errors="raise"
+        ).astype(str)
     hashed = pd.util.hash_pandas_object(identity, index=False).to_numpy(dtype=np.uint64)
     return hashlib.sha256(hashed.tobytes()).hexdigest()
 
@@ -927,21 +1199,35 @@ def _checkpoint_sidecar_directory(checkpoint_path: Path) -> Path:
     return path.with_name(f"{path.stem}_sidecars")
 
 
-def _validate_finalist_sidecar_frame(frame: pd.DataFrame, metadata: Mapping[str, Any]) -> None:
+def _validate_finalist_sidecar_frame(
+    frame: pd.DataFrame, metadata: Mapping[str, Any]
+) -> None:
     if metadata.get("columns") != list(frame.columns):
-        raise ValueError("geometry finalist checkpoint sidecar column schema does not match its manifest")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar column schema does not match its manifest"
+        )
     missing = sorted(_FINALIST_SIDECAR_REQUIRED_COLUMNS.difference(frame.columns))
     if missing:
-        raise ValueError(f"geometry finalist checkpoint sidecar has invalid schema; missing={missing}")
+        raise ValueError(
+            f"geometry finalist checkpoint sidecar has invalid schema; missing={missing}"
+        )
     config_id = str(metadata.get("config_id", ""))
     if not config_id or set(frame["config_id"].astype(str)) != {config_id}:
-        raise ValueError("geometry finalist checkpoint sidecar has a mismatched config_id")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar has a mismatched config_id"
+        )
     if frame.duplicated(list(_FINALIST_SIDECAR_IDENTITY_COLUMNS)).any():
-        raise ValueError("geometry finalist checkpoint sidecar has duplicate identities")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar has duplicate identities"
+        )
     if int(metadata.get("rows", -1)) != len(frame):
-        raise ValueError("geometry finalist checkpoint sidecar row count does not match its manifest")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar row count does not match its manifest"
+        )
     if metadata.get("identity_sha256") != _prediction_identity_sha256(frame):
-        raise ValueError("geometry finalist checkpoint sidecar identity hash does not match its manifest")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar identity hash does not match its manifest"
+        )
 
 
 def _atomic_write_finalist_sidecar(
@@ -978,17 +1264,25 @@ def _atomic_write_finalist_sidecar(
     return metadata
 
 
-def _load_finalist_sidecar(metadata: Mapping[str, Any], checkpoint_path: Path) -> pd.DataFrame:
+def _load_finalist_sidecar(
+    metadata: Mapping[str, Any], checkpoint_path: Path
+) -> pd.DataFrame:
     if metadata.get("schema") != _FINALIST_SIDECAR_SCHEMA:
-        raise ValueError("geometry finalist checkpoint sidecar has an unsupported schema")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar has an unsupported schema"
+        )
     path = Path(str(metadata.get("sidecar_path", "")))
     expected_directory = _checkpoint_sidecar_directory(checkpoint_path).resolve()
     if path.parent.resolve() != expected_directory:
-        raise ValueError("geometry finalist checkpoint sidecar is not in the checkpoint sibling directory")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar is not in the checkpoint sibling directory"
+        )
     if not path.is_file():
         raise ValueError(f"geometry finalist checkpoint sidecar does not exist: {path}")
     if metadata.get("sidecar_sha256") != _file_sha256(path):
-        raise ValueError("geometry finalist checkpoint sidecar checksum does not match its manifest")
+        raise ValueError(
+            "geometry finalist checkpoint sidecar checksum does not match its manifest"
+        )
     frame = pd.read_parquet(path)
     _validate_finalist_sidecar_frame(frame, metadata)
     return frame
@@ -997,9 +1291,15 @@ def _load_finalist_sidecar(metadata: Mapping[str, Any], checkpoint_path: Path) -
 def _frame_identity(frame: pd.DataFrame) -> str:
     """Stable content identity for direct API callers that do not supply one."""
     digest = hashlib.sha256()
-    digest.update(json.dumps(list(frame.columns), separators=(",", ":")).encode("utf-8"))
+    digest.update(
+        json.dumps(list(frame.columns), separators=(",", ":")).encode("utf-8")
+    )
     for column in frame.columns:
-        digest.update(pd.util.hash_pandas_object(frame[column], index=True).to_numpy(dtype=np.uint64).tobytes())
+        digest.update(
+            pd.util.hash_pandas_object(frame[column], index=True)
+            .to_numpy(dtype=np.uint64)
+            .tobytes()
+        )
     return digest.hexdigest()
 
 
@@ -1012,8 +1312,12 @@ def _fold_contract(folds: Sequence[ChronologicalFold]) -> list[dict[str, Any]]:
             "train_end": pd.Timestamp(fold.train_end).isoformat(),
             "oos_start": pd.Timestamp(fold.oos_start).isoformat(),
             "oos_end": pd.Timestamp(fold.oos_end).isoformat(),
-            "train_indices_sha256": hashlib.sha256(np.asarray(fold.train_indices, dtype=np.int64).tobytes()).hexdigest(),
-            "oos_indices_sha256": hashlib.sha256(np.asarray(fold.oos_indices, dtype=np.int64).tobytes()).hexdigest(),
+            "train_indices_sha256": hashlib.sha256(
+                np.asarray(fold.train_indices, dtype=np.int64).tobytes()
+            ).hexdigest(),
+            "oos_indices_sha256": hashlib.sha256(
+                np.asarray(fold.oos_indices, dtype=np.int64).tobytes()
+            ).hexdigest(),
         }
         for fold in folds
     ]
@@ -1035,9 +1339,15 @@ def _restore_checkpoint_result(payload: Mapping[str, Any]) -> dict[str, Any]:
 def _validate_uniform_pre_refinement_weights(params: Mapping[str, Any]) -> None:
     """Reject weighting modes outside the original hard-label geometry contract."""
     if params.get("auto_class_weights") not in (None, "", "None"):
-        raise ValueError("exact geometry export requires uniform weights; auto_class_weights is not allowed")
-    if "scale_pos_weight" in params and not np.isclose(float(params["scale_pos_weight"]), 1.0):
-        raise ValueError("exact geometry export requires uniform weights; scale_pos_weight must be 1")
+        raise ValueError(
+            "exact geometry export requires uniform weights; auto_class_weights is not allowed"
+        )
+    if "scale_pos_weight" in params and not np.isclose(
+        float(params["scale_pos_weight"]), 1.0
+    ):
+        raise ValueError(
+            "exact geometry export requires uniform weights; scale_pos_weight must be 1"
+        )
     class_weights = params.get("class_weights")
     if class_weights is None:
         return
@@ -1066,10 +1376,11 @@ def _checkpoint_exact_geometry_contract(
     if not isinstance(contract, Mapping):
         raise ValueError("geometry-search checkpoint has no contract")
     if checkpoint.get("fingerprint") != _checkpoint_fingerprint(contract):
-        raise ValueError("geometry-search checkpoint fingerprint does not match its contract")
+        raise ValueError(
+            "geometry-search checkpoint fingerprint does not match its contract"
+        )
     expected_identity = dict(
-        checkpoint_input_identity
-        or {"prepared_frame_sha256": _frame_identity(ordered)}
+        checkpoint_input_identity or {"prepared_frame_sha256": _frame_identity(ordered)}
     )
     expected_folds = (
         (
@@ -1093,7 +1404,9 @@ def _checkpoint_exact_geometry_contract(
         "max_train_rows_per_fold": int(max_train_rows_per_fold),
     }
     changed = sorted(
-        name for name, value in expected.items() if contract.get(name) != _json_ready(value)
+        name
+        for name, value in expected.items()
+        if contract.get(name) != _json_ready(value)
     )
     if changed:
         raise ValueError(
@@ -1107,7 +1420,9 @@ def _merge_exact_geometry_labels(labels: pd.Series) -> pd.Series:
     merged = labels.astype("string").replace(_EXACT_GEOMETRY_LABEL_REMAP)
     unknown = sorted(set(merged.dropna()).difference(EXACT_GEOMETRY_EXPORT_CLASSES))
     if unknown:
-        raise ValueError(f"exact geometry export encountered unknown path labels: {unknown}")
+        raise ValueError(
+            f"exact geometry export encountered unknown path labels: {unknown}"
+        )
     return merged
 
 
@@ -1163,11 +1478,15 @@ def _raw_exact_oos_prediction_frame(
     values = _normalise_probability_rows(np.asarray(probabilities, dtype=np.float64))
     expected_shape = (len(positions), len(EXACT_GEOMETRY_EXPORT_CLASSES))
     if values.shape != expected_shape:
-        raise ValueError("exact geometry export has an invalid raw seven-class probability shape")
+        raise ValueError(
+            "exact geometry export has an invalid raw seven-class probability shape"
+        )
     source = frame.iloc[positions]
     timestamp = pd.to_datetime(source[columns.timestamp], utc=True, errors="coerce")
     if timestamp.isna().any() or "candidate_id" not in source:
-        raise ValueError("exact geometry export requires UTC timestamps and candidate_id")
+        raise ValueError(
+            "exact geometry export requires UTC timestamps and candidate_id"
+        )
     train_timestamp = pd.to_datetime(
         frame.iloc[fold.train_indices][columns.timestamp], utc=True, errors="raise"
     )
@@ -1185,7 +1504,9 @@ def _raw_exact_oos_prediction_frame(
         raise ValueError("exact geometry export training information reaches OOS")
     entropy = -np.sum(values * np.log(np.clip(values, 1e-12, 1.0)), axis=1)
     predicted = values.argmax(axis=1)
-    class_index = {name: index for index, name in enumerate(EXACT_GEOMETRY_EXPORT_CLASSES)}
+    class_index = {
+        name: index for index, name in enumerate(EXACT_GEOMETRY_EXPORT_CLASSES)
+    }
     sorted_probabilities = np.sort(values, axis=1)
     result = pd.DataFrame(
         {
@@ -1195,15 +1516,20 @@ def _raw_exact_oos_prediction_frame(
             "side": source[columns.side].astype(str).to_numpy(),
             "candidate_id": source["candidate_id"].astype(str).to_numpy(),
             "true_merged_dynamic_label": true_labels.astype(str).to_numpy(),
-            "predicted_class": [EXACT_GEOMETRY_EXPORT_CLASSES[index] for index in predicted],
+            "predicted_class": [
+                EXACT_GEOMETRY_EXPORT_CLASSES[index] for index in predicted
+            ],
             "probability_vector": [row.tolist() for row in values],
             "probability_entropy": entropy,
             "max_probability": values.max(axis=1),
             "raw_max_probability": values.max(axis=1),
             "normalized_entropy": entropy / np.log(len(EXACT_GEOMETRY_EXPORT_CLASSES)),
-            "raw_normalized_entropy": entropy / np.log(len(EXACT_GEOMETRY_EXPORT_CLASSES)),
-            "top2_probability_margin": sorted_probabilities[:, -1] - sorted_probabilities[:, -2],
-            "raw_top1_top2_probability_margin": sorted_probabilities[:, -1] - sorted_probabilities[:, -2],
+            "raw_normalized_entropy": entropy
+            / np.log(len(EXACT_GEOMETRY_EXPORT_CLASSES)),
+            "top2_probability_margin": sorted_probabilities[:, -1]
+            - sorted_probabilities[:, -2],
+            "raw_top1_top2_probability_margin": sorted_probabilities[:, -1]
+            - sorted_probabilities[:, -2],
             "adverse_probability_mass": values[
                 :, [class_index[name] for name in _EXACT_GEOMETRY_ADVERSE_CLASSES]
             ].sum(axis=1),
@@ -1289,14 +1615,20 @@ def _atomic_write_exact_geometry_sidecar(
         "export_fingerprint": export_fingerprint,
     }
     required = {
-        "true_merged_dynamic_label", "probability_vector", "config_id",
-        "raw_max_probability", "raw_normalized_entropy",
-        "raw_top1_top2_probability_margin", "raw_adverse_probability_mass",
+        "true_merged_dynamic_label",
+        "probability_vector",
+        "config_id",
+        "raw_max_probability",
+        "raw_normalized_entropy",
+        "raw_top1_top2_probability_margin",
+        "raw_adverse_probability_mass",
         "raw_favorable_probability_mass",
         *{f"probability_{name}" for name in EXACT_GEOMETRY_EXPORT_CLASSES},
     }
     if required.difference(predictions.columns):
-        raise ValueError("exact geometry sidecar lacks the required raw seven-class fields")
+        raise ValueError(
+            "exact geometry sidecar lacks the required raw seven-class fields"
+        )
     if metadata["identity_sha256"] != _prediction_identity_sha256(predictions):
         raise ValueError("exact geometry sidecar identity hash is invalid")
     return metadata
@@ -1306,14 +1638,23 @@ def _load_exact_geometry_sidecar(
     metadata: Mapping[str, Any], checkpoint_path: Path, export_fingerprint: str
 ) -> pd.DataFrame:
     if metadata.get("schema") != _EXACT_GEOMETRY_SIDECAR_SCHEMA:
-        raise ValueError("exact geometry checkpoint export has an unsupported sidecar schema")
+        raise ValueError(
+            "exact geometry checkpoint export has an unsupported sidecar schema"
+        )
     if metadata.get("export_fingerprint") != export_fingerprint:
         raise ValueError("exact geometry checkpoint export fingerprint does not match")
     path = Path(str(metadata.get("sidecar_path", "")))
-    if path.parent.resolve() != _checkpoint_sidecar_directory(checkpoint_path).resolve():
-        raise ValueError("exact geometry sidecar is not in the checkpoint sibling directory")
+    if (
+        path.parent.resolve()
+        != _checkpoint_sidecar_directory(checkpoint_path).resolve()
+    ):
+        raise ValueError(
+            "exact geometry sidecar is not in the checkpoint sibling directory"
+        )
     if not path.is_file() or metadata.get("sidecar_sha256") != _file_sha256(path):
-        raise ValueError("exact geometry sidecar is missing or has a mismatched checksum")
+        raise ValueError(
+            "exact geometry sidecar is missing or has a mismatched checksum"
+        )
     frame = pd.read_parquet(path)
     if metadata.get("columns") != list(frame.columns):
         raise ValueError("exact geometry sidecar has a mismatched column schema")
@@ -1337,22 +1678,26 @@ def _persist_final_exact_geometry_model(
     try:
         from catboost import CatBoostClassifier
     except Exception as exc:  # pragma: no cover
-        raise ImportError("CatBoost is required to persist the final exact geometry model") from exc
+        raise ImportError(
+            "CatBoost is required to persist the final exact geometry model"
+        ) from exc
     _validate_uniform_pre_refinement_weights(params)
     positions = np.flatnonzero(labels.notna().to_numpy()).astype(np.int64)
     target = labels.iloc[positions].astype(str)
     if set(target) != set(EXACT_GEOMETRY_EXPORT_CLASSES):
         missing = sorted(set(EXACT_GEOMETRY_EXPORT_CLASSES).difference(target))
-        raise ValueError(f"final exact geometry refit is missing merged hard classes: {missing}")
-    context = _early_stop_context(
-        frame, positions, target, fold_id=-1, columns=columns
-    )
+        raise ValueError(
+            f"final exact geometry refit is missing merged hard classes: {missing}"
+        )
+    context = _early_stop_context(frame, positions, target, fold_id=-1, columns=columns)
     capped_params, resource_contract = capped_catboost_params(params)
     early_fit_y = target.iloc[context.early_stop_fit_indices]
     early_validation_y = target.iloc[context.early_stop_validation_indices]
     early_names = tuple(sorted(early_fit_y.unique()))
     if not set(early_validation_y).issubset(early_names):
-        raise ValueError("final exact geometry early-stop validation has unseen classes")
+        raise ValueError(
+            "final exact geometry early-stop validation has unseen classes"
+        )
     early_model = CatBoostClassifier(
         loss_function="MultiClass",
         verbose=False,
@@ -1371,7 +1716,11 @@ def _persist_final_exact_geometry_model(
         use_best_model=True,
         verbose=False,
     )
-    best_iteration = early_model.get_best_iteration() if hasattr(early_model, "get_best_iteration") else None
+    best_iteration = (
+        early_model.get_best_iteration()
+        if hasattr(early_model, "get_best_iteration")
+        else None
+    )
     tree_count = getattr(early_model, "tree_count_", None)
     iteration_ceiling = int(capped_params.get("iterations", 3000))
     effective_trees = (
@@ -1380,7 +1729,9 @@ def _persist_final_exact_geometry_model(
         else int(tree_count or 0)
     )
     if effective_trees <= 0:
-        raise ValueError("final exact geometry early-stop fit did not expose a usable tree count")
+        raise ValueError(
+            "final exact geometry early-stop fit did not expose a usable tree count"
+        )
     effective_trees = min(max(1, effective_trees), iteration_ceiling)
     model = CatBoostClassifier(
         loss_function="MultiClass",
@@ -1410,11 +1761,15 @@ def _persist_final_exact_geometry_model(
         loaded.predict_proba(feature_matrix.iloc[positions[:1]]), dtype=np.float64
     )
     if verification_probabilities.shape != (1, len(EXACT_GEOMETRY_EXPORT_CLASSES)):
-        raise ValueError("reloaded final exact geometry model has an invalid probability shape")
+        raise ValueError(
+            "reloaded final exact geometry model has an invalid probability shape"
+        )
     if not np.isfinite(verification_probabilities).all() or not np.allclose(
         verification_probabilities.sum(axis=1), 1.0
     ):
-        raise ValueError("reloaded final exact geometry model has invalid raw probabilities")
+        raise ValueError(
+            "reloaded final exact geometry model has invalid raw probabilities"
+        )
     scoring_contract = {
         "max_probability": "max(all_7_raw_probabilities)",
         "normalized_entropy": "-sum(p_i * log(p_i)) / log(7)",
@@ -1493,7 +1848,9 @@ def export_checkpoint_geometry(
         raise ValueError("max_train_rows_per_fold must be non-negative")
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.is_file():
-        raise FileNotFoundError(f"geometry-search checkpoint does not exist: {checkpoint_path}")
+        raise FileNotFoundError(
+            f"geometry-search checkpoint does not exist: {checkpoint_path}"
+        )
     with checkpoint_path.open() as handle:
         checkpoint = json.load(handle)
     if not isinstance(checkpoint, Mapping):
@@ -1506,7 +1863,9 @@ def export_checkpoint_geometry(
     )
     if ordered[columns.timestamp].isna().any():
         raise ValueError("exact geometry export requires valid UTC timestamps")
-    ordered = ordered.sort_values(columns.timestamp, kind="mergesort").reset_index(drop=True)
+    ordered = ordered.sort_values(columns.timestamp, kind="mergesort").reset_index(
+        drop=True
+    )
     prepared_feature_matrix = _feature_matrix(ordered, feature_columns)
     contract, selection_folds = _checkpoint_exact_geometry_contract(
         checkpoint,
@@ -1521,11 +1880,17 @@ def export_checkpoint_geometry(
     if not isinstance(completed, Mapping) or config_id not in completed:
         raise ValueError(f"geometry id does not exist in the checkpoint: {config_id}")
     completed_result = completed[config_id]
-    if not isinstance(completed_result, Mapping) or not isinstance(completed_result.get("config"), Mapping):
-        raise ValueError("geometry-search checkpoint has an invalid completed geometry result")
+    if not isinstance(completed_result, Mapping) or not isinstance(
+        completed_result.get("config"), Mapping
+    ):
+        raise ValueError(
+            "geometry-search checkpoint has an invalid completed geometry result"
+        )
     config = PathGeometryConfig(**dict(completed_result["config"]))
     if geometry_config_id(config) != config_id:
-        raise ValueError("geometry-search checkpoint geometry id does not match its config")
+        raise ValueError(
+            "geometry-search checkpoint geometry id does not match its config"
+        )
     _require_merged_seven_class_refit_support(
         ordered,
         config,
@@ -1535,19 +1900,27 @@ def export_checkpoint_geometry(
     )
     stored_exports = checkpoint.get("exact_geometry_exports", {})
     if stored_exports and not isinstance(stored_exports, Mapping):
-        raise ValueError("geometry-search checkpoint has invalid exact_geometry_exports")
+        raise ValueError(
+            "geometry-search checkpoint has invalid exact_geometry_exports"
+        )
     config_payload = _geometry_config_payload(config)
     export_fingerprint = _exact_geometry_export_fingerprint(
         str(checkpoint["fingerprint"]), config_id, config_payload
     )
     stored = dict(stored_exports).get(config_id)
     if stored is not None:
-        if not isinstance(stored, Mapping) or stored.get("config") != _json_ready(config_payload):
+        if not isinstance(stored, Mapping) or stored.get("config") != _json_ready(
+            config_payload
+        ):
             raise ValueError("exact geometry checkpoint export has a mismatched config")
-        predictions = _load_exact_geometry_sidecar(stored, checkpoint_path, export_fingerprint)
+        predictions = _load_exact_geometry_sidecar(
+            stored, checkpoint_path, export_fingerprint
+        )
         reused_capture = True
     else:
-        _report_progress(progress_reporter, "exact_geometry_capture_start", config_id=config_id)
+        _report_progress(
+            progress_reporter, "exact_geometry_capture_start", config_id=config_id
+        )
         raw_predictor = catboost_predictor if predictor is None else predictor
         labels = _merge_exact_geometry_labels(
             label_path_geometry(ordered, config, columns)["path_geometry_label"]
@@ -1559,23 +1932,41 @@ def export_checkpoint_geometry(
             test_raw = labels.iloc[fold.oos_indices]
             train_positions = fold.train_indices[train_raw.notna().to_numpy()]
             test_positions = fold.oos_indices[test_raw.notna().to_numpy()]
-            train_y, test_y = train_raw.dropna().astype(str), test_raw.dropna().astype(str)
+            train_y, test_y = (
+                train_raw.dropna().astype(str),
+                test_raw.dropna().astype(str),
+            )
             if len(train_y) < 2 or len(test_y) < 1 or train_y.nunique() < 2:
                 continue
             sampled_positions = bounded_chronological_training_positions(
-                ordered, train_positions, train_y, max_rows=max_train_rows_per_fold, columns=columns
+                ordered,
+                train_positions,
+                train_y,
+                max_rows=max_train_rows_per_fold,
+                columns=columns,
             )
             sampled_y = labels.iloc[sampled_positions].astype(str)
             context = _early_stop_context(
-                ordered, sampled_positions, sampled_y, fold_id=fold.fold_id, columns=columns
+                ordered,
+                sampled_positions,
+                sampled_y,
+                fold_id=fold.fold_id,
+                columns=columns,
             )
             probabilities, class_order, fit_report = raw_predictor(
-                prepared_feature_matrix.iloc[sampled_positions], sampled_y,
-                prepared_feature_matrix.iloc[test_positions], effective_model_params, context,
+                prepared_feature_matrix.iloc[sampled_positions],
+                sampled_y,
+                prepared_feature_matrix.iloc[test_positions],
+                effective_model_params,
+                context,
             )
             if tuple(class_order) != EXACT_GEOMETRY_EXPORT_CLASSES:
-                raise ValueError("exact geometry export predictor must return the fixed merged seven-class order")
-            aligned = _normalise_probability_rows(np.asarray(probabilities, dtype=np.float64))
+                raise ValueError(
+                    "exact geometry export predictor must return the fixed merged seven-class order"
+                )
+            aligned = _normalise_probability_rows(
+                np.asarray(probabilities, dtype=np.float64)
+            )
             prediction_frames.append(
                 _raw_exact_oos_prediction_frame(
                     ordered, test_positions, test_y, aligned, config, fold, columns
@@ -1611,7 +2002,9 @@ def export_checkpoint_geometry(
         updated["exact_geometry_exports"] = exports
         updated["last_checkpoint_reason"] = f"exact_geometry_export:{config_id}"
         _atomic_json_write(checkpoint_path, updated)
-        _report_progress(progress_reporter, "exact_geometry_capture_complete", config_id=config_id)
+        _report_progress(
+            progress_reporter, "exact_geometry_capture_complete", config_id=config_id
+        )
         stored = metadata
         reused_capture = False
     final_model = (
@@ -1666,7 +2059,9 @@ def export_checkpoint_geometry(
     }
 
 
-def _report_progress(reporter: ProgressReporter | None, event: str, **details: Any) -> None:
+def _report_progress(
+    reporter: ProgressReporter | None, event: str, **details: Any
+) -> None:
     if reporter is not None:
         reporter(event, _json_ready(details))
 
@@ -1688,32 +2083,48 @@ def _early_stop_context(
     the final fixed-tree refit after the early-stop tree count is selected.
     """
     if not 0.0 < validation_fraction < 1.0:
-        raise ValueError("early-stop validation fraction must be strictly between zero and one")
+        raise ValueError(
+            "early-stop validation fraction must be strictly between zero and one"
+        )
     if embargo < pd.Timedelta(0):
         raise ValueError("early-stop embargo must be non-negative")
     sampled_positions = np.asarray(sampled_positions, dtype=np.int64)
     if len(sampled_positions) != len(sampled_labels):
-        raise ValueError("sampled early-stop positions and labels must have equal length")
+        raise ValueError(
+            "sampled early-stop positions and labels must have equal length"
+        )
     if len(sampled_positions) < 3:
-        raise ValueError("sampled training fold is too small for internal early stopping")
+        raise ValueError(
+            "sampled training fold is too small for internal early stopping"
+        )
     source = frame.iloc[sampled_positions]
-    timestamps = pd.to_datetime(source[columns.timestamp], utc=True, errors="raise").reset_index(drop=True)
+    timestamps = pd.to_datetime(
+        source[columns.timestamp], utc=True, errors="raise"
+    ).reset_index(drop=True)
     if not timestamps.is_monotonic_increasing:
-        raise ValueError("sampled training rows must be chronologically ordered for internal early stopping")
+        raise ValueError(
+            "sampled training rows must be chronologically ordered for internal early stopping"
+        )
     if columns.label_end is None or columns.label_end not in source:
         label_end = timestamps
     else:
-        label_end = pd.to_datetime(source[columns.label_end], utc=True, errors="raise").reset_index(drop=True)
-    if timestamps.isna().any() or label_end.isna().any() or (label_end < timestamps).any():
-        raise ValueError("internal early-stop labels must not resolve before their decision timestamps")
+        label_end = pd.to_datetime(
+            source[columns.label_end], utc=True, errors="raise"
+        ).reset_index(drop=True)
+    if (
+        timestamps.isna().any()
+        or label_end.isna().any()
+        or (label_end < timestamps).any()
+    ):
+        raise ValueError(
+            "internal early-stop labels must not resolve before their decision timestamps"
+        )
     target = sampled_labels.astype(str).reset_index(drop=True)
     minimum_start = max(1, int(np.ceil(len(source) * (1.0 - validation_fraction))))
     timestamp_ns = timestamps.astype("int64", copy=False).to_numpy()
     label_end_ns = label_end.astype("int64", copy=False).to_numpy()
     # Tail boundaries must retain complete decision-timestamp groups.
-    boundaries = np.flatnonzero(
-        np.r_[True, timestamp_ns[1:] != timestamp_ns[:-1]]
-    )
+    boundaries = np.flatnonzero(np.r_[True, timestamp_ns[1:] != timestamp_ns[:-1]])
     candidate_starts = boundaries[boundaries >= minimum_start]
     classes, class_codes = np.unique(target.to_numpy(), return_inverse=True)
     suffix_counts = np.zeros((len(source) + 1, len(classes)), dtype=np.int32)
@@ -1739,9 +2150,15 @@ def _early_stop_context(
             eligible_cursor += 1
         validation_class_mask = suffix_counts[int(start_index)] > 0
         fit_class_mask = fit_counts > 0
-        if fit_class_mask.sum() >= 2 and np.all(~validation_class_mask | fit_class_mask):
-            fit_indices = np.flatnonzero(eligibility_ns < validation_start_ns).astype(np.int64)
-            validation_indices = np.arange(int(start_index), len(source), dtype=np.int64)
+        if fit_class_mask.sum() >= 2 and np.all(
+            ~validation_class_mask | fit_class_mask
+        ):
+            fit_indices = np.flatnonzero(eligibility_ns < validation_start_ns).astype(
+                np.int64
+            )
+            validation_indices = np.arange(
+                int(start_index), len(source), dtype=np.int64
+            )
             return GeometryPredictorContext(
                 fold_id=int(fold_id),
                 sampled_train_positions=sampled_positions.copy(),
@@ -1758,7 +2175,11 @@ def _early_stop_context(
             f"validation_classes={classes[validation_class_mask].tolist()} "
             f"fit_rows={int(fit_counts.sum())}"
         )
-    detail = failures[-1] if failures else "no complete timestamp boundary after nominal tail start"
+    detail = (
+        failures[-1]
+        if failures
+        else "no complete timestamp boundary after nominal tail start"
+    )
     raise ValueError(
         "no valid internal chronological early-stop split after purge/embargo; "
         f"fold_id={fold_id}, sampled_rows={len(sampled_positions)}, {detail}"
@@ -1776,16 +2197,22 @@ def catboost_predictor(
     try:
         from catboost import CatBoostClassifier
     except Exception as exc:  # pragma: no cover
-        raise ImportError("CatBoost is required for geometry-search model scoring") from exc
+        raise ImportError(
+            "CatBoost is required for geometry-search model scoring"
+        ) from exc
     _validate_uniform_pre_refinement_weights(params)
     if set(train_y.astype(str)) != set(EXACT_GEOMETRY_EXPORT_CLASSES):
-        raise ValueError("raw seven-class predictor requires every merged hard class in its refit rows")
+        raise ValueError(
+            "raw seven-class predictor requires every merged hard class in its refit rows"
+        )
     capped_params, _ = capped_catboost_params(params)
     early_fit_y = train_y.iloc[context.early_stop_fit_indices].astype(str)
     early_validation_y = train_y.iloc[context.early_stop_validation_indices].astype(str)
     early_names = tuple(sorted(early_fit_y.unique()))
     if not set(early_validation_y).issubset(early_names):
-        raise ValueError("internal early-stop validation classes are absent from its fit rows")
+        raise ValueError(
+            "internal early-stop validation classes are absent from its fit rows"
+        )
     early_model = CatBoostClassifier(
         loss_function="MultiClass",
         verbose=False,
@@ -1804,7 +2231,11 @@ def catboost_predictor(
         use_best_model=True,
         verbose=False,
     )
-    best_iteration = early_model.get_best_iteration() if hasattr(early_model, "get_best_iteration") else None
+    best_iteration = (
+        early_model.get_best_iteration()
+        if hasattr(early_model, "get_best_iteration")
+        else None
+    )
     tree_count = getattr(early_model, "tree_count_", None)
     iteration_ceiling = int(capped_params.get("iterations", 3000))
     effective_trees = (
@@ -1828,7 +2259,9 @@ def catboost_predictor(
     )
     refit_model.fit(
         train_x,
-        pd.Categorical(train_y.astype(str), categories=EXACT_GEOMETRY_EXPORT_CLASSES).codes,
+        pd.Categorical(
+            train_y.astype(str), categories=EXACT_GEOMETRY_EXPORT_CLASSES
+        ).codes,
         verbose=False,
     )
     return (
@@ -1843,12 +2276,21 @@ def catboost_predictor(
     )
 
 
-def _feature_matrix(frame: pd.DataFrame, feature_columns: Sequence[str]) -> pd.DataFrame:
+def _feature_matrix(
+    frame: pd.DataFrame, feature_columns: Sequence[str]
+) -> pd.DataFrame:
     feature_columns = validate_preentry_features(feature_columns)
     missing = sorted(set(feature_columns).difference(frame.columns))
     if missing:
-        raise ValueError("frozen model features are absent; provide --features-parquet or canonical feature-store join: " + ", ".join(missing[:12]))
-    values = frame.loc[:, list(feature_columns)].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        raise ValueError(
+            "frozen model features are absent; provide --features-parquet or canonical feature-store join: "
+            + ", ".join(missing[:12])
+        )
+    values = (
+        frame.loc[:, list(feature_columns)]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+    )
     return values.fillna(values.median()).fillna(0.0).astype(np.float32)
 
 
@@ -1897,7 +2339,10 @@ def bounded_chronological_training_positions(
     if max_rows >= len(available):
         quotas[:] = 1
     else:
-        order = sorted(range(len(available)), key=lambda index: (-available[index], grouped[index][0]))
+        order = sorted(
+            range(len(available)),
+            key=lambda index: (-available[index], grouped[index][0]),
+        )
         quotas[np.asarray(order[:max_rows], dtype=np.int64)] = 1
     remaining = int(max_rows - quotas.sum())
     capacity = available - quotas
@@ -1912,7 +2357,11 @@ def bounded_chronological_training_positions(
             break
         order = sorted(
             (index for index, value in enumerate(capacity) if value > 0),
-            key=lambda index: (-(raw[index] - np.floor(raw[index])), -capacity[index], grouped[index][0]),
+            key=lambda index: (
+                -(raw[index] - np.floor(raw[index])),
+                -capacity[index],
+                grouped[index][0],
+            ),
         )
         for index in order[:remaining]:
             quotas[index] += 1
@@ -1925,7 +2374,9 @@ def bounded_chronological_training_positions(
         group_positions = group["position"].to_numpy(dtype=np.int64)
         # Quotas never exceed stratum support.  The endpoints ensure every
         # retained stratum spans its available train-time range, not its head.
-        selected = np.rint(np.linspace(0, len(group_positions) - 1, int(quota))).astype(np.int64)
+        selected = np.rint(np.linspace(0, len(group_positions) - 1, int(quota))).astype(
+            np.int64
+        )
         sampled.append(group_positions[selected])
     return np.sort(np.concatenate(sampled)).astype(np.int64, copy=False)
 
@@ -1939,7 +2390,9 @@ def _geometry_config_payload(config: PathGeometryConfig) -> dict[str, Any]:
 
 def geometry_config_id(config: PathGeometryConfig) -> str:
     """Stable identifier for one complete deterministic geometry rule set."""
-    payload = json.dumps(_geometry_config_payload(config), sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(
+        _geometry_config_payload(config), sort_keys=True, separators=(",", ":")
+    )
     return "geometry_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -1977,9 +2430,7 @@ def _oos_prediction_frame(
         )
     latest_train_decision = train_timestamp.max()
     latest_train_resolution = train_resolution.max()
-    training_information_cutoff = max(
-        latest_train_decision, latest_train_resolution
-    )
+    training_information_cutoff = max(latest_train_decision, latest_train_resolution)
     if not training_information_cutoff < fold.oos_start:
         raise ValueError("geometry OOS training information reaches validation")
     result = pd.DataFrame(
@@ -1990,7 +2441,9 @@ def _oos_prediction_frame(
             "side": source[columns.side].astype(str).to_numpy(),
             "candidate_id": source["candidate_id"].astype(str).to_numpy(),
             "true_dynamic_label": true_labels.astype(str).to_numpy(),
-            "predicted_class": [PATH_GEOMETRY_CLASSES[index] for index in predicted_index],
+            "predicted_class": [
+                PATH_GEOMETRY_CLASSES[index] for index in predicted_index
+            ],
             "probability_vector": [row.tolist() for row in raw],
             "probability_entropy": raw_entropy,
             "fold_id": int(fold.fold_id),
@@ -2016,11 +2469,20 @@ def _oos_prediction_frame(
     return result
 
 
-def _support(frame: pd.DataFrame, labels: pd.Series, column: str, name: str) -> pd.DataFrame:
+def _support(
+    frame: pd.DataFrame, labels: pd.Series, column: str, name: str
+) -> pd.DataFrame:
     if column not in frame:
         return pd.DataFrame(columns=[name, "path_geometry_label", "rows"])
-    data = pd.DataFrame({name: frame[column].astype(str), "path_geometry_label": labels.astype(str)})
-    return data.groupby([name, "path_geometry_label"], observed=True).size().rename("rows").reset_index()
+    data = pd.DataFrame(
+        {name: frame[column].astype(str), "path_geometry_label": labels.astype(str)}
+    )
+    return (
+        data.groupby([name, "path_geometry_label"], observed=True)
+        .size()
+        .rename("rows")
+        .reset_index()
+    )
 
 
 def _group_scores(
@@ -2035,7 +2497,9 @@ def _group_scores(
         return []
     labels = np.asarray(truth, dtype=object)
     output: list[dict[str, Any]] = []
-    for value, positions in frame.groupby(column, sort=True, observed=True).indices.items():
+    for value, positions in frame.groupby(
+        column, sort=True, observed=True
+    ).indices.items():
         index = np.asarray(positions, dtype=np.int64)
         if not len(index):
             continue
@@ -2044,7 +2508,11 @@ def _group_scores(
                 group_name: str(value),
                 "fold_id": fold_id,
                 "rows": int(len(index)),
-                **multiclass_scores(labels[index].tolist(), raw_probabilities[index], PATH_GEOMETRY_CLASSES),
+                **multiclass_scores(
+                    labels[index].tolist(),
+                    raw_probabilities[index],
+                    PATH_GEOMETRY_CLASSES,
+                ),
                 **confidence_metrics(raw_probabilities[index], "raw"),
             }
         )
@@ -2053,13 +2521,26 @@ def _group_scores(
 
 def _group_stability(records: list[dict[str, Any]], group_name: str) -> pd.DataFrame:
     if not records:
-        return pd.DataFrame(columns=[group_name, "support_rows", "folds", "mean_oos_logloss", "std_oos_logloss", "mean_macro_f1", "std_macro_f1"])
+        return pd.DataFrame(
+            columns=[
+                group_name,
+                "support_rows",
+                "folds",
+                "mean_oos_logloss",
+                "std_oos_logloss",
+                "mean_macro_f1",
+                "std_macro_f1",
+            ]
+        )
     frame = pd.DataFrame(records)
     grouped = frame.groupby(group_name, observed=True)
     return grouped.agg(
-        support_rows=("rows", "sum"), folds=("fold_id", "nunique"),
-        mean_oos_logloss=("oos_logloss", "mean"), std_oos_logloss=("oos_logloss", "std"),
-        mean_macro_f1=("macro_f1", "mean"), std_macro_f1=("macro_f1", "std"),
+        support_rows=("rows", "sum"),
+        folds=("fold_id", "nunique"),
+        mean_oos_logloss=("oos_logloss", "mean"),
+        std_oos_logloss=("oos_logloss", "std"),
+        mean_macro_f1=("macro_f1", "mean"),
+        std_macro_f1=("macro_f1", "std"),
     ).reset_index()
 
 
@@ -2086,9 +2567,15 @@ def _selection_score(summary: Mapping[str, float]) -> float:
 
 
 def evaluate_geometry_config(
-    frame: pd.DataFrame, feature_columns: Sequence[str], model_params: Mapping[str, Any], config: PathGeometryConfig,
-    *, columns: PathGeometryColumns = PathGeometryColumns(), folds: Sequence[ChronologicalFold] | None = None,
-    predictor: Predictor = catboost_predictor, capture_predictions: bool = False,
+    frame: pd.DataFrame,
+    feature_columns: Sequence[str],
+    model_params: Mapping[str, Any],
+    config: PathGeometryConfig,
+    *,
+    columns: PathGeometryColumns = PathGeometryColumns(),
+    folds: Sequence[ChronologicalFold] | None = None,
+    predictor: Predictor = catboost_predictor,
+    capture_predictions: bool = False,
     prepared_feature_matrix: pd.DataFrame | None = None,
     max_train_rows_per_fold: int = DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
 ) -> dict[str, Any]:
@@ -2100,13 +2587,25 @@ def evaluate_geometry_config(
         x = _feature_matrix(prepared, feature_columns)
     else:
         if len(prepared_feature_matrix) != len(prepared):
-            raise ValueError("prepared feature matrix row count does not match geometry frame")
+            raise ValueError(
+                "prepared feature matrix row count does not match geometry frame"
+            )
         if list(prepared_feature_matrix.columns) != list(feature_columns):
-            raise ValueError("prepared feature matrix does not match frozen feature columns")
+            raise ValueError(
+                "prepared feature matrix does not match frozen feature columns"
+            )
         x = prepared_feature_matrix
     ts = pd.to_datetime(prepared[columns.timestamp], utc=True, errors="coerce")
-    end = ts if columns.label_end is None or columns.label_end not in prepared else pd.to_datetime(prepared[columns.label_end], utc=True, errors="coerce")
-    use_folds = tuple(folds) if folds is not None else four_month_walk_forward_folds(ts, label_end=end)
+    end = (
+        ts
+        if columns.label_end is None or columns.label_end not in prepared
+        else pd.to_datetime(prepared[columns.label_end], utc=True, errors="coerce")
+    )
+    use_folds = (
+        tuple(folds)
+        if folds is not None
+        else four_month_walk_forward_folds(ts, label_end=end)
+    )
     records: list[dict[str, Any]] = []
     side_records: list[dict[str, Any]] = []
     symbol_records: list[dict[str, Any]] = []
@@ -2130,7 +2629,9 @@ def evaluate_geometry_config(
             max_rows=max_train_rows_per_fold,
             columns=columns,
         )
-        sampled_train_y = labels.iloc[sampled_train_positions]["path_geometry_label"].astype(str)
+        sampled_train_y = labels.iloc[sampled_train_positions][
+            "path_geometry_label"
+        ].astype(str)
         if sampled_train_y.nunique() < 2:
             continue
         predictor_context = _early_stop_context(
@@ -2148,10 +2649,15 @@ def evaluate_geometry_config(
             predictor_context,
         )
         if not isinstance(fit_report_raw, Mapping):
-            raise TypeError("geometry predictor must return a mapping fit report as its third value")
+            raise TypeError(
+                "geometry predictor must return a mapping fit report as its third value"
+            )
         fit_report = dict(fit_report_raw)
         aligned_probabilities = _align_probabilities(probabilities, classes)
-        predicted = [PATH_GEOMETRY_CLASSES[index] for index in aligned_probabilities.argmax(axis=1)]
+        predicted = [
+            PATH_GEOMETRY_CLASSES[index]
+            for index in aligned_probabilities.argmax(axis=1)
+        ]
         probability_metrics, probability_bins = _raw_probability_reliability_metrics(
             test_y.tolist(), aligned_probabilities, "raw"
         )
@@ -2168,7 +2674,9 @@ def evaluate_geometry_config(
                     columns,
                 )
             )
-        economics = economic_separation(prepared.iloc[test_positions], test_y.tolist(), predicted, columns)
+        economics = economic_separation(
+            prepared.iloc[test_positions], test_y.tolist(), predicted, columns
+        )
         raw_confusion = economic_confusion_diagnostics(
             prepared.iloc[train_positions],
             train_y.tolist(),
@@ -2197,44 +2705,67 @@ def evaluate_geometry_config(
                 **predictor_context.audit(),
                 **dict(fit_report),
                 # Preserve the pre-existing raw-probability selection metrics.
-                **multiclass_scores(test_y.tolist(), aligned_probabilities, PATH_GEOMETRY_CLASSES),
+                **multiclass_scores(
+                    test_y.tolist(), aligned_probabilities, PATH_GEOMETRY_CLASSES
+                ),
                 **probability_metrics,
                 **confidence_metrics(aligned_probabilities, "raw"),
-                **{f"raw_{key}": value for key, value in raw_confusion["metrics"].items()},
+                **{
+                    f"raw_{key}": value
+                    for key, value in raw_confusion["metrics"].items()
+                },
                 **economics,
             }
         )
         side_records.extend(
             _group_scores(
-                prepared.iloc[test_positions], test_y.tolist(), aligned_probabilities,
-                columns.side, "side", fold.fold_id,
+                prepared.iloc[test_positions],
+                test_y.tolist(),
+                aligned_probabilities,
+                columns.side,
+                "side",
+                fold.fold_id,
             )
         )
         symbol_records.extend(
             _group_scores(
-                prepared.iloc[test_positions], test_y.tolist(), aligned_probabilities,
-                columns.symbol, "symbol", fold.fold_id,
+                prepared.iloc[test_positions],
+                test_y.tolist(),
+                aligned_probabilities,
+                columns.symbol,
+                "symbol",
+                fold.fold_id,
             )
         )
         oos_frame = prepared.iloc[test_positions]
-        oos_months = pd.to_datetime(oos_frame[columns.timestamp], utc=True).dt.strftime("%Y-%m")
+        oos_months = pd.to_datetime(oos_frame[columns.timestamp], utc=True).dt.strftime(
+            "%Y-%m"
+        )
         for month in sorted(oos_months.unique()):
             position = np.flatnonzero(oos_months.to_numpy() == month)
             month_truth = test_y.iloc[position].tolist()
             month_predicted = [predicted[index] for index in position]
-            month_economics = economic_separation(oos_frame.iloc[position], month_truth, month_predicted, columns)
+            month_economics = economic_separation(
+                oos_frame.iloc[position], month_truth, month_predicted, columns
+            )
             month_records.append(
                 {
                     "fold_id": fold.fold_id,
                     "oos_month": str(month),
                     "rows": int(len(position)),
-                    **multiclass_scores(month_truth, aligned_probabilities[position], PATH_GEOMETRY_CLASSES),
+                    **multiclass_scores(
+                        month_truth,
+                        aligned_probabilities[position],
+                        PATH_GEOMETRY_CLASSES,
+                    ),
                     **confidence_metrics(aligned_probabilities[position], "raw"),
                     **month_economics,
                 }
             )
     if not records:
-        raise ValueError("no viable OOS fold has labelled rows and at least two train classes")
+        raise ValueError(
+            "no viable OOS fold has labelled rows and at least two train classes"
+        )
     fold_metrics = pd.DataFrame(records)
     summary = {
         column: float(fold_metrics[column].mean())
@@ -2273,19 +2804,31 @@ def evaluate_geometry_config(
     # zero rather than being silently excluded from target selection.
     summary["economic_selection_score"] = float(
         0.5 * np.nan_to_num(summary.get("true_economic_separation_score"), nan=0.0)
-        + 0.5 * np.nan_to_num(summary.get("predicted_economic_separation_score"), nan=0.0)
+        + 0.5
+        * np.nan_to_num(summary.get("predicted_economic_separation_score"), nan=0.0)
     )
-    summary["evaluated_folds"], summary["evaluated_oos_rows"] = int(len(fold_metrics)), int(fold_metrics["full_validation_rows"].sum())
+    summary["evaluated_folds"], summary["evaluated_oos_rows"] = (
+        int(len(fold_metrics)),
+        int(fold_metrics["full_validation_rows"].sum()),
+    )
     summary["requested_train_rows_per_fold"] = int(max_train_rows_per_fold)
     summary["effective_train_rows"] = int(fold_metrics["effective_train_rows"].sum())
     summary["full_validation_rows"] = int(fold_metrics["full_validation_rows"].sum())
-    summary["evaluated_oos_calendar_months"] = int(monthly_metrics["oos_month"].nunique())
+    summary["evaluated_oos_calendar_months"] = int(
+        monthly_metrics["oos_month"].nunique()
+    )
     summary["selection_score"] = _selection_score(summary)
     result = {
-        "config": _geometry_config_payload(config), "summary": summary, "folds": fold_metrics,
+        "config": _geometry_config_payload(config),
+        "summary": summary,
+        "folds": fold_metrics,
         "boundary": boundary_diagnostics(labels),
-        "side_support": _support(prepared, labels["path_geometry_label"], columns.side, "side"),
-        "symbol_support": _support(prepared, labels["path_geometry_label"], columns.symbol, "symbol"),
+        "side_support": _support(
+            prepared, labels["path_geometry_label"], columns.side, "side"
+        ),
+        "symbol_support": _support(
+            prepared, labels["path_geometry_label"], columns.symbol, "symbol"
+        ),
         "side_stability": _group_stability(side_records, "side"),
         "symbol_stability": _group_stability(symbol_records, "symbol"),
         "temporal_month_stability": monthly_metrics,
@@ -2309,24 +2852,41 @@ def evaluate_geometry_config(
         ),
     }
     if capture_predictions:
-        predictions = pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
+        predictions = (
+            pd.concat(prediction_frames, ignore_index=True)
+            if prediction_frames
+            else pd.DataFrame()
+        )
         identity = ["source_row_position", "__ts__", "__symbol__", "side", "fold_id"]
         if not predictions.empty and predictions.duplicated(identity).any():
-            raise ValueError("captured OOS predictions contain duplicate row/fold identities")
+            raise ValueError(
+                "captured OOS predictions contain duplicate row/fold identities"
+            )
         result["oos_predictions"] = predictions
     return result
 
 
 def _rank_key(result: Mapping[str, Any]) -> tuple[float, float, float, str]:
     summary = result["summary"]
-    return (-summary["selection_score"], -summary["fold_stability"], summary["oos_logloss"], repr(sorted(result["config"].items())))
+    return (
+        -summary["selection_score"],
+        -summary["fold_stability"],
+        summary["oos_logloss"],
+        repr(sorted(result["config"].items())),
+    )
 
 
-def stable_plateau_select(results: Sequence[Mapping[str, Any]], *, score_tolerance: float = 0.02) -> Mapping[str, Any]:
+def stable_plateau_select(
+    results: Sequence[Mapping[str, Any]], *, score_tolerance: float = 0.02
+) -> Mapping[str, Any]:
     if not results:
         raise ValueError("stable plateau selection needs candidates")
     best = max(float(item["summary"]["selection_score"]) for item in results)
-    plateau = [item for item in results if float(item["summary"]["selection_score"]) >= best - score_tolerance]
+    plateau = [
+        item
+        for item in results
+        if float(item["summary"]["selection_score"]) >= best - score_tolerance
+    ]
     return min(
         plateau,
         key=lambda item: (
@@ -2339,8 +2899,13 @@ def stable_plateau_select(results: Sequence[Mapping[str, Any]], *, score_toleran
 
 
 def nested_finalist_validation(
-    frame: pd.DataFrame, feature_columns: Sequence[str], model_params: Mapping[str, Any], finalists: Sequence[Mapping[str, Any]], *,
-    columns: PathGeometryColumns = PathGeometryColumns(), predictor: Predictor = catboost_predictor,
+    frame: pd.DataFrame,
+    feature_columns: Sequence[str],
+    model_params: Mapping[str, Any],
+    finalists: Sequence[Mapping[str, Any]],
+    *,
+    columns: PathGeometryColumns = PathGeometryColumns(),
+    predictor: Predictor = catboost_predictor,
     prepared_feature_matrix: pd.DataFrame | None = None,
     max_train_rows_per_fold: int = DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
     completed_outer_folds: Mapping[str, Mapping[str, Any]] | None = None,
@@ -2353,17 +2918,29 @@ def nested_finalist_validation(
     if not finalists:
         return []
     timestamps = pd.to_datetime(frame[columns.timestamp], utc=True, errors="coerce")
-    end = timestamps if columns.label_end is None or columns.label_end not in frame else pd.to_datetime(frame[columns.label_end], utc=True, errors="coerce")
+    end = (
+        timestamps
+        if columns.label_end is None or columns.label_end not in frame
+        else pd.to_datetime(frame[columns.label_end], utc=True, errors="coerce")
+    )
     start, last, output = timestamps.iloc[0], timestamps.iloc[-1], []
     outer_id = 0
-    while start + pd.DateOffset(months=GEOMETRY_NESTED_MONTHS) <= last + pd.Timedelta(nanoseconds=1):
+    while start + pd.DateOffset(months=GEOMETRY_NESTED_MONTHS) <= last + pd.Timedelta(
+        nanoseconds=1
+    ):
         inner = fixed_four_month_ablation_fold(timestamps, start, label_end=end)
         outer_start = start + pd.DateOffset(
             months=GEOMETRY_TRAIN_MONTHS + GEOMETRY_OOS_MONTHS
         )
         outer_end = outer_start + pd.DateOffset(months=GEOMETRY_OOS_MONTHS)
-        outer_train = np.flatnonzero((timestamps >= start).to_numpy() & (timestamps < outer_start).to_numpy() & (end < outer_start).to_numpy())
-        outer_oos = np.flatnonzero((timestamps >= outer_start).to_numpy() & (timestamps < outer_end).to_numpy())
+        outer_train = np.flatnonzero(
+            (timestamps >= start).to_numpy()
+            & (timestamps < outer_start).to_numpy()
+            & (end < outer_start).to_numpy()
+        )
+        outer_oos = np.flatnonzero(
+            (timestamps >= outer_start).to_numpy() & (timestamps < outer_end).to_numpy()
+        )
         if len(outer_train) and len(outer_oos):
             completed = (completed_outer_folds or {}).get(str(outer_id))
             if completed is not None:
@@ -2410,8 +2987,13 @@ def nested_finalist_validation(
                     config_id=config_id,
                 )
                 result = evaluate_geometry_config(
-                    frame, feature_columns, model_params, candidate,
-                    columns=columns, folds=(inner,), predictor=predictor,
+                    frame,
+                    feature_columns,
+                    model_params,
+                    candidate,
+                    columns=columns,
+                    folds=(inner,),
+                    predictor=predictor,
                     prepared_feature_matrix=prepared_feature_matrix,
                     max_train_rows_per_fold=max_train_rows_per_fold,
                 )
@@ -2425,7 +3007,9 @@ def nested_finalist_validation(
                     config_id=config_id,
                 )
             selected = stable_plateau_select(inner_results)
-            outer = ChronologicalFold(outer_id, outer_train, outer_oos, outer_start, outer_start, outer_end)
+            outer = ChronologicalFold(
+                outer_id, outer_train, outer_oos, outer_start, outer_start, outer_end
+            )
             selected_config = PathGeometryConfig(**selected["config"])
             selected_config_id = geometry_config_id(selected_config)
             outer_evaluation_key = f"{outer_id}:outer:{selected_config_id}"
@@ -2446,8 +3030,13 @@ def nested_finalist_validation(
                     config_id=selected_config_id,
                 )
                 scored = evaluate_geometry_config(
-                    frame, feature_columns, model_params, selected_config,
-                    columns=columns, folds=(outer,), predictor=predictor,
+                    frame,
+                    feature_columns,
+                    model_params,
+                    selected_config,
+                    columns=columns,
+                    folds=(outer,),
+                    predictor=predictor,
                     prepared_feature_matrix=prepared_feature_matrix,
                     max_train_rows_per_fold=max_train_rows_per_fold,
                 )
@@ -2479,7 +3068,9 @@ def nested_finalist_validation(
                 progress_reporter,
                 "nested_fold_complete",
                 outer_fold_id=outer_id,
-                selected_config_id=geometry_config_id(PathGeometryConfig(**selected["config"])),
+                selected_config_id=geometry_config_id(
+                    PathGeometryConfig(**selected["config"])
+                ),
                 selection_score=selected["summary"]["selection_score"],
             )
         start += pd.DateOffset(months=GEOMETRY_TRAIN_MONTHS)
@@ -2487,8 +3078,15 @@ def nested_finalist_validation(
     return output
 
 
-def _result_row(stage: str, parameter: str, result: Mapping[str, Any]) -> dict[str, Any]:
-    return {"stage": stage, "parameter": parameter, **result["config"], **result["summary"]}
+def _result_row(
+    stage: str, parameter: str, result: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "parameter": parameter,
+        **result["config"],
+        **result["summary"],
+    }
 
 
 def reduced_joint_best_two_values(
@@ -2506,13 +3104,17 @@ def reduced_joint_best_two_values(
             if len(values) == 2:
                 break
         if len(values) != min(2, len({item["config"][parameter] for item in results})):
-            raise ValueError(f"1D sweep did not produce two distinct values for {parameter}")
+            raise ValueError(
+                f"1D sweep did not produce two distinct values for {parameter}"
+            )
         selected[parameter] = tuple(values)
     return selected
 
 
 def reduced_joint_design(
-    incumbent: PathGeometryConfig, best_two_values: Mapping[str, Sequence[Any]], max_joint_trials: int,
+    incumbent: PathGeometryConfig,
+    best_two_values: Mapping[str, Sequence[Any]],
+    max_joint_trials: int,
 ) -> tuple[PathGeometryConfig, ...]:
     """Deterministic ring-pair design spanning parameters without factorial growth."""
     if max_joint_trials < 0:
@@ -2520,7 +3122,10 @@ def reduced_joint_design(
     parameters = sorted(best_two_values)
     if len(parameters) < 2 or max_joint_trials == 0:
         return ()
-    pairs = [(parameters[index], parameters[(index + 1) % len(parameters)]) for index in range(len(parameters))]
+    pairs = [
+        (parameters[index], parameters[(index + 1) % len(parameters)])
+        for index in range(len(parameters))
+    ]
     combinations_by_pair = ((0, 0), (0, 1), (1, 0), (1, 1))
     design: list[PathGeometryConfig] = []
     # Cycle combinations before repeating a pair so a small capped design has
@@ -2542,10 +3147,20 @@ def reduced_joint_design(
 
 
 def staged_geometry_search(
-    frame: pd.DataFrame, feature_columns: Sequence[str], model_params: Mapping[str, Any], *,
-    columns: PathGeometryColumns = PathGeometryColumns(), incumbent: PathGeometryConfig = PathGeometryConfig(),
-    predictor: Predictor = catboost_predictor, max_joint_trials: int = 24, score_tolerance: float = 0.02,
-    ablation_start_date: str | pd.Timestamp | None = None, nested_oof: bool = False,
+    frame: pd.DataFrame,
+    feature_columns: Sequence[str],
+    model_params: Mapping[str, Any],
+    *,
+    columns: PathGeometryColumns = PathGeometryColumns(),
+    incumbent: PathGeometryConfig = PathGeometryConfig(),
+    predictor: Predictor = catboost_predictor,
+    max_joint_trials: int = 24,
+    score_tolerance: float = 0.02,
+    ablation_start_date: str | pd.Timestamp | None = None,
+    nested_oof: bool = False,
+    evaluation_mode: str = GEOMETRY_EVALUATION_MODE_LEGACY,
+    short_history_development_end: str | pd.Timestamp | None = None,
+    short_history_subfold_count: int = 2,
     capture_predictions: bool = False,
     run_post_search_refits: bool = True,
     max_train_rows_per_fold: int = DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
@@ -2559,6 +3174,20 @@ def staged_geometry_search(
         raise ValueError("max_joint_trials must be non-negative")
     if max_train_rows_per_fold < 0:
         raise ValueError("max_train_rows_per_fold must be non-negative")
+    if evaluation_mode not in {
+        GEOMETRY_EVALUATION_MODE_LEGACY,
+        GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+    }:
+        raise ValueError("unknown geometry evaluation mode")
+    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY:
+        if short_history_development_end is None:
+            raise ValueError(
+                "short-history geometry requires a development-end boundary"
+            )
+        if nested_oof:
+            raise ValueError("short-history geometry forbids nested OOF")
+        if ablation_start_date is not None:
+            raise ValueError("short-history geometry forbids 4m ablation overrides")
     effective_model_params, catboost_resource = capped_catboost_params(model_params)
     geometry_grid: Mapping[str, Sequence[Any]] = GEOMETRY_GRID
     incumbent_contract = asdict(incumbent)
@@ -2569,10 +3198,14 @@ def staged_geometry_search(
         preview_grid = preview_contract.get("geometry_grid")
         preview_incumbent = preview_contract.get("incumbent")
         current_without_fast_margin = {
-            key: value for key, value in GEOMETRY_GRID.items() if key != "fast_net_margin_atr"
+            key: value
+            for key, value in GEOMETRY_GRID.items()
+            if key != "fast_net_margin_atr"
         }
         incumbent_without_fast_margin = {
-            key: value for key, value in incumbent_contract.items() if key != "fast_net_margin_atr"
+            key: value
+            for key, value in incumbent_contract.items()
+            if key != "fast_net_margin_atr"
         }
         legacy_fast_margin_checkpoint = (
             isinstance(preview_grid, Mapping)
@@ -2598,8 +3231,12 @@ def staged_geometry_search(
         feature_count=len(feature_columns),
     )
     ordered = ensure_risk_fraction(frame, columns)
-    ordered[columns.timestamp] = pd.to_datetime(ordered[columns.timestamp], utc=True, errors="coerce")
-    ordered = ordered.sort_values(columns.timestamp, kind="mergesort").reset_index(drop=True)
+    ordered[columns.timestamp] = pd.to_datetime(
+        ordered[columns.timestamp], utc=True, errors="coerce"
+    )
+    ordered = ordered.sort_values(columns.timestamp, kind="mergesort").reset_index(
+        drop=True
+    )
     prepared_feature_matrix = _feature_matrix(ordered, feature_columns)
     _report_progress(
         progress_reporter,
@@ -2608,20 +3245,35 @@ def staged_geometry_search(
         feature_count=len(feature_columns),
         feature_matrix_rows=int(len(prepared_feature_matrix)),
     )
-    all_folds = four_month_walk_forward_folds(
-        ordered[columns.timestamp], label_end=ordered.get(columns.label_end)
-    )
-    selection_folds = (
-        (
-            fixed_four_month_ablation_fold(
-                ordered[columns.timestamp],
-                ablation_start_date,
-                label_end=ordered.get(columns.label_end),
-            ),
+    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY:
+        assert short_history_development_end is not None
+        if columns.label_end is None or columns.label_end not in ordered:
+            raise ValueError(
+                "short-history geometry requires canonical resolved label-end timestamps"
+            )
+        selection_folds = short_history_purged_chronological_folds(
+            ordered[columns.timestamp],
+            label_end=ordered[columns.label_end],
+            development_end=short_history_development_end,
+            subfold_count=short_history_subfold_count,
+            embargo=GEOMETRY_EARLY_STOP_EMBARGO,
         )
-        if ablation_start_date is not None
-        else all_folds
-    )
+        all_folds: tuple[ChronologicalFold, ...] = ()
+    else:
+        all_folds = four_month_walk_forward_folds(
+            ordered[columns.timestamp], label_end=ordered.get(columns.label_end)
+        )
+        selection_folds = (
+            (
+                fixed_four_month_ablation_fold(
+                    ordered[columns.timestamp],
+                    ablation_start_date,
+                    label_end=ordered.get(columns.label_end),
+                ),
+            )
+            if ablation_start_date is not None
+            else all_folds
+        )
     _report_progress(
         progress_reporter,
         "fold_definitions",
@@ -2632,7 +3284,10 @@ def staged_geometry_search(
     )
     checkpoint_contract = {
         "schema": _CHECKPOINT_SCHEMA,
-        "input_identity": dict(checkpoint_input_identity or {"prepared_frame_sha256": _frame_identity(ordered)}),
+        "input_identity": dict(
+            checkpoint_input_identity
+            or {"prepared_frame_sha256": _frame_identity(ordered)}
+        ),
         "feature_columns": list(feature_columns),
         "effective_model_params": dict(effective_model_params),
         "columns": asdict(columns),
@@ -2643,12 +3298,23 @@ def staged_geometry_search(
         "max_train_rows_per_fold": int(max_train_rows_per_fold),
         "max_joint_trials": int(max_joint_trials),
         "score_tolerance": float(score_tolerance),
-        "ablation_start_date": str(ablation_start_date) if ablation_start_date is not None else None,
+        "ablation_start_date": str(ablation_start_date)
+        if ablation_start_date is not None
+        else None,
+        "evaluation_mode": evaluation_mode,
+        "short_history_development_end": (
+            str(short_history_development_end)
+            if short_history_development_end is not None
+            else None
+        ),
+        "short_history_subfold_count": int(short_history_subfold_count),
         "nested_oof": bool(nested_oof),
         "capture_predictions": bool(capture_predictions),
         "nested_months": GEOMETRY_NESTED_MONTHS,
         "early_stop_validation_fraction": GEOMETRY_EARLY_STOP_VALIDATION_FRACTION,
-        "early_stop_embargo_hours": float(GEOMETRY_EARLY_STOP_EMBARGO / pd.Timedelta(hours=1)),
+        "early_stop_embargo_hours": float(
+            GEOMETRY_EARLY_STOP_EMBARGO / pd.Timedelta(hours=1)
+        ),
     }
     checkpoint_fingerprint = _checkpoint_fingerprint(checkpoint_contract)
     checkpoint_state: dict[str, Any] = {
@@ -2664,11 +3330,15 @@ def staged_geometry_search(
     if checkpoint_path is not None and Path(checkpoint_path).exists():
         with Path(checkpoint_path).open() as handle:
             restored = json.load(handle)
-        if not isinstance(restored, Mapping) or restored.get("schema") != _CHECKPOINT_SCHEMA:
+        if (
+            not isinstance(restored, Mapping)
+            or restored.get("schema") != _CHECKPOINT_SCHEMA
+        ):
             raise ValueError("geometry-search checkpoint has an unsupported schema")
-        exact_checkpoint_match = (
-            restored.get("fingerprint") == checkpoint_fingerprint
-            and restored.get("contract") == _json_ready(checkpoint_contract)
+        exact_checkpoint_match = restored.get(
+            "fingerprint"
+        ) == checkpoint_fingerprint and restored.get("contract") == _json_ready(
+            checkpoint_contract
         )
         migrated_nested_disable = False
         if not exact_checkpoint_match and not run_post_search_refits:
@@ -2697,7 +3367,12 @@ def staged_geometry_search(
                 "geometry-search checkpoint fingerprint does not match the current "
                 f"exact contract; changed top-level keys={changed_keys}"
             )
-        for key in ("completed_configs", "finalist_captures", "nested_outer_folds", "nested_completed_evaluations"):
+        for key in (
+            "completed_configs",
+            "finalist_captures",
+            "nested_outer_folds",
+            "nested_completed_evaluations",
+        ):
             if not isinstance(restored.get(key, {}), Mapping):
                 raise ValueError(f"geometry-search checkpoint has invalid {key}")
         checkpoint_state.update(dict(restored))
@@ -2720,7 +3395,9 @@ def staged_geometry_search(
             completed_config_count=len(checkpoint_state["completed_configs"]),
             finalist_capture_count=len(checkpoint_state["finalist_captures"]),
             nested_fold_count=len(checkpoint_state["nested_outer_folds"]),
-            nested_evaluation_count=len(checkpoint_state["nested_completed_evaluations"]),
+            nested_evaluation_count=len(
+                checkpoint_state["nested_completed_evaluations"]
+            ),
         )
 
     def persist_checkpoint(reason: str) -> None:
@@ -2738,21 +3415,41 @@ def staged_geometry_search(
         )
 
     cache: dict[tuple[tuple[str, Any], ...], dict[str, Any]] = {}
-    def evaluate(candidate: PathGeometryConfig, *, stage: str, parameter: str) -> dict[str, Any]:
+
+    def evaluate(
+        candidate: PathGeometryConfig, *, stage: str, parameter: str
+    ) -> dict[str, Any]:
         candidate_payload = _geometry_config_payload(candidate)
         key = tuple(sorted(candidate_payload.items()))
         config_id = geometry_config_id(candidate)
         if key in cache:
-            _report_progress(progress_reporter, f"{stage}_candidate_cached", parameter=parameter, config_id=config_id)
+            _report_progress(
+                progress_reporter,
+                f"{stage}_candidate_cached",
+                parameter=parameter,
+                config_id=config_id,
+            )
         else:
             restored_result = checkpoint_state["completed_configs"].get(config_id)
             if restored_result is not None:
                 if restored_result.get("config") != _json_ready(candidate_payload):
-                    raise ValueError("geometry-search checkpoint config id collision or invalid result")
+                    raise ValueError(
+                        "geometry-search checkpoint config id collision or invalid result"
+                    )
                 cache[key] = _restore_checkpoint_result(restored_result)
-                _report_progress(progress_reporter, f"{stage}_candidate_resume", parameter=parameter, config_id=config_id)
+                _report_progress(
+                    progress_reporter,
+                    f"{stage}_candidate_resume",
+                    parameter=parameter,
+                    config_id=config_id,
+                )
             else:
-                _report_progress(progress_reporter, f"{stage}_candidate_start", parameter=parameter, config_id=config_id)
+                _report_progress(
+                    progress_reporter,
+                    f"{stage}_candidate_start",
+                    parameter=parameter,
+                    config_id=config_id,
+                )
                 cache[key] = evaluate_geometry_config(
                     ordered,
                     feature_columns,
@@ -2764,7 +3461,9 @@ def staged_geometry_search(
                     prepared_feature_matrix=prepared_feature_matrix,
                     max_train_rows_per_fold=max_train_rows_per_fold,
                 )
-                checkpoint_state["completed_configs"][config_id] = _checkpoint_result(cache[key])
+                checkpoint_state["completed_configs"][config_id] = _checkpoint_result(
+                    cache[key]
+                )
                 persist_checkpoint(f"{stage}:{parameter}:{config_id}")
                 _report_progress(
                     progress_reporter,
@@ -2774,6 +3473,7 @@ def staged_geometry_search(
                     selection_score=cache[key]["summary"]["selection_score"],
                 )
         return cache[key]
+
     current = incumbent
     baseline = evaluate(incumbent, stage="baseline", parameter="incumbent")
     rows = []
@@ -2781,28 +3481,47 @@ def staged_geometry_search(
     one_dimensional: dict[str, list[dict[str, Any]]] = {}
     for parameter, values in geometry_grid.items():
         candidates = [
-            evaluate(replace(current, **{parameter: value}), stage="one_dimensional", parameter=parameter)
+            evaluate(
+                replace(current, **{parameter: value}),
+                stage="one_dimensional",
+                parameter=parameter,
+            )
             for value in values
         ]
         all_results.extend(candidates)
         chosen = stable_plateau_select(candidates, score_tolerance=score_tolerance)
         one_dimensional[parameter] = candidates
         current = PathGeometryConfig(**chosen["config"])
-        rows.extend(_result_row("one_dimensional", parameter, item) for item in candidates)
+        rows.extend(
+            _result_row("one_dimensional", parameter, item) for item in candidates
+        )
     best_two_values = reduced_joint_best_two_values(one_dimensional)
     joint_trials = reduced_joint_design(current, best_two_values, max_joint_trials)
     joint_results = [
-        evaluate(candidate, stage="joint", parameter="cross_parameter") for candidate in joint_trials
+        evaluate(candidate, stage="joint", parameter="cross_parameter")
+        for candidate in joint_trials
     ]
     if joint_results:
         all_results.extend(joint_results)
-        current = PathGeometryConfig(**stable_plateau_select(joint_results, score_tolerance=score_tolerance)["config"])
-        rows.extend(_result_row("sampled_reduced_joint", "cross_parameter", item) for item in joint_results)
-    finalists = sorted({tuple(sorted(item["config"].items())): item for item in all_results}.values(), key=_rank_key)[:5]
+        current = PathGeometryConfig(
+            **stable_plateau_select(joint_results, score_tolerance=score_tolerance)[
+                "config"
+            ]
+        )
+        rows.extend(
+            _result_row("sampled_reduced_joint", "cross_parameter", item)
+            for item in joint_results
+        )
+    finalists = sorted(
+        {tuple(sorted(item["config"].items())): item for item in all_results}.values(),
+        key=_rank_key,
+    )[:5]
     finalist_prediction_results: list[dict[str, Any]] = []
     if capture_predictions and run_post_search_refits:
         if len(finalists) != 5:
-            raise ValueError("prediction capture requires exactly five unique finalist configs")
+            raise ValueError(
+                "prediction capture requires exactly five unique finalist configs"
+            )
         for rank, finalist in enumerate(finalists, start=1):
             finalist_config = PathGeometryConfig(**finalist["config"])
             config_id = geometry_config_id(finalist_config)
@@ -2817,15 +3536,26 @@ def staged_geometry_search(
                 and isinstance(restored_diagnostics, Mapping)
                 and set(_FINALIST_DIAGNOSTIC_KEYS).issubset(restored_diagnostics)
             ):
-                _report_progress(progress_reporter, "finalist_capture_resume", rank=rank, config_id=config_id)
+                _report_progress(
+                    progress_reporter,
+                    "finalist_capture_resume",
+                    rank=rank,
+                    config_id=config_id,
+                )
                 captured_entry = dict(restored_capture)
                 if captured_entry.get("config") != _json_ready(
                     _geometry_config_payload(finalist_config)
                 ):
-                    raise ValueError("geometry finalist checkpoint sidecar has a mismatched config")
+                    raise ValueError(
+                        "geometry finalist checkpoint sidecar has a mismatched config"
+                    )
                 if checkpoint_path is None:
-                    raise ValueError("geometry finalist checkpoint sidecar cannot resume without checkpoint_path")
-                captured_entry["predictions"] = _load_finalist_sidecar(captured_entry, Path(checkpoint_path))
+                    raise ValueError(
+                        "geometry finalist checkpoint sidecar cannot resume without checkpoint_path"
+                    )
+                captured_entry["predictions"] = _load_finalist_sidecar(
+                    captured_entry, Path(checkpoint_path)
+                )
                 captured_entry["diagnostics"] = {
                     key: pd.DataFrame(restored_diagnostics[key])
                     for key in _FINALIST_DIAGNOSTIC_KEYS
@@ -2833,59 +3563,84 @@ def staged_geometry_search(
             else:
                 _report_progress(
                     progress_reporter,
-                    "finalist_capture_start" if restored_capture is None else "finalist_capture_diagnostics_refresh",
+                    "finalist_capture_start"
+                    if restored_capture is None
+                    else "finalist_capture_diagnostics_refresh",
                     rank=rank,
                     config_id=config_id,
                 )
                 captured = evaluate_geometry_config(
-                    ordered, feature_columns, effective_model_params, finalist_config,
-                    columns=columns, folds=selection_folds, predictor=predictor,
-                    capture_predictions=True, prepared_feature_matrix=prepared_feature_matrix,
+                    ordered,
+                    feature_columns,
+                    effective_model_params,
+                    finalist_config,
+                    columns=columns,
+                    folds=selection_folds,
+                    predictor=predictor,
+                    capture_predictions=True,
+                    prepared_feature_matrix=prepared_feature_matrix,
                     max_train_rows_per_fold=max_train_rows_per_fold,
                 )
                 captured_entry = {
-                    "rank": rank, "config_id": config_id, "config": _geometry_config_payload(finalist_config),
-                    "summary": captured["summary"], "predictions": captured["oos_predictions"],
+                    "rank": rank,
+                    "config_id": config_id,
+                    "config": _geometry_config_payload(finalist_config),
+                    "summary": captured["summary"],
+                    "predictions": captured["oos_predictions"],
                     "diagnostics": {
                         key: captured[key].copy() for key in _FINALIST_DIAGNOSTIC_KEYS
                     },
                 }
                 if checkpoint_path is not None:
-                    checkpoint_state["finalist_captures"][config_id] = _atomic_write_finalist_sidecar(
-                        Path(checkpoint_path),
-                        config_id,
-                        captured_entry["predictions"],
-                        config=captured_entry["config"],
-                        summary=captured_entry["summary"],
-                        diagnostics=captured_entry["diagnostics"],
+                    checkpoint_state["finalist_captures"][config_id] = (
+                        _atomic_write_finalist_sidecar(
+                            Path(checkpoint_path),
+                            config_id,
+                            captured_entry["predictions"],
+                            config=captured_entry["config"],
+                            summary=captured_entry["summary"],
+                            diagnostics=captured_entry["diagnostics"],
+                        )
                     )
                     persist_checkpoint(f"finalist_capture:{rank}:{config_id}")
-                _report_progress(progress_reporter, "finalist_capture_complete", rank=rank, config_id=config_id)
+                _report_progress(
+                    progress_reporter,
+                    "finalist_capture_complete",
+                    rank=rank,
+                    config_id=config_id,
+                )
             captured_entry["rank"] = rank
             finalist_prediction_results.append(captured_entry)
+
     def save_nested(outer_fold_id: int, entry: Mapping[str, Any]) -> None:
         checkpoint_state["nested_outer_folds"][str(outer_fold_id)] = _json_ready(entry)
         persist_checkpoint(f"nested_outer_fold:{outer_fold_id}")
 
     def save_nested_evaluation(evaluation_key: str, result: Mapping[str, Any]) -> None:
-        checkpoint_state["nested_completed_evaluations"][evaluation_key] = _checkpoint_result(result)
+        checkpoint_state["nested_completed_evaluations"][evaluation_key] = (
+            _checkpoint_result(result)
+        )
         persist_checkpoint(f"nested_evaluation:{evaluation_key}")
 
-    nested = nested_finalist_validation(
-        ordered,
-        feature_columns,
-        effective_model_params,
-        finalists,
-        columns=columns,
-        predictor=predictor,
-        prepared_feature_matrix=prepared_feature_matrix,
-        max_train_rows_per_fold=max_train_rows_per_fold,
-        completed_outer_folds=checkpoint_state["nested_outer_folds"],
-        completed_evaluations=checkpoint_state["nested_completed_evaluations"],
-        on_outer_fold_complete=save_nested,
-        on_evaluation_complete=save_nested_evaluation,
-        progress_reporter=progress_reporter,
-    ) if nested_oof and run_post_search_refits else []
+    nested = (
+        nested_finalist_validation(
+            ordered,
+            feature_columns,
+            effective_model_params,
+            finalists,
+            columns=columns,
+            predictor=predictor,
+            prepared_feature_matrix=prepared_feature_matrix,
+            max_train_rows_per_fold=max_train_rows_per_fold,
+            completed_outer_folds=checkpoint_state["nested_outer_folds"],
+            completed_evaluations=checkpoint_state["nested_completed_evaluations"],
+            on_outer_fold_complete=save_nested,
+            on_evaluation_complete=save_nested_evaluation,
+            progress_reporter=progress_reporter,
+        )
+        if nested_oof and run_post_search_refits
+        else []
+    )
     selected_result = evaluate(current, stage="selected", parameter="final")
     fold_reports = pd.concat(
         [
@@ -2900,7 +3655,8 @@ def staged_geometry_search(
     selected_config_id = geometry_config_id(current)
     selected_capture = next(
         (
-            item for item in finalist_prediction_results
+            item
+            for item in finalist_prediction_results
             if str(item["config_id"]) == selected_config_id
         ),
         None,
@@ -2927,8 +3683,12 @@ def staged_geometry_search(
         "finalists": finalists,
         "nested_oof": nested,
         "finalist_oos_predictions": finalist_prediction_results,
-        "reduced_joint_best_two_values": {name: list(values) for name, values in best_two_values.items()},
-        "boundary": boundary_diagnostics(label_path_geometry(ordered, current, columns)),
+        "reduced_joint_best_two_values": {
+            name: list(values) for name, values in best_two_values.items()
+        },
+        "boundary": boundary_diagnostics(
+            label_path_geometry(ordered, current, columns)
+        ),
         "temporal_month_stability": selected_result["temporal_month_stability"],
         "side_stability": selected_result["side_stability"],
         "symbol_stability": selected_result["symbol_stability"],
@@ -2940,10 +3700,16 @@ def staged_geometry_search(
             "probability_reliability_bins"
         ),
         "selected_economic_confusion": selected_diagnostic("economic_confusion"),
-        "selected_economic_confusion_priors": selected_diagnostic("economic_confusion_priors"),
+        "selected_economic_confusion_priors": selected_diagnostic(
+            "economic_confusion_priors"
+        ),
         "search_contract": {
             "evaluation_split": {
-                "name": "4_month_train_4_month_oos",
+                "name": (
+                    "purged_chronological_development_only"
+                    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+                    else "4_month_train_4_month_oos"
+                ),
                 "train_months": GEOMETRY_TRAIN_MONTHS,
                 "oos_months": GEOMETRY_OOS_MONTHS,
                 "walk_forward_cadence_months": GEOMETRY_TRAIN_MONTHS,
@@ -2951,13 +3717,22 @@ def staged_geometry_search(
                 "nested_outer_oos_months": GEOMETRY_OOS_MONTHS,
                 "oos_row_contract": "all_labelled_oos_rows",
                 "default_max_train_rows_per_fold": DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
+                "evaluation_mode": evaluation_mode,
+                "short_history_development_end": (
+                    str(short_history_development_end)
+                    if short_history_development_end is not None
+                    else None
+                ),
+                "short_history_subfold_count": int(short_history_subfold_count),
             },
             "cost_return": PATH_GEOMETRY_COST_RETURN,
             "model_hpo": False,
             "joint_strategy": "best_two_per_parameter_ring_pair",
             "max_joint_trials": max_joint_trials,
             "selection": "combined_learnability_economic_score",
-            "ablation_start_date": str(ablation_start_date) if ablation_start_date is not None else None,
+            "ablation_start_date": str(ablation_start_date)
+            if ablation_start_date is not None
+            else None,
             "selection_fold_count": len(selection_folds),
             "capture_predictions": capture_predictions,
             "run_post_search_refits": run_post_search_refits,
@@ -2982,7 +3757,9 @@ def staged_geometry_search(
                     "outer-train rows at the selected fixed tree count; outer OOS never used"
                 ),
                 "validation_fraction": GEOMETRY_EARLY_STOP_VALIDATION_FRACTION,
-                "embargo_hours": float(GEOMETRY_EARLY_STOP_EMBARGO / pd.Timedelta(hours=1)),
+                "embargo_hours": float(
+                    GEOMETRY_EARLY_STOP_EMBARGO / pd.Timedelta(hours=1)
+                ),
                 "tree_count_reporting": "per_candidate_fold_report",
                 "non_iteration_hpo_params": "frozen_from_classifier_contract",
             },
@@ -3012,5 +3789,9 @@ def staged_geometry_search(
         checkpoint_state["selected_config"] = asdict(current)
         checkpoint_state["last_checkpoint_reason"] = "complete"
         _atomic_json_write(Path(checkpoint_path), checkpoint_state)
-        _report_progress(progress_reporter, "checkpoint_complete", checkpoint_path=str(checkpoint_path))
+        _report_progress(
+            progress_reporter,
+            "checkpoint_complete",
+            checkpoint_path=str(checkpoint_path),
+        )
     return result

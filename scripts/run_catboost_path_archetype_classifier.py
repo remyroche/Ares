@@ -64,6 +64,7 @@ from extreme_price_movements.training_resource_guard import (  # noqa: E402
 )
 
 RUNNER_SCHEMA = "run_catboost_path_archetype_classifier_v10_side_local_staged"
+DEVELOPMENT_OOS_ROUTING_SCHEMA = "catboost_path_archetype_development_oos_routing_v1"
 FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = "catboost_path_archetype_feature_selection_hpo_contract_v3_structural_hpo_balance_sweep"
 FEATURE_SELECTION_HPO_CONTRACT_FILENAME = "feature_selection_hpo_contract.json"
 DEFAULT_HPO_NO_IMPROVEMENT_TRIALS = 15
@@ -115,6 +116,7 @@ IDENTITY_SYMBOL_COLUMN = "__symbol__"
 IDENTITY_SIDE_COLUMNS = ("side", "side_name", "__side__")
 CANONICAL_CANDIDATE_KEY_COLUMNS = ("__ts__", "__symbol__", "side", "candidate_id")
 FROZEN_AE_GMM_KEY_COLUMNS = ("__ts__", "__symbol__", "side")
+REPRESENTATION_AVAILABLE_FEATURE = "gmm_representation_available"
 PATH_TARGET_PROVENANCE_COLUMNS = {
     "__decision_ts__",
     "candidate_id",
@@ -559,11 +561,106 @@ def _read_frozen_ae_gmm_manifest(path: Path | None) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         raise ValueError("frozen AE/GMM manifest must contain a JSON object")
     expected = list(map(str, AE_GMM_FEATURE_COLUMNS))
-    if payload.get("output_features") != expected:
+    manifest_features = payload.get("output_features")
+    if manifest_features is None and payload.get("schema") == (
+        "packb_downstream_frozen_side_representation_v1"
+    ):
+        representation = payload.get("representation")
+        if not isinstance(representation, dict):
+            raise ValueError(
+                "frozen AE/GMM context manifest is missing representation contract"
+            )
+        manifest_features = representation.get("generated_features")
+        if representation.get("availability_feature") != (
+            REPRESENTATION_AVAILABLE_FEATURE
+        ):
+            raise ValueError(
+                "frozen AE/GMM context manifest has the wrong availability feature"
+            )
+        if (
+            not isinstance(manifest_features, list)
+            or not manifest_features
+            or len(manifest_features) != len(set(manifest_features))
+            or not set(map(str, manifest_features)).issubset(expected)
+        ):
+            raise ValueError(
+                "frozen AE/GMM context manifest has invalid generated features"
+            )
+    elif manifest_features != expected:
         raise ValueError(
-            "frozen AE/GMM manifest output_features do not match AE_GMM_FEATURE_COLUMNS"
+            "frozen AE/GMM manifest generated features do not match "
+            "AE_GMM_FEATURE_COLUMNS"
         )
     return payload
+
+
+def _sidecar_side_sql(alias: str, column: str = "side") -> str:
+    qualified = f"{alias}.{_quote_identifier(column)}"
+    return (
+        f"CASE lower(trim(CAST({qualified} AS VARCHAR))) "
+        f"WHEN 'long' THEN 1 WHEN 'short' THEN -1 "
+        f"ELSE try_cast({qualified} AS TINYINT) END"
+    )
+
+
+def _development_oos_routing(
+    frame: pd.DataFrame,
+    *,
+    timestamp_column: str,
+    label_end_column: str,
+    development_end: str | pd.Timestamp | None,
+) -> tuple[pd.Series, dict[str, Any]]:
+    """Return the training-development mask and an auditable OOS partition.
+
+    A supplied cutoff is deliberately based on *label resolution*, not merely
+    decision time: a decision before the boundary whose path resolves later
+    cannot influence feature selection or HPO.  It is also not silently
+    relabelled as an OOS decision, so the boundary spill is explicit in the
+    manifest.  The later outer-OOF stage remains responsible for scoring its
+    fixed evaluation windows with its own fold-local train sets.
+    """
+
+    decision = pd.to_datetime(frame[timestamp_column], utc=True, errors="raise")
+    label_end = pd.to_datetime(frame[label_end_column], utc=True, errors="raise")
+    if development_end is None:
+        development = pd.Series(True, index=frame.index)
+        return development, {
+            "schema": DEVELOPMENT_OOS_ROUTING_SCHEMA,
+            "enabled": False,
+            "development_end_exclusive": None,
+            "development_rows": int(len(frame)),
+            "oos_decision_rows": 0,
+            "boundary_unassigned_rows": 0,
+            "development_contract": "legacy_full_population_compatibility_mode",
+        }
+    cutoff = _utc_timestamp(development_end)
+    development = label_end.lt(cutoff)
+    oos = decision.ge(cutoff)
+    boundary = ~(development | oos)
+    if not development.any():
+        raise ValueError(
+            "strict development/OOS routing leaves no label-resolved development rows"
+        )
+    return development, {
+        "schema": DEVELOPMENT_OOS_ROUTING_SCHEMA,
+        "enabled": True,
+        "development_end_exclusive": cutoff,
+        "development_rows": int(development.sum()),
+        "oos_decision_rows": int(oos.sum()),
+        "boundary_unassigned_rows": int(boundary.sum()),
+        "development_contract": (
+            "feature_selection_hpo_and_any_reusable_selection_state_use_only_rows "
+            "whose_label_end_is_strictly_before_development_end"
+        ),
+        "oos_contract": (
+            "decisions_at_or_after_development_end_are_excluded_from_feature_selection "
+            "and_hpo_and_are_reserved_for_outer_oof_evaluation"
+        ),
+        "boundary_contract": (
+            "pre_cutoff_decisions_with_unresolved_labels_are_excluded_from_both "
+            "development_fitting_and_oos_decision_reporting"
+        ),
+    }
 
 
 def _validate_frozen_ae_gmm_sidecar(
@@ -586,7 +683,16 @@ def _validate_frozen_ae_gmm_sidecar(
     sidecar_path = Path(sidecar_path)
     if not sidecar_path.is_file():
         raise FileNotFoundError(f"frozen AE/GMM sidecar does not exist: {sidecar_path}")
-    expected_features = tuple(map(str, AE_GMM_FEATURE_COLUMNS))
+    manifest = _read_frozen_ae_gmm_manifest(manifest_path)
+    if manifest is not None and manifest.get("schema") == (
+        "packb_downstream_frozen_side_representation_v1"
+    ):
+        generated_features = tuple(
+            map(str, manifest["representation"]["generated_features"])
+        )
+    else:
+        generated_features = tuple(map(str, AE_GMM_FEATURE_COLUMNS))
+    expected_features = (*generated_features, REPRESENTATION_AVAILABLE_FEATURE)
     schema_names = tuple(map(str, pq.ParquetFile(sidecar_path).schema_arrow.names))
     required_columns = set(FROZEN_AE_GMM_KEY_COLUMNS) | set(expected_features)
     missing_columns = sorted(required_columns.difference(schema_names))
@@ -595,14 +701,14 @@ def _validate_frozen_ae_gmm_sidecar(
             "frozen AE/GMM sidecar is missing required columns: "
             + ", ".join(missing_columns[:8])
         )
-    manifest = _read_frozen_ae_gmm_manifest(manifest_path)
     identity = _frozen_sidecar_identity(
         frame, timestamp_column=timestamp_column, side_column=side_column
     )
     sidecar_sql = _sql_literal(sidecar_path)
+    normalized_side = _sidecar_side_sql("s")
     join = (
         "epoch_ns(l.__ts__) = epoch_ns(s.__ts__) "
-        "AND l.__symbol__ = s.__symbol__ AND l.side = CAST(s.side AS TINYINT)"
+        f"AND l.__symbol__ = s.__symbol__ AND l.side = ({normalized_side})"
     )
     con = duckdb.connect()
     try:
@@ -616,16 +722,32 @@ def _validate_frozen_ae_gmm_sidecar(
         if len(duckdb_columns) != len(schema_names):
             raise RuntimeError("frozen AE/GMM sidecar schema changed while opening it")
         resolved_columns = dict(zip(schema_names, duckdb_columns, strict=True))
-        finite_predicate = " OR ".join(
-            "NOT coalesce(isfinite(CAST("
+        native_missing_predicate = " OR ".join(
+            f"s.{_quote_identifier(resolved_columns[name])} IS NULL OR "
+            "coalesce(isnan(CAST("
             f"s.{_quote_identifier(resolved_columns[name])} AS DOUBLE)), false)"
-            for name in expected_features
+            for name in generated_features
+        )
+        infinite_predicate = " OR ".join(
+            "coalesce(isinf(CAST("
+            f"s.{_quote_identifier(resolved_columns[name])} AS DOUBLE)), false)"
+            for name in generated_features
+        )
+        availability_column = _quote_identifier(
+            resolved_columns[REPRESENTATION_AVAILABLE_FEATURE]
+        )
+        availability_sql = f"CAST(s.{availability_column} AS DOUBLE)"
+        invalid_availability_predicate = (
+            f"s.{availability_column} IS NULL OR "
+            f"coalesce(isnan({availability_sql}), false) OR "
+            f"coalesce(isinf({availability_sql}), false) OR "
+            f"{availability_sql} NOT IN (0.0, 1.0)"
         )
         duplicate = con.execute(
             f"""
             SELECT 1
-            FROM read_parquet({sidecar_sql})
-            GROUP BY epoch_ns(__ts__), __symbol__, CAST(side AS TINYINT)
+            FROM read_parquet({sidecar_sql}) AS s
+            GROUP BY epoch_ns(s.__ts__), s.__symbol__, ({normalized_side})
             HAVING count(*) > 1
             LIMIT 1
             """
@@ -640,8 +762,16 @@ def _validate_frozen_ae_gmm_sidecar(
                 count(*) AS label_rows,
                 count(s.__ts__) AS matched_rows,
                 count(*) - count(s.__ts__) AS missing_rows,
-                sum(CASE WHEN s.__ts__ IS NOT NULL AND ({finite_predicate}) THEN 1 ELSE 0 END)
-                    AS nonfinite_rows
+                sum(CASE WHEN s.__ts__ IS NOT NULL AND ({native_missing_predicate}) THEN 1 ELSE 0 END)
+                    AS native_missing_rows,
+                sum(CASE WHEN s.__ts__ IS NOT NULL AND ({infinite_predicate}) THEN 1 ELSE 0 END)
+                    AS infinite_rows,
+                sum(CASE WHEN s.__ts__ IS NOT NULL AND ({invalid_availability_predicate})
+                    THEN 1 ELSE 0 END) AS invalid_availability_rows,
+                sum(CASE WHEN s.__ts__ IS NOT NULL
+                              AND {availability_sql} = 1.0
+                              AND ({native_missing_predicate})
+                    THEN 1 ELSE 0 END) AS available_with_missing_rows
             FROM label_keys AS l
             LEFT JOIN read_parquet({sidecar_sql}) AS s ON {join}
             """
@@ -649,16 +779,34 @@ def _validate_frozen_ae_gmm_sidecar(
     finally:
         con.close()
     assert coverage is not None
-    label_rows, matched_rows, missing_rows, nonfinite_rows = map(int, coverage)
+    (
+        label_rows,
+        matched_rows,
+        missing_rows,
+        native_missing_rows,
+        infinite_rows,
+        invalid_availability_rows,
+        available_with_missing_rows,
+    ) = map(int, coverage)
     if missing_rows:
         raise ValueError(
             "frozen AE/GMM sidecar does not cover every label key: "
             f"missing={missing_rows}, labels={label_rows}"
         )
-    if nonfinite_rows:
+    if infinite_rows:
         raise ValueError(
-            "frozen AE/GMM sidecar has non-finite generated outputs: "
-            f"rows={nonfinite_rows}"
+            "frozen AE/GMM sidecar has infinite generated outputs: "
+            f"rows={infinite_rows}"
+        )
+    if invalid_availability_rows:
+        raise ValueError(
+            "frozen AE/GMM sidecar has an invalid representation-availability "
+            f"flag: rows={invalid_availability_rows}"
+        )
+    if available_with_missing_rows:
+        raise ValueError(
+            "frozen AE/GMM sidecar marks rows available despite missing generated "
+            f"outputs: rows={available_with_missing_rows}"
         )
     return {
         "path": str(sidecar_path),
@@ -674,8 +822,18 @@ def _validate_frozen_ae_gmm_sidecar(
         "label_rows": label_rows,
         "matched_rows": matched_rows,
         "missing_rows": missing_rows,
-        "nonfinite_rows": nonfinite_rows,
-        "join_contract": "exact UTC timestamp, symbol, and canonical int8 side",
+        "native_missing_rows": native_missing_rows,
+        "infinite_rows": infinite_rows,
+        "invalid_availability_rows": invalid_availability_rows,
+        "available_with_missing_rows": available_with_missing_rows,
+        "availability_feature": REPRESENTATION_AVAILABLE_FEATURE,
+        "missing_value_policy": (
+            "preserve_native_nan_only_when_availability_is_zero_reject_infinite"
+        ),
+        "join_contract": (
+            "exact UTC timestamp, symbol, and canonical long/short side "
+            "normalized to int8"
+        ),
     }
 
 
@@ -724,7 +882,7 @@ def _load_frozen_ae_gmm_matrix(
             JOIN read_parquet({sidecar_sql}) AS s
               ON epoch_ns(l.__ts__) = epoch_ns(s.__ts__)
              AND l.__symbol__ = s.__symbol__
-             AND l.side = CAST(s.side AS TINYINT)
+             AND l.side = ({_sidecar_side_sql("s")})
             ORDER BY l.__row_id__
             """
         ).fetchdf()
@@ -739,8 +897,18 @@ def _load_frozen_ae_gmm_matrix(
         )
     matrix = loaded.loc[:, list(aliases)].apply(pd.to_numeric, errors="coerce")
     matrix.columns = requested
-    if not np.isfinite(matrix.to_numpy(dtype=float)).all():
-        raise RuntimeError("frozen AE/GMM sidecar load produced non-finite values")
+    values = matrix.to_numpy(dtype=float)
+    if np.isinf(values).any():
+        raise RuntimeError("frozen AE/GMM sidecar load produced infinite values")
+    if REPRESENTATION_AVAILABLE_FEATURE in matrix:
+        availability = matrix[REPRESENTATION_AVAILABLE_FEATURE].to_numpy(dtype=float)
+        if (
+            not np.isfinite(availability).all()
+            or not np.isin(availability, (0.0, 1.0)).all()
+        ):
+            raise RuntimeError(
+                "frozen AE/GMM sidecar load produced an invalid availability flag"
+            )
     matrix.index = frame.index
     return matrix.astype(np.float32, copy=False)
 
@@ -1930,6 +2098,7 @@ def _feature_selection_hpo_fingerprint(
     side: str | None,
     canonical_input_contract: Mapping[str, Any] | None,
     geometry_contract_path: Path | None,
+    development_oos_routing: Mapping[str, Any],
 ) -> dict[str, Any]:
     target_contract = _target_geometry_contract(
         frame,
@@ -1953,6 +2122,7 @@ def _feature_selection_hpo_fingerprint(
     inputs = {
         "side_local_training": {
             "side": side,
+            "development_oos_routing": dict(development_oos_routing),
             "canonical_input_contract": (
                 dict(canonical_input_contract)
                 if canonical_input_contract is not None
@@ -2518,6 +2688,7 @@ def run_pipeline(
     output_dir: Path,
     *,
     discovery_end: str | pd.Timestamp,
+    development_end: str | pd.Timestamp | None = None,
     side: str | None = None,
     feature_dir: Path | None = None,
     canonical_candidate_path: Path | None = None,
@@ -2816,12 +2987,38 @@ def run_pipeline(
         raise ValueError(f"unknown deterministic path shapes: {invalid_labels[:8]}")
     if labels.nunique() > len(expected_classes):
         raise ValueError("CatBoost path target exceeds its declared taxonomy contract")
+    development_mask, development_oos_routing = _development_oos_routing(
+        frame,
+        timestamp_column=timestamp_column,
+        label_end_column=label_end_column,
+        development_end=development_end,
+    )
+    if canonical_store_mode and not smoke:
+        required_development_end = pd.Timestamp("2026-05-01T00:00:00Z")
+        actual_development_end = development_oos_routing.get(
+            "development_end_exclusive"
+        )
+        if (
+            not development_oos_routing["enabled"]
+            or pd.Timestamp(actual_development_end) != required_development_end
+        ):
+            raise ValueError(
+                "canonical production CatBoost requires --development-end "
+                "2026-05-01T00:00:00Z"
+            )
+        if config.embargo != pd.Timedelta(hours=24):
+            raise ValueError(
+                "canonical production CatBoost requires an exact 24h embargo"
+            )
+    development_frame = frame.loc[development_mask].copy()
+    development_labels = labels.loc[development_mask].copy()
+    development_summaries = summaries.loc[development_mask].copy()
     class_support_gate: dict[str, Any] | None = None
     if canonical_store_mode and not smoke:
         assert canonical_side is not None
         class_support_gate = _validate_merged_class_support_gate(
-            labels,
-            frame[timestamp_column],
+            development_labels,
+            development_frame[timestamp_column],
             side=canonical_side,
         )
     recomputed = summaries.apply(deterministic_path_archetype, axis=1).astype("string")
@@ -2910,7 +3107,7 @@ def run_pipeline(
             [
                 *_config_feature_names(config_mapping),
                 *(
-                    AE_GMM_FEATURE_COLUMNS
+                    tuple(frozen_sidecar_contract["output_features"])
                     if frozen_sidecar_contract is not None
                     else ()
                 ),
@@ -2920,6 +3117,10 @@ def run_pipeline(
                 AE_GMM_FEATURE_COLUMNS if frozen_sidecar_contract is not None else ()
             ),
         )
+        if frozen_sidecar_contract is not None:
+            configured_declared = tuple(
+                dict.fromkeys([*configured_declared, REPRESENTATION_AVAILABLE_FEATURE])
+            )
         # A canonical path-label parquet is deliberately narrow. Catch an
         # accidental wide feature export before the static store is consulted.
         embedded_features = sorted(
@@ -2939,7 +3140,7 @@ def run_pipeline(
             if feature in schema_columns
         )
         frozen_universe = tuple(
-            map(str, AE_GMM_FEATURE_COLUMNS)
+            map(str, frozen_sidecar_contract["output_features"])
             if frozen_sidecar_contract is not None
             else ()
         )
@@ -2970,7 +3171,18 @@ def run_pipeline(
             "no configured base/meta pre-entry features are present in input"
         )
     _assert_preentry_only(universe)
-    mandatory = tuple(dict.fromkeys(map(str, mandatory_features)))
+    mandatory = tuple(
+        dict.fromkeys(
+            [
+                *map(str, mandatory_features),
+                *(
+                    (REPRESENTATION_AVAILABLE_FEATURE,)
+                    if frozen_sidecar_contract is not None
+                    else ()
+                ),
+            ]
+        )
+    )
     _assert_preentry_only(mandatory)
     missing_mandatory = set(mandatory).difference(universe)
     if missing_mandatory:
@@ -2981,7 +3193,7 @@ def run_pipeline(
     model_universe = tuple(universe)
     if smoke and len(model_universe) > SMOKE_MAX_FEATURES:
         frozen_required = tuple(
-            map(str, AE_GMM_FEATURE_COLUMNS)
+            map(str, frozen_sidecar_contract["output_features"])
             if frozen_sidecar_contract is not None
             else ()
         )
@@ -2999,23 +3211,23 @@ def run_pipeline(
                 ]
             )
         )
-    effective_hpo_rows = min(int(hpo_rows), len(frame))
+    effective_hpo_rows = min(int(hpo_rows), len(development_frame))
     effective_hpo_folds = min(int(hpo_folds), effective_folds)
     hpo_config = archetype.PathArchetypeConfig(
         **{**config.__dict__, "oof_folds": effective_hpo_folds}
     )
     structural_hpo_contract = archetype.catboost_structural_hpo_contract(hpo_config)
     hpo_positions, hpo_sampling_contract = _stratified_hpo_sample(
-        frame,
-        labels,
+        development_frame,
+        development_labels,
         sample_rows=effective_hpo_rows,
         validation_folds=effective_hpo_folds,
         timestamp_column=timestamp_column,
         label_end_column=label_end_column,
         side_column=side_column,
     )
-    hpo_frame = frame.iloc[hpo_positions]
-    hpo_labels = labels.iloc[hpo_positions]
+    hpo_frame = development_frame.iloc[hpo_positions]
+    hpo_labels = development_labels.iloc[hpo_positions]
     hpo_sampling_contract["purged_fold_support"] = _validate_hpo_sample_class_support(
         hpo_frame,
         hpo_labels,
@@ -3025,9 +3237,9 @@ def run_pipeline(
         config=hpo_config,
     )
     selection_hpo_contract = _feature_selection_hpo_fingerprint(
-        frame=frame,
-        summaries=summaries,
-        effective_labels=labels,
+        frame=development_frame,
+        summaries=development_summaries,
+        effective_labels=development_labels,
         timestamp_column=timestamp_column,
         side_column=side_column,
         frozen_sidecar_contract=frozen_sidecar_contract,
@@ -3050,6 +3262,7 @@ def run_pipeline(
         side=canonical_side,
         canonical_input_contract=canonical_input_contract,
         geometry_contract_path=geometry_contract,
+        development_oos_routing=development_oos_routing,
     )
     selection_fingerprint = str(selection_hpo_contract["selection_fingerprint"])
     resumed_selection_checkpoint = (
@@ -3101,9 +3314,9 @@ def run_pipeline(
     ):
         raise full_contract_error
     _validate_oof_class_support(
-        labels,
-        frame[timestamp_column],
-        frame[label_end_column],
+        development_labels,
+        development_frame[timestamp_column],
+        development_frame[label_end_column],
         config=config,
     )
     selector: archetype.FastSelectorResult | None = None
@@ -3118,11 +3331,13 @@ def run_pipeline(
             reused_checkpoint["selected_features"], model_universe
         )
         selection_frame = (
-            frame.iloc[
-                _beginning_middle_end_positions(len(frame), config.selector_sample_rows)
+            development_frame.iloc[
+                _beginning_middle_end_positions(
+                    len(development_frame), config.selector_sample_rows
+                )
             ]
             if canonical_store_mode
-            else frame
+            else development_frame
         )
         selector_manifest = dict(reused_checkpoint.get("selection", {}))
         permutation_records = list(reused_checkpoint.get("permutation", []))
@@ -3148,11 +3363,13 @@ def run_pipeline(
             selection_checkpoint["selected_features"], model_universe
         )
         selection_frame = (
-            frame.iloc[
-                _beginning_middle_end_positions(len(frame), config.selector_sample_rows)
+            development_frame.iloc[
+                _beginning_middle_end_positions(
+                    len(development_frame), config.selector_sample_rows
+                )
             ].copy()
             if canonical_store_mode
-            else frame
+            else development_frame
         )
         selector_manifest = dict(selection_checkpoint["selection"])
         permutation_records = list(selection_checkpoint["permutation"])
@@ -3175,11 +3392,13 @@ def run_pipeline(
             resumed_mda_progress["initial_selected_features"], model_universe
         )
         selection_frame = (
-            frame.iloc[
-                _beginning_middle_end_positions(len(frame), config.selector_sample_rows)
+            development_frame.iloc[
+                _beginning_middle_end_positions(
+                    len(development_frame), config.selector_sample_rows
+                )
             ].copy()
             if canonical_store_mode
-            else frame
+            else development_frame
         )
         selector_manifest = dict(resumed_mda_progress["selection"])
         permutation_records = [
@@ -3198,15 +3417,15 @@ def run_pipeline(
     else:
         if canonical_store_mode:
             sample_positions = _beginning_middle_end_positions(
-                len(frame), config.selector_sample_rows
+                len(development_frame), config.selector_sample_rows
             )
-            selection_frame = frame.iloc[sample_positions].copy()
-            selection_labels = labels.iloc[sample_positions]
+            selection_frame = development_frame.iloc[sample_positions].copy()
+            selection_labels = development_labels.iloc[sample_positions]
             split_at = np.flatnonzero(np.diff(sample_positions) > 1) + 1
             selection_parts: list[pd.DataFrame] = []
             selection_reads: list[dict[str, Any]] = []
             for block_positions in np.split(sample_positions, split_at):
-                block_frame = frame.iloc[block_positions]
+                block_frame = development_frame.iloc[block_positions]
                 block_features, block_read = _load_model_feature_matrix(
                     block_frame,
                     model_universe,
@@ -3234,9 +3453,9 @@ def run_pipeline(
                 "blocks": selection_reads,
             }
         else:
-            selection_frame = frame
-            selection_labels = labels
-            selection_features = frame.loc[:, model_universe].copy()
+            selection_frame = development_frame
+            selection_labels = development_labels
+            selection_features = development_frame.loc[:, model_universe].copy()
         selector = archetype.fast_select_preentry_features(
             selection_features,
             selection_labels,
@@ -3247,7 +3466,7 @@ def run_pipeline(
 
     if canonical_store_mode:
         if selection_labels is None:
-            selection_labels = labels.loc[selection_frame.index]
+            selection_labels = development_labels.loc[selection_frame.index]
         if selection_features is None:
             selection_features, selection_read = _load_model_feature_matrix(
                 selection_frame,
@@ -3277,7 +3496,7 @@ def run_pipeline(
         )
     else:
         selection_features = (
-            frame.loc[:, selected].copy()
+            development_frame.loc[:, selected].copy()
             if (
                 reused_checkpoint is not None
                 or resumed_selection_checkpoint is not None
@@ -3286,7 +3505,7 @@ def run_pipeline(
             )
             else selection_features
         )
-        selection_labels = labels.loc[selection_frame.index]
+        selection_labels = development_labels.loc[selection_frame.index]
 
     if selection_features is None or selection_labels is None:
         raise RuntimeError("selection sample was not materialized")
@@ -3537,7 +3756,7 @@ def run_pipeline(
                 timestamp_column=timestamp_column,
             )
         else:
-            hpo_features = frame.iloc[hpo_positions].loc[:, selected]
+            hpo_features = development_frame.iloc[hpo_positions].loc[:, selected]
         resource_guard.checkpoint("hpo")
         hpo = archetype.optimize_purged_catboost_hpo(
             hpo_features.loc[:, selected],
@@ -3586,7 +3805,7 @@ def run_pipeline(
     class_balance_provenance: dict[str, Any] = {
         "structural_hpo_contract": dict(structural_hpo_contract),
         "structural_hpo_contract_sha256": _sha256_json(structural_hpo_contract),
-        "status": "structural_hpo_complete_pending_full_population_balance_sweep",
+        "status": "structural_hpo_complete_pending_development_balance_sweep",
         "promotion_eligible": False,
         "final_refit_used_for_selection": False,
     }
@@ -3595,6 +3814,7 @@ def run_pipeline(
         "status": "feature_selection_hpo_complete",
         "side": canonical_side,
         "model_side_scope": "per_side" if canonical_side else None,
+        "development_oos_routing": development_oos_routing,
         "candidate_identity_sha256": candidate_identity_sha256(
             frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
         ),
@@ -3690,7 +3910,9 @@ def run_pipeline(
             "feature_selection_hpo_reuse": reuse_provenance,
             "hpo_sampling_contract": hpo_sampling_contract,
             "class_balance": class_balance_provenance,
-            "next_required_stage": "full_population_fixed_parameter_balance_mini_sweep",
+            "next_required_stage": (
+                "development_only_fixed_parameter_balance_mini_sweep"
+            ),
             "permutation_stage_metrics": permutation_stage_metrics,
             "permutation_acceleration_contract": (
                 archetype.staged_permutation_acceleration_contract(config)
@@ -3724,7 +3946,9 @@ def run_pipeline(
         raise ValueError(
             "class-balance economic OOF sweep requires unique non-null candidate_id row IDs"
         )
-    observed_sides = frame[side_column].astype("string").str.strip().str.lower()
+    observed_sides = _canonical_side_series(
+        frame[side_column], source="class-balance population"
+    )
     if observed_sides.isna().any() or observed_sides.nunique() != 1:
         raise ValueError(
             "class-balance economic OOF sweep requires one exact training side"
@@ -3746,20 +3970,24 @@ def run_pipeline(
         }
     )
     geometry_fingerprint = _sha256_json(bound_geometry_contract)
-    resource_guard.checkpoint("full_population_balance_mini_sweep")
+    balance_frame = development_frame
+    balance_labels = development_labels
+    balance_features = features.loc[development_mask, selected]
+    balance_row_ids = row_ids.loc[development_mask]
+    resource_guard.checkpoint("development_only_balance_mini_sweep")
     mini_sweep = archetype.sweep_purged_catboost_class_balance_arms(
-        features.loc[:, selected],
-        labels,
-        frame[timestamp_column],
+        balance_features,
+        balance_labels,
+        balance_frame[timestamp_column],
         structural_params=params,
-        label_end=frame[label_end_column],
+        label_end=balance_frame[label_end_column],
         config=config,
         arm_callback=lambda arm: resource_guard.checkpoint(
-            f"full_population_balance_mini_sweep:{arm.arm}"
+            f"development_only_balance_mini_sweep:{arm.arm}"
         ),
         arm_fold_callback=lambda arm, fold_index, _probabilities, _fold_ids: (
             resource_guard.checkpoint(
-                f"full_population_balance_mini_sweep:{arm}:fold={fold_index}"
+                f"development_only_balance_mini_sweep:{arm}:fold={fold_index}"
             )
         ),
     )
@@ -3784,10 +4012,10 @@ def run_pipeline(
             feature_fingerprint=feature_fingerprint,
             geometry_fingerprint=geometry_fingerprint,
             oof_guard=arm.guard,
-            row_ids=row_ids.to_numpy(),
+            row_ids=balance_row_ids.to_numpy(),
         )
     encoded_final_target = archetype._categorical_target(
-        labels, features.index, config=config
+        balance_labels, balance_features.index, config=config
     )
     frozen_class_order = tuple(map(str, encoded_final_target.cat.categories))
     if tuple(map(str, sweep_arms["uniform"].classes)) != frozen_class_order:
@@ -3802,7 +4030,7 @@ def run_pipeline(
         embargo=config.embargo,
     )
     economic_report = score_class_balance_oof_economics(
-        frame,
+        balance_frame,
         encoded_final_target.cat.codes.to_numpy(),
         sweep_arms,
         config=economic_config,
@@ -3835,7 +4063,17 @@ def run_pipeline(
             "mini_sweep_report_sha256": mini_sweep_report_sha256,
             "economic_oof_config_sha256": scorer_config_digest,
             "economic_oof_report_sha256": economic_evidence_sha256,
-            "candidate_order_sha256": _sha256_json(row_ids.astype(str).tolist()),
+            "candidate_order_sha256": _sha256_json(
+                balance_row_ids.astype(str).tolist()
+            ),
+            "selection_scope": (
+                "pre_first_outer_validation_month_development_only"
+                if development_oos_routing["enabled"]
+                else "legacy_full_population_compatibility_mode"
+            ),
+            "development_label_end_exclusive": (
+                development_oos_routing["development_end_exclusive"]
+            ),
         }
     )
     if smoke:
@@ -3873,10 +4111,58 @@ def run_pipeline(
         "class_balance_arm": selected_arm,
         "class_balance_selection_provenance": selection_provenance,
     }
-    # Recover the original OOF object (rather than the economics adapter) as
-    # the canonical classifier OOF artifact.
-    oof = {arm.arm: arm.oof for arm in mini_sweep.arms}[selected_arm]
-    assert oof is not None
+    balance_selection_oof = {arm.arm: arm.oof for arm in mini_sweep.arms}[selected_arm]
+    assert balance_selection_oof is not None
+    outer_oof_report: dict[str, Any] | None = None
+    if canonical_store_mode and not smoke:
+        frozen_params_provenance = {
+            "schema": archetype.FIXED_MONTHLY_OUTER_OOF_FROZEN_PARAMS_SCHEMA,
+            "selection_scope": ("pre_first_outer_validation_month_development_only"),
+            "development_label_end_exclusive": (
+                development_oos_routing["development_end_exclusive"]
+            ),
+            "params_sha256": _sha256_json(params),
+            "final_refit_used_for_selection": False,
+            "class_balance_selection_scope": (
+                "pre_first_outer_validation_month_development_only"
+            ),
+        }
+        resource_guard.checkpoint("fixed_monthly_outer_oof")
+        outer_result = archetype.fit_fixed_monthly_outer_oof_catboost(
+            features.loc[:, selected],
+            labels,
+            frame[timestamp_column],
+            label_end=frame[label_end_column],
+            params=params,
+            frozen_params_provenance=frozen_params_provenance,
+            row_ids=row_ids.to_numpy(),
+            config=config,
+            fold_callback=lambda window, _probabilities, _fold_ids: (
+                resource_guard.checkpoint(
+                    "fixed_monthly_outer_oof:"
+                    + window.validation_start.strftime("%Y-%m")
+                )
+            ),
+        )
+        oof = outer_result.oof
+        outer_oof_report = outer_result.report()
+        _write_json(
+            output_dir / "fixed_monthly_outer_oof_report.json", outer_oof_report
+        )
+    elif development_oos_routing["enabled"]:
+        # Smoke/in-memory compatibility still evaluates the frozen choices on
+        # rows outside the development selector instead of reusing the
+        # development balance-selection predictions as reported OOF.
+        oof = archetype.fit_purged_chronological_oof_catboost(
+            features.loc[:, selected],
+            labels,
+            frame[timestamp_column],
+            label_end=frame[label_end_column],
+            config=config,
+            params=params,
+        )
+    else:
+        oof = balance_selection_oof
     resource_guard.checkpoint("final_refit")
     if "class_balance_selection_provenance" in params and (
         not smoke or bool(selection_provenance.get("promotion_eligible", False))
@@ -3919,8 +4205,9 @@ def run_pipeline(
             "permutation_feature_selection",
             "side_local_geometry_selected_between_selection_and_hpo",
             "structural_hpo_on_frozen_selected_features",
-            "four_arm_full_population_oof_economic_balance_sweep",
-            "final_refit_from_economic_oof_selected_arm",
+            "four_arm_development_only_oof_economic_balance_sweep",
+            "fixed_monthly_may_june_july_outer_oof_with_frozen_choices",
+            "final_refit_after_outer_oof",
         ],
         "hpo_feature_count": int(len(selected)),
         "future_training_taxonomy": taxonomy_contract,
@@ -3934,6 +4221,7 @@ def run_pipeline(
             pre_permutation_oof.diagnostics if pre_permutation_oof is not None else None
         ),
         "oof_diagnostics": oof.diagnostics,
+        "fixed_monthly_outer_oof": outer_oof_report,
         "hpo": hpo_report,
         "class_balance": class_balance_provenance,
         "geometry_contract": bound_geometry_contract,
@@ -4020,6 +4308,8 @@ def run_pipeline(
     role_manifest = {
         "schema": "path_archetype_oof_prediction_role_v1",
         "prediction_role": "path_archetype_oof",
+        "development_oos_routing": development_oos_routing,
+        "fixed_monthly_outer_oof": outer_oof_report,
         "future_training_taxonomy": taxonomy_contract,
         "source_artifact_sha256": _sha256_file(oof_path),
         "source_artifact": str(oof_path),
@@ -4054,6 +4344,7 @@ def run_pipeline(
         {
             "schema": RUNNER_SCHEMA,
             "discovery_end_exclusive": discovery_cutoff,
+            "development_oos_routing": development_oos_routing,
             "label_source": summary_source,
             "supervised_target_source": target_source,
             "future_training_taxonomy": taxonomy_contract,
@@ -4068,6 +4359,7 @@ def run_pipeline(
         {
             "schema": RUNNER_SCHEMA,
             "future_training_taxonomy": taxonomy_contract,
+            "development_oos_routing": development_oos_routing,
             "configured_universe": list(universe),
             "model_universe": list(model_universe),
             "selection": selector_manifest,
@@ -4089,6 +4381,7 @@ def run_pipeline(
             {
                 "schema": RUNNER_SCHEMA,
                 **static_store_manifest,
+                "development_oos_routing": development_oos_routing,
                 "selector_availability": dict(
                     selector_manifest.get("availability", {})
                 ),
@@ -4101,6 +4394,7 @@ def run_pipeline(
             "schema": RUNNER_SCHEMA,
             "future_training_taxonomy": taxonomy_contract,
             "feature_contract_frozen_before_hpo": True,
+            "development_oos_routing": development_oos_routing,
             "hpo_feature_count": int(len(selected)),
             "hpo_features": list(selected),
             "no_improvement_patience_trials": int(hpo_no_improvement_trials),
@@ -4124,12 +4418,14 @@ def run_pipeline(
         {
             "schema": RUNNER_SCHEMA,
             "future_training_taxonomy": taxonomy_contract,
+            "development_oos_routing": development_oos_routing,
             "pre_permutation_oof_diagnostics": (
                 pre_permutation_oof.diagnostics
                 if pre_permutation_oof is not None
                 else None
             ),
             "oof_diagnostics": oof.diagnostics,
+            "fixed_monthly_outer_oof": outer_oof_report,
             "class_balance": class_balance_provenance,
             "class_names": list(classifier.class_names),
             "class_semantics": "merged seven-class future path taxonomy",
@@ -4146,8 +4442,9 @@ def run_pipeline(
                 "permutation_feature_selection",
                 "side_local_geometry_selected_between_selection_and_hpo",
                 "structural_hpo_on_frozen_selected_features",
-                "four_arm_full_population_oof_economic_balance_sweep",
-                "final_refit_from_economic_oof_selected_arm",
+                "four_arm_development_only_oof_economic_balance_sweep",
+                "fixed_monthly_may_june_july_outer_oof_with_frozen_choices",
+                "final_refit_after_outer_oof",
             ],
             "hpo_sampling_contract": hpo_sampling_contract,
             "permutation_stage_metrics": permutation_stage_metrics,
@@ -4175,6 +4472,8 @@ def run_pipeline(
         "class_support_gate": class_support_gate,
         "discovery_rows": int(discovery_mask.sum()),
         "discovery_end_exclusive": discovery_cutoff,
+        "development_oos_routing": development_oos_routing,
+        "fixed_monthly_outer_oof": outer_oof_report,
         "timestamp_column": timestamp_column,
         "label_end_column": label_end_column,
         "utc_timestamp_contract": "naive timestamps interpreted as UTC on ingest",
@@ -4214,8 +4513,9 @@ def run_pipeline(
             "permutation_feature_selection",
             "side_local_geometry_selected_between_selection_and_hpo",
             "structural_hpo_on_frozen_selected_features",
-            "four_arm_full_population_oof_economic_balance_sweep",
-            "final_refit_from_economic_oof_selected_arm",
+            "four_arm_development_only_oof_economic_balance_sweep",
+            "fixed_monthly_may_june_july_outer_oof_with_frozen_choices",
+            "final_refit_after_outer_oof",
         ],
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
         "training_resource_guard": _resource_guard_contract(resource_guard),
@@ -4335,6 +4635,15 @@ def main() -> None:
         "--discovery-end",
         required=True,
         help="Exclusive UTC boundary for train-only path discovery",
+    )
+    parser.add_argument(
+        "--development-end",
+        default=None,
+        help=(
+            "Optional exclusive UTC boundary for strict feature-selection/HPO "
+            "development routing. Rows resolved at or after it are excluded "
+            "from development fitting and reserved for outer-OOF evaluation."
+        ),
     )
     parser.add_argument("--timestamp-column", default=DEFAULT_TIMESTAMP_COLUMN)
     parser.add_argument("--label-end-column", default=DEFAULT_LABEL_END_COLUMN)
@@ -4468,6 +4777,7 @@ def main() -> None:
         args.input,
         args.output_dir,
         discovery_end=args.discovery_end,
+        development_end=args.development_end,
         side=args.side,
         feature_dir=args.feature_dir,
         canonical_candidate_path=args.canonical_candidate_path,

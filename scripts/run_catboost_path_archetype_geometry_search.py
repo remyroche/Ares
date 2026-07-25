@@ -21,6 +21,8 @@ if str(ROOT) not in sys.path:
 from extreme_price_movements.base_candidate_population import candidate_identity_sha256
 from extreme_price_movements.path_archetype_geometry_search import (
     DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
+    GEOMETRY_EVALUATION_MODE_LEGACY,
+    GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
     GEOMETRY_NESTED_MONTHS,
     GEOMETRY_OOS_MONTHS,
     GEOMETRY_TRAIN_MONTHS,
@@ -32,6 +34,11 @@ from extreme_price_movements.path_archetype_geometry_search import (
     staged_geometry_search,
 )
 from extreme_price_movements.static_feature_store import read_static_features
+from extreme_price_movements.training_resource_guard import (
+    GIB,
+    TrainingResourceGuard,
+    TrainingResourceLimits,
+)
 
 FEATURE_SELECTION_HPO_CONTRACT_FILENAME = "feature_selection_hpo_contract.json"
 FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = (
@@ -42,6 +49,68 @@ GEOMETRY_PREREQUISITE_SCHEMA = "catboost_path_archetype_geometry_prerequisite_v1
 GEOMETRY_CONTRACT_SCHEMA = "catboost_path_archetype_geometry_contract_v1"
 SIDE_SELECTION_CONTRACT_SCOPE = "per_side"
 CANONICAL_SIDES = frozenset(("long", "short"))
+SHORT_HISTORY_DEVELOPMENT_START = pd.Timestamp("2026-04-01T00:00:00Z")
+SHORT_HISTORY_DEVELOPMENT_END = pd.Timestamp("2026-05-01T00:00:00Z")
+SHORT_HISTORY_SUBFOLDS = 2
+RESOURCE_TELEMETRY_FILENAME = "geometry_resource_telemetry.jsonl"
+
+
+def _gib_to_bytes(value: float, *, name: str) -> int:
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative GiB value")
+    return int(value * GIB)
+
+
+def _resource_disk_path(output_dir: Path) -> Path:
+    path = Path(output_dir)
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
+def _build_resource_guard(
+    *,
+    output_dir: Path,
+    min_free_ram_gib: float,
+    max_process_rss_gib: float,
+    min_free_disk_gib: float,
+    check_interval_seconds: float,
+    telemetry_path: Path | None,
+) -> TrainingResourceGuard:
+    if not np.isfinite(check_interval_seconds) or check_interval_seconds < 0:
+        raise ValueError(
+            "resource_check_interval_seconds must be finite and non-negative"
+        )
+    return TrainingResourceGuard(
+        limits=TrainingResourceLimits(
+            min_free_ram_bytes=_gib_to_bytes(
+                min_free_ram_gib, name="resource_min_free_ram_gib"
+            ),
+            max_process_rss_bytes=_gib_to_bytes(
+                max_process_rss_gib, name="resource_max_process_rss_gib"
+            ),
+            min_free_disk_bytes=_gib_to_bytes(
+                min_free_disk_gib, name="resource_min_free_disk_gib"
+            ),
+            check_interval_seconds=float(check_interval_seconds),
+        ),
+        disk_path=_resource_disk_path(output_dir),
+        telemetry_path=telemetry_path or output_dir / RESOURCE_TELEMETRY_FILENAME,
+    )
+
+
+def _resource_guard_contract(guard: TrainingResourceGuard) -> dict[str, Any]:
+    return {
+        "contract": "fail_closed_preflight_and_geometry_boundary_checkpoints_v1",
+        "limits": {
+            "min_free_ram_bytes": guard.limits.min_free_ram_bytes,
+            "max_process_rss_bytes": guard.limits.max_process_rss_bytes,
+            "min_free_disk_bytes": guard.limits.min_free_disk_bytes,
+            "check_interval_seconds": guard.limits.check_interval_seconds,
+        },
+        "disk_path": str(guard.disk_path),
+        "telemetry_path": str(guard.telemetry_path) if guard.telemetry_path else None,
+    }
 
 
 def _read_json(path: Path) -> Any:
@@ -1173,6 +1242,7 @@ def run(
     max_joint_trials: int = 24,
     max_train_rows_per_fold: int = DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
     ablation_start_date: str | None = None,
+    evaluation_mode: str = GEOMETRY_EVALUATION_MODE_LEGACY,
     geometry_prerequisite: Path | None = None,
     features_json_path: Path | None = None,
     catboost_params_json_path: Path | None = None,
@@ -1181,10 +1251,30 @@ def run(
     exact_checkpoint_geometry_id: str | None = None,
     side: str | None = None,
     canonical_context_manifest: Path | None = None,
+    resource_min_free_ram_gib: float = 2.0,
+    resource_max_process_rss_gib: float = 12.0,
+    resource_min_free_disk_gib: float = 10.0,
+    resource_check_interval_seconds: float = 60.0,
+    resource_telemetry_path: Path | None = None,
 ) -> dict[str, Any]:
     normalized_side = str(side or "").strip().lower()
     if normalized_side not in CANONICAL_SIDES:
         raise ValueError("geometry search requires side=long or side=short")
+    if evaluation_mode not in {
+        GEOMETRY_EVALUATION_MODE_LEGACY,
+        GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+    }:
+        raise ValueError("geometry search has an unsupported evaluation mode")
+    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY:
+        if nested_oof or ablation_start_date is not None:
+            raise ValueError(
+                "short-history geometry forbids nested OOF and 4m ablation overrides"
+            )
+        if geometry_prerequisite is None:
+            raise ValueError(
+                "short-history geometry requires a verified frozen geometry prerequisite; "
+                "unsafe inputs are not permitted in canonical April-only mode"
+            )
     # This is deliberately the first data operation: no feature load, validity
     # filter, row cap or checkpoint identity may observe pooled rows.
     frame = pd.read_parquet(input_path)
@@ -1195,6 +1285,79 @@ def run(
     side_candidate_identity = candidate_identity_sha256(
         frame, columns=(columns.timestamp, columns.symbol, columns.side)
     )
+    full_side_input_rows = int(len(frame))
+    short_history_holdout: dict[str, Any] | None = None
+    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY:
+        if columns.label_end is None or columns.label_end not in frame:
+            raise ValueError(
+                "short-history geometry requires canonical label_end timestamps"
+            )
+        label_end = pd.to_datetime(frame[columns.label_end], utc=True, errors="coerce")
+        if label_end.isna().any():
+            raise ValueError(
+                "short-history geometry requires finite UTC label_end timestamps"
+            )
+        decision_ts = pd.to_datetime(
+            frame[columns.timestamp], utc=True, errors="coerce"
+        )
+        if decision_ts.isna().any():
+            raise ValueError(
+                "short-history geometry requires finite UTC decision timestamps"
+            )
+        development_mask = decision_ts.ge(
+            SHORT_HISTORY_DEVELOPMENT_START
+        ) & label_end.lt(SHORT_HISTORY_DEVELOPMENT_END)
+        withheld = frame.loc[~development_mask]
+        frame = frame.loc[development_mask].copy()
+        if frame.empty:
+            raise ValueError("short-history geometry has no April development rows")
+        development_label_end = pd.to_datetime(
+            frame[columns.label_end], utc=True, errors="raise"
+        )
+        development_ts = pd.to_datetime(
+            frame[columns.timestamp], utc=True, errors="raise"
+        )
+        if (
+            not bool((development_label_end < SHORT_HISTORY_DEVELOPMENT_END).all())
+            or not bool(development_ts.ge(SHORT_HISTORY_DEVELOPMENT_START).all())
+            or not bool((development_ts < SHORT_HISTORY_DEVELOPMENT_END).all())
+        ):
+            raise ValueError("short-history development boundary was not enforced")
+        short_history_holdout = {
+            "contract": "may_july_untouched_by_geometry_selection_v1",
+            "development_timestamp_inclusive": SHORT_HISTORY_DEVELOPMENT_START,
+            "development_label_end_exclusive": SHORT_HISTORY_DEVELOPMENT_END,
+            "selection_data_scope": (
+                "2026-04-01T00:00:00Z <= timestamp and "
+                "label_end < 2026-05-01T00:00:00Z only"
+            ),
+            "may_and_later_used_for_geometry_selection": False,
+            "development_rows_before_path_validity": int(len(frame)),
+            "development_input_sha256": _prepared_frame_identity(frame),
+            "untouched_rows_before_path_validity": int(len(withheld)),
+            "untouched_input_sha256": _prepared_frame_identity(withheld),
+            "untouched_timestamp_start_utc": (
+                pd.to_datetime(
+                    withheld[columns.timestamp], utc=True, errors="coerce"
+                ).min()
+                if not withheld.empty
+                else None
+            ),
+            "untouched_timestamp_end_utc": (
+                pd.to_datetime(
+                    withheld[columns.timestamp], utc=True, errors="coerce"
+                ).max()
+                if not withheld.empty
+                else None
+            ),
+            "untouched_label_end_start_utc": label_end.loc[~development_mask].min()
+            if not withheld.empty
+            else None,
+            "untouched_label_end_end_utc": label_end.loc[~development_mask].max()
+            if not withheld.empty
+            else None,
+            "may_and_later_rows_in_development": 0,
+        }
     if geometry_prerequisite is not None:
         if canonical_context_manifest is None:
             raise ValueError(
@@ -1236,6 +1399,15 @@ def run(
     # mutable checkpoint and every manifest has a side-owned subdirectory.
     output_dir = Path(output_dir) / f"side={normalized_side}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    resource_guard = _build_resource_guard(
+        output_dir=output_dir,
+        min_free_ram_gib=resource_min_free_ram_gib,
+        max_process_rss_gib=resource_max_process_rss_gib,
+        min_free_disk_gib=resource_min_free_disk_gib,
+        check_interval_seconds=resource_check_interval_seconds,
+        telemetry_path=resource_telemetry_path,
+    )
+    resource_guard.preflight("geometry_feature_loading")
     checkpoint_path = checkpoint_path or output_dir / (
         f"geometry_search_checkpoint_{normalized_side}.json"
     )
@@ -1260,6 +1432,8 @@ def run(
             ].copy()
     if frame.empty:
         raise ValueError("no complete finite path rows remain for geometry search")
+    if short_history_holdout is not None:
+        short_history_holdout["development_rows_after_path_validity"] = int(len(frame))
     if max_rows > 0:
         frame = frame.iloc[:max_rows].copy()
     join_columns = feature_join_columns or [
@@ -1268,19 +1442,25 @@ def run(
         columns.side,
     ]
     if feature_dir is not None:
+        resource_guard.checkpoint("geometry_static_feature_load")
         frame = _load_canonical_features(
             frame, feature_columns, feature_dir, frozen_ae_gmm_sidecar, columns
         )
     else:
+        resource_guard.checkpoint("geometry_feature_join")
         frame = _join_frozen_features(
             frame, features_parquet, feature_columns, join_columns, columns
         )
     frame = ensure_risk_fraction(frame, columns)
+    resource_guard.checkpoint("geometry_feature_prep_complete")
     checkpoint_input_identity = {
         "side": normalized_side,
         "input_path": str(input_path.resolve()),
         "input_sha256": _file_sha256(input_path),
         "candidate_identity_sha256": side_candidate_identity,
+        "evaluation_mode": evaluation_mode,
+        "full_side_input_rows": full_side_input_rows,
+        "short_history_holdout": short_history_holdout,
         "prepared_frame_sha256": _prepared_frame_identity(frame),
         "prepared_rows": int(len(frame)),
         "geometry_prerequisite_provenance": dict(input_provenance),
@@ -1298,7 +1478,13 @@ def run(
             "geometry_prerequisite_sha256"
         ),
     }
+
+    def guarded_progress(event: str, details: Mapping[str, Any]) -> None:
+        resource_guard.checkpoint(f"geometry:{event}")
+        _geometry_progress(event, details)
+
     if exact_checkpoint_geometry_id is not None:
+        resource_guard.checkpoint("geometry_exact_checkpoint_export")
         export = export_checkpoint_geometry(
             frame,
             feature_columns,
@@ -1308,7 +1494,7 @@ def run(
             columns=columns,
             max_train_rows_per_fold=max_train_rows_per_fold,
             checkpoint_input_identity=checkpoint_input_identity,
-            progress_reporter=_geometry_progress,
+            progress_reporter=guarded_progress,
         )
         manifest_path, manifest = _write_exact_geometry_export(
             output_dir,
@@ -1324,6 +1510,9 @@ def run(
                         "exact_geometry_oos_predictions": manifest,
                         "geometry_prerequisite_provenance": dict(input_provenance),
                         "side": normalized_side,
+                        "evaluation_mode": evaluation_mode,
+                        "short_history_holdout": short_history_holdout,
+                        "resource_guard": _resource_guard_contract(resource_guard),
                         "model_side_scope": SIDE_SELECTION_CONTRACT_SCOPE,
                         "candidate_identity_sha256": side_candidate_identity,
                         "canonical_context_sha256": input_provenance.get(
@@ -1364,6 +1553,7 @@ def run(
             + "\n"
         )
         return export
+    resource_guard.checkpoint("geometry_search_start")
     report = staged_geometry_search(
         frame,
         feature_columns,
@@ -1373,13 +1563,21 @@ def run(
         max_joint_trials=max_joint_trials,
         ablation_start_date=ablation_start_date,
         nested_oof=nested_oof,
+        evaluation_mode=evaluation_mode,
+        short_history_development_end=(
+            SHORT_HISTORY_DEVELOPMENT_END
+            if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+            else None
+        ),
+        short_history_subfold_count=SHORT_HISTORY_SUBFOLDS,
         capture_predictions=True,
         run_post_search_refits=run_post_search_refits,
         max_train_rows_per_fold=max_train_rows_per_fold,
         checkpoint_path=checkpoint_path,
         checkpoint_input_identity=checkpoint_input_identity,
-        progress_reporter=_geometry_progress,
+        progress_reporter=guarded_progress,
     )
+    resource_guard.checkpoint("geometry_search_complete")
     _parquet_ready(report["sweep_results"]).to_parquet(
         output_dir / "geometry_sweeps.parquet", index=False
     )
@@ -1457,8 +1655,15 @@ def run(
             "rows_after_side_filter": rows_before_path_validity,
             "rows_before_path_validity": rows_before_path_validity,
             "rows_after_path_validity": int(len(frame)),
+            "evaluation_mode": evaluation_mode,
+            "short_history_holdout": short_history_holdout,
+            "resource_guard": _resource_guard_contract(resource_guard),
             "geometry_evaluation_contract": {
-                "name": "4_month_train_4_month_oos",
+                "name": (
+                    "purged_chronological_april_development_only"
+                    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+                    else "4_month_train_4_month_oos"
+                ),
                 "train_months": GEOMETRY_TRAIN_MONTHS,
                 "oos_months": GEOMETRY_OOS_MONTHS,
                 "walk_forward_cadence_months": GEOMETRY_TRAIN_MONTHS,
@@ -1466,6 +1671,17 @@ def run(
                 "max_train_rows_per_fold": int(max_train_rows_per_fold),
                 "default_max_train_rows_per_fold": DEFAULT_MAX_TRAIN_ROWS_PER_FOLD,
                 "oos_row_contract": "all_labelled_oos_rows",
+                "evaluation_mode": evaluation_mode,
+                "short_history_development_end": (
+                    SHORT_HISTORY_DEVELOPMENT_END
+                    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+                    else None
+                ),
+                "short_history_subfold_count": (
+                    SHORT_HISTORY_SUBFOLDS
+                    if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
+                    else None
+                ),
             },
             "fold_reports_path": str(output_dir / "geometry_fold_reports.parquet"),
             "selected_fold_row_usage": report["selected_fold_reports"].to_dict(
@@ -1540,6 +1756,9 @@ def run(
         "schema": GEOMETRY_CONTRACT_SCHEMA,
         "status": "geometry_complete",
         "side": normalized_side,
+        "evaluation_mode": evaluation_mode,
+        "short_history_holdout": short_history_holdout,
+        "resource_guard": _resource_guard_contract(resource_guard),
         "candidate_identity_sha256": side_candidate_identity,
         "selection_fingerprint": input_provenance.get("selection_fingerprint"),
         "selected_features": list(feature_columns),
@@ -1688,6 +1907,18 @@ def main() -> None:
         help="UTC start of the fixed 4m train -> next 4m OOS target-selection split.",
     )
     parser.add_argument(
+        "--evaluation-mode",
+        choices=(
+            GEOMETRY_EVALUATION_MODE_LEGACY,
+            GEOMETRY_EVALUATION_MODE_SHORT_HISTORY,
+        ),
+        default=GEOMETRY_EVALUATION_MODE_LEGACY,
+        help=(
+            "Legacy 4m/4m geometry selection, or the explicit April-only "
+            "purged development mode that keeps May+ labels untouched."
+        ),
+    )
+    parser.add_argument(
         "--nested-oof",
         action="store_true",
         help="Run nested 4m/4m finalist validation when at least 12 months are available.",
@@ -1697,6 +1928,11 @@ def main() -> None:
         action="store_true",
         help="Explicitly refit the top-five raw seven-class finalists after the sweep.",
     )
+    parser.add_argument("--resource-min-free-ram-gib", type=float, default=2.0)
+    parser.add_argument("--resource-max-process-rss-gib", type=float, default=12.0)
+    parser.add_argument("--resource-min-free-disk-gib", type=float, default=10.0)
+    parser.add_argument("--resource-check-interval-seconds", type=float, default=60.0)
+    parser.add_argument("--resource-telemetry-path", type=Path, default=None)
     args = parser.parse_args()
     columns = PathGeometryColumns(
         **(_read_json(args.columns_json) if args.columns_json else {})
@@ -1750,6 +1986,7 @@ def main() -> None:
         max_joint_trials=args.max_joint_trials,
         max_train_rows_per_fold=args.max_train_rows_per_fold,
         ablation_start_date=args.ablation_start_date,
+        evaluation_mode=args.evaluation_mode,
         nested_oof=args.nested_oof,
         run_post_search_refits=args.run_finalist_refits,
         geometry_prerequisite=args.geometry_prerequisite,
@@ -1760,6 +1997,11 @@ def main() -> None:
         exact_checkpoint_geometry_id=args.export_checkpoint_geometry_id,
         side=args.side,
         canonical_context_manifest=args.canonical_context_manifest,
+        resource_min_free_ram_gib=args.resource_min_free_ram_gib,
+        resource_max_process_rss_gib=args.resource_max_process_rss_gib,
+        resource_min_free_disk_gib=args.resource_min_free_disk_gib,
+        resource_check_interval_seconds=args.resource_check_interval_seconds,
+        resource_telemetry_path=args.resource_telemetry_path,
     )
 
 

@@ -1341,6 +1341,43 @@ def _provenance(
     }
 
 
+def _execution_label_horizon_minutes(sources: Sequence[LoadedSource]) -> int:
+    execution_source = next(
+        source for source in sources if source.spec.name == "execution_labels"
+    )
+    signed = execution_source.metadata["signed_prediction_role_manifest"]
+    manifest = json.loads(Path(signed["path"]).read_text(encoding="utf-8"))
+    exit_contract = manifest.get("exit_policy_contract", {})
+    raw_minutes = (
+        exit_contract.get("horizon_minutes")
+        if isinstance(exit_contract, Mapping)
+        else None
+    )
+    if raw_minutes is None:
+        timing = manifest.get("timing", {})
+        if isinstance(timing, Mapping):
+            raw_minutes = timing.get("horizon_minutes")
+            if raw_minutes is None and timing.get("horizon_hours") is not None:
+                raw_minutes = float(timing["horizon_hours"]) * 60.0
+    if (
+        raw_minutes is None
+        and manifest.get("prediction_role") == "execution_ev_12h_labels"
+    ):
+        raw_minutes = 12 * 60
+    try:
+        minutes_float = float(raw_minutes)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "execution label manifest must declare a positive replay horizon"
+        ) from exc
+    minutes = int(round(minutes_float))
+    if minutes <= 0 or not np.isclose(minutes_float, minutes, atol=1e-9, rtol=0.0):
+        raise ValueError(
+            "execution label manifest horizon must be a positive whole number of minutes"
+        )
+    return minutes
+
+
 def run(args: argparse.Namespace) -> dict[str, Path]:
     if args.output.exists():
         raise ValueError(
@@ -1560,9 +1597,11 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         raise ValueError(
             "execution decision timestamp must equal signal timestamp + one hour"
         )
-    if not (label_end == decision + pd.Timedelta(hours=12)).all():
+    label_horizon_minutes = _execution_label_horizon_minutes(sources)
+    if not (label_end == decision + pd.Timedelta(minutes=label_horizon_minutes)).all():
         raise ValueError(
-            "execution label-end timestamp must equal decision timestamp + 12 hours"
+            "execution label-end timestamp must equal decision timestamp plus "
+            f"the signed {label_horizon_minutes}-minute replay horizon"
         )
     accounting_error = (
         joined["execution_gross_ev_12h"]

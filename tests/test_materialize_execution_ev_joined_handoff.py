@@ -452,6 +452,36 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     )
 
 
+def test_materializes_signed_24h_deployed_policy_horizon(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path)
+    labels = pd.read_parquet(paths["labels"])
+    labels["execution_label_end_utc"] = labels["__decision_ts__"] + pd.Timedelta(
+        minutes=1440
+    )
+    labels["execution_label_available_at"] = labels["execution_label_end_utc"]
+    labels.to_parquet(paths["labels"], index=False)
+    manifest = json.loads(paths["labels_manifest"].read_text(encoding="utf-8"))
+    manifest["schema"] = "execution_ev_deployed_policy_1m_labels_v1"
+    manifest["exit_policy_contract"] = {
+        "replay_timeframe": "1m",
+        "horizon_minutes": 1440,
+        "geometry_scope": "side_x_policy_archetype_with_side_parent_fallback",
+        "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+        "simulator": (
+            "extreme_price_movements.simple_policy_optimiser.simulate_and_score"
+        ),
+    }
+    paths["labels_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _resign_manifest(paths, "labels")
+
+    result = materializer.run(_args(tmp_path, paths))
+    provenance = json.loads(result["provenance"].read_text())
+    target = provenance["targets"]["execution_net_ev_12h"]
+    assert target["horizon_hours"] == 24.0
+    assert target["exit_policy_contract"]["horizon_minutes"] == 1440
+    assert target["exit_policy_contract"]["replay_timeframe"] == "1m"
+
+
 def test_accepts_oof_prediction_available_at_execution_decision(
     tmp_path: Path,
 ) -> None:

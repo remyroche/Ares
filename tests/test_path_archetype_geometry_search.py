@@ -1593,6 +1593,12 @@ def test_geometry_runner_filters_to_side_before_search_and_owns_side_artifacts(
         assert not (parent / "geometry_search_manifest.json").exists()
     assert observed["long"]["side"] == "long"
     assert observed["short"]["side"] == "short"
+    filtered = runner._filter_side_before_search(
+        labels,
+        side="short",
+        side_column="side",
+    )
+    assert str(filtered["side"].dtype) == "string"
     assert (
         observed["long"]["candidate_identity_sha256"]
         != observed["short"]["candidate_identity_sha256"]

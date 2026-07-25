@@ -321,7 +321,7 @@ def _filter_side_before_search(
     if result.empty:
         raise ValueError(f"geometry input contains no {side} rows")
     # Every downstream join, sampler, model and report now sees one side only.
-    result.loc[:, side_column] = side
+    result[side_column] = pd.Series(side, index=result.index, dtype="string")
     return result
 
 

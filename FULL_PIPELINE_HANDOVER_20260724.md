@@ -1703,10 +1703,12 @@ pipelines:
 
 ```text
 long CatBoost:  long-only feature selection -> long-only geometry sweep
-                -> long-only model HPO -> long-only class-balance mini-HPO
+                -> long-only structural model HPO
+                -> fixed-parameter four-arm class-balance OOF sweep
 
 short CatBoost: short-only feature selection -> short-only geometry sweep
-                -> short-only model HPO -> short-only class-balance mini-HPO
+                -> short-only structural model HPO
+                -> fixed-parameter four-arm class-balance OOF sweep
 ```
 
 Required side-local sequence:
@@ -1717,17 +1719,28 @@ Required side-local sequence:
    thresholds and support gates may differ by side.
 3. Run CatBoost HPO independently per side using the selected side contract and
    geometry.
-4. After geometry selection, run a small class-balancing HPO independently per
-   side. This mini-HPO must compare bounded class-weighting strength rather than
-   blindly enabling full inverse-frequency balancing.
-5. Refit only the winning per-side configuration on the larger confirmation
-   sample, then generate side-local OOF predictions and final models.
+4. Freeze the winning structural HPO parameters, then run a separate
+   class-balance mini-sweep independently per side. Evaluate every declared
+   balance arm on the exact same purged chronological OOF folds and class order;
+   do not let Optuna jointly confound structural parameters with the balance
+   choice.
+5. Select a balance arm only from matched OOF ML and economic evidence. Then
+   rematerialize that arm's bounded class weights from the full final
+   side-local training labels immediately before the final refit. Never reuse
+   fold-local or HPO-subsample weight values in the final model.
+6. Refit only the winning per-side configuration on the larger confirmation
+   sample, persist the final model, and retain the side-local OOF predictions
+   produced before that refit.
 
 Class-balance mini-HPO requirements:
 
 - Include no balancing as the control.
-- Search mild-to-moderate frequency correction, such as class-frequency
-  exponents from `0.25` through `0.75`, with bounded maximum class-weight ratios.
+- Evaluate the fixed arms `uniform`, `frequency_power_0.25`,
+  `frequency_power_0.50`, and `frequency_power_0.75`, with the declared maximum
+  class-weight ratio cap. Production coverage is incomplete unless all four
+  arms finish.
+- Fit each fold's balance weights from that fold's training labels only. OOF
+  labels and realized path outcomes are evaluation-only.
 - Keep the minimum support contract per side: each class should represent at
   least 1% overall and at least 0.5% per month, or be merged before fitting.
 - Reject an arm if predicted probabilities or hard predictions collapse onto
@@ -1753,8 +1766,48 @@ The scoring report must include:
 - Stability: fold, month, symbol, base-archetype, and score-tail stability,
   including worst-month economic separation.
 
-No arm is promotable unless it improves or preserves the combined ML/economic
-objective and passes every no-collapse support gate.
+Use a conservative lexicographic promotion gate rather than an opaque weighted
+score:
+
+1. All four arms must complete on identical folds and pass the aggregate and
+   per-fold no-collapse guards; otherwise select `uniform` and mark the sweep
+   non-promotable.
+2. Relative to `uniform`, aggregate log loss, macro Brier, and RPS must not
+   worsen, and macro F1 must not decline. Retain paired fold deltas.
+3. The candidate must produce strictly positive aggregate uplift in realized
+   `path_arch_final_return_net_1pct` within the predeclared top 20% of its OOF
+   predicted EV, with non-positive EV-MAE change. At least three of four folds
+   and at least half of adequately supported UTC months must have non-negative
+   top-20% EV uplift.
+4. Worst-supported-month top-20% net EV and the worst paired monthly delta must
+   be no worse than `uniform`.
+5. Ties or any failed gate select `uniform`. Among survivors, break ties by
+   larger aggregate top-20% EV uplift, lower EV MAE, lower log loss, then lower
+   frequency exponent.
+
+For the economic comparison, estimate class-to-outcome priors exclusively from
+each exact OOF fold's training rows and apply the same frozen priors to every
+arm. Use canonical v9 outcomes without double-counting costs:
+`path_arch_final_return_net_1pct`, `path_arch_peak_mfe_atr`,
+`path_arch_mae_12h_r`, `path_arch_mae_before_meaningful_mfe_r`,
+`path_arch_stop_before_meaningful_mfe`, `path_arch_reaches_meaningful_mfe`,
+conditional `path_arch_time_to_first_meaningful_mfe_h`,
+`path_arch_peak_retention_ratio`, and finite
+`path_arch_time_to_trailing_h`. Keep R and ATR quantities separate, keep
+unreached timing rows censored rather than assigning a fake horizon time, and
+report unsupported monthly slices explicitly rather than silently pooling
+them.
+
+Persist `class_balance_mini_sweep_report.json` before applying any promotion
+gate, then persist `class_balance_economic_oof_report.json`. Bind both reports,
+the complete economic-selector configuration, the structural-HPO contract,
+the selected-feature contract, the side-local geometry contract, and the exact
+ordered candidate identities by deterministic digests in the selected-arm and
+final-weight provenance. Fail closed before the final refit when an arm has no
+complete OOF result, identities or folds differ, the input contains more than
+one side, or any required digest is absent or inconsistent. A fully covered
+uniform control selected because no non-uniform arm passes is a valid
+production selection; a smoke or incomplete-coverage uniform fallback is not.
 
 Required outputs:
 

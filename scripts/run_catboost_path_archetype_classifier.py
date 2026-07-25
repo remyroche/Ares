@@ -33,6 +33,11 @@ from extreme_price_movements import (
 from extreme_price_movements.base_candidate_population import (  # noqa: E402
     candidate_identity_sha256,
 )
+from extreme_price_movements.class_balance_oof_economics import (  # noqa: E402
+    BalanceArmOOF,
+    EconomicOOFConfig,
+    score_class_balance_oof_economics,
+)
 from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS  # noqa: E402
 from extreme_price_movements.path_archetype_labels import (  # noqa: E402
     PATH_ARCHETYPE_RULE_VERSION,
@@ -47,6 +52,7 @@ from extreme_price_movements.path_archetype_support import (  # noqa: E402
     MERGED_PATH_ARCHETYPE_CLASSES,
     merge_fast_realization_winner,
 )
+from extreme_price_movements.side_aware import candidate_id_series  # noqa: E402
 from extreme_price_movements.static_feature_store import (  # noqa: E402
     STATIC_FEATURE_ENDPOINT_VERSION,
     read_static_features,
@@ -57,10 +63,8 @@ from extreme_price_movements.training_resource_guard import (  # noqa: E402
     TrainingResourceLimits,
 )
 
-RUNNER_SCHEMA = "run_catboost_path_archetype_classifier_v9_merged_raw_probability"
-FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = (
-    "catboost_path_archetype_feature_selection_hpo_contract_v1"
-)
+RUNNER_SCHEMA = "run_catboost_path_archetype_classifier_v10_side_local_staged"
+FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = "catboost_path_archetype_feature_selection_hpo_contract_v3_structural_hpo_balance_sweep"
 FEATURE_SELECTION_HPO_CONTRACT_FILENAME = "feature_selection_hpo_contract.json"
 HPO_SAMPLING_CONTRACT_VERSION = (
     "chronological_regions_time_spread_side_class_stratified_v1"
@@ -72,6 +76,28 @@ SMOKE_HPO_TRIALS = 1
 SMOKE_MAX_FEATURES = 32
 SMOKE_MAX_ITERATIONS = 128
 SMOKE_PERMUTATION_STAGES = (32, 16)
+GEOMETRY_SEARCH_MODEL_PARAMS = {
+    # Geometry compares target definitions, never class-balancing arms.  Keep
+    # this fixed, bounded and CatBoost-valid until the post-geometry HPO stage.
+    "loss_function": "MultiClass",
+    "eval_metric": "MultiClass",
+    "iterations": 1_000,
+    "od_wait": 100,
+    "learning_rate": 0.03,
+    "depth": 6,
+    "l2_leaf_reg": 30.0,
+    "random_strength": 1.0,
+    "bagging_temperature": 1.0,
+    "rsm": 0.8,
+    "border_count": 64,
+    "auto_class_weights": None,
+    "bootstrap_type": "Bayesian",
+    "grow_policy": "SymmetricTree",
+    "random_seed": 20260722,
+    "verbose": False,
+    "allow_writing_files": False,
+    "thread_count": 1,
+}
 PROXY_HPO_ROWS = 8_000
 PROXY_HPO_TRIALS = 20
 PROXY_HPO_FOLDS = 2
@@ -86,6 +112,7 @@ RESOURCE_TELEMETRY_FILENAME = "training_resource_telemetry.jsonl"
 LOGGER = logging.getLogger(__name__)
 IDENTITY_SYMBOL_COLUMN = "__symbol__"
 IDENTITY_SIDE_COLUMNS = ("side", "side_name", "__side__")
+CANONICAL_CANDIDATE_KEY_COLUMNS = ("__ts__", "__symbol__", "side", "candidate_id")
 FROZEN_AE_GMM_KEY_COLUMNS = ("__ts__", "__symbol__", "side")
 PATH_TARGET_PROVENANCE_COLUMNS = {
     "__decision_ts__",
@@ -101,6 +128,8 @@ PATH_TARGET_PROVENANCE_COLUMNS = {
     "activation_distance_return",
     "trailing_activation_distance_return",
 }
+MIN_SIDE_CLASS_SHARE = 0.01
+MIN_SIDE_MONTH_CLASS_SHARE = 0.005
 
 FUTURE_TRAINING_TAXONOMY_CONTRACT = {
     "version": "merged_fast_realization_winner_v1",
@@ -1090,6 +1119,405 @@ def _normalise_input(
     return out
 
 
+def _normalise_training_side(value: str) -> str:
+    side = str(value).strip().lower()
+    if side not in {"long", "short"}:
+        raise ValueError("side must be exactly 'long' or 'short'")
+    return side
+
+
+def _validate_merged_class_support_gate(
+    labels: pd.Series,
+    timestamps: pd.Series,
+    *,
+    side: str,
+) -> dict[str, Any]:
+    """Require all seven classes to be learnable in this side-local cohort."""
+
+    expected = tuple(map(str, MERGED_PATH_ARCHETYPE_CLASSES))
+    values = labels.astype(str)
+    months = pd.to_datetime(timestamps, utc=True, errors="raise").dt.strftime("%Y-%m")
+    total = max(1, len(values))
+    report: dict[str, Any] = {
+        "contract": "merged_7class_side_month_minimum_support_v1",
+        "side": side,
+        "minimum_overall_share": MIN_SIDE_CLASS_SHARE,
+        "minimum_monthly_share": MIN_SIDE_MONTH_CLASS_SHARE,
+        "rows": int(len(values)),
+        "months": sorted(months.unique().tolist()),
+        "classes": {},
+    }
+    failures: list[str] = []
+    for class_name in expected:
+        overall_rows = int(values.eq(class_name).sum())
+        overall_share = overall_rows / total
+        monthly: dict[str, dict[str, float | int]] = {}
+        for month in report["months"]:
+            month_mask = months.eq(month)
+            month_rows = int(month_mask.sum())
+            class_rows = int((month_mask & values.eq(class_name)).sum())
+            share = class_rows / max(1, month_rows)
+            monthly[month] = {"rows": class_rows, "share": share}
+            if share < MIN_SIDE_MONTH_CLASS_SHARE:
+                failures.append(f"{class_name}/{month}={share:.4%}")
+        report["classes"][class_name] = {
+            "overall_rows": overall_rows,
+            "overall_share": overall_share,
+            "monthly": monthly,
+        }
+        if overall_share < MIN_SIDE_CLASS_SHARE:
+            failures.append(f"{class_name}/overall={overall_share:.4%}")
+    report["passed"] = not failures
+    if failures:
+        raise ValueError(
+            "side-local merged-class support gate failed (requires >=1% overall and "
+            ">=0.5% per UTC month): " + ", ".join(failures[:12])
+        )
+    return report
+
+
+def _canonical_side_series(values: pd.Series, *, source: str) -> pd.Series:
+    """Normalise one side field without accepting a mixed/unknown cohort."""
+
+    text = values.astype("string").str.strip().str.lower()
+    normalized = text.map(
+        {
+            "long": "long",
+            "buy": "long",
+            "1": "long",
+            "short": "short",
+            "sell": "short",
+            "-1": "short",
+        }
+    )
+    if normalized.isna().any():
+        invalid = sorted(set(text.loc[normalized.isna()].dropna().astype(str)))
+        raise ValueError(f"{source} contains noncanonical side values: {invalid[:8]}")
+    return normalized.astype(str)
+
+
+def _canonical_candidate_id_frame(
+    frame: pd.DataFrame,
+    *,
+    source: str,
+    require_selected_top40: bool,
+) -> pd.DataFrame:
+    """Return exact canonical keys, rejecting synthetic or duplicate identities."""
+
+    required = {"__ts__", "__symbol__", "candidate_id", "side"}
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(f"{source} is missing canonical identity columns: {missing}")
+    if require_selected_top40:
+        if "selected_top40" not in frame:
+            raise ValueError(f"{source} is missing selected_top40")
+        selected = pd.to_numeric(frame["selected_top40"], errors="coerce")
+        if selected.isna().any() or not selected.isin((0, 1, True, False)).all():
+            raise ValueError(f"{source} has invalid selected_top40 values")
+        frame = frame.loc[selected.astype(bool)].copy()
+    keys = frame.loc[:, list(CANONICAL_CANDIDATE_KEY_COLUMNS)].copy()
+    keys["__ts__"] = pd.to_datetime(keys["__ts__"], utc=True, errors="coerce")
+    keys["__symbol__"] = keys["__symbol__"].astype(str)
+    keys["side"] = _canonical_side_series(keys["side"], source=source)
+    keys["candidate_id"] = keys["candidate_id"].astype("string").str.strip()
+    if (
+        keys.isna().any().any()
+        or keys["__symbol__"].eq("").any()
+        or keys["candidate_id"].eq("").any()
+    ):
+        raise ValueError(f"{source} has null or blank canonical identity values")
+    expected = candidate_id_series(
+        keys["__ts__"], keys["__symbol__"], "1h", keys["side"]
+    )
+    if not np.array_equal(
+        keys["candidate_id"].astype(str).to_numpy(), expected.astype(str).to_numpy()
+    ):
+        raise ValueError(f"{source} candidate_id does not match UTC/symbol/1h/side")
+    if keys.duplicated(list(CANONICAL_CANDIDATE_KEY_COLUMNS), keep=False).any():
+        raise ValueError(f"{source} has duplicate canonical candidate keys")
+    if keys["candidate_id"].duplicated(keep=False).any():
+        raise ValueError(f"{source} has duplicate candidate_id values")
+    return keys.sort_values(
+        list(CANONICAL_CANDIDATE_KEY_COLUMNS), kind="mergesort"
+    ).reset_index(drop=True)
+
+
+def _read_manifest_binding(path: Path, *, artifact: Path, field: str) -> dict[str, Any]:
+    """Read an explicit manifest and require its advertised file digest."""
+
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"canonical {field} manifest does not exist: {path}")
+    payload = _read_json_object(path, artifact_name=f"canonical {field} manifest")
+    advertised: str | None = None
+    for key in ("output_sha256", "sha256"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            advertised = value
+            break
+    output = payload.get("output")
+    if advertised is None and isinstance(output, Mapping):
+        value = output.get("sha256")
+        if isinstance(value, str) and value:
+            advertised = value
+    if advertised is None:
+        raise ValueError(f"canonical {field} manifest has no advertised output SHA-256")
+    actual = _sha256_file(artifact)
+    if advertised != actual:
+        raise ValueError(
+            f"canonical {field} parquet SHA-256 does not match its manifest"
+        )
+    return {
+        "path": str(artifact.resolve()),
+        "sha256": actual,
+        "manifest_path": str(path.resolve()),
+        "manifest_sha256": _sha256_file(path),
+        "manifest": payload,
+    }
+
+
+def _validate_side_local_canonical_inputs(
+    labels: pd.DataFrame,
+    *,
+    side: str,
+    candidate_path: Path,
+    candidate_manifest: Path,
+    context_path: Path,
+    context_manifest: Path,
+    ae_gmm_state: Path | None,
+    ae_gmm_state_manifest: Path | None,
+) -> dict[str, Any]:
+    """Bind one side's labels to immutable candidate/context/AE artifacts.
+
+    This check intentionally happens before feature selection.  It prevents a
+    pooled candidate file, another side's frozen representation, or a context
+    row that is merely close in time from entering any learned stage.
+    """
+
+    side = _normalise_training_side(side)
+    candidate_path, context_path = Path(candidate_path), Path(context_path)
+    if not candidate_path.is_file() or not context_path.is_file():
+        raise FileNotFoundError(
+            "canonical candidate and context inputs must be parquet files"
+        )
+    candidate_binding = _read_manifest_binding(
+        candidate_manifest, artifact=candidate_path, field="candidate"
+    )
+    context_binding = _read_manifest_binding(
+        context_manifest, artifact=context_path, field="context"
+    )
+    label_keys = _canonical_candidate_id_frame(
+        labels, source="path labels", require_selected_top40=False
+    )
+    canonical_columns = [*CANONICAL_CANDIDATE_KEY_COLUMNS, "selected_top40"]
+    candidate_keys = _canonical_candidate_id_frame(
+        pd.read_parquet(candidate_path, columns=canonical_columns),
+        source=str(candidate_path),
+        require_selected_top40=True,
+    )
+    context_keys = _canonical_candidate_id_frame(
+        pd.read_parquet(context_path, columns=canonical_columns),
+        source=str(context_path),
+        require_selected_top40=True,
+    )
+    label_keys = label_keys.loc[label_keys["side"].eq(side)].reset_index(drop=True)
+    candidate_keys = candidate_keys.loc[candidate_keys["side"].eq(side)].reset_index(
+        drop=True
+    )
+    context_keys = context_keys.loc[context_keys["side"].eq(side)].reset_index(
+        drop=True
+    )
+    if label_keys.empty or candidate_keys.empty or context_keys.empty:
+        raise ValueError(
+            f"canonical side={side} has empty label, candidate, or context support"
+        )
+    candidate_index = pd.MultiIndex.from_frame(candidate_keys)
+    context_index = pd.MultiIndex.from_frame(context_keys)
+    label_index = pd.MultiIndex.from_frame(label_keys)
+    if not candidate_index.isin(context_index).all():
+        raise ValueError(
+            "canonical candidate population contains rows outside the canonical context"
+        )
+    if not label_index.isin(candidate_index).all():
+        raise ValueError(
+            "path labels contain rows outside the canonical candidate population"
+        )
+    if not label_index.isin(context_index).all():
+        raise ValueError(
+            "path labels contain rows outside the canonical context population"
+        )
+    context_manifest_payload = context_binding["manifest"]
+    ae_evidence = (
+        context_manifest_payload.get("ae_gmm", {})
+        .get("loader_evidence_by_side", {})
+        .get(side)
+    )
+    if not isinstance(ae_evidence, Mapping):
+        raise ValueError(
+            f"canonical context manifest has no AE/GMM binding for side={side}"
+        )
+    ae_root = context_manifest_payload.get("ae_gmm", {}).get("root")
+    default_state = Path(str(ae_root)) / side / "ae_gmm" / "ae_gmm_state.pkl"
+    default_manifest = Path(str(ae_root)) / side / "ae_gmm" / "side_stage_manifest.json"
+    state_path = Path(ae_gmm_state) if ae_gmm_state is not None else default_state
+    state_manifest_path = (
+        Path(ae_gmm_state_manifest)
+        if ae_gmm_state_manifest is not None
+        else default_manifest
+    )
+    if not state_path.is_file() or not state_manifest_path.is_file():
+        raise FileNotFoundError("side-local AE/GMM state and side manifest must exist")
+    expected_state_sha = ae_evidence.get("ae_state_sha256")
+    expected_manifest_sha = ae_evidence.get("ae_manifest_sha256")
+    if _sha256_file(state_path) != expected_state_sha:
+        raise ValueError(
+            "AE/GMM state hash does not match canonical context side binding"
+        )
+    if _sha256_file(state_manifest_path) != expected_manifest_sha:
+        raise ValueError(
+            "AE/GMM manifest hash does not match canonical context side binding"
+        )
+    side_manifest_payload = _read_json_object(
+        state_manifest_path, artifact_name="side-local AE/GMM manifest"
+    )
+    if side_manifest_payload.get("side") != side:
+        raise ValueError("AE/GMM state manifest side does not match requested side")
+    if side_manifest_payload.get("artifact", {}).get("sha256") != expected_state_sha:
+        raise ValueError("AE/GMM state manifest does not bind the selected state hash")
+    return {
+        "side": side,
+        "candidate": {
+            key: value for key, value in candidate_binding.items() if key != "manifest"
+        },
+        "context": {
+            key: value for key, value in context_binding.items() if key != "manifest"
+        },
+        "label_rows": int(len(label_keys)),
+        "candidate_rows_side": int(len(candidate_keys)),
+        "context_rows_side": int(len(context_keys)),
+        "exact_key_contract": "candidate_id + UTC timestamp + symbol + canonical side; label rows are exact subsets of candidate and context",
+        "ae_gmm": {
+            "state_path": str(state_path.resolve()),
+            "state_sha256": expected_state_sha,
+            "manifest_path": str(state_manifest_path.resolve()),
+            "manifest_sha256": expected_manifest_sha,
+            "side": side,
+        },
+    }
+
+
+def _side_local_geometry_provenance(
+    canonical_input_contract: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Promote immutable context/AE digests to simple geometry-facing fields."""
+
+    if canonical_input_contract is None:
+        return {
+            "canonical_context_sha256": None,
+            "side_ae_state_sha256": None,
+            "geometry_search_model_params": dict(GEOMETRY_SEARCH_MODEL_PARAMS),
+            "geometry_search_model_params_sha256": _sha256_json(
+                GEOMETRY_SEARCH_MODEL_PARAMS
+            ),
+        }
+    context = canonical_input_contract.get("context", {})
+    ae_gmm = canonical_input_contract.get("ae_gmm", {})
+    context_sha = context.get("sha256") if isinstance(context, Mapping) else None
+    ae_sha = ae_gmm.get("state_sha256") if isinstance(ae_gmm, Mapping) else None
+    if not isinstance(context_sha, str) or not isinstance(ae_sha, str):
+        raise ValueError("canonical side input contract is missing context/AE hashes")
+    return {
+        "canonical_context_sha256": context_sha,
+        "side_ae_state_sha256": ae_sha,
+        "geometry_search_model_params": dict(GEOMETRY_SEARCH_MODEL_PARAMS),
+        "geometry_search_model_params_sha256": _sha256_json(
+            GEOMETRY_SEARCH_MODEL_PARAMS
+        ),
+    }
+
+
+def _read_side_geometry_contract(
+    path: Path | None,
+    *,
+    side: str | None,
+    candidate_identity: str,
+    selected_features: Sequence[str],
+    selection_fingerprint: str,
+    geometry_prerequisite_path: Path,
+    canonical_input_contract: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Accept only a geometry artifact bound to this side and frozen selection.
+
+    Geometry is intentionally external to this runner.  This narrow adapter is
+    the stage-order seam: it makes model-HPO impossible to run against pooled or
+    stale geometry, without reimplementing the geometry sweep here.
+    """
+
+    if path is None:
+        return None
+    path = Path(path)
+    if path.name != "geometry_contract.json":
+        raise ValueError("model-HPO/final stage requires geometry_contract.json")
+    payload = _read_json_object(path, artifact_name="side-local geometry contract")
+    if side is None:
+        raise ValueError(
+            "geometry contracts are only valid for explicit side-local runs"
+        )
+    if payload.get("side") != side:
+        raise ValueError("geometry contract side does not match requested side")
+    if payload.get("candidate_identity_sha256") != candidate_identity:
+        raise ValueError(
+            "geometry contract candidate identity does not match this side"
+        )
+    if payload.get("selection_fingerprint") != selection_fingerprint:
+        raise ValueError("geometry contract selection fingerprint does not match")
+    geometry_features = payload.get("selected_features")
+    if list(geometry_features or []) != list(selected_features):
+        raise ValueError(
+            "geometry contract selected features do not match frozen selection"
+        )
+    if payload.get("status") not in {"geometry_complete", "selected"}:
+        raise ValueError(
+            "geometry contract is not a completed side-local geometry selection"
+        )
+    prerequisite_path = Path(geometry_prerequisite_path)
+    prerequisite = _read_json_object(
+        prerequisite_path, artifact_name="geometry prerequisite"
+    )
+    expected_prerequisite_sha = _sha256_file(prerequisite_path)
+    if payload.get("geometry_prerequisite_sha256") != expected_prerequisite_sha:
+        raise ValueError("geometry contract does not bind the exact selection handoff")
+    expected_provenance = _side_local_geometry_provenance(canonical_input_contract)
+    for key in (
+        "canonical_context_sha256",
+        "side_ae_state_sha256",
+        "geometry_search_model_params_sha256",
+    ):
+        if prerequisite.get(key) != expected_provenance[key]:
+            raise ValueError(f"geometry prerequisite {key} does not match this run")
+        if payload.get(key) != expected_provenance[key]:
+            raise ValueError(f"geometry contract {key} does not match this run")
+    if prerequisite.get("candidate_identity_sha256") != candidate_identity:
+        raise ValueError("geometry prerequisite candidate identity does not match")
+    if prerequisite.get("selection_fingerprint") != selection_fingerprint:
+        raise ValueError("geometry prerequisite selection fingerprint does not match")
+    if list(prerequisite.get("selected_features") or []) != list(selected_features):
+        raise ValueError("geometry prerequisite selected features do not match")
+    return {
+        "path": str(path.resolve()),
+        "sha256": _sha256_file(path),
+        "schema": payload.get("schema"),
+        "status": payload.get("status"),
+        "side": side,
+        "candidate_identity_sha256": candidate_identity,
+        "selection_fingerprint": selection_fingerprint,
+        "selected_features": list(selected_features),
+        "geometry_prerequisite_path": str(prerequisite_path.resolve()),
+        "geometry_prerequisite_sha256": expected_prerequisite_sha,
+        **expected_provenance,
+    }
+
+
 def _path_summaries(
     frame: pd.DataFrame, *, future_path_column: str | None
 ) -> tuple[pd.DataFrame, str]:
@@ -1496,7 +1924,11 @@ def _feature_selection_hpo_fingerprint(
     selection_od_wait: int,
     smoke: bool,
     hpo_sample_contract: Mapping[str, Any],
+    structural_hpo_contract: Mapping[str, Any],
     taxonomy_contract: Mapping[str, Any],
+    side: str | None,
+    canonical_input_contract: Mapping[str, Any] | None,
+    geometry_contract_path: Path | None,
 ) -> dict[str, Any]:
     target_contract = _target_geometry_contract(
         frame,
@@ -1518,6 +1950,19 @@ def _feature_selection_hpo_fingerprint(
         else None
     )
     inputs = {
+        "side_local_training": {
+            "side": side,
+            "canonical_input_contract": (
+                dict(canonical_input_contract)
+                if canonical_input_contract is not None
+                else None
+            ),
+            "geometry_contract_sha256": (
+                _sha256_file(geometry_contract_path)
+                if geometry_contract_path is not None
+                else None
+            ),
+        },
         "candidate_identity_sha256": candidate_identity_sha256(
             frame,
             columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column),
@@ -1548,6 +1993,11 @@ def _feature_selection_hpo_fingerprint(
             "selection_proxy_od_wait": int(selection_od_wait),
             "hpo_no_improvement_patience_trials": int(hpo_no_improvement_trials),
             "hpo_sampling_contract": dict(hpo_sample_contract),
+            # This is deliberately HPO-only: balance-arm selection must
+            # invalidate a reusable HPO result, but must not force the
+            # already-leakage-safe feature-selection stage to rerun.
+            "hpo_structural_contract": dict(structural_hpo_contract),
+            "hpo_structural_contract_sha256": _sha256_json(structural_hpo_contract),
             "smoke": bool(smoke),
         },
     }
@@ -1569,8 +2019,74 @@ def _selection_only_fingerprint(inputs: Mapping[str, Any]) -> str:
     selection_inputs = {
         key: value for key, value in inputs.items() if key != "selection_hpo_settings"
     }
+    # Geometry is deliberately selected after feature selection.  It belongs to
+    # the downstream model-HPO fingerprint, never the reusable selector state.
+    side_local = dict(selection_inputs.get("side_local_training", {}))
+    side_local.pop("geometry_contract_sha256", None)
+    selection_inputs["side_local_training"] = side_local
     selection_inputs["selection_settings"] = selection_settings
     return _sha256_json(selection_inputs)
+
+
+def _class_balance_artifact_provenance(
+    *,
+    structural_hpo_contract: Mapping[str, Any],
+    mini_sweep: archetype.CatBoostClassBalanceMiniSweepResult,
+    economic_report: Mapping[str, Any],
+    economic_config: EconomicOOFConfig,
+    structural_fingerprint: str,
+    feature_fingerprint: str,
+    geometry_fingerprint: str,
+    mini_sweep_report_path: Path,
+    economic_report_path: Path,
+    economic_evidence_sha256: str,
+) -> dict[str, Any]:
+    """Bind economic arm selection to its matched, full-population OOF sweep."""
+
+    selection = economic_report.get("selection_provenance")
+    if not isinstance(selection, Mapping):
+        raise ValueError("economic balance scorer did not return selection provenance")
+    selected_arm = selection.get("arm")
+    if not isinstance(selected_arm, str) or not selected_arm:
+        raise ValueError("economic balance scorer did not select a declared arm")
+    selected = {arm.arm: arm for arm in mini_sweep.arms}.get(selected_arm)
+    if selected is None or selected.oof is None:
+        raise ValueError(
+            "economic balance scorer selected an arm without full OOF output"
+        )
+    guard = dict(selected.guard)
+    return {
+        "structural_hpo_contract": dict(structural_hpo_contract),
+        "structural_hpo_contract_sha256": _sha256_json(structural_hpo_contract),
+        "structural_fingerprint": structural_fingerprint,
+        "selected_feature_fingerprint": feature_fingerprint,
+        "geometry_fingerprint": geometry_fingerprint,
+        "mini_sweep_contract": dict(mini_sweep.contract),
+        "mini_sweep_contract_sha256": _sha256_json(mini_sweep.contract),
+        "mini_sweep_report": mini_sweep_report_path.name,
+        "mini_sweep_report_sha256": _sha256_file(mini_sweep_report_path),
+        "economic_oof_report": economic_report_path.name,
+        "economic_oof_report_sha256": economic_evidence_sha256,
+        "economic_oof_report_file_sha256": _sha256_file(economic_report_path),
+        "economic_oof_config": dict(economic_config.__dict__),
+        "economic_oof_config_sha256": _sha256_json(economic_config.__dict__),
+        "selected_arm": selected_arm
+        if bool(selection.get("promotion_eligible"))
+        else None,
+        "provisional_arm": None
+        if bool(selection.get("promotion_eligible"))
+        else selected_arm,
+        "promotion_eligible": bool(selection.get("promotion_eligible", False)),
+        "selection_status": selection.get("selection_status"),
+        "selection_provenance": dict(selection),
+        "selected_arm_oof_guard": guard,
+        "selected_arm_oof_guard_sha256": _sha256_json(guard),
+        "selected_arm_fold_balance_provenance": selected.fold_balance_provenance,
+        "selected_arm_fold_balance_provenance_sha256": _sha256_json(
+            selected.fold_balance_provenance
+        ),
+        "final_refit_used_for_selection": False,
+    }
 
 
 def _read_feature_selection_hpo_contract(path: Path) -> dict[str, Any]:
@@ -2001,7 +2517,16 @@ def run_pipeline(
     output_dir: Path,
     *,
     discovery_end: str | pd.Timestamp,
+    side: str | None = None,
     feature_dir: Path | None = None,
+    canonical_candidate_path: Path | None = None,
+    canonical_candidate_manifest: Path | None = None,
+    canonical_context_path: Path | None = None,
+    canonical_context_manifest: Path | None = None,
+    ae_gmm_state: Path | None = None,
+    ae_gmm_state_manifest: Path | None = None,
+    geometry_contract: Path | None = None,
+    stage: str = "model_hpo_final",
     frozen_ae_gmm_sidecar: Path | None = None,
     frozen_ae_gmm_manifest: Path | None = None,
     timestamp_column: str = DEFAULT_TIMESTAMP_COLUMN,
@@ -2042,6 +2567,8 @@ def run_pipeline(
     resource_guard: TrainingResourceGuard | None = None,
 ) -> dict[str, Any]:
     """Run deterministic-label feature selection, HPO, OOF, and final fit."""
+    if stage not in {"selection_only", "model_hpo_final"}:
+        raise ValueError("stage must be 'selection_only' or 'model_hpo_final'")
     if hpo_trials < 1:
         raise ValueError("hpo_trials must be at least one; HPO is a required stage")
     if selection_rows < 100:
@@ -2076,6 +2603,7 @@ def run_pipeline(
         selection_checkpoint_path.name,
         mda_progress_path.name,
         hpo_progress_path.name,
+        "geometry_prerequisite.json",
     }
     guard_telemetry_path = getattr(resource_guard, "telemetry_path", None)
     if (
@@ -2094,6 +2622,21 @@ def run_pipeline(
         )
     if output_dir.exists() and any(output_dir.iterdir()):
         existing = {path.name for path in output_dir.iterdir()}
+        if "run_manifest.json" in existing:
+            try:
+                prior_manifest = _read_json_object(
+                    output_dir / "run_manifest.json", artifact_name="run manifest"
+                )
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise ValueError("existing run manifest is unreadable") from exc
+            if (
+                prior_manifest.get("status")
+                != "stopped_after_side_local_feature_selection"
+            ):
+                raise FileExistsError(
+                    f"refusing to overwrite completed or incompatible output directory: {output_dir}"
+                )
+            resumable_names.update({"run_manifest.json", "geometry_contract.json"})
         if not existing.issubset(resumable_names):
             raise FileExistsError(
                 f"refusing to overwrite non-empty output directory: {output_dir}"
@@ -2136,6 +2679,8 @@ def run_pipeline(
     )
     raw, source = _load_frame(input_data)
     canonical_store_mode = feature_dir is not None
+    canonical_side: str | None = None
+    canonical_input_contract: dict[str, Any] | None = None
     if frozen_ae_gmm_manifest is not None and frozen_ae_gmm_sidecar is None:
         raise ValueError("--frozen-ae-gmm-manifest requires --frozen-ae-gmm-sidecar")
     if frozen_ae_gmm_sidecar is not None and not canonical_store_mode:
@@ -2145,12 +2690,89 @@ def run_pipeline(
             "parquet input requires --feature-dir; only in-memory DataFrame mode "
             "may supply pre-entry features directly"
         )
+    if canonical_store_mode and "path_arch_complete_24h" not in raw:
+        raise ValueError(
+            "canonical path-label training requires explicit path_arch_complete_24h; "
+            "incomplete paths must never enter selection, HPO, or OOF"
+        )
+    # A canonical path-label file may contain both sides.  Normalise and route
+    # it *before* every cap, selection sample, HPO sample, and OOF split.
     frame = _normalise_input(
         raw,
         timestamp_column=timestamp_column,
         label_end_column=label_end_column,
-        max_rows=effective_max_rows,
+        max_rows=0,
     )
+    if canonical_store_mode:
+        if side is None:
+            raise ValueError(
+                "canonical --feature-dir mode requires explicit --side long|short"
+            )
+        canonical_side = _normalise_training_side(side)
+        canonical_side_column = next(
+            (name for name in IDENTITY_SIDE_COLUMNS if name in frame), None
+        )
+        if canonical_side_column is None:
+            raise ValueError("canonical path labels require an explicit side column")
+        normalized_labels_side = _canonical_side_series(
+            frame[canonical_side_column], source="path labels"
+        )
+        frame = frame.loc[normalized_labels_side.eq(canonical_side)].copy()
+        if frame.empty:
+            raise ValueError(
+                f"canonical path labels have no rows for side={canonical_side}"
+            )
+        if effective_max_rows > 0:
+            frame = frame.iloc[: int(effective_max_rows)].reset_index(drop=True)
+        required_bindings = {
+            "canonical_candidate_path": canonical_candidate_path,
+            "canonical_candidate_manifest": canonical_candidate_manifest,
+            "canonical_context_path": canonical_context_path,
+            "canonical_context_manifest": canonical_context_manifest,
+        }
+        missing_bindings = [
+            name for name, value in required_bindings.items() if value is None
+        ]
+        if missing_bindings:
+            raise ValueError(
+                "canonical side-local CatBoost requires exact candidate/context parquet "
+                "inputs and manifests: " + ", ".join(missing_bindings)
+            )
+        canonical_input_contract = _validate_side_local_canonical_inputs(
+            frame,
+            side=canonical_side,
+            candidate_path=Path(canonical_candidate_path),
+            candidate_manifest=Path(canonical_candidate_manifest),
+            context_path=Path(canonical_context_path),
+            context_manifest=Path(canonical_context_manifest),
+            ae_gmm_state=ae_gmm_state,
+            ae_gmm_state_manifest=ae_gmm_state_manifest,
+        )
+        if stage == "model_hpo_final" and geometry_contract is None:
+            raise ValueError(
+                "canonical model-HPO/final stage requires a side-local geometry contract "
+                "between feature selection and HPO"
+            )
+    elif side is not None:
+        # Tests and legacy in-memory callers can opt into side filtering, but a
+        # canonical parquet run never reaches this compatibility branch.
+        canonical_side = _normalise_training_side(side)
+        side_column = next(
+            (name for name in IDENTITY_SIDE_COLUMNS if name in frame), None
+        )
+        if side_column is None:
+            raise ValueError("side was requested but input has no side column")
+        frame = frame.loc[
+            _canonical_side_series(frame[side_column], source="input").eq(
+                canonical_side
+            )
+        ].copy()
+        if frame.empty:
+            raise ValueError(f"input has no rows for side={canonical_side}")
+        if effective_max_rows > 0:
+            frame = frame.iloc[: int(effective_max_rows)].reset_index(drop=True)
+    elif effective_max_rows > 0:
+        frame = frame.iloc[: int(effective_max_rows)].reset_index(drop=True)
     discovery_cutoff = _utc_timestamp(discovery_end)
     discovery_mask = frame[label_end_column] < discovery_cutoff
 
@@ -2193,6 +2815,14 @@ def run_pipeline(
         raise ValueError(f"unknown deterministic path shapes: {invalid_labels[:8]}")
     if labels.nunique() > len(expected_classes):
         raise ValueError("CatBoost path target exceeds its declared taxonomy contract")
+    class_support_gate: dict[str, Any] | None = None
+    if canonical_store_mode and not smoke:
+        assert canonical_side is not None
+        class_support_gate = _validate_merged_class_support_gate(
+            labels,
+            frame[timestamp_column],
+            side=canonical_side,
+        )
     recomputed = summaries.apply(deterministic_path_archetype, axis=1).astype("string")
     effective_recomputed = merge_fast_realization_winner(recomputed).astype("string")
     mismatch = effective_recomputed.isna() | effective_recomputed.ne(labels)
@@ -2373,6 +3003,7 @@ def run_pipeline(
     hpo_config = archetype.PathArchetypeConfig(
         **{**config.__dict__, "oof_folds": effective_hpo_folds}
     )
+    structural_hpo_contract = archetype.catboost_structural_hpo_contract(hpo_config)
     hpo_positions, hpo_sampling_contract = _stratified_hpo_sample(
         frame,
         labels,
@@ -2413,7 +3044,11 @@ def run_pipeline(
         selection_od_wait=int(selection_od_wait),
         smoke=smoke,
         hpo_sample_contract=hpo_sampling_contract,
+        structural_hpo_contract=structural_hpo_contract,
         taxonomy_contract=taxonomy_contract,
+        side=canonical_side,
+        canonical_input_contract=canonical_input_contract,
+        geometry_contract_path=geometry_contract,
     )
     selection_fingerprint = str(selection_hpo_contract["selection_fingerprint"])
     resumed_selection_checkpoint = (
@@ -2471,6 +3106,7 @@ def run_pipeline(
         config=config,
     )
     selector: archetype.FastSelectorResult | None = None
+    bound_geometry_contract: dict[str, Any] | None = None
     pre_permutation_oof: archetype.OOFPathArchetypeResult | None = None
     selection_features: pd.DataFrame | None = None
     selection_labels: pd.Series | None = None
@@ -2798,7 +3434,97 @@ def run_pipeline(
                     ),
                 },
             )
+        # Feature selection is a durable stage in its own right.  Geometry is
+        # intentionally external and must be selected from this exact side-only
+        # feature contract before model HPO is allowed to begin.
+        _write_json(
+            selection_checkpoint_path,
+            {
+                "schema": RUNNER_SCHEMA,
+                "status": "feature_selection_complete",
+                "fingerprint": selection_fingerprint,
+                "selection_fingerprint": selection_fingerprint,
+                "side": canonical_side,
+                "model_side_scope": "per_side" if canonical_side else None,
+                "canonical_input_contract": canonical_input_contract,
+                "class_support_gate": class_support_gate,
+                **_side_local_geometry_provenance(canonical_input_contract),
+                "selected_features": list(selected),
+                "selected_feature_count": int(len(selected)),
+                "selection": selector_manifest,
+                "permutation": permutation_records,
+                "permutation_stage_metrics": permutation_stage_metrics,
+                "selection_proxy_params": {
+                    "iterations": int(selection_iterations),
+                    "od_wait": int(selection_od_wait),
+                },
+                "permutation_acceleration_contract": (
+                    archetype.staged_permutation_acceleration_contract(config)
+                ),
+                "reuse_provenance": reuse_provenance,
+                "catboost_resource_contract": archetype.catboost_resource_contract(
+                    config
+                ),
+            },
+        )
+        side_candidate_identity = candidate_identity_sha256(
+            frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+        )
+        geometry_provenance = _side_local_geometry_provenance(canonical_input_contract)
+        geometry_prerequisite = {
+            "schema": "catboost_path_archetype_geometry_prerequisite_v1",
+            "status": "selection_complete_pending_geometry",
+            "side": canonical_side,
+            "model_side_scope": "per_side",
+            "candidate_identity_sha256": side_candidate_identity,
+            "selection_fingerprint": selection_fingerprint,
+            "selected_features": list(selected),
+            "selected_features_sha256": _sha256_json(list(selected)),
+            "feature_selection_checkpoint": str(selection_checkpoint_path.resolve()),
+            "feature_selection_checkpoint_sha256": _sha256_file(
+                selection_checkpoint_path
+            ),
+            "canonical_input_contract": canonical_input_contract,
+            "class_support_gate": class_support_gate,
+            "canonical_input_contract_sha256": _sha256_json(canonical_input_contract),
+            "required_next_stage": "side_local_geometry_sweep",
+            **geometry_provenance,
+        }
+        _write_json(output_dir / "geometry_prerequisite.json", geometry_prerequisite)
+        if stage == "selection_only":
+            checkpoint_manifest = {
+                "schema": RUNNER_SCHEMA,
+                "status": "stopped_after_side_local_feature_selection",
+                "stage": "selection_only",
+                "side": canonical_side,
+                "model_side_scope": "per_side" if canonical_side else None,
+                "rows": int(len(frame)),
+                "candidate_identity_sha256": side_candidate_identity,
+                "canonical_input_contract": canonical_input_contract,
+                "class_support_gate": class_support_gate,
+                "selected_features": list(selected),
+                "selected_features_sha256": _sha256_json(list(selected)),
+                "feature_selection_checkpoint": "feature_selection_checkpoint.json",
+                "geometry_prerequisite": "geometry_prerequisite.json",
+                "feature_selection_fingerprint": selection_fingerprint,
+                "geometry_prerequisite_sha256": _sha256_file(
+                    output_dir / "geometry_prerequisite.json"
+                ),
+                **geometry_provenance,
+                "full_oof_and_final_refit_complete": False,
+            }
+            _write_json(output_dir / "run_manifest.json", checkpoint_manifest)
+            return checkpoint_manifest
         if canonical_store_mode:
+            bound_geometry_contract = _read_side_geometry_contract(
+                geometry_contract,
+                side=canonical_side,
+                candidate_identity=side_candidate_identity,
+                selected_features=selected,
+                selection_fingerprint=selection_fingerprint,
+                geometry_prerequisite_path=output_dir / "geometry_prerequisite.json",
+                canonical_input_contract=canonical_input_contract,
+            )
             hpo_features, _ = _load_model_feature_matrix(
                 hpo_frame,
                 selected,
@@ -2825,6 +3551,7 @@ def run_pipeline(
             search_od_wait=int(hpo_od_wait),
             no_improvement_trials=int(hpo_no_improvement_trials),
             progress_path=hpo_progress_path,
+            structural_only_hpo=True,
         )
         resource_guard.checkpoint("hpo_complete")
         params = dict(hpo.best_params)
@@ -2840,11 +3567,37 @@ def run_pipeline(
         hpo_report = {
             **hpo.report(),
             "sampling_contract": hpo_sampling_contract,
+            "geometry_contract": bound_geometry_contract,
         }
 
+    if canonical_store_mode and bound_geometry_contract is None:
+        bound_geometry_contract = _read_side_geometry_contract(
+            geometry_contract,
+            side=canonical_side,
+            candidate_identity=candidate_identity_sha256(
+                frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+            ),
+            selected_features=selected,
+            selection_fingerprint=selection_fingerprint,
+            geometry_prerequisite_path=output_dir / "geometry_prerequisite.json",
+            canonical_input_contract=canonical_input_contract,
+        )
+    class_balance_provenance: dict[str, Any] = {
+        "structural_hpo_contract": dict(structural_hpo_contract),
+        "structural_hpo_contract_sha256": _sha256_json(structural_hpo_contract),
+        "status": "structural_hpo_complete_pending_full_population_balance_sweep",
+        "promotion_eligible": False,
+        "final_refit_used_for_selection": False,
+    }
     completed_selection_hpo_contract = {
         **selection_hpo_contract,
         "status": "feature_selection_hpo_complete",
+        "side": canonical_side,
+        "model_side_scope": "per_side" if canonical_side else None,
+        "candidate_identity_sha256": candidate_identity_sha256(
+            frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+        ),
+        **_side_local_geometry_provenance(canonical_input_contract),
         "selected_features": list(selected),
         "effective_model_params": params,
         "selection": selector_manifest,
@@ -2858,9 +3611,11 @@ def run_pipeline(
             archetype.staged_permutation_acceleration_contract(config)
         ),
         "hpo": hpo_report,
+        "class_balance": class_balance_provenance,
         "hpo_sampling_contract": hpo_sampling_contract,
         "hpo_study_path": hpo_study_path,
         "hpo_progress_path": hpo_progress_path,
+        "geometry_contract": bound_geometry_contract,
         "reuse_provenance": reuse_provenance,
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
     }
@@ -2896,6 +3651,7 @@ def run_pipeline(
             "selected_features": list(selected),
             "effective_model_params": params,
             "hpo": hpo_report,
+            "class_balance": class_balance_provenance,
             "hpo_sampling_contract": hpo_sampling_contract,
             "selection_proxy_params": {
                 "iterations": int(selection_iterations),
@@ -2914,7 +3670,7 @@ def run_pipeline(
     if stop_after_hpo:
         checkpoint_manifest = {
             "schema": RUNNER_SCHEMA,
-            "status": "stopped_after_feature_selection_and_hpo",
+            "status": "stopped_after_structural_hpo_pending_balance_sweep",
             "future_training_taxonomy": taxonomy_contract,
             "source": source,
             "rows": int(len(frame)),
@@ -2932,6 +3688,8 @@ def run_pipeline(
             "feature_selection_fingerprint": selection_fingerprint,
             "feature_selection_hpo_reuse": reuse_provenance,
             "hpo_sampling_contract": hpo_sampling_contract,
+            "class_balance": class_balance_provenance,
+            "next_required_stage": "full_population_fixed_parameter_balance_mini_sweep",
             "permutation_stage_metrics": permutation_stage_metrics,
             "permutation_acceleration_contract": (
                 archetype.staged_permutation_acceleration_contract(config)
@@ -2956,19 +3714,195 @@ def run_pipeline(
         static_store_manifest["full_selected_feature_read"] = full_availability
     else:
         features = frame.loc[:, selected].copy()
-    resource_guard.checkpoint("final_oof")
-    oof = archetype.fit_purged_chronological_oof_catboost(
+    if "candidate_id" not in frame:
+        raise ValueError(
+            "class-balance economic OOF sweep requires persisted candidate_id row IDs"
+        )
+    row_ids = frame["candidate_id"].astype("string")
+    if row_ids.isna().any() or row_ids.duplicated().any():
+        raise ValueError(
+            "class-balance economic OOF sweep requires unique non-null candidate_id row IDs"
+        )
+    observed_sides = frame[side_column].astype("string").str.strip().str.lower()
+    if observed_sides.isna().any() or observed_sides.nunique() != 1:
+        raise ValueError(
+            "class-balance economic OOF sweep requires one exact training side"
+        )
+    if canonical_side is not None and observed_sides.iloc[0] != canonical_side:
+        raise ValueError(
+            "class-balance economic OOF sweep side no longer matches the canonical side"
+        )
+    structural_fingerprint = _sha256_json(
+        {
+            "structural_hpo_contract": structural_hpo_contract,
+            "frozen_structural_params": params,
+        }
+    )
+    feature_fingerprint = _sha256_json(
+        {
+            "selected_features": list(selected),
+            "selection_fingerprint": selection_fingerprint,
+        }
+    )
+    geometry_fingerprint = _sha256_json(bound_geometry_contract)
+    resource_guard.checkpoint("full_population_balance_mini_sweep")
+    mini_sweep = archetype.sweep_purged_catboost_class_balance_arms(
         features.loc[:, selected],
         labels,
         frame[timestamp_column],
+        structural_params=params,
         label_end=frame[label_end_column],
         config=config,
-        params=params,
-        fold_callback=lambda fold_index, _probabilities, _fold_ids: (
-            resource_guard.checkpoint(f"final_oof_fold:{fold_index}")
+        arm_callback=lambda arm: resource_guard.checkpoint(
+            f"full_population_balance_mini_sweep:{arm.arm}"
+        ),
+        arm_fold_callback=lambda arm, fold_index, _probabilities, _fold_ids: (
+            resource_guard.checkpoint(
+                f"full_population_balance_mini_sweep:{arm}:fold={fold_index}"
+            )
         ),
     )
+    mini_sweep_report_path = output_dir / "class_balance_mini_sweep_report.json"
+    # Persist the complete compact arm evidence before fail-closing on a
+    # missing arm, so an interrupted/unsafe sweep remains auditable.
+    _write_json(mini_sweep_report_path, mini_sweep.report())
+    mini_sweep_report_sha256 = _sha256_file(mini_sweep_report_path)
+    sweep_arms: dict[str, BalanceArmOOF] = {}
+    for arm in mini_sweep.arms:
+        if arm.oof is None:
+            raise RuntimeError(
+                "class-balance mini-sweep arm has no OOF output for economic scoring: "
+                + arm.arm
+            )
+        sweep_arms[arm.arm] = BalanceArmOOF(
+            probabilities=arm.oof.probabilities,
+            fold_ids=arm.oof.fold_ids,
+            folds=arm.oof.folds,
+            classes=arm.oof.classes,
+            structural_fingerprint=structural_fingerprint,
+            feature_fingerprint=feature_fingerprint,
+            geometry_fingerprint=geometry_fingerprint,
+            oof_guard=arm.guard,
+            row_ids=row_ids.to_numpy(),
+        )
+    encoded_final_target = archetype._categorical_target(
+        labels, features.index, config=config
+    )
+    frozen_class_order = tuple(map(str, encoded_final_target.cat.categories))
+    if tuple(map(str, sweep_arms["uniform"].classes)) != frozen_class_order:
+        raise ValueError(
+            "class-balance mini-sweep OOF class order does not match the frozen target order"
+        )
+    economic_config = EconomicOOFConfig(
+        timestamp_col=timestamp_column,
+        side_col=side_column,
+        label_end_col=label_end_column,
+        identity_col="candidate_id",
+        embargo=config.embargo,
+    )
+    economic_report = score_class_balance_oof_economics(
+        frame,
+        encoded_final_target.cat.codes.to_numpy(),
+        sweep_arms,
+        config=economic_config,
+    )
+    selection_provenance = economic_report.get("selection_provenance")
+    if not isinstance(selection_provenance, Mapping):
+        raise ValueError("economic class-balance scorer returned no arm selection")
+    selection_provenance = dict(selection_provenance)
+    economic_evidence_sha256 = _sha256_json(
+        {
+            "schema": economic_report.get("schema"),
+            "contract": economic_report.get("contract"),
+            "per_arm": economic_report.get("per_arm"),
+        }
+    )
+    economic_contract = economic_report.get("contract")
+    scorer_config_digest = (
+        economic_contract.get("selector_config_sha256")
+        if isinstance(economic_contract, Mapping)
+        else None
+    )
+    if not isinstance(scorer_config_digest, str) or not scorer_config_digest:
+        scorer_config_digest = _sha256_json(economic_config.__dict__)
+    selection_provenance.update(
+        {
+            "structural_fingerprint": structural_fingerprint,
+            "feature_fingerprint": feature_fingerprint,
+            "geometry_fingerprint": geometry_fingerprint,
+            "mini_sweep_contract_sha256": _sha256_json(mini_sweep.contract),
+            "mini_sweep_report_sha256": mini_sweep_report_sha256,
+            "economic_oof_config_sha256": scorer_config_digest,
+            "economic_oof_report_sha256": economic_evidence_sha256,
+            "candidate_order_sha256": _sha256_json(row_ids.astype(str).tolist()),
+        }
+    )
+    if smoke:
+        # A smoke sweep checks plumbing only; it cannot promote a production
+        # balance arm even when the tiny fixture happens to cover all gates.
+        selection_provenance.update(
+            {
+                "arm": archetype.CATBOOST_CLASS_BALANCE_ARM_UNIFORM,
+                "promotion_eligible": False,
+                "mandatory_initial_coverage_complete": False,
+                "selection_status": "smoke_nonpromotable_uniform_default",
+                "promotion_reason": "explicit_smoke_only_nonpromotable_override",
+            }
+        )
+    economic_report = {**economic_report, "selection_provenance": selection_provenance}
+    selected_arm = selection_provenance.get("arm")
+    if not isinstance(selected_arm, str) or selected_arm not in sweep_arms:
+        raise ValueError("economic class-balance scorer selected an unavailable arm")
+    economic_report_path = output_dir / "class_balance_economic_oof_report.json"
+    _write_json(economic_report_path, economic_report)
+    class_balance_provenance = _class_balance_artifact_provenance(
+        structural_hpo_contract=structural_hpo_contract,
+        mini_sweep=mini_sweep,
+        economic_report=economic_report,
+        economic_config=economic_config,
+        structural_fingerprint=structural_fingerprint,
+        feature_fingerprint=feature_fingerprint,
+        geometry_fingerprint=geometry_fingerprint,
+        mini_sweep_report_path=mini_sweep_report_path,
+        economic_report_path=economic_report_path,
+        economic_evidence_sha256=economic_evidence_sha256,
+    )
+    params = {
+        **dict(mini_sweep.structural_params),
+        "class_balance_arm": selected_arm,
+        "class_balance_selection_provenance": selection_provenance,
+    }
+    # Recover the original OOF object (rather than the economics adapter) as
+    # the canonical classifier OOF artifact.
+    oof = {arm.arm: arm.oof for arm in mini_sweep.arms}[selected_arm]
+    assert oof is not None
     resource_guard.checkpoint("final_refit")
+    if "class_balance_selection_provenance" in params and (
+        not smoke or bool(selection_provenance.get("promotion_eligible", False))
+    ):
+        # The arm was selected solely from purged OOF rows above.  Derive its
+        # bounded weights again from the actual full final-label population;
+        # no HPO-sample weight vector may leak into the final fit.
+        params = archetype.rematerialize_final_class_balance_params(
+            params,
+            labels,
+            config=config,
+            allow_nonpromotable_selection=bool(smoke),
+        )
+        final_balance = params.get("class_balance_provenance")
+        if not isinstance(final_balance, Mapping):
+            raise ValueError("final class-balance rematerialisation lacks provenance")
+        class_balance_provenance["final_refit_weight_provenance"] = dict(final_balance)
+        class_balance_provenance["final_refit_weight_provenance_sha256"] = _sha256_json(
+            final_balance
+        )
+        class_balance_provenance["final_refit_weights_sha256"] = _sha256_json(
+            params.get("class_balance_final_weights")
+        )
+    elif smoke:
+        class_balance_provenance["final_refit_weight_materialisation"] = (
+            "skipped_smoke_nonpromotable_uniform"
+        )
     classifier = _fit_final_classifier(
         features, labels, selected, config=config, params=params
     )
@@ -2982,11 +3916,14 @@ def run_pipeline(
         "training_phase_order": [
             "fast_feature_selection",
             "permutation_feature_selection",
-            "hpo_on_frozen_selected_features",
-            "final_oof_and_refit",
+            "side_local_geometry_selected_between_selection_and_hpo",
+            "structural_hpo_on_frozen_selected_features",
+            "four_arm_full_population_oof_economic_balance_sweep",
+            "final_refit_from_economic_oof_selected_arm",
         ],
         "hpo_feature_count": int(len(selected)),
         "future_training_taxonomy": taxonomy_contract,
+        "class_support_gate": class_support_gate,
         "effective_model_params": params,
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
         "selector_backend": selector.proxy_backend
@@ -2997,6 +3934,8 @@ def run_pipeline(
         ),
         "oof_diagnostics": oof.diagnostics,
         "hpo": hpo_report,
+        "class_balance": class_balance_provenance,
+        "geometry_contract": bound_geometry_contract,
         "hpo_sampling_contract": hpo_sampling_contract,
         "permutation_stages": permutation_records,
         "permutation_stage_metrics": permutation_stage_metrics,
@@ -3098,6 +4037,7 @@ def run_pipeline(
             "latest_resolved_training_label": "label_resolution_available_at",
             "prediction_available_at": "available_at",
         },
+        "class_balance": class_balance_provenance,
     }
     role_manifest["prediction_role_manifest_sha256"] = _signed_manifest_hash(
         role_manifest
@@ -3164,6 +4104,7 @@ def run_pipeline(
             "hpo_features": list(selected),
             "no_improvement_patience_trials": int(hpo_no_improvement_trials),
             "hpo": hpo_report,
+            "class_balance": class_balance_provenance,
             "selection_proxy_params": {
                 "iterations": int(selection_iterations),
                 "od_wait": int(selection_od_wait),
@@ -3188,6 +4129,7 @@ def run_pipeline(
                 else None
             ),
             "oof_diagnostics": oof.diagnostics,
+            "class_balance": class_balance_provenance,
             "class_names": list(classifier.class_names),
             "class_semantics": "merged seven-class future path taxonomy",
             "oof_rows": int(valid_oof.sum()),
@@ -3198,6 +4140,14 @@ def run_pipeline(
             "feature_selection_hpo_fingerprint": selection_hpo_contract["fingerprint"],
             "feature_selection_fingerprint": selection_fingerprint,
             "feature_selection_hpo_reuse": reuse_provenance,
+            "training_phase_order": [
+                "fast_feature_selection",
+                "permutation_feature_selection",
+                "side_local_geometry_selected_between_selection_and_hpo",
+                "structural_hpo_on_frozen_selected_features",
+                "four_arm_full_population_oof_economic_balance_sweep",
+                "final_refit_from_economic_oof_selected_arm",
+            ],
             "hpo_sampling_contract": hpo_sampling_contract,
             "permutation_stage_metrics": permutation_stage_metrics,
             "permutation_acceleration_contract": (
@@ -3207,6 +4157,8 @@ def run_pipeline(
     )
     manifest = {
         "schema": RUNNER_SCHEMA,
+        "stage": "model_hpo_final",
+        "side": canonical_side,
         "source": source,
         "rows": int(len(frame)),
         "candidate_identity_sha256": candidate_identity_sha256(
@@ -3217,6 +4169,9 @@ def run_pipeline(
             "exact canonical OOF base top-fraction population; identity hash "
             "must match auxiliary and residual-alpha handoffs"
         ),
+        "canonical_input_contract": canonical_input_contract,
+        "geometry_contract": bound_geometry_contract,
+        "class_support_gate": class_support_gate,
         "discovery_rows": int(discovery_mask.sum()),
         "discovery_end_exclusive": discovery_cutoff,
         "timestamp_column": timestamp_column,
@@ -3256,8 +4211,10 @@ def run_pipeline(
         "training_phase_order": [
             "fast_feature_selection",
             "permutation_feature_selection",
-            "hpo_on_frozen_selected_features",
-            "final_oof_and_refit",
+            "side_local_geometry_selected_between_selection_and_hpo",
+            "structural_hpo_on_frozen_selected_features",
+            "four_arm_full_population_oof_economic_balance_sweep",
+            "final_refit_from_economic_oof_selected_arm",
         ],
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
         "training_resource_guard": _resource_guard_contract(resource_guard),
@@ -3280,6 +4237,8 @@ def run_pipeline(
             "oof_prediction_role_manifest": "oof_probabilities.role_manifest.json",
             "feature_selection": "feature_selection_manifest.json",
             "hpo": "hpo_manifest.json",
+            "class_balance_mini_sweep": "class_balance_mini_sweep_report.json",
+            "class_balance_economic_oof": "class_balance_economic_oof_report.json",
             "mda_progress": MDA_PROGRESS_FILENAME,
             "hpo_progress": hpo_progress_path.name,
             "hpo_study": hpo_study_path.name,
@@ -3304,11 +4263,60 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--side", required=True, choices=("long", "short"))
     parser.add_argument(
         "--feature-dir",
         required=True,
         type=Path,
         help="Timestamped shared static feature store used for all classifier inputs",
+    )
+    parser.add_argument(
+        "--canonical-candidate-path",
+        required=True,
+        type=Path,
+        help="Exact canonical top-40 candidate parquet; validated by key and SHA-256.",
+    )
+    parser.add_argument(
+        "--canonical-candidate-manifest",
+        required=True,
+        type=Path,
+        help="Manifest that advertises the candidate parquet SHA-256.",
+    )
+    parser.add_argument(
+        "--canonical-context-path",
+        required=True,
+        type=Path,
+        help="Exact canonical frozen side-context parquet; validated by key and SHA-256.",
+    )
+    parser.add_argument(
+        "--canonical-context-manifest",
+        required=True,
+        type=Path,
+        help="Manifest that advertises the context parquet SHA-256 and side AE/GMM binding.",
+    )
+    parser.add_argument(
+        "--ae-gmm-state",
+        type=Path,
+        default=None,
+        help="Optional explicit side-local AE/GMM state; defaults to the context manifest binding.",
+    )
+    parser.add_argument(
+        "--ae-gmm-state-manifest",
+        type=Path,
+        default=None,
+        help="Optional explicit side-local AE/GMM manifest; defaults to the context manifest binding.",
+    )
+    parser.add_argument(
+        "--geometry-contract",
+        type=Path,
+        default=None,
+        help="Completed side-local geometry contract required for model-HPO/final OOF.",
+    )
+    parser.add_argument(
+        "--stage",
+        choices=("selection_only", "model_hpo_final"),
+        default="model_hpo_final",
+        help="Run only frozen side-local feature selection, or resume after geometry for HPO/OOF/final refit.",
     )
     parser.add_argument(
         "--frozen-ae-gmm-sidecar",
@@ -3459,7 +4467,16 @@ def main() -> None:
         args.input,
         args.output_dir,
         discovery_end=args.discovery_end,
+        side=args.side,
         feature_dir=args.feature_dir,
+        canonical_candidate_path=args.canonical_candidate_path,
+        canonical_candidate_manifest=args.canonical_candidate_manifest,
+        canonical_context_path=args.canonical_context_path,
+        canonical_context_manifest=args.canonical_context_manifest,
+        ae_gmm_state=args.ae_gmm_state,
+        ae_gmm_state_manifest=args.ae_gmm_state_manifest,
+        geometry_contract=args.geometry_contract,
+        stage=args.stage,
         frozen_ae_gmm_sidecar=args.frozen_ae_gmm_sidecar,
         frozen_ae_gmm_manifest=args.frozen_ae_gmm_manifest,
         timestamp_column=args.timestamp_column,

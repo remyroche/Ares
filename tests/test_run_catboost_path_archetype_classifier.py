@@ -155,6 +155,63 @@ def _config() -> dict[str, object]:
     }
 
 
+def _fake_full_population_balance_sweep(
+    features: pd.DataFrame,
+    target: pd.Series,
+    *args: object,
+    structural_params: dict[str, object],
+    **kwargs: object,
+) -> archetype.CatBoostClassBalanceMiniSweepResult:
+    """Small runner stub: economics is separately stubbed in runner tests."""
+
+    config = kwargs["config"]
+    classes = np.asarray(config.class_order)
+    oof = archetype.OOFPathArchetypeResult(
+        probabilities=np.full((len(features), len(classes)), 1.0 / len(classes)),
+        fold_ids=np.where(np.arange(len(features)) < len(features) // 4, -1, 0),
+        folds=[],
+        models=[],
+        classes=classes,
+        feature_columns=tuple(features.columns),
+        diagnostics={"logloss": 1.0},
+    )
+    arms = tuple(
+        archetype.CatBoostClassBalanceMiniSweepArmResult(
+            arm=arm["name"],
+            params={**structural_params, "class_balance_arm": arm["name"]},
+            status="eligible",
+            oof=oof,
+            objective_components={"objective": 1.0},
+            guard={"passed": True, "per_fold": []},
+            fold_signature={"oof_row_count": int((oof.fold_ids >= 0).sum())},
+            fold_balance_provenance=(),
+        )
+        for arm in archetype.predeclared_catboost_class_balance_arms()
+    )
+    return archetype.CatBoostClassBalanceMiniSweepResult(
+        structural_params=dict(structural_params),
+        arms=arms,
+        contract={"schema": "test_fixed_structural_balance_sweep"},
+    )
+
+
+def _fake_balance_economic_score(*args: object, **kwargs: object) -> dict[str, object]:
+    return {
+        "schema": "test_economic_oof_v1",
+        "selection_provenance": {
+            "schema": "catboost_path_archetype_class_balance_arm_selection_v1",
+            "arm": "uniform",
+            "class_order": list(runner.MERGED_PATH_ARCHETYPE_CLASSES),
+            "selection_evidence": "purged_chronological_oof_validation_only",
+            "final_refit_used_for_selection": False,
+            "mandatory_initial_coverage_complete": True,
+            "promotion_eligible": True,
+            "selection_status": "test_uniform_selected",
+        },
+        "per_arm": {},
+    }
+
+
 def _write_frozen_ae_gmm_sidecar(
     path: Path,
     frame: pd.DataFrame,
@@ -176,6 +233,61 @@ def _write_frozen_ae_gmm_sidecar(
         values = values.sample(frac=1.0, random_state=7).reset_index(drop=True)
     values.to_parquet(path, index=False)
     return values
+
+
+def _write_canonical_side_bindings(
+    tmp_path: Path,
+    frame: pd.DataFrame,
+    *,
+    side: str = "long",
+) -> dict[str, Path]:
+    """Small immutable candidate/context/AE fixture for strict runner tests."""
+
+    keys = frame.loc[:, ["__ts__", "__symbol__", "side", "candidate_id"]].copy()
+    keys["selected_top40"] = True
+    candidate = tmp_path / "canonical_candidates.parquet"
+    context = tmp_path / "canonical_context.parquet"
+    keys.to_parquet(candidate, index=False)
+    keys.to_parquet(context, index=False)
+    ae_dir = tmp_path / "ae" / side / "ae_gmm"
+    ae_dir.mkdir(parents=True)
+    state = ae_dir / "ae_gmm_state.pkl"
+    state.write_bytes(b"strict-side-state")
+    state_sha = runner._sha256_file(state)
+    ae_manifest = ae_dir / "side_stage_manifest.json"
+    ae_manifest.write_text(
+        json.dumps({"side": side, "artifact": {"sha256": state_sha}}),
+        encoding="utf-8",
+    )
+    candidate_manifest = tmp_path / "canonical_candidates_manifest.json"
+    candidate_manifest.write_text(
+        json.dumps({"output_sha256": runner._sha256_file(candidate)}),
+        encoding="utf-8",
+    )
+    context_manifest = tmp_path / "canonical_context_manifest.json"
+    context_manifest.write_text(
+        json.dumps(
+            {
+                "output": {"sha256": runner._sha256_file(context)},
+                "ae_gmm": {
+                    "root": str(tmp_path / "ae"),
+                    "loader_evidence_by_side": {
+                        side: {
+                            "ae_state_sha256": state_sha,
+                            "ae_manifest_sha256": runner._sha256_file(ae_manifest),
+                        }
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "canonical_candidate_path": candidate,
+        "canonical_candidate_manifest": candidate_manifest,
+        "canonical_context_path": context,
+        "canonical_context_manifest": context_manifest,
+    }
 
 
 @pytest.mark.parametrize("failure", ["missing", "duplicate", "nonfinite"])
@@ -235,6 +347,117 @@ def test_frozen_ae_gmm_sidecar_load_preserves_full_label_order_and_alignment(
     )
 
 
+def test_canonical_side_binding_rejects_cross_side_ae_state(tmp_path: Path) -> None:
+    frame = _frame(40)
+    frame["candidate_id"] = runner.candidate_id_series(
+        frame["__ts__"], frame["__symbol__"], "1h", frame["side"]
+    )
+    bindings = _write_canonical_side_bindings(tmp_path, frame, side="long")
+    wrong_state = tmp_path / "ae" / "short" / "ae_gmm" / "ae_gmm_state.pkl"
+    wrong_manifest = wrong_state.with_name("side_stage_manifest.json")
+    wrong_state.parent.mkdir(parents=True)
+    wrong_state.write_bytes(b"short-state")
+    wrong_manifest.write_text(
+        json.dumps(
+            {
+                "side": "short",
+                "artifact": {"sha256": runner._sha256_file(wrong_state)},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="state hash does not match"):
+        runner._validate_side_local_canonical_inputs(
+            frame,
+            side="long",
+            ae_gmm_state=wrong_state,
+            ae_gmm_state_manifest=wrong_manifest,
+            candidate_path=bindings["canonical_candidate_path"],
+            candidate_manifest=bindings["canonical_candidate_manifest"],
+            context_path=bindings["canonical_context_path"],
+            context_manifest=bindings["canonical_context_manifest"],
+        )
+
+
+def test_geometry_contract_is_bound_to_exact_side_selection_and_population(
+    tmp_path: Path,
+) -> None:
+    prerequisite = tmp_path / "geometry_prerequisite.json"
+    prerequisite_payload = {
+        "schema": "catboost_path_archetype_geometry_prerequisite_v1",
+        "status": "selection_complete_pending_geometry",
+        "side": "long",
+        "candidate_identity_sha256": "long-candidates",
+        "selection_fingerprint": "long-selection",
+        "selected_features": ["base_x"],
+        "canonical_context_sha256": None,
+        "side_ae_state_sha256": None,
+        "geometry_search_model_params_sha256": runner._sha256_json(
+            runner.GEOMETRY_SEARCH_MODEL_PARAMS
+        ),
+    }
+    prerequisite.write_text(json.dumps(prerequisite_payload), encoding="utf-8")
+    path = tmp_path / "geometry_contract.json"
+    payload = {
+        "schema": "side_geometry_v1",
+        "status": "geometry_complete",
+        "side": "long",
+        "candidate_identity_sha256": "long-candidates",
+        "selection_fingerprint": "long-selection",
+        "selected_features": ["base_x"],
+        "geometry_prerequisite_sha256": runner._sha256_file(prerequisite),
+        "canonical_context_sha256": None,
+        "side_ae_state_sha256": None,
+        "geometry_search_model_params_sha256": runner._sha256_json(
+            runner.GEOMETRY_SEARCH_MODEL_PARAMS
+        ),
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    contract = runner._read_side_geometry_contract(
+        path,
+        side="long",
+        candidate_identity="long-candidates",
+        selected_features=["base_x"],
+        selection_fingerprint="long-selection",
+        geometry_prerequisite_path=prerequisite,
+        canonical_input_contract=None,
+    )
+    assert contract is not None
+    with pytest.raises(ValueError, match="side does not match"):
+        runner._read_side_geometry_contract(
+            path,
+            side="short",
+            candidate_identity="long-candidates",
+            selected_features=["base_x"],
+            selection_fingerprint="long-selection",
+            geometry_prerequisite_path=prerequisite,
+            canonical_input_contract=None,
+        )
+
+
+def test_merged_class_support_gate_requires_each_class_in_each_utc_month() -> None:
+    months = pd.to_datetime(
+        ["2026-04-01T00:00:00Z"] * 1000 + ["2026-05-01T00:00:00Z"] * 1000,
+        utc=True,
+    )
+    classes = list(runner.MERGED_PATH_ARCHETYPE_CLASSES)
+    labels = pd.Series(
+        [classes[index % len(classes)] for index in range(len(months))],
+        dtype="string",
+    )
+    report = runner._validate_merged_class_support_gate(
+        labels, pd.Series(months), side="long"
+    )
+    assert report["passed"] is True
+    failed = labels.copy()
+    failed.iloc[:150] = classes[0]
+    failed.iloc[1000:] = classes[0]
+    with pytest.raises(ValueError, match="support gate failed"):
+        runner._validate_merged_class_support_gate(
+            failed, pd.Series(months), side="long"
+        )
+
+
 def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -259,6 +482,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     def fake_hpo(*args: object, **kwargs: object) -> SimpleNamespace:
         captured["hpo_calls"] = int(captured["hpo_calls"]) + 1
         captured["hpo_trials"] = kwargs["n_trials"]
+        captured["structural_only_hpo"] = kwargs["structural_only_hpo"]
         return SimpleNamespace(
             best_params={"iterations": 4},
             report=lambda: {"best_params": {"iterations": 4}},
@@ -313,6 +537,14 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
 
     monkeypatch.setattr(archetype, "fast_select_preentry_features", fake_selector)
     monkeypatch.setattr(archetype, "optimize_purged_catboost_hpo", fake_hpo)
+    monkeypatch.setattr(
+        archetype,
+        "sweep_purged_catboost_class_balance_arms",
+        _fake_full_population_balance_sweep,
+    )
+    monkeypatch.setattr(
+        runner, "score_class_balance_oof_economics", _fake_balance_economic_score
+    )
     monkeypatch.setattr(archetype, "fit_purged_chronological_oof_catboost", fake_oof)
     monkeypatch.setattr(archetype, "staged_permutation_selection", fake_permutation)
     monkeypatch.setattr(runner, "_fit_final_classifier", fake_final)
@@ -336,6 +568,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         runner.MERGED_PATH_ARCHETYPE_CLASSES
     )
     assert captured["hpo_trials"] == 1
+    assert captured["structural_only_hpo"] is True
     assert captured["stages"] == runner.SMOKE_PERMUTATION_STAGES
     assert captured["selector_calls"] == 1
     assert "fast_realization_winner" in captured["selector_labels"]
@@ -388,6 +621,26 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
         (output / "oof_probabilities.role_manifest.json").read_text()
     )
     assert role_manifest["prediction_role"] == "path_archetype_oof"
+    assert role_manifest["class_balance"]["structural_hpo_contract_sha256"] == (
+        runner._sha256_json(
+            archetype.catboost_structural_hpo_contract(
+                archetype.PathArchetypeConfig(
+                    timestamp_col="__ts__",
+                    label_end_col="__label_end_ts__",
+                    random_state=20260722,
+                    embargo=pd.Timedelta(hours=24),
+                    oof_folds=2,
+                    catboost_thread_count=4,
+                    catboost_os_reserve_gib=4.0,
+                    unsafe_allow_catboost_threads=False,
+                    selector_sample_rows=240,
+                    permutation_stages=runner.SMOKE_PERMUTATION_STAGES,
+                    class_order=runner.MERGED_PATH_ARCHETYPE_CLASSES,
+                    legacy_allow_class_weights=False,
+                )
+            )
+        )
+    )
     assert role_manifest["source_artifact_sha256"] == runner._sha256_file(
         output / "oof_probabilities.parquet"
     )
@@ -448,8 +701,10 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     assert manifest["training_phase_order"] == [
         "fast_feature_selection",
         "permutation_feature_selection",
-        "hpo_on_frozen_selected_features",
-        "final_oof_and_refit",
+        "side_local_geometry_selected_between_selection_and_hpo",
+        "structural_hpo_on_frozen_selected_features",
+        "four_arm_full_population_oof_economic_balance_sweep",
+        "final_refit_from_economic_oof_selected_arm",
     ]
     reused = runner.run_pipeline(
         frame,
@@ -520,6 +775,14 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
     monkeypatch.setattr(archetype, "staged_permutation_selection", fake_permutation)
     monkeypatch.setattr(archetype, "optimize_purged_catboost_hpo", fake_hpo)
     monkeypatch.setattr(
+        archetype,
+        "sweep_purged_catboost_class_balance_arms",
+        _fake_full_population_balance_sweep,
+    )
+    monkeypatch.setattr(
+        runner, "score_class_balance_oof_economics", _fake_balance_economic_score
+    )
+    monkeypatch.setattr(
         runner,
         "_fit_final_classifier",
         lambda *args, **kwargs: archetype.PathArchetypeClassifier(
@@ -543,6 +806,7 @@ def test_interrupted_hpo_resumes_exact_pre_hpo_selection_checkpoint(
     assert "catboost_resource_contract" in checkpoint
     assert {path.name for path in output.iterdir()} == {
         "feature_selection_checkpoint.json",
+        "geometry_prerequisite.json",
         runner.MDA_PROGRESS_FILENAME,
         runner.RESOURCE_TELEMETRY_FILENAME,
     }
@@ -596,22 +860,81 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
         captured["hpo_od_wait"] = kwargs["search_od_wait"]
         captured["hpo_storage"] = kwargs["storage"]
         captured["hpo_progress_path"] = kwargs["progress_path"]
+        captured["structural_only_hpo"] = kwargs["structural_only_hpo"]
+        arm = archetype.CATBOOST_CLASS_BALANCE_ARM_UNIFORM
         return SimpleNamespace(
-            best_params={"iterations": 400, "od_wait": 40, "depth": 6},
-            report=lambda: {"best_params": {"iterations": 400, "od_wait": 40}},
+            best_params={
+                "iterations": 400,
+                "od_wait": 40,
+                "depth": 6,
+                "class_balance_arm": arm,
+                "class_balance_selection_provenance": {
+                    "arm": arm,
+                    "promotion_eligible": True,
+                    "selection_status": "coverage_complete",
+                },
+            },
+            report=lambda: {
+                "best_params": {"iterations": 400, "od_wait": 40},
+                "best_objective": 0.25,
+                "class_balance_search": {
+                    "selected_arm": arm,
+                    "provisional_arm": None,
+                    "promotion_eligible": True,
+                },
+                "trials": [
+                    {
+                        "number": 84,
+                        "value": 0.25,
+                        "class_balance_arm": arm,
+                        "class_balance_guard": {
+                            "passed": True,
+                            "aggregate": {"rows": 120},
+                            "per_fold": [{"fold_id": 0, "rows": 60}],
+                        },
+                    }
+                ],
+            },
         )
+
+    def fake_rematerialize(
+        params: dict[str, object], target: pd.Series, **kwargs: object
+    ) -> dict[str, object]:
+        captured["rematerialize_target_rows"] = len(target)
+        captured["rematerialize_allow_nonpromotable"] = kwargs[
+            "allow_nonpromotable_selection"
+        ]
+        return {
+            **params,
+            "class_balance_final_weights": [1.0] * 7,
+            "class_balance_provenance": {"scope": "actual_final_labels"},
+        }
 
     monkeypatch.setattr(archetype, "fast_select_preentry_features", fake_selector)
     monkeypatch.setattr(archetype, "fit_purged_chronological_oof_catboost", fake_oof)
     monkeypatch.setattr(archetype, "staged_permutation_selection", fake_permutation)
     monkeypatch.setattr(archetype, "optimize_purged_catboost_hpo", fake_hpo)
     monkeypatch.setattr(
-        runner,
-        "_fit_final_classifier",
-        lambda *args, **kwargs: archetype.PathArchetypeClassifier(
-            ("base_x",), ("a", "b", "c", "d"), _PickleModel()
-        ),
+        archetype,
+        "sweep_purged_catboost_class_balance_arms",
+        _fake_full_population_balance_sweep,
     )
+    monkeypatch.setattr(
+        runner, "score_class_balance_oof_economics", _fake_balance_economic_score
+    )
+    monkeypatch.setattr(
+        archetype, "rematerialize_final_class_balance_params", fake_rematerialize
+    )
+
+    def fake_final(
+        *args: object, **kwargs: object
+    ) -> archetype.PathArchetypeClassifier:
+        captured["final_params"] = dict(kwargs["params"])
+        return archetype.PathArchetypeClassifier(
+            ("base_x",), ("a", "b", "c", "d"), _PickleModel()
+        )
+
+    monkeypatch.setattr(runner, "_fit_final_classifier", fake_final)
 
     output = tmp_path / "proxy"
     runner.run_pipeline(
@@ -630,15 +953,59 @@ def test_selection_and_hpo_proxies_do_not_leak_into_final_model_params(
     )
 
     assert captured["oof_params"][0] == {"iterations": 500, "od_wait": 50}
-    assert captured["oof_params"][-1]["iterations"] == 3_000
-    assert captured["oof_params"][-1]["od_wait"] == 150
+    assert captured["final_params"]["iterations"] == 3_000
+    assert captured["final_params"]["od_wait"] == 150
     assert captured["hpo_iterations"] == 400
     assert captured["hpo_od_wait"] == 40
     assert str(captured["hpo_storage"]).endswith("/hpo_study.sqlite3")
     assert captured["hpo_progress_path"] == output / runner.HPO_PROGRESS_FILENAME
+    assert captured["structural_only_hpo"] is True
+    assert captured["rematerialize_target_rows"] == len(_frame())
+    assert captured["rematerialize_allow_nonpromotable"] is False
     report = json.loads((output / "training_report.json").read_text())
+    assert report["training_phase_order"] == [
+        "fast_feature_selection",
+        "permutation_feature_selection",
+        "side_local_geometry_selected_between_selection_and_hpo",
+        "structural_hpo_on_frozen_selected_features",
+        "four_arm_full_population_oof_economic_balance_sweep",
+        "final_refit_from_economic_oof_selected_arm",
+    ]
     assert report["effective_model_params"]["iterations"] == 3_000
     assert report["effective_model_params"]["od_wait"] == 150
+    assert report["class_balance"]["selected_arm"] == "uniform"
+    assert report["class_balance"]["promotion_eligible"] is True
+    assert report["class_balance"]["selected_arm_oof_guard_sha256"] == (
+        runner._sha256_json(report["class_balance"]["selected_arm_oof_guard"])
+    )
+    selection = report["class_balance"]["selection_provenance"]
+    assert (
+        selection["mini_sweep_report_sha256"]
+        == report["class_balance"]["mini_sweep_report_sha256"]
+    )
+    assert (
+        selection["economic_oof_report_sha256"]
+        == report["class_balance"]["economic_oof_report_sha256"]
+    )
+    economic = json.loads(
+        (output / "class_balance_economic_oof_report.json").read_text()
+    )
+    assert report["class_balance"]["economic_oof_report_sha256"] == (
+        runner._sha256_json(
+            {
+                "schema": economic["schema"],
+                "contract": economic.get("contract"),
+                "per_arm": economic["per_arm"],
+            }
+        )
+    )
+    assert report["class_balance"]["economic_oof_report_file_sha256"] == (
+        runner._sha256_file(output / "class_balance_economic_oof_report.json")
+    )
+    role_manifest = json.loads(
+        (output / "oof_probabilities.role_manifest.json").read_text()
+    )
+    assert role_manifest["class_balance"] == report["class_balance"]
 
 
 def test_interrupted_mda_resumes_only_remaining_exact_stages(
@@ -706,6 +1073,14 @@ def test_interrupted_mda_resumes_only_remaining_exact_stages(
         lambda *args, **kwargs: SimpleNamespace(
             best_params={"depth": 6}, report=lambda: {"best_params": {"depth": 6}}
         ),
+    )
+    monkeypatch.setattr(
+        archetype,
+        "sweep_purged_catboost_class_balance_arms",
+        _fake_full_population_balance_sweep,
+    )
+    monkeypatch.setattr(
+        runner, "score_class_balance_oof_economics", _fake_balance_economic_score
     )
     monkeypatch.setattr(
         runner,
@@ -1169,6 +1544,9 @@ def test_canonical_feature_dir_reads_bme_sample_then_selected_full_population(
 
     narrow = _frame(3000).drop(columns=["base_x", "meta_x"])
     narrow["path_arch_complete_24h"] = np.int8(1)
+    narrow["candidate_id"] = runner.candidate_id_series(
+        narrow["__ts__"], narrow["__symbol__"], "1h", narrow["side"]
+    )
     input_path = tmp_path / "path_labels.parquet"
     narrow.to_parquet(input_path, index=False)
     feature_dir = tmp_path / "data" / "features" / "20260102_000000"
@@ -1176,38 +1554,43 @@ def test_canonical_feature_dir_reads_bme_sample_then_selected_full_population(
     output = tmp_path / "artifacts"
     config = _config()
     config["base_shared_feature_keys"] = ["base_x", "unused_x"]
+    bindings = _write_canonical_side_bindings(tmp_path, narrow)
     manifest = runner.run_pipeline(
         input_path,
         output,
         discovery_end="2026-01-05T00:00:00Z",
         feature_dir=feature_dir,
+        side="long",
+        stage="selection_only",
+        **bindings,
         config_mapping=config,
         hpo_trials=1,
         selection_rows=600,
+        smoke=True,
     )
 
-    assert captured["selector"] == [(600, ("base_x", "unused_x", "meta_x"))]
+    assert captured["selector"] == [(240, ("base_x", "unused_x", "meta_x"))]
     # HPO must see only the contract frozen by the final permutation stage.
-    assert captured["hpo"] == [(3000, ("base_x",))]
-    assert captured["oof"] == [
-        (600, ("base_x", "meta_x")),
-        (3000, ("base_x",)),
-    ]
+    assert captured["hpo"] == []
+    assert captured["oof"] == [(240, ("base_x", "meta_x"))]
     assert captured["static"] == [
         (3, ("base_x", "unused_x", "meta_x")),
-        (3, ("base_x", "unused_x", "meta_x")),
-        (3, ("base_x", "unused_x", "meta_x")),
-        (1, ("base_x",)),
-        (1, ("base_x",)),
     ]
-    availability = json.loads(
-        (output / "feature_availability_manifest.json").read_text(encoding="utf-8")
+    assert manifest["stage"] == "selection_only"
+    prerequisite = json.loads((output / "geometry_prerequisite.json").read_text())
+    assert prerequisite["side"] == "long"
+    assert prerequisite["status"] == "selection_complete_pending_geometry"
+    assert prerequisite["selected_features"] == ["base_x"]
+    assert prerequisite["geometry_search_model_params"] == (
+        runner.GEOMETRY_SEARCH_MODEL_PARAMS
     )
-    assert availability["configured_features_absent_from_schema"] == []
-    assert availability["selection_sample_contract"].startswith("deterministic")
-    assert (
-        manifest["artifacts"]["feature_availability"]
-        == "feature_availability_manifest.json"
+    assert prerequisite["geometry_search_model_params_sha256"] == runner._sha256_json(
+        runner.GEOMETRY_SEARCH_MODEL_PARAMS
+    )
+    assert prerequisite["geometry_search_model_params"]["auto_class_weights"] is None
+    assert "class_weights" not in prerequisite["geometry_search_model_params"]
+    assert prerequisite["canonical_context_sha256"] == runner._sha256_file(
+        bindings["canonical_context_path"]
     )
 
 
@@ -1318,8 +1701,13 @@ def test_canonical_runner_lets_frozen_aegmm_compete_without_forcing_them(
     monkeypatch.setattr(archetype, "fit_purged_chronological_oof_catboost", fake_oof)
     monkeypatch.setattr(archetype, "staged_permutation_selection", fake_permutation)
     monkeypatch.setattr(runner, "_fit_final_classifier", fake_final)
+    monkeypatch.setattr(runner, "SMOKE_MAX_FEATURES", 100)
 
     frame = _frame(300)
+    frame["path_arch_complete_24h"] = np.int8(1)
+    frame["candidate_id"] = runner.candidate_id_series(
+        frame["__ts__"], frame["__symbol__"], "1h", frame["side"]
+    )
     input_path = tmp_path / "path_labels.parquet"
     frame.drop(columns=["base_x", "meta_x"]).to_parquet(input_path, index=False)
     sidecar = tmp_path / "frozen.parquet"
@@ -1327,35 +1715,33 @@ def test_canonical_runner_lets_frozen_aegmm_compete_without_forcing_them(
     feature_dir = tmp_path / "data" / "features" / "20260102_000000"
     feature_dir.mkdir(parents=True)
     output = tmp_path / "artifacts"
+    bindings = _write_canonical_side_bindings(tmp_path, frame)
     manifest = runner.run_pipeline(
         input_path,
         output,
         discovery_end="2026-01-05T00:00:00Z",
         feature_dir=feature_dir,
+        side="long",
+        stage="selection_only",
+        **bindings,
         frozen_ae_gmm_sidecar=sidecar,
         config_mapping=_config(),
         hpo_trials=1,
+        smoke=True,
     )
 
     assert captured["selector"] == [
-        (300, ("base_x", "meta_x", *AE_GMM_FEATURE_COLUMNS))
+        (240, ("base_x", "meta_x", *AE_GMM_FEATURE_COLUMNS))
     ]
     assert captured_mandatory == [()]
     # The staged selector removes base_x, so HPO is restricted to the frozen
     # AE/GMM-only final contract rather than the wider preselection contract.
-    assert captured["hpo"] == [(300, tuple(AE_GMM_FEATURE_COLUMNS))]
-    assert captured["oof"] == [
-        (300, ("base_x", *AE_GMM_FEATURE_COLUMNS)),
-        (300, tuple(AE_GMM_FEATURE_COLUMNS)),
-    ]
+    assert captured["hpo"] == []
+    assert captured["oof"] == [(240, ("base_x", *AE_GMM_FEATURE_COLUMNS))]
     assert captured["static"] == [(2, ("base_x", "meta_x"))]
-    availability = json.loads(
-        (output / "feature_availability_manifest.json").read_text()
-    )
-    frozen_contract = availability["frozen_ae_gmm_sidecar"]
-    assert frozen_contract["matched_rows"] == 300
-    assert frozen_contract["missing_rows"] == 0
-    assert manifest["rows"] == 300
+    checkpoint = json.loads((output / "feature_selection_checkpoint.json").read_text())
+    assert checkpoint["side"] == "long"
+    assert manifest["rows"] == 240
 
 
 def test_sparse_class_consolidation_preserves_shape_and_uses_nearest_strength() -> None:

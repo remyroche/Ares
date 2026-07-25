@@ -3805,16 +3805,18 @@ def run_pipeline(
             }
             _write_json(output_dir / "run_manifest.json", checkpoint_manifest)
             return checkpoint_manifest
-        if canonical_store_mode and bound_geometry_contract is None:
-            bound_geometry_contract = _read_side_geometry_contract(
-                geometry_contract,
-                side=canonical_side,
-                candidate_identity=side_candidate_identity,
-                selected_features=selected,
-                selection_fingerprint=selection_fingerprint,
-                geometry_prerequisite_path=output_dir / "geometry_prerequisite.json",
-                canonical_input_contract=canonical_input_contract,
-            )
+        if canonical_store_mode:
+            if bound_geometry_contract is None:
+                bound_geometry_contract = _read_side_geometry_contract(
+                    geometry_contract,
+                    side=canonical_side,
+                    candidate_identity=side_candidate_identity,
+                    selected_features=selected,
+                    selection_fingerprint=selection_fingerprint,
+                    geometry_prerequisite_path=output_dir
+                    / "geometry_prerequisite.json",
+                    canonical_input_contract=canonical_input_contract,
+                )
             hpo_features, _ = _load_model_feature_matrix(
                 hpo_frame,
                 selected,

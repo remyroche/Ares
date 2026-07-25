@@ -7,8 +7,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-_SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "report_catboost_path_archetype_oof.py"
-_SPEC = importlib.util.spec_from_file_location("report_catboost_path_archetype_oof", _SCRIPT_PATH)
+_SCRIPT_PATH = (
+    Path(__file__).parents[1] / "scripts" / "report_catboost_path_archetype_oof.py"
+)
+_SPEC = importlib.util.spec_from_file_location(
+    "report_catboost_path_archetype_oof", _SCRIPT_PATH
+)
 assert _SPEC is not None and _SPEC.loader is not None
 _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
@@ -17,7 +21,7 @@ PATH_SHAPE_TYPES = _MODULE.PATH_SHAPE_TYPES
 
 
 def _oof_frame() -> pd.DataFrame:
-    probabilities = [(0.89, 0.05), (0.05, 0.89), (0.59, 0.35), (0.65, 0.29)]
+    probabilities = [(0.90, 0.05), (0.05, 0.90), (0.60, 0.35), (0.66, 0.29)]
     frame = pd.DataFrame(
         {
             "__ts__": pd.to_datetime(
@@ -30,8 +34,18 @@ def _oof_frame() -> pd.DataFrame:
                 utc=True,
             ),
             "side": ["long", "long", "short", "short"],
-            "path_archetype": [PATH_SHAPE_TYPES[0], PATH_SHAPE_TYPES[1], PATH_SHAPE_TYPES[0], PATH_SHAPE_TYPES[1]],
-            "predicted_path_archetype": [PATH_SHAPE_TYPES[0], PATH_SHAPE_TYPES[1], PATH_SHAPE_TYPES[0], PATH_SHAPE_TYPES[0]],
+            "path_archetype": [
+                PATH_SHAPE_TYPES[0],
+                PATH_SHAPE_TYPES[1],
+                PATH_SHAPE_TYPES[0],
+                PATH_SHAPE_TYPES[1],
+            ],
+            "predicted_path_archetype": [
+                PATH_SHAPE_TYPES[0],
+                PATH_SHAPE_TYPES[1],
+                PATH_SHAPE_TYPES[0],
+                PATH_SHAPE_TYPES[0],
+            ],
             "oof_fold_id": [0, 0, 1, 1],
         }
     )
@@ -54,6 +68,17 @@ def test_report_writes_oof_metrics_and_utc_calendar_groups(tmp_path) -> None:
     csv = pd.read_csv(output_dir / "oof_metrics.csv")
     assert result["metrics"]["overall"]["all"]["rows"] == 4
     assert metrics["overall"]["all"]["accuracy"] == pytest.approx(0.75)
+    assert metrics["overall"]["all"]["ranked_probability_score"] >= 0.0
+    assert metrics["overall"]["all"]["probability_confidence"][
+        "mean_max_probability"
+    ] == pytest.approx(0.765)
+    assert metrics["overall"]["all"]["collapse_diagnostics"][
+        "dominant_predicted_class_share"
+    ] == pytest.approx(0.75)
+    assert metrics["overall"]["all"]["collapse_diagnostics"][
+        "missing_predicted_classes"
+    ] == list(PATH_SHAPE_TYPES[2:])
+    assert manifest["class_names"] == list(PATH_SHAPE_TYPES)
     assert set(metrics) >= {
         "month",
         "week",
@@ -65,7 +90,12 @@ def test_report_writes_oof_metrics_and_utc_calendar_groups(tmp_path) -> None:
     assert set(metrics["month"]) == {"2026-01", "2026-02"}
     assert "2026-W05" in metrics["week"]
     assert metrics["side"]["long"]["rows"] == 2
-    assert metrics["true_path_archetype"][PATH_SHAPE_TYPES[0]]["classwise"][PATH_SHAPE_TYPES[0]]["recall"] == 1.0
+    assert (
+        metrics["true_path_archetype"][PATH_SHAPE_TYPES[0]]["classwise"][
+            PATH_SHAPE_TYPES[0]
+        ]["recall"]
+        == 1.0
+    )
     assert manifest["source"]["sha256"]
     assert "OOF-only" in manifest["claim"]
     assert {"classwise_json", "confusion_matrix_json"}.issubset(csv.columns)

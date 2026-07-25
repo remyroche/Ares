@@ -596,6 +596,52 @@ def test_optuna_hpo_reports_minimizing_purged_oof_objective(
     assert "class_balance_final_weights" not in report["best_params"]
 
 
+def test_resumed_hpo_does_not_add_trial_after_persisted_stagnation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    import extreme_price_movements.catboost_archetype_classifier as module
+
+    def fake_oof(*args: object, **kwargs: object) -> object:
+        return module.OOFPathArchetypeResult(
+            probabilities=np.array([[0.8, 0.2], [0.2, 0.8], [0.7, 0.3], [0.1, 0.9]]),
+            fold_ids=np.array([0, 0, 1, 1]),
+            folds=[],
+            models=[],
+            classes=np.array(["a", "b"]),
+            diagnostics={"logloss": 0.2},
+        )
+
+    monkeypatch.setattr(module, "fit_purged_chronological_oof_catboost", fake_oof)
+    kwargs = {
+        "n_trials": 5,
+        "no_improvement_trials": 2,
+        "study_name": "resume_stagnation",
+        "storage": f"sqlite:///{tmp_path / 'study.sqlite3'}",
+        "structural_only_hpo": True,
+        "config": PathArchetypeConfig(class_balance_min_class_support=1),
+    }
+    features = pd.DataFrame({"pre_x": [0.0, 1.0, 2.0, 3.0]})
+    target = ["a", "b", "a", "b"]
+    timestamps = pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")
+
+    first = module.optimize_purged_catboost_hpo(
+        features,
+        target,
+        timestamps,
+        **kwargs,
+    )
+    second = module.optimize_purged_catboost_hpo(
+        features,
+        target,
+        timestamps,
+        **kwargs,
+    )
+
+    assert len(first.trials) == 3
+    assert len(second.trials) == 3
+
+
 def test_class_balance_contract_is_versioned_and_production_requires_all_arms() -> None:
     import extreme_price_movements.catboost_archetype_classifier as module
 

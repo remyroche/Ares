@@ -100,7 +100,9 @@ def _validate_frame(
     ):
         raise ValueError("Probability rows must sum to 1 within tolerance")
     expected = np.asarray(class_names, dtype=str)[np.argmax(probabilities, axis=1)]
-    if not np.array_equal(frame[predicted_class_column].astype(str).to_numpy(), expected):
+    if not np.array_equal(
+        frame[predicted_class_column].astype(str).to_numpy(), expected
+    ):
         raise ValueError(f"{predicted_class_column} does not match probability argmax")
     folds = pd.to_numeric(frame[fold_column], errors="coerce").to_numpy(dtype=float)
     if (
@@ -108,7 +110,9 @@ def _validate_frame(
         or not np.equal(folds, np.floor(folds)).all()
         or np.any(folds < 0)
     ):
-        raise ValueError(f"{fold_column} must contain non-negative integer OOF fold ids")
+        raise ValueError(
+            f"{fold_column} must contain non-negative integer OOF fold ids"
+        )
 
 
 def _metrics(
@@ -135,6 +139,59 @@ def _metrics(
         "minimum": float(np.min(eces)),
         "maximum": float(np.max(eces)),
     }
+    class_count = len(class_names)
+    one_hot = np.eye(class_count, dtype=np.float64)[labels]
+    cumulative_probability = np.cumsum(probabilities, axis=1)[:, :-1]
+    cumulative_target = np.cumsum(one_hot, axis=1)[:, :-1]
+    report["ranked_probability_score"] = float(
+        np.mean(
+            np.sum(
+                np.square(cumulative_probability - cumulative_target),
+                axis=1,
+            )
+            / max(class_count - 1, 1)
+        )
+    )
+    predicted = np.argmax(probabilities, axis=1)
+    predicted_support = np.bincount(predicted, minlength=class_count)
+    target_support = np.bincount(labels, minlength=class_count)
+    predicted_share = predicted_support / max(len(labels), 1)
+    target_share = target_support / max(len(labels), 1)
+    report["predicted_class_share"] = {
+        name: float(predicted_share[index]) for index, name in enumerate(class_names)
+    }
+    report["target_class_share"] = {
+        name: float(target_share[index]) for index, name in enumerate(class_names)
+    }
+    report["collapse_diagnostics"] = {
+        "dominant_predicted_class": class_names[int(np.argmax(predicted_share))],
+        "dominant_predicted_class_share": float(np.max(predicted_share)),
+        "missing_predicted_classes": [
+            name
+            for index, name in enumerate(class_names)
+            if predicted_support[index] == 0
+        ],
+        "prediction_target_total_variation": float(
+            0.5 * np.abs(predicted_share - target_share).sum()
+        ),
+    }
+    sorted_probabilities = np.sort(probabilities, axis=1)
+    entropy = -np.sum(
+        probabilities * np.log(np.clip(probabilities, 1e-15, 1.0)),
+        axis=1,
+    )
+    report["probability_confidence"] = {
+        "mean_max_probability": float(np.mean(sorted_probabilities[:, -1])),
+        "mean_normalized_entropy": float(
+            np.mean(entropy / max(np.log(class_count), 1e-15))
+        ),
+        "mean_top2_margin": float(
+            np.mean(sorted_probabilities[:, -1] - sorted_probabilities[:, -2])
+        ),
+    }
+    report["mean_normalized_confusion_distance"] = float(
+        np.mean(np.abs(predicted - labels)) / max(class_count - 1, 1)
+    )
     return report
 
 
@@ -146,7 +203,9 @@ def _grouped_metrics(
     true_class_column: str,
 ) -> dict[str, dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
-    for value, indices in frame.groupby(group_column, observed=True, sort=True).indices.items():
+    for value, indices in frame.groupby(
+        group_column, observed=True, sort=True
+    ).indices.items():
         groups[str(value)] = _metrics(
             frame.iloc[indices],
             probability_columns,
@@ -200,9 +259,9 @@ def run_report(
     schema = pd.Series(
         {field.name: str(field.type) for field in parquet_schema}, dtype="object"
     )
-    probability_columns = sorted(
+    observed_probability_columns = {
         column for column in schema.index if column.startswith(probability_prefix)
-    )
+    }
     required = {
         timestamp_column,
         side_column,
@@ -216,14 +275,23 @@ def run_report(
     expected_probability_columns = {
         f"{probability_prefix}{class_name}" for class_name in PATH_SHAPE_TYPES
     }
-    if set(probability_columns) != expected_probability_columns:
-        missing_probabilities = sorted(expected_probability_columns - set(probability_columns))
-        unexpected_probabilities = sorted(set(probability_columns) - expected_probability_columns)
+    if observed_probability_columns != expected_probability_columns:
+        missing_probabilities = sorted(
+            expected_probability_columns - observed_probability_columns
+        )
+        unexpected_probabilities = sorted(
+            observed_probability_columns - expected_probability_columns
+        )
         raise ValueError(
             "Expected the exact canonical seven-class path-archetype probability vector; "
             f"missing={missing_probabilities}, unexpected={unexpected_probabilities}"
         )
-    class_names = [column.removeprefix(probability_prefix) for column in probability_columns]
+    probability_columns = [
+        f"{probability_prefix}{class_name}" for class_name in PATH_SHAPE_TYPES
+    ]
+    class_names = [
+        column.removeprefix(probability_prefix) for column in probability_columns
+    ]
     if len(set(class_names)) != len(class_names):
         raise ValueError("Probability class names must be unique")
     columns = [
@@ -248,9 +316,7 @@ def run_report(
         fold_column=fold_column,
     )
     frame["__month__"] = pd.Categorical(frame[timestamp_column].dt.strftime("%Y-%m"))
-    frame["__week__"] = pd.Categorical(
-        frame[timestamp_column].dt.strftime("%G-W%V")
-    )
+    frame["__week__"] = pd.Categorical(frame[timestamp_column].dt.strftime("%G-W%V"))
     frame["__side_true_archetype__"] = pd.Categorical(
         frame[side_column].astype(str) + " x " + frame[true_class_column].astype(str)
     )

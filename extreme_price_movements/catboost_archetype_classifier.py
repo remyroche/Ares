@@ -3785,7 +3785,12 @@ def optimize_purged_catboost_hpo(
         ) - 1 - last_improvement_position >= int(no_improvement_trials):
             study.stop()
 
-    remaining_trials = max(0, int(n_trials) - completed_before)
+    already_stagnant = last_improvement_position >= 0 and len(
+        known_trials
+    ) - 1 - last_improvement_position >= int(no_improvement_trials)
+    remaining_trials = (
+        0 if already_stagnant else max(0, int(n_trials) - completed_before)
+    )
     study.optimize(
         objective,
         n_trials=remaining_trials,

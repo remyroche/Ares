@@ -3696,39 +3696,6 @@ def run_pipeline(
                     ),
                 },
             )
-        # Feature selection is a durable stage in its own right.  Geometry is
-        # intentionally external and must be selected from this exact side-only
-        # feature contract before model HPO is allowed to begin.
-        _write_json(
-            selection_checkpoint_path,
-            {
-                "schema": RUNNER_SCHEMA,
-                "status": "feature_selection_complete",
-                "fingerprint": selection_fingerprint,
-                "selection_fingerprint": selection_fingerprint,
-                "side": canonical_side,
-                "model_side_scope": "per_side" if canonical_side else None,
-                "canonical_input_contract": canonical_input_contract,
-                "class_support_gate": class_support_gate,
-                **_side_local_geometry_provenance(canonical_input_contract),
-                "selected_features": list(selected),
-                "selected_feature_count": int(len(selected)),
-                "selection": selector_manifest,
-                "permutation": permutation_records,
-                "permutation_stage_metrics": permutation_stage_metrics,
-                "selection_proxy_params": {
-                    "iterations": int(selection_iterations),
-                    "od_wait": int(selection_od_wait),
-                },
-                "permutation_acceleration_contract": (
-                    archetype.staged_permutation_acceleration_contract(config)
-                ),
-                "reuse_provenance": reuse_provenance,
-                "catboost_resource_contract": archetype.catboost_resource_contract(
-                    config
-                ),
-            },
-        )
         side_candidate_identity = _side_candidate_identity_sha256(
             frame,
             timestamp_column=timestamp_column,
@@ -3736,26 +3703,84 @@ def run_pipeline(
             side_column=side_column,
         )
         geometry_provenance = _side_local_geometry_provenance(canonical_input_contract)
-        geometry_prerequisite = {
-            "schema": "catboost_path_archetype_geometry_prerequisite_v1",
-            "status": "selection_complete_pending_geometry",
-            "side": canonical_side,
-            "model_side_scope": "per_side",
-            "candidate_identity_sha256": side_candidate_identity,
-            "selection_fingerprint": selection_fingerprint,
-            "selected_features": list(selected),
-            "selected_features_sha256": _sha256_json(list(selected)),
-            "feature_selection_checkpoint": str(selection_checkpoint_path.resolve()),
-            "feature_selection_checkpoint_sha256": _sha256_file(
-                selection_checkpoint_path
-            ),
-            "canonical_input_contract": canonical_input_contract,
-            "class_support_gate": class_support_gate,
-            "canonical_input_contract_sha256": _sha256_json(canonical_input_contract),
-            "required_next_stage": "side_local_geometry_sweep",
-            **geometry_provenance,
-        }
-        _write_json(output_dir / "geometry_prerequisite.json", geometry_prerequisite)
+        preserve_geometry_handoff = (
+            canonical_store_mode
+            and stage == "model_hpo_final"
+            and geometry_contract is not None
+        )
+        if preserve_geometry_handoff:
+            # The external geometry sweep cryptographically binds these files.
+            # Verify the frozen handoff before any write and never regenerate it
+            # during model HPO merely because reuse provenance changed.
+            bound_geometry_contract = _read_side_geometry_contract(
+                geometry_contract,
+                side=canonical_side,
+                candidate_identity=side_candidate_identity,
+                selected_features=selected,
+                selection_fingerprint=selection_fingerprint,
+                geometry_prerequisite_path=output_dir / "geometry_prerequisite.json",
+                canonical_input_contract=canonical_input_contract,
+            )
+        else:
+            # Feature selection is a durable stage in its own right. Geometry is
+            # intentionally external and must be selected from this exact
+            # side-only feature contract before model HPO is allowed to begin.
+            _write_json(
+                selection_checkpoint_path,
+                {
+                    "schema": RUNNER_SCHEMA,
+                    "status": "feature_selection_complete",
+                    "fingerprint": selection_fingerprint,
+                    "selection_fingerprint": selection_fingerprint,
+                    "side": canonical_side,
+                    "model_side_scope": "per_side" if canonical_side else None,
+                    "canonical_input_contract": canonical_input_contract,
+                    "class_support_gate": class_support_gate,
+                    **_side_local_geometry_provenance(canonical_input_contract),
+                    "selected_features": list(selected),
+                    "selected_feature_count": int(len(selected)),
+                    "selection": selector_manifest,
+                    "permutation": permutation_records,
+                    "permutation_stage_metrics": permutation_stage_metrics,
+                    "selection_proxy_params": {
+                        "iterations": int(selection_iterations),
+                        "od_wait": int(selection_od_wait),
+                    },
+                    "permutation_acceleration_contract": (
+                        archetype.staged_permutation_acceleration_contract(config)
+                    ),
+                    "reuse_provenance": reuse_provenance,
+                    "catboost_resource_contract": archetype.catboost_resource_contract(
+                        config
+                    ),
+                },
+            )
+            geometry_prerequisite = {
+                "schema": "catboost_path_archetype_geometry_prerequisite_v1",
+                "status": "selection_complete_pending_geometry",
+                "side": canonical_side,
+                "model_side_scope": "per_side",
+                "candidate_identity_sha256": side_candidate_identity,
+                "selection_fingerprint": selection_fingerprint,
+                "selected_features": list(selected),
+                "selected_features_sha256": _sha256_json(list(selected)),
+                "feature_selection_checkpoint": str(
+                    selection_checkpoint_path.resolve()
+                ),
+                "feature_selection_checkpoint_sha256": _sha256_file(
+                    selection_checkpoint_path
+                ),
+                "canonical_input_contract": canonical_input_contract,
+                "class_support_gate": class_support_gate,
+                "canonical_input_contract_sha256": _sha256_json(
+                    canonical_input_contract
+                ),
+                "required_next_stage": "side_local_geometry_sweep",
+                **geometry_provenance,
+            }
+            _write_json(
+                output_dir / "geometry_prerequisite.json", geometry_prerequisite
+            )
         if stage == "selection_only":
             checkpoint_manifest = {
                 "schema": RUNNER_SCHEMA,
@@ -3780,7 +3805,7 @@ def run_pipeline(
             }
             _write_json(output_dir / "run_manifest.json", checkpoint_manifest)
             return checkpoint_manifest
-        if canonical_store_mode:
+        if canonical_store_mode and bound_geometry_contract is None:
             bound_geometry_contract = _read_side_geometry_contract(
                 geometry_contract,
                 side=canonical_side,

@@ -1756,6 +1756,61 @@ Required side-local sequence:
    on all complete labels, persist the final model, and retain the untouched
    May-July predictions as the canonical OOF stream.
 
+Canonical invocation pattern, run one side and one stage at a time:
+
+```bash
+SIDE=long  # repeat independently with SIDE=short
+CLASSIFIER_ROOT=data_perp/reports/catboost_path_archetype_packb31_8_structural_balance_20260725_v1
+GEOMETRY_ROOT=data_perp/reports/catboost_path_archetype_geometry_packb31_8_20260725_v1
+LABELS=data_perp/artifacts/20260724_path_archetype_labels_v9_packb31_8_top40/path_archetype_labels.parquet
+CONTEXT_ROOT=data_perp/artifacts/packb_downstream_context_20260725_v2_31_8_frozen_ae_gmm
+CANDIDATE_ROOT=data_perp/artifacts/packb_side_local_top40_20260724_v1_31_8
+
+python3 scripts/run_catboost_path_archetype_classifier.py \
+  --input "$LABELS" --side "$SIDE" \
+  --output-dir "$CLASSIFIER_ROOT/side=$SIDE" --stage selection_only \
+  --feature-dir data_perp/features/20260711_070000 \
+  --canonical-candidate-path "$CANDIDATE_ROOT/base_candidate_population.parquet" \
+  --canonical-candidate-manifest "$CANDIDATE_ROOT/manifest.json" \
+  --canonical-context-path "$CONTEXT_ROOT/context.parquet" \
+  --canonical-context-manifest "$CONTEXT_ROOT/manifest.json" \
+  --frozen-ae-gmm-sidecar "$CONTEXT_ROOT/context.parquet" \
+  --frozen-ae-gmm-manifest "$CONTEXT_ROOT/manifest.json" \
+  --discovery-end 2026-05-01T00:00:00Z \
+  --development-end 2026-05-01T00:00:00Z \
+  --resource-min-free-ram-gib 2 --resource-max-process-rss-gib 12 \
+  --resource-min-free-disk-gib 10
+
+python3 scripts/run_catboost_path_archetype_geometry_search.py \
+  --input "$LABELS" --side "$SIDE" \
+  --output-dir "$GEOMETRY_ROOT/side=$SIDE" \
+  --geometry-prerequisite "$CLASSIFIER_ROOT/side=$SIDE/geometry_prerequisite.json" \
+  --canonical-context-manifest "$CONTEXT_ROOT/manifest.json" \
+  --feature-dir data_perp/features/20260711_070000 \
+  --frozen-ae-gmm-sidecar "$CONTEXT_ROOT/context.parquet" \
+  --evaluation-mode short_history_purged_april_v1 \
+  --resource-min-free-ram-gib 2 --resource-max-process-rss-gib 12 \
+  --resource-min-free-disk-gib 10
+
+python3 scripts/run_catboost_path_archetype_classifier.py \
+  --input "$LABELS" --side "$SIDE" \
+  --output-dir "$CLASSIFIER_ROOT/side=$SIDE" --stage model_hpo_final \
+  --feature-dir data_perp/features/20260711_070000 \
+  --canonical-candidate-path "$CANDIDATE_ROOT/base_candidate_population.parquet" \
+  --canonical-candidate-manifest "$CANDIDATE_ROOT/manifest.json" \
+  --canonical-context-path "$CONTEXT_ROOT/context.parquet" \
+  --canonical-context-manifest "$CONTEXT_ROOT/manifest.json" \
+  --frozen-ae-gmm-sidecar "$CONTEXT_ROOT/context.parquet" \
+  --frozen-ae-gmm-manifest "$CONTEXT_ROOT/manifest.json" \
+  --geometry-contract "$GEOMETRY_ROOT/side=$SIDE/geometry_contract.json" \
+  --discovery-end 2026-05-01T00:00:00Z \
+  --development-end 2026-05-01T00:00:00Z \
+  --hpo-trials 75 --hpo-folds 3 --hpo-no-improvement-trials 15 \
+  --embargo-hours 24 \
+  --resource-min-free-ram-gib 2 --resource-max-process-rss-gib 12 \
+  --resource-min-free-disk-gib 10
+```
+
 Class-balance mini-HPO requirements:
 
 - Include no balancing as the control.

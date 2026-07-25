@@ -1,0 +1,91 @@
+{
+  "schema": "catboost_side_validation_v1",
+  "side": "short",
+  "status": "COMPLETE_WEAK_DOWNSTREAM_EV_GATE_REQUIRED",
+  "candidate_identity_sha256": "50df8eaa68d2c2151fe6766fcb2dcae4677fbe738cda91fc878db725c0aed681",
+  "selected_feature_count": 75,
+  "selected_features_sha256": "cfb440e27f44f73700ee2e55ca6e18dfa0d488e1215172e721cca00e2c04fc81",
+  "hpo": {
+    "best_trial_number": 24,
+    "best_objective": 1.6520232192575806,
+    "complete_trials": 12,
+    "pruned_trials": 28,
+    "failed_trials": 0,
+    "total_terminal_trials": 40,
+    "requested_trials": 75,
+    "stopped_safely_by_no_improvement_patience": true,
+    "selected_balance_arm": "uniform",
+    "balance_reason": "no non-uniform arm passed the strict matched OOF ML and economic gates"
+  },
+  "outer_oof": {
+    "rows": 69272,
+    "aggregate": {
+      "logloss": 1.6650059313245003,
+      "ranked_probability_score": 0.19554164029516707,
+      "brier_macro": 0.11181546502117883,
+      "f1_macro": 0.1431725508995577,
+      "f1_weighted": 0.2337464654450781,
+      "dominant_predicted_class": "dead_timeout",
+      "dominant_predicted_class_share": 0.4590310659429495,
+      "missing_argmax_classes": [
+        "early_mfe_full_reversal",
+        "fast_realization_winner",
+        "noisy_timeout_usable_mfe"
+      ]
+    },
+    "fold_local_train_prior_comparison": {
+      "2026-05": {
+        "rows": 35622,
+        "model_logloss": 1.6445428659635133,
+        "prior_logloss": 1.684943383756129,
+        "logloss_gain": 0.0404005177926157,
+        "model_rps": 0.19529868473617945,
+        "prior_rps": 0.20449477850078316,
+        "rps_gain": 0.009196093764603708
+      },
+      "2026-06": {
+        "rows": 25624,
+        "model_logloss": 1.6980889054739052,
+        "prior_logloss": 1.739993611100742,
+        "logloss_gain": 0.0419047056268369,
+        "model_rps": 0.1894050427175928,
+        "prior_rps": 0.1965872907403022,
+        "rps_gain": 0.007182248022709404
+      },
+      "2026-07_partial": {
+        "rows": 8026,
+        "model_logloss": 1.6502061786064235,
+        "prior_logloss": 1.6778235500750404,
+        "logloss_gain": 0.02761737146861698,
+        "model_rps": 0.2162118046672105,
+        "prior_rps": 0.2241837221176414,
+        "rps_gain": 0.00797191745043091
+      }
+    },
+    "fold_train_only_economic_mapping": {
+      "aggregate_top20_realised_net_ev": -0.007934070853618589,
+      "aggregate_top20_positive_net_ev_fraction": 0.4619992782389029,
+      "monthly_top20_realised_net_ev": {
+        "2026-05": -0.008605737450527126,
+        "2026-06": -0.0029889365483028174,
+        "2026-07_partial": -0.018316028304568428
+      }
+    }
+  },
+  "decision": {
+    "classification_gate": "pass_with_concentration_warning",
+    "standalone_economic_admission": "fail",
+    "reason": "Log loss and RPS beat fold-local train priors in every untouched outer fold, but hard predictions remain concentrated, three low-support classes never win argmax, and the fold-train-only probability-weighted top 20% has negative realised net EV in every outer month.",
+    "required_next_gate": "CatBoost probabilities may be used only as context/risk inputs. Do not use them as a standalone admission score; require positive strict OOF execution-EV uplift over alpha plus auxiliaries, including probability-vector ablations and month/side stability."
+  },
+  "artifacts": {
+    "feature_selection_checkpoint_sha256": "47c0651bc43b51ec7760f8c761a8f2e9f6ddc392908dc2fd2c6410f63d846be9",
+    "geometry_contract_sha256": "fd146921157434ea5fb2c4cfd11d757c611c55e6cac9952da0ec25a86996a077",
+    "hpo_manifest_sha256": "6859336aba670d1aec7ec6b1bc6e9254b30f1a09451399c63d24b695dc4fcb20",
+    "class_balance_economic_oof_sha256": "d2b1fe0db117e1edd0a042ac8d61f4fae2161f30230cf56af8a5d9cae058c4a7",
+    "outer_oof_probabilities_sha256": "8dc7c5d03fd27dda3a2093114ed12ae086989b08ea8270f41ebf96a95b613225",
+    "final_classifier_sha256": "422516c11c9d91cb2d038a5d0cc42ad974be24fbd5c37d930f86193f395d796b",
+    "expanded_oof_metrics_sha256": "50c0526f96ad323ffefc9f55749125bef415bf5d6f45da511a3ade036fdc47a1",
+    "outer_oof_economic_report_sha256": "4f6117385e2521a937e665de8d186c739915a76509227e9c630687158228fa2a"
+  }
+}

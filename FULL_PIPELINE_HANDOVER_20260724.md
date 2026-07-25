@@ -2004,6 +2004,37 @@ The authoritative validation record, including hashes and monthly prior
 comparisons, is
 `docs/pipeline_roadmap/20260724/r3/catboost_long_validation_20260725_v1.json`.
 
+#### 2026-07-25 short-side CatBoost result
+
+The short-side pipeline is also complete on the canonical 31/8 handoff. It
+selected 75 features, completed its own geometry sweep, structural HPO,
+four-arm April balance sweep, fixed May/June/partial-July outer OOF, and final
+refit. HPO stopped safely after 40 of the requested 75 trials when the
+15-trial no-improvement rule was met; trial 24 remained the winner. The
+uniform balance arm was retained because no non-uniform arm passed the strict
+matched ML and economic promotion gates.
+
+The untouched outer OOF contains 69,272 unique short candidate IDs. Aggregate
+log loss is `1.665006`, RPS is `0.195542`, macro Brier is `0.111815`, macro F1
+is `0.143173`, and weighted F1 is `0.233746`. Against fold-local train-prior
+baselines, log loss improves by `0.040401` in May, `0.041905` in June, and
+`0.027617` in partial July; RPS improves by `0.009196`, `0.007182`, and
+`0.007972`, respectively. These improvements validate the new side-local
+75-feature model; there is no metric-based reason to fall back to an earlier
+feature list.
+
+This is likewise a classification pass with a concentration warning, not a
+standalone economic promotion. `dead_timeout` receives 45.9% of aggregate
+hard predictions and three low-support classes never win argmax. The
+probability-weighted top 20% from fold-train-only economic priors has negative
+realized net EV in May (`-0.008606`), June (`-0.002989`), and partial July
+(`-0.018316`). Short CatBoost probabilities may enter execution-EV only as
+context/risk inputs and must prove positive paired OOF incremental value.
+
+The authoritative validation record, including hashes and monthly prior
+comparisons, is
+`docs/pipeline_roadmap/20260724/r3/catboost_short_validation_20260725_v1.json`.
+
 ### Phase 4: Finish the Five Auxiliary LGBM Heads
 
 Goal: produce OOF predictions and final models for all five targets.

@@ -545,6 +545,30 @@ yield is consistent with much of the remaining deficit being genuine
 illiquidity/no-trade history or history the exact endpoint no longer serves,
 not a feature-store row-join failure.
 
+The one-pass source audit is now reproducible. The immutable network-response
+stage is:
+
+```text
+data_perp/artifacts/
+kraken_futures_exact_source_repair_20260725_v1
+```
+
+Its first-pass ledger contains all 6,917 endpoint timestamps and must **not** be
+applied: 6,839 are flat zero-volume rows, mostly linked carry candles. Offline
+series-level validation using the same carry filter as canonical Kraken
+ingestion produced the only eligible patch:
+
+```text
+data_perp/artifacts/
+kraken_futures_exact_source_repair_20260725_v1_revalidated_carry_filtered_v2
+```
+
+The validated patch contains exactly 94 candles: 78 positive-volume trade
+candles and 16 isolated legitimate no-trade candles. It rejects 6,823 scoped
+linked carry candles and made no additional network calls. Both artifacts are
+`NOT_APPLIED`; the baseline raw, feature, and context artifacts remain
+unchanged.
+
 **Decision / go-no-go:** one bounded, exact-exchange OHLCV source repair is
 warranted, but a broad or repeated historical backfill is not. Run the bounded
 repair once, before starting the remaining CatBoost production stages, because
@@ -557,14 +581,17 @@ recompute only affected rolling features and rematerialize the frozen
 representation as a challenger while retaining the current artifact as the
 immutable baseline.
 
-Promote the repaired challenger and regenerate downstream auxiliary/CatBoost
-artifacts only if it preserves candidate identity and produces a measurable
-increase in jointly finite short representation rows. If it recovers no
-additional candidate rows, keep the baseline and proceed. Regardless of the
-uplift, stop after this one exact-source pass: the endpoint supplies only 1.36%
-of the audited missing source hours, so repeated downloads have a poor expected
-return. Pre-listing windows, no-trade hours, and genuine exchange outages remain
-unavailable. This is a source-repair operation, not feature imputation.
+Apply only the 94-row validated patch to a copy-on-write raw challenger,
+causally recompute only affected symbols/windows, and rematerialize a context
+challenger with the frozen AE/GMM state. Promote that challenger and regenerate
+downstream auxiliary/CatBoost artifacts only if it preserves candidate identity
+and produces a measurable increase in jointly finite short representation
+rows. If it recovers no additional candidate rows, keep the baseline and
+proceed. Regardless of the uplift, stop after this one exact-source pass: the
+validated endpoint yield is only 1.36% of the audited missing source hours, so
+repeated downloads have a poor expected return. Pre-listing windows, no-trade
+hours, and genuine exchange outages remain unavailable. This is a source-repair
+operation, not feature imputation.
 
 The repair is successful only if recovered candles produce additional jointly
 finite representation rows without changing candidate identity. Regardless of
@@ -2011,9 +2038,48 @@ Required metrics:
 
 Gate:
 
-- Ten OOF model streams exist on exact candidate keys: five targets x two sides.
-- Ten final models, with per-side feature lists, parameters, and hashes, exist.
+- Eleven reusable role streams exist for both sides, including the shared
+  meaningful-MFE event/timing family; five composed head bundles exist on the
+  exact candidate keys.
+- Side-local final models, feature lists, parameters, and hashes exist for
+  every role.
 - No supportive realized label is present at inference.
+
+#### 2026-07-25 canonical auxiliary result and promotion audit
+
+The canonical run is structurally complete and leakage-safe:
+
+- 300,315 exact candidates and 195,931 identical May-July OOF IDs across all
+  five heads.
+- May/June/July OOF support is 99,992 / 73,211 / 22,728 respectively; July is
+  only July 1-10 and must not be described as a full validation month.
+- All outer training labels resolve before validation starts, the 13-hour
+  decision/label purge is present on every fold, and final-refit models are
+  excluded from OOF predictions.
+- All 22 side-role contracts use independent long/short selection and HPO.
+- The 514 resource checkpoints all passed. Peak process RSS was 4.744 GiB,
+  minimum available RAM was 9.243 GiB, and minimum free disk was 76.865 GiB.
+
+Artifact-integrity completion is **not** production promotion. The first three
+heads may enter an identical-row execution-EV OOF ablation, but none is
+production-approved yet:
+
+| Head/component | May-July OOF finding | Current action |
+|---|---|---|
+| Peak conditional mean | Learnable: monthly R² long `0.438/0.131/0.274`; short representation-available `0.513/0.262/0.188` | Keep as an execution-EV ablation candidate |
+| Peak conditional q80 | Invalid as a range estimate: long empirical coverage `1.000/1.000/0.905` instead of 0.80; pooled long coverage `0.989` and negative pinball skill | Withhold q80 from downstream inputs. For the next training cycle, raise/remove the 10-ATR target ceiling or use a lower identifiable quantile, then require per-side monthly calibration |
+| Timing CDF | Two-hour AUC is useful (`0.596-0.664` long, `0.617-0.658` short available) and the projected CDF has zero monotonicity violations | Pass the horizon probabilities, especially 2h/4h, as separate ablation features; do not rely only on expected censored time |
+| Expected censored time | Weak: monthly R² long `0.018/-0.002/-0.030`, short available `0.013/-0.071/0.031` | Diagnostic until it adds cost-aware execution value |
+| Expected MAE mixture | Not learnable as currently composed: monthly R² long `-0.008/-0.142/-0.206`, short available `0.010/-0.092/0.003` | Do not promote. Replace/augment it with economically defined tail probabilities such as stop-before-meaningful-MFE and MAE-above-0.5/1.0R, then re-test |
+| Confirmed adverse trough | R² is approximately `-0.021` to `+0.020`, IC only `0.06-0.15`, and target support is incomplete | Model trough occurrence/competing risk first, then conditional timing; keep blocked from policy use |
+| Favorable slope | Positive but weak R²/IC; July is partial | Retain as diagnostic only and require incremental cost-aware EV plus two later full months |
+
+Short representation-missing rows are 16,400 of 106,987 OOF rows (15.3%);
+June alone is 10,192 of 41,454 (24.6%). Every execution-EV ablation must report
+this slice separately. A head can be materialized for a research OOF ablation
+without being production-promoted; production promotion requires positive
+aggregate and worst-month identical-row economics, acceptable side/month
+calibration, and later full-month confirmation.
 
 ### Phase 5: Materialize Execution-EV Inputs
 
@@ -2044,7 +2110,10 @@ Expected joined groups:
 - Residual-alpha predictions and common EV mapping.
 - Base archetype identities.
 - Frozen AE/GMM and support/OOD context already present in alpha handoff.
-- Five auxiliary OOF predictions and uncertainty.
+- Only promotion-audited auxiliary OOF candidates. Initially this means peak
+  conditional mean/expected peak and separate timing-horizon probabilities.
+  Expected MAE, confirmed adverse-trough timing, favorable slope, and peak q80
+  remain diagnostic or withheld until their stated gates pass.
 - Seven CatBoost class probabilities and aggregate confidence/risk fields.
 - Execution-EV label and metadata, used only as targets/reporting.
 

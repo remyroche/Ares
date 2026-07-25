@@ -3125,3 +3125,119 @@ one class, drops a supported class, violates the per-side monthly support gates,
 or improves aggregate loss by sacrificing economically important minority
 classes. CatBoost outputs and reports remain separate for long and short; a
 combined table is reporting only.
+
+## 12. Fixed 4m -> 6m Base/Residual Label Ablation (2026-07-25)
+
+The dedicated research runner is now implemented in
+`scripts/run_base_residual_label_ablation.py`, with chronology, label recipes,
+ranking, and economic evaluation owned by
+`extreme_price_movements/base_residual_label_ablation.py`. The verified result
+is:
+
+`data_perp/artifacts/base_residual_label_ablation_20260725_v2`
+
+The fixed UTC calendar is:
+
+```text
+base fit:       2025-09-01 through 2025-12-30 22:59:59
+base purge:     25 hours before 2026-01-01
+base OOS:       2026-01-01 through 2026-06-30
+meta fit:       first three base-OOS months, 2026-01 through 2026-03
+meta final OOS: final three base-OOS months, 2026-04 through 2026-06
+```
+
+The base model is fitted once per recipe and side, then frozen for all six OOS
+months. Residual label promotion uses only February-March residual OOF. The
+21-day admission calibrator is fitted only on the first 21 days of that
+residual OOF stream. No April-June row selects a label recipe, threshold,
+calibrator, feature, parameter, or side mapping.
+
+All arms use the same paired rows, the same 31-long/8-short approved feature
+contracts, the same top-40 residual handoff, and the same realized
+`__first_touch_capture_net__` economic field. That field already embeds the
+full 1% round-trip cost; the ablation does not subtract cost again. The current
+31/8 feature reuse is the previously approved feature-selection exception and
+is recorded explicitly in the artifact. It is not a claim that the feature
+selection itself was redone inside the four-month window.
+
+The label matrix contains:
+
+- exact incumbent 24-hour soft-label replay;
+- a 12-hour timeout/path-quality soft label;
+- a time-aware 12-hour label combining cost-aware meaningful MFE, pre-MFE MAE,
+  time to meaningful/80%-peak MFE, an early two-hour path proxy, and 12-hour
+  slope;
+- nine deterministic per-side label-HPO recipes over the MFE, MAE, timing,
+  early-path, slope, threshold, and softening weights. Side/sign is never an
+  HPO dimension.
+
+The full-population auxiliary store does not contain exact 15-minute closes for
+the next two or three bars. Therefore the implemented early-path component is
+honestly named `early_path_2h_proxy`: it uses early MFE and adverse-trough
+targets. It must not be represented as the requested exact next-2/3-bar
+non-flat/non-adverse label. Materializing that exact keyed target from canonical
+15-minute bars remains a follow-up task.
+
+Only about 51% of the canonical calendar rows have complete paired 12-hour path
+targets after all required fields are enforced (long 51.53%, short 51.26%).
+Every arm uses that same paired subset, so arm comparisons are internally fair,
+but the result does not yet prove full-universe economics.
+
+### Final untouched April-June results
+
+All returns below are already net of the embedded 1% cost:
+
+| Arm | Raw global top-10 | Raw timestamp x side top-10 | Post-21d admitted global top-10 | Post-21d admitted timestamp x side top-10 |
+|---|---:|---:|---:|---:|
+| incumbent 24h | -28.87 bps | -28.72 bps | +17.48 bps | +10.07 bps |
+| 12h timeout | -26.68 bps | -29.77 bps | +23.28 bps | +13.01 bps |
+| time-aware 12h | -25.14 bps | -29.70 bps | +24.22 bps | +8.19 bps |
+| side-local HPO winner | -29.19 bps | -29.89 bps | +35.73 bps | +18.83 bps |
+
+The training-only label HPO selected `hpo_01` for long and retained the
+incumbent 24-hour label for short. The long winning weights are approximately
+51.6% 12-hour execution, 23.6% MFE, 15.6% clean MAE, 3.6% timing, 1.6% early
+path, and 4.1% slope, with threshold 0.42 and temperature 0.12.
+
+The admitted side-local winner keeps 3,457 of 149,487 final top-40 residual
+rows. Its global admitted top-10 contains 346 rows. Although global admitted
+top-10 is positive in April, May, and June, the timestamp x side admitted
+top-10 falls to -5.57 bps in June. Raw top-10 is negative under both ranking
+scopes in every final month. This instability and the small admitted subset
+block promotion.
+
+The requested “remove assets currently excluded at inference” arm has zero row
+impact: none of the paired training/evaluation rows belongs to the current
+139-symbol spread blacklist. This confirms existing static universe parity for
+this dataset, not causal historical parity. The current blacklist is derived
+from June-July 2026 spread observations and is therefore future-derived for the
+September-March training period. It remains a diagnostic-only check. A valid
+historical ablation requires a point-in-time row-level average-spread
+eligibility sidecar with strictly prior observations; current spread history
+does not cover the 2025 training window.
+
+### Decision and next actions
+
+Do not promote any label arm into the production base/residual chain yet.
+
+1. Materialize exact next-2/3 15-minute-bar favorable/adverse/flat targets and a
+   true 12-hour executable timeout utility on the full candidate universe.
+2. Backfill or regenerate complete 12-hour target support so paired coverage is
+   high enough for a full-universe claim.
+3. Add point-in-time average-spread history before retrying the training
+   exclusion arm; do not backfill historical rows from the July `latest` file.
+4. Repeat the fixed 4m -> 6m matrix with those targets, keeping April-June
+   untouched.
+5. Require positive raw top-10 or a materially broader, stable admitted set,
+   including positive worst-month timestamp x side top-10, before promotion.
+
+Current status:
+
+```text
+Fixed-window ablation infrastructure: implemented and tested
+Label HPO: completed per side on residual OOF
+12h/time-aware challengers: evaluated; not promoted
+21-day admission: aggregate uplift, but too narrow and June-unstable
+Inference-spread training exclusion: no-op on current paired rows; causal arm blocked by missing history
+Production base/residual label: unchanged
+```

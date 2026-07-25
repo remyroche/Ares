@@ -535,14 +535,35 @@ include `OPEN` (234 missing hours, maximum gap 28h), `SPK` (228, 10h),
 `CAKE` (273, 17h), and `GRIFFAIN` (335, 36h). By contrast, a high-availability
 control sample was generally complete or had only one isolated 10h gap.
 
-**Decision:** attempt a targeted, exact-exchange OHLCV backfill for these
-internal gaps, then causally recompute the affected rolling features and
-rematerialize the frozen representation. Accept a recovered value only when
-the source candle is real and the full required lookback is continuous. This
-is a source-repair operation, not feature imputation. Record pre/post coverage
-and candidate hashes; retain the current artifact as the immutable baseline.
-Gaps that the exact exchange cannot supply, pre-listing windows, and genuine
-exchange outages remain unavailable.
+**2026-07-25 recoverability assessment:** the 30 symbols with the most missing
+June short candidates account for 4,227 of the 10,192 unavailable candidates
+(41.47%) and 6,917 locally absent May-June source hours. A read-only query of
+Kraken Futures' exact trade-candle endpoint found only 94 valid candles that
+are absent locally, across 17 of the 30 symbols. This is 1.36% of the audited
+source-hour deficit; 13 symbols had no currently recoverable candle. The low
+yield is consistent with much of the remaining deficit being genuine
+illiquidity/no-trade history or history the exact endpoint no longer serves,
+not a feature-store row-join failure.
+
+**Decision:** perform one bounded, exact-exchange OHLCV source repair for every
+affected candidate symbol, but do not expect backfill alone to restore June
+coverage. Persist the endpoint response and the exact accepted-candle ledger;
+accept a recovered value only when the source candle is real and the full
+required lookback becomes continuous. Then causally recompute only affected
+rolling features and rematerialize the frozen representation. Record pre/post
+coverage, recovered candidate count, and candidate hashes while retaining the
+current artifact as the immutable baseline. Stop retrying historical gaps that
+the exact exchange does not supply; pre-listing windows, no-trade hours, and
+genuine exchange outages remain unavailable. This is a source-repair
+operation, not feature imputation.
+
+The repair is successful only if recovered candles produce additional jointly
+finite representation rows without changing candidate identity. Regardless of
+the uplift, keep `gmm_representation_available` as an explicit feature and
+report OOF economics separately for available and unavailable rows. If the
+unavailable June short slice is materially worse, the next remedy is a new
+training-time representation contract with missingness masks or a smaller
+robust input set—not repeated downloads or synthetic filling.
 
 Do **not** median-fill, zero-fill, forward-fill, or interpolate these missing
 AE/GMM inputs into the frozen state. Every candidate has an exact feature-store

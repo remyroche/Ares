@@ -2217,7 +2217,12 @@ def rematerialize_final_class_balance_params(
         config=config,
         require_complete_coverage=not allow_nonpromotable_selection,
     )
-    encoded = _categorical_target(target, pd.RangeIndex(len(target)), config=config)
+    # Class-weight materialisation is positional.  Passing a Series with its
+    # original filtered-row index alongside a fresh RangeIndex would trigger
+    # pandas label alignment and silently encode every unmatched row as -1.
+    encoded = _categorical_target(
+        np.asarray(target), pd.RangeIndex(len(target)), config=config
+    )
     final_class_order = tuple(map(str, encoded.cat.categories))
     if final_class_order != tuple(map(str, selection_provenance["class_order"])):
         raise ValueError(

@@ -2840,6 +2840,8 @@ def run_pipeline(
         FEATURE_SELECTION_HPO_CONTRACT_FILENAME,
         "hpo_checkpoint.json",
         "class_balance_mini_sweep_report.json",
+        "class_balance_economic_oof_report.json",
+        "fixed_monthly_outer_oof_report.json",
     }
     guard_telemetry_path = getattr(resource_guard, "telemetry_path", None)
     if (

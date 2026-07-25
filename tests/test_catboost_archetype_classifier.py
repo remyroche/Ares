@@ -786,6 +786,33 @@ def test_final_class_balance_weights_are_rematerialized_from_actual_final_labels
     )
 
 
+def test_final_class_balance_uses_filtered_series_labels_positionally() -> None:
+    import extreme_price_movements.catboost_archetype_classifier as module
+
+    config = PathArchetypeConfig(class_order=("a", "b"))
+    labels = pd.Series(["a"] * 20 + ["b"] * 2, index=np.arange(100, 122))
+    params = {
+        "class_balance_arm": "frequency_power_0.75",
+        "class_balance_selection_provenance": {
+            "schema": module.CATBOOST_CLASS_BALANCE_SELECTION_SCHEMA,
+            "arm": "frequency_power_0.75",
+            "class_order": ["a", "b"],
+            "selection_evidence": "purged_chronological_oof_validation_only",
+            "final_refit_used_for_selection": False,
+            "mandatory_initial_coverage_complete": True,
+            "promotion_eligible": True,
+        },
+    }
+
+    materialized = module.rematerialize_final_class_balance_params(
+        params,
+        labels,
+        config=config,
+    )
+
+    assert materialized["class_balance_provenance"]["class_support"] == [20, 2]
+
+
 def test_final_balance_provenance_binds_compact_oof_selection_links() -> None:
     import extreme_price_movements.catboost_archetype_classifier as module
 

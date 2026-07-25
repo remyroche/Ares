@@ -66,15 +66,35 @@ def _frame(rows: int = 96) -> pd.DataFrame:
 
 def _provenance(rows: int) -> dict[str, object]:
     features = {
-        "catboost_archetype": ("predicted_path_archetype", "frozen CatBoost path classifier", False),
+        "catboost_archetype": (
+            "predicted_path_archetype",
+            "frozen CatBoost path classifier",
+            False,
+        ),
         "existing_alpha_ev": ("alpha_score", "frozen alpha EV", True),
         "pred_time_to_mfe_12h": ("time_to_mfe", "frozen OOF time head", True),
         "pred_peak_mfe_12h": ("peak_mfe", "frozen OOF peak head", True),
-        "pred_mae_before_meaningful_mfe_atr": ("mae_before_meaningful_mfe", "frozen OOF adverse-depth head", True),
-        "pred_bars_before_price_stops_decreasing": ("adverse_turn_timing", "frozen OOF adverse-turn head", True),
-        "pred_favorable_path_slope_atr_per_hour": ("favorable_path_slope", "frozen OOF path-slope head", True),
+        "pred_mae_before_meaningful_mfe_atr": (
+            "mae_before_meaningful_mfe",
+            "frozen OOF adverse-depth head",
+            True,
+        ),
+        "pred_bars_before_price_stops_decreasing": (
+            "adverse_turn_timing",
+            "frozen OOF adverse-turn head",
+            True,
+        ),
+        "pred_favorable_path_slope_atr_per_hour": (
+            "favorable_path_slope",
+            "frozen OOF path-slope head",
+            True,
+        ),
         "catboost_entropy": ("catboost_entropy", "frozen CatBoost entropy", True),
-        "base_prediction_uncertainty": ("prediction_uncertainty", "OOF uncertainty", True),
+        "base_prediction_uncertainty": (
+            "prediction_uncertainty",
+            "OOF uncertainty",
+            True,
+        ),
         "meta_leaf_support_log1p": ("leaf_support", "frozen leaf support", True),
         "base_archetype_label__family__trend": (
             "base_archetype_labels",
@@ -97,7 +117,10 @@ def _provenance(rows: int) -> dict[str, object]:
         "handoff": {
             "join_mode": "exact_inner_one_to_one",
             "join_keys": list(runner.DEFAULT_ID_COLUMNS),
-            "source_artifacts": {"alpha": "alpha.parquet", "execution": "execution.parquet"},
+            "source_artifacts": {
+                "alpha": "alpha.parquet",
+                "execution": "execution.parquet",
+            },
             "row_count": rows,
         },
         "features": {
@@ -114,7 +137,9 @@ def _provenance(rows: int) -> dict[str, object]:
     }
 
 
-def _args(input_path: Path, provenance_path: Path, output_dir: Path, **overrides: object) -> SimpleNamespace:
+def _args(
+    input_path: Path, provenance_path: Path, output_dir: Path, **overrides: object
+) -> SimpleNamespace:
     values: dict[str, object] = {
         "input": input_path,
         "provenance_json": provenance_path,
@@ -140,7 +165,9 @@ def _args(input_path: Path, provenance_path: Path, output_dir: Path, **overrides
     return SimpleNamespace(**values)
 
 
-def _write_inputs(tmp_path: Path, frame: pd.DataFrame | None = None) -> tuple[Path, Path, pd.DataFrame]:
+def _write_inputs(
+    tmp_path: Path, frame: pd.DataFrame | None = None
+) -> tuple[Path, Path, pd.DataFrame]:
     frame = _frame() if frame is None else frame
     handoff = tmp_path / "handoff.parquet"
     provenance = tmp_path / "provenance.json"
@@ -175,7 +202,42 @@ def test_dry_run_uses_provenance_join_keys_when_id_columns_are_omitted(
     assert manifest["identity_columns"] == list(runner.DEFAULT_ID_COLUMNS)
 
 
-def test_strict_handoff_rejects_late_probability_and_duplicate_identity(tmp_path: Path) -> None:
+def test_production_mode_resolves_full_oof_defaults_and_defers_timing(
+    tmp_path: Path,
+) -> None:
+    handoff, provenance, _frame_value = _write_inputs(tmp_path)
+    paths = runner.run(
+        _args(
+            handoff,
+            provenance,
+            tmp_path / "production",
+            dry_run=True,
+            production=True,
+            timestamp_col=None,
+            max_rows=None,
+            max_span_days=None,
+            n_splits=None,
+            min_train_rows=None,
+            hpo_trials=None,
+            n_estimators=None,
+            early_stopping_rounds=None,
+            n_jobs=None,
+            disable_timing_risk_head=False,
+            enable_timing_risk_head=False,
+        )
+    )
+    manifest = json.loads(paths["manifest"].read_text())
+    assert manifest["run_mode"] == "production"
+    assert manifest["trainer_config"]["decision_time_col"] == "execution_decision_utc"
+    assert manifest["trainer_config"]["n_splits"] == 3
+    assert manifest["trainer_config"]["hpo_trials"] == 40
+    assert manifest["trainer_config"]["n_estimators"] == 1_500
+    assert manifest["timing_risk_head_enabled"] is False
+
+
+def test_strict_handoff_rejects_late_probability_and_duplicate_identity(
+    tmp_path: Path,
+) -> None:
     handoff, provenance, frame = _write_inputs(tmp_path)
     late = frame.copy()
     late.loc[0, "available_at"] = late.loc[0, "__ts__"] + pd.Timedelta(seconds=1)
@@ -184,7 +246,9 @@ def test_strict_handoff_rejects_late_probability_and_duplicate_identity(tmp_path
         runner.run(_args(handoff, provenance, tmp_path / "late", dry_run=True))
 
     duplicate = frame.copy()
-    duplicate.loc[1, list(runner.DEFAULT_ID_COLUMNS)] = duplicate.loc[0, list(runner.DEFAULT_ID_COLUMNS)]
+    duplicate.loc[1, list(runner.DEFAULT_ID_COLUMNS)] = duplicate.loc[
+        0, list(runner.DEFAULT_ID_COLUMNS)
+    ]
     duplicate.to_parquet(handoff, index=False)
     with pytest.raises(ValueError, match="one-to-one"):
         runner.run(_args(handoff, provenance, tmp_path / "duplicate", dry_run=True))
@@ -215,7 +279,9 @@ def test_handoff_checks_identity_after_utc_canonicalization(tmp_path: Path) -> N
         )
 
 
-def test_runner_persists_oof_bundle_reports_and_top10_winner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_persists_oof_bundle_reports_and_top10_winner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     handoff, provenance_path, frame = _write_inputs(tmp_path)
     expected = frame["execution_net_ev_12h"].to_numpy()
     oof = pd.DataFrame(
@@ -240,7 +306,9 @@ def test_runner_persists_oof_bundle_reports_and_top10_winner(tmp_path: Path, mon
             "diagnostics": pd.DataFrame({"scope": ["overall"], "rows": [len(frame)]}),
         },
     )
-    monkeypatch.setattr(runner, "train_execution_ev_meta", lambda *args, **kwargs: bundle)
+    monkeypatch.setattr(
+        runner, "train_execution_ev_meta", lambda *args, **kwargs: bundle
+    )
 
     def fake_save(_bundle: object, path: Path) -> Path:
         path = Path(path)
@@ -292,7 +360,9 @@ def test_runner_never_promotes_ablation_over_full_input_model_mode(
         oof_provenance=None,
         report={"oof_contract": "test", "folds": [], "diagnostics": pd.DataFrame()},
     )
-    monkeypatch.setattr(runner, "train_execution_ev_meta", lambda *args, **kwargs: bundle)
+    monkeypatch.setattr(
+        runner, "train_execution_ev_meta", lambda *args, **kwargs: bundle
+    )
 
     def fake_save(_bundle: object, path: Path) -> Path:
         Path(path).write_bytes(b"bundle")
@@ -347,6 +417,7 @@ def test_runner_smoke_trains_and_persists_timing_risk_companion(tmp_path: Path) 
             max_rows=256,
             no_ablations=True,
             disable_timing_risk_head=False,
+            enable_timing_risk_head=True,
             n_estimators=8,
             early_stopping_rounds=3,
         )
@@ -354,10 +425,16 @@ def test_runner_smoke_trains_and_persists_timing_risk_companion(tmp_path: Path) 
     assert paths["timing_risk_bundle"].is_file()
     diagnostics = pd.read_csv(paths["timing_risk_diagnostics"])
     assert {"overall", "side", "month"}.issubset(diagnostics["scope"])
-    assert diagnostics.loc[diagnostics["scope"] == "overall", "loss_brier"].notna().all()
+    assert (
+        diagnostics.loc[diagnostics["scope"] == "overall", "loss_brier"].notna().all()
+    )
 
 
-def test_runner_rejects_input_before_loading_when_row_smoke_cap_is_exceeded(tmp_path: Path) -> None:
+def test_runner_rejects_input_before_loading_when_row_smoke_cap_is_exceeded(
+    tmp_path: Path,
+) -> None:
     handoff, provenance, _ = _write_inputs(tmp_path)
     with pytest.raises(ValueError, match="before loading"):
-        runner.run(_args(handoff, provenance, tmp_path / "too-large", max_rows=4, dry_run=True))
+        runner.run(
+            _args(handoff, provenance, tmp_path / "too-large", max_rows=4, dry_run=True)
+        )

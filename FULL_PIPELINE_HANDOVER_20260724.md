@@ -2267,6 +2267,14 @@ candidate IDs.
 Goal: determine whether execution EV should be predicted directly or as a
 residual correction to alpha EV.
 
+The runner now has an explicit `--production` profile. It uses
+`execution_decision_utc` rather than the signal timestamp for availability,
+splitting, and training; admits the full May-July OOF span; defaults to three
+outer folds, 40 HPO trials, 1,500 LightGBM estimators, 100-round early stopping,
+and three worker threads; and retains override flags for bounded reruns.
+The timing-risk companion is disabled unless explicitly requested, so timing
+work cannot silently run before the execution-EV winner is stable.
+
 Direct target:
 
 ```text

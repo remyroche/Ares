@@ -223,10 +223,8 @@ def _validate_handoff(
     label_end_time_col: str | None,
     max_span_days: float,
 ) -> pd.DataFrame:
-    if timestamp_col not in id_columns or side_col not in id_columns:
-        raise ValueError(
-            "joined handoff identity must include both timestamp and side columns"
-        )
+    if side_col not in id_columns:
+        raise ValueError("joined handoff identity must include the side column")
     required = list(
         dict.fromkeys(
             [
@@ -258,6 +256,11 @@ def _validate_handoff(
         )
     work = frame.copy()
     work[timestamp_col] = _utc(work[timestamp_col], column=timestamp_col)
+    signal_timestamp_col = declared_keys[0]
+    if signal_timestamp_col != timestamp_col:
+        work[signal_timestamp_col] = _utc(
+            work[signal_timestamp_col], column=signal_timestamp_col
+        )
     if work[timestamp_col].dt.tz is None:  # defensive; utc=True always sets it
         raise ValueError("decision timestamps must normalize to UTC")
     # Identity is defined on canonical UTC timestamps. Checking before this
@@ -276,7 +279,7 @@ def _validate_handoff(
                 "use a smaller joined handoff"
             )
     decision = _utc(work["execution_decision_utc"], column="execution_decision_utc")
-    if not (decision == work[timestamp_col] + pd.Timedelta(hours=1)).all():
+    if not (decision == work[signal_timestamp_col] + pd.Timedelta(hours=1)).all():
         raise ValueError(
             "execution decision timestamps must equal signal timestamp + one hour"
         )
@@ -552,29 +555,45 @@ def _parser() -> argparse.ArgumentParser:
             "declared by the provenance artifact."
         ),
     )
-    parser.add_argument("--timestamp-col", default="__ts__")
+    parser.add_argument("--timestamp-col")
     parser.add_argument("--side-col", default="side_name")
     parser.add_argument("--archetype-col", default="catboost_archetype")
     parser.add_argument("--label-end-time-col", default="execution_label_end_utc")
     parser.add_argument(
         "--max-rows",
         type=int,
-        default=5_000,
-        help="Hard smoke cap, checked from parquet metadata before loading.",
+        default=None,
+        help="Hard row cap. Defaults to 5,000 in smoke mode and 1,000,000 in production.",
     )
     parser.add_argument(
         "--max-span-days",
         type=float,
-        default=31.0,
-        help="Hard smoke date-span cap after UTC normalization.",
+        default=None,
+        help="Hard date-span cap. Defaults to 31 days in smoke mode and 120 in production.",
     )
-    parser.add_argument("--n-splits", type=int, default=2)
-    parser.add_argument("--min-train-rows", type=int, default=50)
-    parser.add_argument("--hpo-trials", type=int, default=0)
-    parser.add_argument("--n-estimators", type=int, default=150)
-    parser.add_argument("--early-stopping-rounds", type=int, default=30)
-    parser.add_argument("--n-jobs", type=int, default=1)
+    parser.add_argument("--n-splits", type=int)
+    parser.add_argument("--min-train-rows", type=int)
+    parser.add_argument("--hpo-trials", type=int)
+    parser.add_argument("--n-estimators", type=int)
+    parser.add_argument("--early-stopping-rounds", type=int)
+    parser.add_argument("--n-jobs", type=int)
     parser.add_argument("--no-ablations", action="store_true")
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Use the full OOF calendar, execution decision timestamp, three outer "
+            "folds, side-local HPO, and production-sized LightGBM defaults."
+        ),
+    )
+    parser.add_argument(
+        "--enable-timing-risk-head",
+        action="store_true",
+        help=(
+            "Explicitly opt into the companion timing-risk model. It is deferred "
+            "by default until the execution-EV winner is stable."
+        ),
+    )
     parser.add_argument(
         "--disable-timing-risk-head",
         action="store_true",
@@ -589,6 +608,28 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> dict[str, Path]:
+    production_mode = bool(getattr(args, "production", False))
+
+    def resolved(value: Any, *, smoke: Any, production: Any) -> Any:
+        return (
+            value if value is not None else (production if production_mode else smoke)
+        )
+
+    args.timestamp_col = resolved(
+        getattr(args, "timestamp_col", None),
+        smoke="__ts__",
+        production="execution_decision_utc",
+    )
+    args.max_rows = resolved(args.max_rows, smoke=5_000, production=1_000_000)
+    args.max_span_days = resolved(args.max_span_days, smoke=31.0, production=120.0)
+    args.n_splits = resolved(args.n_splits, smoke=2, production=3)
+    args.min_train_rows = resolved(args.min_train_rows, smoke=50, production=5_000)
+    args.hpo_trials = resolved(args.hpo_trials, smoke=0, production=40)
+    args.n_estimators = resolved(args.n_estimators, smoke=150, production=1_500)
+    args.early_stopping_rounds = resolved(
+        args.early_stopping_rounds, smoke=30, production=100
+    )
+    args.n_jobs = resolved(args.n_jobs, smoke=1, production=3)
     if args.max_rows < 1 or args.max_span_days < 0:
         raise ValueError(
             "max-rows must be positive and max-span-days must be non-negative"
@@ -625,7 +666,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         label_end_time_col=args.label_end_time_col,
         max_span_days=args.max_span_days,
     )
-    timing_risk_enabled = not bool(getattr(args, "disable_timing_risk_head", False))
+    timing_risk_enabled = bool(
+        getattr(args, "enable_timing_risk_head", False)
+    ) and not bool(getattr(args, "disable_timing_risk_head", False))
     if timing_risk_enabled:
         timing_columns = (
             "execution_exit_hour",
@@ -655,6 +698,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     args.output_dir.mkdir(parents=True, exist_ok=False)
     manifest: dict[str, Any] = {
         "schema": "execution_ev_meta_runner_v1",
+        "run_mode": "production" if production_mode else "smoke",
         "input": {
             "path": str(args.input),
             "sha256": _sha256(args.input),
@@ -672,7 +716,10 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         "identity_columns": id_columns,
         "trainer_config": asdict(config),
         "timing_risk_head_enabled": timing_risk_enabled,
-        "smoke_caps": {"max_rows": args.max_rows, "max_span_days": args.max_span_days},
+        "resource_caps": {
+            "max_rows": args.max_rows,
+            "max_span_days": args.max_span_days,
+        },
         "leakage_contract": "exact one-to-one handoff; finite pre-entry OOF/frozen features; feature availability <= decision time; 12h purge and embargo; OOF-only model comparison",
     }
     manifest_path = _write_json(args.output_dir / "manifest.json", manifest)

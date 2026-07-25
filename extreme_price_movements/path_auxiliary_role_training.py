@@ -44,6 +44,7 @@ def select_auxiliary_role_features(
     mandatory_features_by_side: Mapping[str, Sequence[str]] | None = None,
     random_state: int = 42,
     cfg: Mapping[str, Any] | None = None,
+    purge_hours: float = 13.0,
 ) -> dict[str, Any]:
     """Run the full feature selector independently per side for one role.
 
@@ -53,10 +54,7 @@ def select_auxiliary_role_features(
     are exactly identical (for example peak conditional mean and q80).
     """
 
-    from extreme_price_movements.lgbm_pipeline import (
-        LGBM_PER_SIDE_FEATURE_SELECTION,
-        train_lgbm_stability_candidate,
-    )
+    from extreme_price_movements import lgbm_pipeline
 
     if not isinstance(X, pd.DataFrame) or X.empty:
         raise ValueError("X must be a non-empty pandas DataFrame")
@@ -92,7 +90,7 @@ def select_auxiliary_role_features(
         or np.any(weights <= 0.0)
     ):
         raise ValueError("sample_weight must be finite, positive, and aligned to X")
-    if not bool(LGBM_PER_SIDE_FEATURE_SELECTION):
+    if not bool(lgbm_pipeline.LGBM_PER_SIDE_FEATURE_SELECTION):
         raise RuntimeError(
             "auxiliary roles require independent long/short feature selection"
         )
@@ -177,25 +175,66 @@ def select_auxiliary_role_features(
         }
         if binary:
             label_context["y_bin"] = local_target
-        result = train_lgbm_stability_candidate(
-            matrix.iloc[side_idx].reset_index(drop=True),
-            local_target,
-            sample_weight=weights[side_idx],
-            random_state=int(random_state) + (1009 if side == "long" else 2017),
-            mode="classifier" if binary else "regressor",
-            timestamps=timestamp_values[side_idx],
-            assets=asset_values[side_idx],
-            returns=local_target,
-            hard_labels=local_target if binary else None,
-            hpo_objective_mode="train_base" if binary else "auxiliary_regression",
-            preset_best_params=params,
-            preset_source=f"{MODEL_SCHEMA}:{role_name}:{side}:selection_only",
-            cfg=local_cfg,
-            label_context=label_context,
+        previous_short_history_fallback = (
+            lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
         )
+        previous_aux_validation_months = (
+            lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
+        )
+        previous_purge_hours = lgbm_pipeline.LGBM_PURGE_HOURS
+        auxiliary_validation_months = min(int(previous_aux_validation_months), 1)
+        # The frozen December-April auxiliary reference window is shorter than
+        # the base model's 365-day burn-in.  Use the pipeline's chronological
+        # short-history fallback for this synchronous side-local selection
+        # call: it retains an expanding train-before-validation split and never
+        # falls back to shuffled CV.
+        lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK = True
+        # Regression selection otherwise reserves six months for validation
+        # from a five-month December-April reference window, leaving the first
+        # fold with no causally earlier training rows.  An April validation tail
+        # leaves December-March for strictly earlier fitting and matches the
+        # approved largest-single-fold feature-selection convention.
+        lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS = auxiliary_validation_months
+        lgbm_pipeline.LGBM_PURGE_HOURS = float(purge_hours)
+        try:
+            result = lgbm_pipeline.train_lgbm_stability_candidate(
+                matrix.iloc[side_idx].reset_index(drop=True),
+                local_target,
+                sample_weight=weights[side_idx],
+                random_state=int(random_state) + (1009 if side == "long" else 2017),
+                mode="classifier" if binary else "regressor",
+                timestamps=timestamp_values[side_idx],
+                assets=asset_values[side_idx],
+                returns=local_target,
+                hard_labels=local_target if binary else None,
+                hpo_objective_mode="train_base" if binary else "auxiliary_regression",
+                preset_best_params=params,
+                preset_source=f"{MODEL_SCHEMA}:{role_name}:{side}:selection_only",
+                cfg=local_cfg,
+                label_context=label_context,
+            )
+        finally:
+            lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK = (
+                previous_short_history_fallback
+            )
+            lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS = (
+                previous_aux_validation_months
+            )
+            lgbm_pipeline.LGBM_PURGE_HOURS = previous_purge_hours
         if not result:
             raise RuntimeError(f"feature selection failed for {role_name}/{side}")
         side_metrics = dict(result.get("metrics") or {})
+        side_metrics["auxiliary_selection_cv_contract"] = {
+            "mode": "forward_burnin_with_chronological_short_history_fallback",
+            "base_burn_in_days": float(lgbm_pipeline.LGBM_BASE_FORWARD_BURN_IN_DAYS),
+            "short_history_fallback_fraction": float(
+                lgbm_pipeline.LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
+            ),
+            "auxiliary_validation_months": auxiliary_validation_months,
+            "purge_hours": float(purge_hours),
+            "train_before_validation_only": True,
+            "shuffled_fallback_forbidden": True,
+        }
         selected = [
             str(feature)
             for feature in result.get("selected_feature_names", ())

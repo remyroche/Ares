@@ -258,9 +258,7 @@ def use_canonical_two_phase_feature_selection(
     it can proceed directly to a narrow full-population reload.  Bypassing the
     split for a fresh selection is retained only as an explicit diagnostic.
     """
-    return not bool(has_frozen_feature_contract) and not bool(
-        diagnostic_single_phase
-    )
+    return not bool(has_frozen_feature_contract) and not bool(diagnostic_single_phase)
 
 
 LGBM_CV_SPLITS = int(os.environ.get("EPM_LGBM_CV_SPLITS", "3"))
@@ -843,9 +841,9 @@ LGBM_FEATURE_RECENT_MIN_COVERAGE = float(
 LGBM_FEATURE_RECENT_TAIL_MONTHS = int(
     os.environ.get("EPM_LGBM_FEATURE_RECENT_TAIL_MONTHS", "4")
 )
-LGBM_FEATURE_COVERAGE_SCOPE = os.environ.get(
-    "EPM_LGBM_FEATURE_COVERAGE_SCOPE", "all_post_warmup"
-).strip().lower()
+LGBM_FEATURE_COVERAGE_SCOPE = (
+    os.environ.get("EPM_LGBM_FEATURE_COVERAGE_SCOPE", "all_post_warmup").strip().lower()
+)
 LGBM_FEATURE_COVERAGE_WARMUP_DAYS = int(
     os.environ.get("EPM_LGBM_FEATURE_COVERAGE_WARMUP_DAYS", "30")
 )
@@ -1091,14 +1089,10 @@ if LGBM_CV_MODE not in {
 LGBM_PURGE_HOURS = max(0.0, float(LGBM_PURGE_HOURS))
 LGBM_BASE_FORWARD_BURN_IN_DAYS = max(0.0, float(LGBM_BASE_FORWARD_BURN_IN_DAYS))
 LGBM_META_FORWARD_VALIDATION_MONTHS = max(1, int(LGBM_META_FORWARD_VALIDATION_MONTHS))
-LGBM_AUX_FORWARD_VALIDATION_MONTHS = max(
-    1, int(LGBM_AUX_FORWARD_VALIDATION_MONTHS)
-)
+LGBM_AUX_FORWARD_VALIDATION_MONTHS = max(1, int(LGBM_AUX_FORWARD_VALIDATION_MONTHS))
 LGBM_FORWARD_MIN_TRAIN_ROWS = max(1, int(LGBM_FORWARD_MIN_TRAIN_ROWS))
 LGBM_FORWARD_MIN_VALID_ROWS = max(1, int(LGBM_FORWARD_MIN_VALID_ROWS))
-LGBM_AUX_FORWARD_MIN_VALID_ROWS = max(
-    1, int(LGBM_AUX_FORWARD_MIN_VALID_ROWS)
-)
+LGBM_AUX_FORWARD_MIN_VALID_ROWS = max(1, int(LGBM_AUX_FORWARD_MIN_VALID_ROWS))
 LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC = float(
     np.clip(float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC), 0.10, 0.90)
 )
@@ -2150,8 +2144,7 @@ class LGBMStabilityModel:
                 state = getattr(self, "ae_gmm_state", {}) or {}
                 if _ae_gmm_cycle_state_strict(state):
                     raise ValueError(
-                        "Frozen AE/GMM cycle context transform failed: "
-                        f"{exc}"
+                        f"Frozen AE/GMM cycle context transform failed: {exc}"
                     ) from exc
                 tprint(
                     "WARNING: optional AE/GMM context features unavailable; "
@@ -2332,10 +2325,14 @@ def _fit_or_load_ae_gmm_cycle_state_for_selection(
             X_df.columns,
         )
         if len(input_features) < 2:
-            return X_df, {}, {
-                "enabled": False,
-                "reason": "insufficient_cycle_input_features",
-            }
+            return (
+                X_df,
+                {},
+                {
+                    "enabled": False,
+                    "reason": "insufficient_cycle_input_features",
+                },
+            )
         n = len(X_df)
         reference_cap = max(
             int(LGBM_AE_GMM_MAX_TRAIN_ROWS),
@@ -2375,15 +2372,17 @@ def _fit_or_load_ae_gmm_cycle_state_for_selection(
             outcome_free=True,
         )
         if not _ae_gmm_state_enabled(state):
-            return X_df, state, {
-                "enabled": False,
-                "reason": str(state.get("reason", "fit_failed")),
-            }
+            return (
+                X_df,
+                state,
+                {
+                    "enabled": False,
+                    "reason": str(state.get("reason", "fit_failed")),
+                },
+            )
         reference_ts_values = _take_aligned(timestamps, reference_idx, n)
         reference_ts = (
-            pd.Series(
-                pd.to_datetime(reference_ts_values, utc=True, errors="coerce")
-            )
+            pd.Series(pd.to_datetime(reference_ts_values, utc=True, errors="coerce"))
             if reference_ts_values is not None
             else pd.Series(dtype="datetime64[ns, UTC]")
         )
@@ -2455,18 +2454,22 @@ def _fit_or_load_ae_gmm_cycle_state_for_selection(
         list(dict.fromkeys(list(map(str, X_df.columns)) + generated_features)),
         index=X_df.index,
     )
-    return augmented, state, {
-        "enabled": True,
-        "state_source": state_source,
-        "cycle_state_hash": str(
-            state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
-        ),
-        "input_feature_count": int(len(input_features)),
-        "generated_feature_count": int(len(generated_features)),
-        "reference_rows_sampled": int(
-            state.get("cycle_reference_rows_sampled", 0) or 0
-        ),
-    }
+    return (
+        augmented,
+        state,
+        {
+            "enabled": True,
+            "state_source": state_source,
+            "cycle_state_hash": str(
+                state.get("cycle_state_hash") or ae_gmm_learned_transform_hash(state)
+            ),
+            "input_feature_count": int(len(input_features)),
+            "generated_feature_count": int(len(generated_features)),
+            "reference_rows_sampled": int(
+                state.get("cycle_reference_rows_sampled", 0) or 0
+            ),
+        },
+    )
 
 
 def _ae_gmm_model_feature_names_for_objective(objective_mode: str | None) -> list[str]:
@@ -2788,9 +2791,7 @@ def _fit_ae_gmm_post_selection_state(
         temporal_stability_hpo=not bool(outcome_free),
         outcome_free=bool(outcome_free),
         temporal_feature_contract=(
-            "row_independent_v1"
-            if outcome_free
-            else "ordered_batch_sequence_v1"
+            "row_independent_v1" if outcome_free else "ordered_batch_sequence_v1"
         ),
     )
     if _ae_gmm_state_enabled(state) and bool(outcome_free):
@@ -3551,9 +3552,7 @@ def _lgbm_cv_metric_fields(objective_mode: str | None = None) -> dict[str, Any]:
                 ),
                 "forward_min_train_rows": int(LGBM_FORWARD_MIN_TRAIN_ROWS),
                 "forward_min_valid_rows": int(LGBM_FORWARD_MIN_VALID_ROWS),
-                "forward_aux_min_valid_rows": int(
-                    LGBM_AUX_FORWARD_MIN_VALID_ROWS
-                ),
+                "forward_aux_min_valid_rows": int(LGBM_AUX_FORWARD_MIN_VALID_ROWS),
                 "forward_burnin_strict": bool(LGBM_FORWARD_BURNIN_STRICT),
                 "forward_allow_short_history_fallback": bool(
                     LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
@@ -6500,11 +6499,7 @@ def _recent_feature_coverage_survivors(
     scope = str(coverage_scope or LGBM_FEATURE_COVERAGE_SCOPE).strip().lower()
     warmup_days_value = max(
         0,
-        int(
-            LGBM_FEATURE_COVERAGE_WARMUP_DAYS
-            if warmup_days is None
-            else warmup_days
-        ),
+        int(LGBM_FEATURE_COVERAGE_WARMUP_DAYS if warmup_days is None else warmup_days),
     )
     cols = [c for c in all_cols if c not in exempt]
     diagnostics: dict[str, Any] = {
@@ -7512,7 +7507,11 @@ def _resolve_lgbm_time_feature_selector_bypass_features(
             )
         nested_mda = cfg.get("mda_config")
         if isinstance(nested_mda, Mapping):
-            for key in ("protected_features", "force_include_features", "force_include"):
+            for key in (
+                "protected_features",
+                "force_include_features",
+                "force_include",
+            ):
                 configured_protected.extend(
                     _string_list_config(nested_mda.get(key), (), env_key=None)
                 )
@@ -7625,7 +7624,8 @@ def _mark_lgbm_pre_mda_selector_bypass(
         existing = out.get("selector_bypass_reason", pd.Series("", index=out.index))
         out.loc[mask, "selector_bypass_reason"] = np.where(
             existing.loc[mask].astype(str).str.len().to_numpy() > 0,
-            existing.loc[mask].astype(str).to_numpy() + ";pre_mda_conditional_candidate",
+            existing.loc[mask].astype(str).to_numpy()
+            + ";pre_mda_conditional_candidate",
             "pre_mda_conditional_candidate",
         )
     return out
@@ -9188,7 +9188,7 @@ def materialize_bme_parquet_sample(
         if ts.tzinfo is not None:
             ts = ts.tz_convert("UTC").tz_localize(None)
         bounds.append(
-            f'"{timestamp_column}" {operator} TIMESTAMP \'{ts.isoformat(sep=" ")}\''
+            f"\"{timestamp_column}\" {operator} TIMESTAMP '{ts.isoformat(sep=' ')}'"
         )
     source_relation = (
         f"(SELECT * FROM {raw_source_relation} WHERE {' AND '.join(bounds)})"
@@ -9196,9 +9196,9 @@ def materialize_bme_parquet_sample(
         else raw_source_relation
     )
     schema = set(
-        connection.execute(
-            f"DESCRIBE SELECT * FROM {source_relation}"
-        ).fetchdf()["column_name"].astype(str)
+        connection.execute(f"DESCRIBE SELECT * FROM {source_relation}")
+        .fetchdf()["column_name"]
+        .astype(str)
     )
     ordered_identity = [str(col) for col in identity_columns]
     required = [str(timestamp_column), *ordered_identity]
@@ -9206,12 +9206,10 @@ def materialize_bme_parquet_sample(
     if missing:
         raise ValueError(f"B/M/E parquet source is missing identity columns: {missing}")
     source_rows = int(
-        connection.execute(
-            f"SELECT count(*) FROM {source_relation}"
-        ).fetchone()[0]
+        connection.execute(f"SELECT count(*) FROM {source_relation}").fetchone()[0]
     )
     first_ts, last_ts = connection.execute(
-        f"SELECT min(\"{timestamp_column}\"), max(\"{timestamp_column}\") "
+        f'SELECT min("{timestamp_column}"), max("{timestamp_column}") '
         f"FROM {source_relation}"
     ).fetchone()
     if first_ts is None or last_ts is None:
@@ -9240,9 +9238,10 @@ def materialize_bme_parquet_sample(
         if ts.tzinfo is not None:
             ts = ts.tz_convert("UTC").tz_localize(None)
         return ts.isoformat(sep=" ")
+
     identity_select = ", ".join(f'"{col}"' for col in ordered_identity)
     normalized_identity = ", ".join(
-        f"cast(\"{col}\" AS VARCHAR)" for col in ordered_identity
+        f'cast("{col}" AS VARCHAR)' for col in ordered_identity
     )
     join_clause = " AND ".join(
         [f'h."{timestamp_column}" = k."{timestamp_column}"']
@@ -10609,6 +10608,26 @@ def _forward_burnin_splitter(
         valid,
         objective_mode=objective_mode,
     )
+    fallback_enabled = (
+        bool(LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK)
+        if allow_short_history_fallback is None
+        else bool(allow_short_history_fallback)
+    )
+    valid_ns = ns[valid]
+    if (
+        fallback_enabled
+        and len(valid_ns) > 0
+        and int(validation_start) <= int(np.min(valid_ns))
+    ):
+        fallback_start = _forward_short_history_validation_start_ns(ns, valid)
+        if fallback_start is not None:
+            validation_start = int(fallback_start)
+            tprint(
+                "WARNING: configured forward validation window leaves no "
+                "pre-validation history; using chronological short-history "
+                f"fallback at {pd.Timestamp(validation_start, unit='ns', tz='UTC').isoformat()} "
+                f"(frac={float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC):.2f})."
+            )
     eligible = valid & (ns >= int(validation_start))
     unique_ts = np.asarray(sorted(np.unique(ns[eligible]).tolist()), dtype=np.int64)
     if len(unique_ts) == 0:
@@ -10618,11 +10637,6 @@ def _forward_burnin_splitter(
             f"base_burn_in_days={float(LGBM_BASE_FORWARD_BURN_IN_DAYS):.1f}, "
             f"meta_validation_months={int(LGBM_META_FORWARD_VALIDATION_MONTHS)}, "
             f"rows={n}."
-        )
-        fallback_enabled = (
-            bool(LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK)
-            if allow_short_history_fallback is None
-            else bool(allow_short_history_fallback)
         )
         if fallback_enabled:
             fallback_start = _forward_short_history_validation_start_ns(ns, valid)
@@ -10872,8 +10886,10 @@ def _direction_score_for_feature(
         normalized_delta = (high_mean - low_mean) / target_scale
         try:
             target_bins = pd.qcut(
-                pd.Series(y_arr), q=min(8, max(3, len(levels))),
-                labels=False, duplicates="drop",
+                pd.Series(y_arr),
+                q=min(8, max(3, len(levels))),
+                labels=False,
+                duplicates="drop",
             ).to_numpy(dtype=np.float64)
             valid_target_bins = np.isfinite(target_bins)
             mi = float(
@@ -11101,9 +11117,7 @@ def _univariate_directional_filter(
                 )
                 p20_norm_vals.append(float(metrics.get("precision20_norm", 0.0)))
                 lift20_vals.append(float(metrics.get("lift20", 1.0)))
-                mono_vals.append(
-                    float(metrics.get("rank_bucket_monotonicity", 0.0))
-                )
+                mono_vals.append(float(metrics.get("rank_bucket_monotonicity", 0.0)))
             dirs.append(direction)
             margins.append(margin)
         j_pos_med = float(np.median(j_pos_vals)) if j_pos_vals else 0.0
@@ -11158,9 +11172,7 @@ def _univariate_directional_filter(
                 "pass_precision": bool(precision_pass),
                 "pass_lift": bool(lift_pass),
                 "pass_monotonicity": bool(mono_pass),
-                "pass_auxiliary_regression": bool(
-                    auxiliary_regression and passed
-                ),
+                "pass_auxiliary_regression": bool(auxiliary_regression and passed),
             }
         )
     stats = pd.DataFrame(records)
@@ -13550,9 +13562,7 @@ def _fit_lgbm_archetype_states(
     ref_timestamps = timestamps
     ref_assets = assets
     ref_sides = (
-        X_train["side"].to_numpy(copy=False)
-        if "side" in X_train.columns
-        else None
+        X_train["side"].to_numpy(copy=False) if "side" in X_train.columns else None
     )
     cap = int(LGBM_ARCHETYPE_FIT_MAX_ROWS)
     if cap > 0 and n_train > cap:
@@ -22600,9 +22610,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
                 "economic_tail_only"
                 if side_tail_weight is not None
                 else (
-                    "uniform"
-                    if side_tail_across_archetypes
-                    else "input_sample_weight"
+                    "uniform" if side_tail_across_archetypes else "input_sample_weight"
                 )
             ),
         }
@@ -22636,14 +22644,11 @@ def _run_lgbm_side_aware_feature_selection_tail(
         "per_side_feature_selection_cluster_union_count": int(len(cluster_union)),
         "per_side_feature_selection_selected_union_count": int(len(selected_union)),
         "per_side_feature_selection_selected_features": {
-            str(side): list(features)
-            for side, features in selected_by_side.items()
+            str(side): list(features) for side, features in selected_by_side.items()
         },
         "per_side_feature_selection_elapsed_sec": float(time.perf_counter() - t0),
         "archetype_conditioned_mda": dict(archetype_mda_diag),
-        "per_side_mda_across_archetypes_unweighted": bool(
-            side_tail_across_archetypes
-        ),
+        "per_side_mda_across_archetypes_unweighted": bool(side_tail_across_archetypes),
     }
     tprint(
         "LGBM side-aware feature-selection tail complete: "
@@ -22961,16 +22966,17 @@ def train_lgbm_stability_candidate(
     # still request legacy exemptions, but production base/meta selection uses
     # the same complete-case rule for every candidate.
     coverage_exempt_features = set()
-    if _config_bool(
-        cfg,
-        "lgbm_feature_coverage_allow_model_derived_exemptions",
-        False,
-        env_key="EPM_LGBM_FEATURE_COVERAGE_ALLOW_MODEL_DERIVED_EXEMPTIONS",
-    ) and objective_mode == "train_meta":
+    if (
+        _config_bool(
+            cfg,
+            "lgbm_feature_coverage_allow_model_derived_exemptions",
+            False,
+            env_key="EPM_LGBM_FEATURE_COVERAGE_ALLOW_MODEL_DERIVED_EXEMPTIONS",
+        )
+        and objective_mode == "train_meta"
+    ):
         coverage_exempt_features = {
-            str(c)
-            for c in X_df.columns
-            if _is_lgbm_model_derived_meta_feature(str(c))
+            str(c) for c in X_df.columns if _is_lgbm_model_derived_meta_feature(str(c))
         }
     coverage_survivors, coverage_diagnostics = _recent_feature_coverage_survivors(
         X_raw_df.reindex(columns=list(X_df.columns)),
@@ -22997,9 +23003,7 @@ def train_lgbm_stability_candidate(
             )
         ),
         coverage_scope=str(
-            (cfg or {}).get(
-                "lgbm_feature_coverage_scope", LGBM_FEATURE_COVERAGE_SCOPE
-            )
+            (cfg or {}).get("lgbm_feature_coverage_scope", LGBM_FEATURE_COVERAGE_SCOPE)
             if isinstance(cfg, Mapping)
             else LGBM_FEATURE_COVERAGE_SCOPE
         ),
@@ -24625,9 +24629,7 @@ def fit_lgbm_stability_full_model(
                     )
                 ),
                 "ae_gmm_representation_selection_outcome_free": bool(
-                    ae_gmm_state.get(
-                        "representation_selection_outcome_free", False
-                    )
+                    ae_gmm_state.get("representation_selection_outcome_free", False)
                 ),
                 "ae_gmm_oof_generation_policy": "single_cycle_state_for_all_oof_folds",
                 "ae_gmm_cycle_contract_version": str(

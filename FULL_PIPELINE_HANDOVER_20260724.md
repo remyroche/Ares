@@ -1783,25 +1783,23 @@ Gate:
 
 Goal: produce OOF predictions and final models for all five targets.
 
-Resume candidate:
+Canonical runner:
 
 ```bash
 PYTHONUNBUFFERED=1 PYTHONPATH=. <PYTHON> -u \
-  scripts/run_path_auxiliary_lgbm_models.py \
+  scripts/run_path_auxiliary_role_bundles.py \
   --labels-path \
-  data_perp/artifacts/20260723_s59_h5_path_aux_targets_v11_resolved_supportive_15atr/labels \
-  --archetype-context-path \
-  data_perp/reports/s59_h5_signalclose_causal_base_sharedstore_mda_hpo150_wf30_20260722_v1/meta_handoff_top40/train_meta_regime_handoff.parquet \
-  --selection-hpo-reference-end 2026-03-01T00:00:00Z \
-  --label-resolution-column __label_end_ts__ \
+  data_perp/artifacts/packb_path_auxiliary_targets_20260725_v1_31_8/targets.parquet \
+  --context-path \
+  data_perp/artifacts/packb_downstream_context_20260725_v2_31_8_frozen_ae_gmm/context.parquet \
+  --selection-hpo-reference-end 2026-05-01T00:00:00Z \
   --feature-dir data_perp/features/20260711_070000 \
   --output-dir \
-  data_perp/reports/path_auxiliary_lgbm_full_20260723_v18_auxcv6m_min300_strict \
-  --n-trials 75 \
+  data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8 \
+  --n-trials 40 \
+  --hpo-patience 12 \
   --seed 42 \
   --purge-hours 13 \
-  --start 2025-02-01T00:00:00Z \
-  --end 2026-07-21T06:00:00Z \
   --selection-rows 45000 \
   --hpo-rows 45000
 ```
@@ -1819,6 +1817,11 @@ Selection contract:
 - Separate long and short training populations and model bundles.
 - Univariate, Relief, correlation pruning, MDA, automatic stopping, and HPO are
   all fitted independently per side.
+- Feature selection uses a purged April validation tail with only resolved
+  December-March rows available for training. The base selector's 365-day
+  burn-in is replaced by its chronological short-history fallback for binary
+  roles; shuffled fallback is forbidden. Regression roles use one April
+  validation month rather than the impossible six-month default.
 - Refactor the current global pre-screen before resuming; a global pre-screen or
   global selected-feature union does not satisfy this contract.
 - No global selected-feature union and no shared fitted selector.
@@ -1827,7 +1830,7 @@ Selection contract:
 - Automatic MDA stop.
 - Preserve observable base archetype encodings.
 - HPO after feature selection.
-- Up to 75 trials, with early stopping/pruning.
+- Up to 40 trials per unique role study, with stale-trial stopping after 12.
 
 Target-specific sample weights remain bounded between 0.5 and 2.0.
 

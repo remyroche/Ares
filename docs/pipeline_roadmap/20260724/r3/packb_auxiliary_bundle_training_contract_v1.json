@@ -26,6 +26,7 @@
   },
   "feature_selection": {
     "contract": "full univariate plus Relief plus MDA pipeline independently by side and unique role target",
+    "cv_contract": "strictly chronological and purged: validate on April only, train on resolved December-March rows only; classifier short-history fallback is chronological and shuffled fallback is forbidden",
     "event_role_reuse": "the exact meaningful-MFE event selector is shared by peak, timing, and MAE because the event target is identical",
     "mandatory_context": [
       "score",
@@ -35,7 +36,7 @@
       "gmm_representation_available",
       "frozen base-archetype one-hot contract"
     ],
-    "reference_sample": "up to 45000 April rows spread across beginning, middle, and end",
+    "reference_sample": "up to 45000 resolved pre-May rows spread across December-April; April is the feature-selection validation tail",
     "side_scope": [
       "long",
       "short"

@@ -171,6 +171,31 @@ def test_latest_holdout_can_enable_local_short_history_fallback(monkeypatch):
     assert lp.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK is False
 
 
+def test_auxiliary_window_without_prior_history_uses_chronological_fallback(
+    monkeypatch,
+):
+    _patch_forward_defaults(monkeypatch)
+    monkeypatch.setattr(lp, "LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK", True)
+    timestamps = pd.date_range("2026-04-01", periods=30, freq="D", tz="UTC")
+    y = np.linspace(0.0, 1.0, len(timestamps), dtype=np.float32)
+
+    splitter, y_split = lp._forward_burnin_splitter(
+        y,
+        False,
+        42,
+        timestamps=timestamps,
+        n_splits=2,
+        objective_mode="auxiliary_regression",
+    )
+    folds = list(splitter.split(np.zeros(len(y_split)), y_split))
+    fallback_cutoff = timestamps[int(np.floor(0.70 * len(timestamps)))]
+
+    assert len(folds) == 2
+    for train_idx, valid_idx in folds:
+        assert timestamps[valid_idx].min() >= fallback_cutoff
+        assert timestamps[train_idx].max() < timestamps[valid_idx].min()
+
+
 def test_distillation_skips_short_forward_cv_failure(monkeypatch):
     _patch_forward_defaults(monkeypatch)
     monkeypatch.setattr(lp, "LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE", True)

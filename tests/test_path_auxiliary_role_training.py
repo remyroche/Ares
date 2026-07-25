@@ -152,9 +152,16 @@ def test_role_hpo_rejects_runs_longer_than_the_production_cap() -> None:
 def test_binary_role_feature_selection_is_independent_per_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from extreme_price_movements import lgbm_pipeline
+
     rows = 800
     sides = np.repeat(["long", "short"], rows // 2)
     calls: list[tuple[str, str]] = []
+    original_short_history_fallback = (
+        lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
+    )
+    original_aux_validation_months = lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
+    original_purge_hours = lgbm_pipeline.LGBM_PURGE_HOURS
 
     def fake_selector(
         X: pd.DataFrame,
@@ -197,3 +204,30 @@ def test_binary_role_feature_selection_is_independent_per_side(
         "long": ["efficiency_ratio_20"],
         "short": ["prog_eff_24"],
     }
+    assert (
+        result["selection_metrics"]["by_side"]["long"][
+            "auxiliary_selection_cv_contract"
+        ]["train_before_validation_only"]
+        is True
+    )
+    assert (
+        result["selection_metrics"]["by_side"]["long"][
+            "auxiliary_selection_cv_contract"
+        ]["auxiliary_validation_months"]
+        == 1
+    )
+    assert (
+        result["selection_metrics"]["by_side"]["long"][
+            "auxiliary_selection_cv_contract"
+        ]["purge_hours"]
+        == 13.0
+    )
+    assert (
+        lgbm_pipeline.LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
+        is original_short_history_fallback
+    )
+    assert (
+        lgbm_pipeline.LGBM_AUX_FORWARD_VALIDATION_MONTHS
+        == original_aux_validation_months
+    )
+    assert lgbm_pipeline.LGBM_PURGE_HOURS == original_purge_hours

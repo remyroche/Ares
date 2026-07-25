@@ -322,15 +322,30 @@ def _selection_contracts(
         static_report=static_report,
         handoff_feature_columns=handoff_feature_columns,
     )
-    matrix = pd.concat(
-        [
-            matrix.reset_index(drop=True),
-            archetype_features.iloc[selection_idx].reset_index(drop=True),
-        ],
-        axis=1,
-        copy=False,
+    archetype_available = [
+        feature
+        for feature in archetype_features.columns
+        if feature in requested_features
+    ]
+    if archetype_available:
+        matrix.loc[:, archetype_available] = (
+            archetype_features.iloc[selection_idx]
+            .loc[:, archetype_available]
+            .to_numpy(dtype=np.float32, copy=False)
+        )
+    source_available = sorted(
+        set(map(str, static_report.get("available_feature_names", []))).union(
+            archetype_available
+        )
     )
-    available, universe_report = configured_auxiliary_feature_universe(matrix.columns)
+    static_report = dict(static_report)
+    static_report["available_feature_names"] = source_available
+    static_report["available_features"] = int(len(source_available))
+    static_report["missing_features"] = sorted(
+        set(map(str, requested_features)) - set(source_available)
+    )
+    static_report["archetype_overlay_features"] = sorted(archetype_available)
+    available, universe_report = configured_auxiliary_feature_universe(source_available)
     matrix = matrix.reindex(columns=available).astype(np.float32, copy=False)
     contracts = select_bundle_feature_contracts(
         matrix,
@@ -341,6 +356,7 @@ def _selection_contracts(
         archetypes=_archetype_context(selection_labels).to_numpy(),
         mandatory_features_by_side=mandatory_features_by_side,
         random_state=int(seed),
+        purge_hours=13.0,
         progress_callback=_guard_callback(guard, prefix="role_selection"),
     )
     report = {
@@ -641,6 +657,7 @@ def _representation_role_metrics(
             metric_mask = (
                 canonical & eligible & np.isfinite(target) & np.isfinite(prediction)
             )
+            support = int(metric_mask.sum())
             if task == "binary":
                 metrics = probability_calibration_metrics(
                     target, np.clip(prediction, 0.0, 1.0), mask=metric_mask
@@ -657,7 +674,6 @@ def _representation_role_metrics(
                     metrics["empirical_coverage_alpha_0_8"] = float(
                         np.mean(observed <= estimate)
                     )
-            support = int(metric_mask.sum())
             report[side][label] = {
                 "canonical_rows": int(canonical.sum()),
                 "oof_prediction_rows": int((canonical & np.isfinite(prediction)).sum()),
@@ -1057,6 +1073,44 @@ def run(
         raise ValueError(
             f"{REPRESENTATION_AVAILABLE_FEATURE} is unavailable to selection"
         )
+    from extreme_price_movements import lgbm_pipeline
+
+    selection_cv_contract = {
+        "mode": str(lgbm_pipeline.LGBM_CV_MODE),
+        "splits": int(lgbm_pipeline.LGBM_CV_SPLITS),
+        "purge_hours": 13.0,
+        "min_train_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_TRAIN_ROWS),
+        "min_binary_validation_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_VALID_ROWS),
+        "min_regression_validation_rows": int(
+            lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS
+        ),
+        "binary_short_history_fallback_fraction": float(
+            lgbm_pipeline.LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
+        ),
+        "regression_validation_months": 1,
+        "train_before_validation_only": True,
+        "shuffled_fallback_forbidden": True,
+    }
+    if max_rows == 0:
+        production_selector_requirements = {
+            "mode": "forward_burnin",
+            "splits": 3,
+            "min_train_rows": 200,
+            "min_binary_validation_rows": 20,
+            "min_regression_validation_rows": 300,
+        }
+        mismatches = {
+            key: {
+                "expected": expected,
+                "actual": selection_cv_contract[key],
+            }
+            for key, expected in production_selector_requirements.items()
+            if selection_cv_contract[key] != expected
+        }
+        if mismatches:
+            raise ValueError(
+                f"canonical production selector runtime is noncanonical: {mismatches}"
+            )
 
     fingerprint_payload = {
         "schema": RUNNER_SCHEMA,
@@ -1096,6 +1150,7 @@ def run(
             ),
         },
         "selection_groups": dict(SELECTION_ROLE_SOURCES),
+        "selection_cv_contract": selection_cv_contract,
         "reference_end": reference_end.isoformat(),
         "fixed_oof_months": list(FIXED_MAY_JULY_OOF_MONTHS),
         "purge_hours": float(purge_hours),
@@ -1278,6 +1333,7 @@ def run(
             "contract": "one side-local model and bitwise-identical OOF vector",
         },
         "selection_report": selection_report,
+        "selection_cv_contract": selection_cv_contract,
         "feature_universe_report": universe_report,
         "mandatory_features_by_side": mandatory_by_side,
         "sample_weight_contract": (

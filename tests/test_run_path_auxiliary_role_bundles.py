@@ -172,6 +172,21 @@ def test_representation_report_emits_zero_support_slice_explicitly() -> None:
     assert report["short"]["missing"]["metric_rows"] == 2
 
 
+def test_quantile_representation_report_computes_coverage_with_support() -> None:
+    labels = _labels()
+    labels.loc[labels["side"].eq("long"), "gmm_representation_available"] = 1.0
+    result = _role_result(
+        "peak_mfe_12h_atr.conditional_q80",
+        [0.2, 0.4, 0.6, 0.8, 0.3, 0.5, 0.7, 0.9],
+        task="quantile",
+    )
+    report = _representation_role_metrics(labels, result)
+
+    assert report["long"]["available"]["metric_rows"] == 4
+    assert "empirical_coverage_alpha_0_8" in report["long"]["available"]["metrics"]
+    assert report["long"]["missing"]["metric_rows"] == 0
+
+
 def test_timing_family_owns_the_bitwise_shared_12h_event_prediction() -> None:
     labels = _labels()
     families = {}

@@ -135,6 +135,7 @@ def select_bundle_feature_contracts(
     archetypes: Sequence[Any],
     mandatory_features_by_side: Mapping[str, Sequence[str]] | None = None,
     random_state: int = 42,
+    purge_hours: float = 13.0,
     progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Select features once per unique target-and-conditioning contract."""
@@ -174,6 +175,7 @@ def select_bundle_feature_contracts(
             sample_weight=np.ones(int(eligible.sum()), dtype=np.float32),
             mandatory_features_by_side=mandatory_features_by_side,
             random_state=int(random_state) + 10007 * group_index,
+            purge_hours=float(purge_hours),
         )
         selection["source_role"] = source_role
         selection["eligible_rows"] = int(eligible.sum())

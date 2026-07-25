@@ -24,7 +24,9 @@ class _StubRegressor:
 def _stub_regressor_fitter(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep focused tests independent of slow optional tree-model imports."""
 
-    def fit(_algorithm: str, x: pd.DataFrame, y: np.ndarray, **_kwargs: object) -> _StubRegressor:
+    def fit(
+        _algorithm: str, x: pd.DataFrame, y: np.ndarray, **_kwargs: object
+    ) -> _StubRegressor:
         values = x.to_numpy(dtype=float)
         coefficients = np.linalg.lstsq(
             np.c_[np.ones(len(values)), values], np.asarray(y, dtype=float), rcond=None
@@ -69,17 +71,48 @@ def _frame(rows: int = 192) -> tuple[pd.DataFrame, dict[str, FeatureProvenance]]
     for index in range(len(PATH_SHAPE_TYPES)):
         frame[f"catboost_p_{index}"] = probabilities[:, index]
     provenance: dict[str, FeatureProvenance] = {
-        "existing_alpha_ev": FeatureProvenance("alpha_score", "frozen alpha", available_at_col="available_at"),
-        "pred_time_to_mfe_12h": FeatureProvenance("time_to_mfe", "frozen aux", available_at_col="available_at"),
-        "pred_peak_mfe_12h": FeatureProvenance("peak_mfe", "frozen aux", available_at_col="available_at"),
-        "pred_mae_before_meaningful_mfe_atr": FeatureProvenance("mae_before_meaningful_mfe", "frozen aux", available_at_col="available_at"),
-        "pred_bars_before_price_stops_decreasing": FeatureProvenance("adverse_turn_timing", "frozen aux", available_at_col="available_at"),
-        "pred_favorable_path_slope_atr_per_hour": FeatureProvenance("favorable_path_slope", "frozen aux", available_at_col="available_at"),
-        "catboost_entropy": FeatureProvenance("catboost_entropy", "frozen CatBoost entropy", available_at_col="available_at"),
-        "base_prediction_uncertainty": FeatureProvenance("prediction_uncertainty", "frozen alpha uncertainty", available_at_col="available_at"),
-        "meta_leaf_support_log1p": FeatureProvenance("leaf_support", "frozen alpha leaf support", available_at_col="available_at"),
-        "base_archetype_label__family__trend": FeatureProvenance("base_archetype_labels", "frozen base archetype label", available_at_col="available_at"),
-        "catboost_archetype": FeatureProvenance("predicted_path_archetype", "frozen CatBoost assignment", available_at_col="available_at", model_input=False),
+        "existing_alpha_ev": FeatureProvenance(
+            "alpha_score", "frozen alpha", available_at_col="available_at"
+        ),
+        "pred_time_to_mfe_12h": FeatureProvenance(
+            "time_to_mfe", "frozen aux", available_at_col="available_at"
+        ),
+        "pred_peak_mfe_12h": FeatureProvenance(
+            "peak_mfe", "frozen aux", available_at_col="available_at"
+        ),
+        "pred_mae_before_meaningful_mfe_atr": FeatureProvenance(
+            "mae_before_meaningful_mfe", "frozen aux", available_at_col="available_at"
+        ),
+        "pred_bars_before_price_stops_decreasing": FeatureProvenance(
+            "adverse_turn_timing", "frozen aux", available_at_col="available_at"
+        ),
+        "pred_favorable_path_slope_atr_per_hour": FeatureProvenance(
+            "favorable_path_slope", "frozen aux", available_at_col="available_at"
+        ),
+        "catboost_entropy": FeatureProvenance(
+            "catboost_entropy",
+            "frozen CatBoost entropy",
+            available_at_col="available_at",
+        ),
+        "base_prediction_uncertainty": FeatureProvenance(
+            "prediction_uncertainty",
+            "frozen alpha uncertainty",
+            available_at_col="available_at",
+        ),
+        "meta_leaf_support_log1p": FeatureProvenance(
+            "leaf_support", "frozen alpha leaf support", available_at_col="available_at"
+        ),
+        "base_archetype_label__family__trend": FeatureProvenance(
+            "base_archetype_labels",
+            "frozen base archetype label",
+            available_at_col="available_at",
+        ),
+        "catboost_archetype": FeatureProvenance(
+            "predicted_path_archetype",
+            "frozen CatBoost assignment",
+            available_at_col="available_at",
+            model_input=False,
+        ),
     }
     provenance.update(
         {
@@ -94,7 +127,9 @@ def _frame(rows: int = 192) -> tuple[pd.DataFrame, dict[str, FeatureProvenance]]
     return frame, provenance
 
 
-def _config(*, algorithms: tuple[str, ...] = ("extra_trees",)) -> ablation.ExecutionEVModelAblationConfig:
+def _config(
+    *, algorithms: tuple[str, ...] = ("extra_trees",)
+) -> ablation.ExecutionEVModelAblationConfig:
     return ablation.ExecutionEVModelAblationConfig(
         n_splits=2,
         min_train_rows=48,
@@ -126,7 +161,9 @@ def test_contract_rejects_late_and_outcome_like_inputs() -> None:
         ),
     }
     with pytest.raises(ValueError, match="outcome-derived"):
-        ablation.validate_execution_ev_model_ablation_contract(leaked, leaked_provenance)
+        ablation.validate_execution_ev_model_ablation_contract(
+            leaked, leaked_provenance
+        )
 
 
 def test_contract_allows_frozen_oof_future_slope_but_not_raw_future_target() -> None:
@@ -135,16 +172,23 @@ def test_contract_allows_frozen_oof_future_slope_but_not_raw_future_target() -> 
     frozen = {
         **provenance,
         "future_slope": FeatureProvenance(
-            "favorable_path_slope", "frozen OOF future-slope prediction", available_at_col="available_at"
+            "favorable_path_slope",
+            "frozen OOF future-slope prediction",
+            available_at_col="available_at",
         ),
     }
-    raw_columns, _ = ablation.validate_execution_ev_model_ablation_contract(frame, frozen)
+    raw_columns, _ = ablation.validate_execution_ev_model_ablation_contract(
+        frame, frozen
+    )
     assert "future_slope" in raw_columns
 
     raw = {
         **frozen,
         "future_slope": FeatureProvenance(
-            "favorable_path_slope", "raw future target", oof_or_frozen=False, available_at_col="available_at"
+            "favorable_path_slope",
+            "raw future target",
+            oof_or_frozen=False,
+            available_at_col="available_at",
         ),
     }
     with pytest.raises(ValueError, match="outcome-derived"):
@@ -162,10 +206,14 @@ def test_side_local_oof_has_purge_cutoff_and_train_only_isotonic() -> None:
     assert scored.any()
     assert oof.loc[scored].notna().all()
     assert (
-        provenance_frame.loc[scored, "execution_ev_model_ablation_oof_train_decision_cutoff_utc"]
+        provenance_frame.loc[
+            scored, "execution_ev_model_ablation_oof_train_decision_cutoff_utc"
+        ]
         < frame.loc[scored, "__ts__"]
     ).all()
-    audits = bundle.report["oof_audit"]["extra_trees"]["direct"]["without_hpo"]["mda_1se"]
+    audits = bundle.report["oof_audit"]["extra_trees"]["direct"]["without_hpo"][
+        "mda_1se"
+    ]
     successful = [row for row in audits if row["status"] == "ok"]
     assert successful
     for row in successful:
@@ -180,7 +228,13 @@ def test_oof_and_final_prediction_do_not_require_outcomes_at_inference() -> None
     bundle = ablation.train_execution_ev_model_ablation(
         frame, provenance, config=_config()
     )
-    inference = frame.drop(columns=["execution_net_ev_12h", "execution_gross_ev_12h", "execution_label_end_utc"])
+    inference = frame.drop(
+        columns=[
+            "execution_net_ev_12h",
+            "execution_gross_ev_12h",
+            "execution_label_end_utc",
+        ]
+    )
     scored = ablation.predict_execution_ev_model_ablation_bundle(
         bundle, inference, algorithms=("extra_trees",)
     )
@@ -201,11 +255,50 @@ def test_leaderboard_keeps_fixed_and_hpo_arms_distinct() -> None:
         config=replace(_config(algorithms=ablation.ALGORITHM_NAMES), hpo_trials=1),
     )
     leaderboard = pd.DataFrame(bundle.report["leaderboard"])
-    model_rows = leaderboard.loc[leaderboard["algorithm"].isin(ablation.ALGORITHM_NAMES)]
+    model_rows = leaderboard.loc[
+        leaderboard["algorithm"].isin(ablation.ALGORITHM_NAMES)
+    ]
     assert set(model_rows["algorithm"]) == set(ablation.ALGORITHM_NAMES)
     assert set(model_rows["target_mode"]) == {"direct", "residual"}
     assert set(model_rows["hpo_arm"]) == {"without_hpo", "with_hpo"}
     assert set(model_rows["feature_arm"]) == {"all_features", "mda_1se"}
+
+
+def test_promotion_top10_is_global_and_after_21d_admission_calibrator() -> None:
+    net = np.array([0.01, -0.02, 0.03, 0.04, -0.01])
+    gross = net + 0.001
+    predictions = pd.DataFrame(
+        {
+            "extra_trees__direct__with_hpo__mda_1se": np.arange(5, dtype=float),
+            (
+                "extra_trees__direct__with_hpo__mda_1se"
+                "__recent_ev_catboost_predicted_archetype"
+            ): np.arange(5, dtype=float)[::-1],
+        }
+    )
+    corrected = predictions.columns[-1]
+    leaderboard = ablation._leaderboard(
+        net,
+        gross,
+        predictions,
+        top_k_fraction=0.20,
+        evaluation_mask=np.ones(5, dtype=bool),
+        promotion_eligible_columns=frozenset({corrected}),
+    )
+
+    promoted = leaderboard.loc[leaderboard["promotion_eligible"]]
+    assert promoted["prediction"].tolist() == [corrected]
+    assert promoted["ranking_scope"].tolist() == ["global_shared_outer_oof"]
+    assert promoted["ranking_stage"].tolist() == [
+        "after_causal_21d_admission_calibrator"
+    ]
+    assert promoted["top_k_rows"].tolist() == [1]
+    diagnostic = leaderboard.loc[~leaderboard["promotion_eligible"]]
+    assert (
+        diagnostic["ranking_stage"]
+        .eq("before_admission_calibrator_diagnostic_only")
+        .all()
+    )
 
 
 def test_direct_and_residual_arms_share_oof_rows_and_rank_absolute_net_ev() -> None:
@@ -227,7 +320,9 @@ def test_direct_and_residual_arms_share_oof_rows_and_rank_absolute_net_ev() -> N
     assert set(model_rows["target_mode"]) == {"direct", "residual"}
 
 
-@pytest.mark.parametrize("family", ["prediction_uncertainty", "leaf_support", "base_archetype_labels"])
+@pytest.mark.parametrize(
+    "family", ["prediction_uncertainty", "leaf_support", "base_archetype_labels"]
+)
 def test_contract_requires_repaired_input_families(family: str) -> None:
     frame, provenance = _frame()
     reduced = {name: spec for name, spec in provenance.items() if spec.family != family}
@@ -248,7 +343,9 @@ def test_mda_one_se_prefers_smallest_feature_set_within_one_standard_error(
     monkeypatch.setattr(
         ablation,
         "_evaluate_inner_feature_set",
-        lambda _algorithm, _x, _net, _gross, features, _folds, **_kwargs: scores[len(features)],
+        lambda _algorithm, _x, _net, _gross, features, _folds, **_kwargs: scores[
+            len(features)
+        ],
     )
     monkeypatch.setattr(
         ablation,
@@ -264,7 +361,9 @@ def test_mda_one_se_prefers_smallest_feature_set_within_one_standard_error(
         np.array([0.0]),
         [object()],
         params={},
-        config=ablation.ExecutionEVModelAblationConfig(mda_min_features=1, mda_max_steps=2),
+        config=ablation.ExecutionEVModelAblationConfig(
+            mda_min_features=1, mda_max_steps=2
+        ),
     )
     assert selected == ["a", "b"]
     assert report["selected_step"] == 1
@@ -286,7 +385,9 @@ def test_train_only_isotonic_mapping_is_monotone_and_has_identity_fallback() -> 
     np.testing.assert_allclose(fallback.predict(np.array([0.25])), [0.25])
 
 
-def test_recent_ev_correction_is_daily_causal_and_reports_gmm_route_unavailability() -> None:
+def test_recent_ev_correction_is_daily_causal_and_reports_gmm_route_unavailability() -> (
+    None
+):
     frame, provenance = _frame()
     mapped = frame["existing_alpha_ev"].to_numpy(dtype=float)
     config = _config()
@@ -333,7 +434,9 @@ def test_hpo_is_bounded_deterministic_and_not_recycled_fixed_variants(
     frame = pd.DataFrame(
         {
             "__ts__": pd.date_range("2026-01-01", periods=8, freq="h", tz="UTC"),
-            "execution_label_end_utc": pd.date_range("2026-01-01 12:00", periods=8, freq="h", tz="UTC"),
+            "execution_label_end_utc": pd.date_range(
+                "2026-01-01 12:00", periods=8, freq="h", tz="UTC"
+            ),
         }
     )
     monkeypatch.setattr(

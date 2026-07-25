@@ -153,7 +153,9 @@ def _side_values(frame: pd.DataFrame, side_col: str) -> np.ndarray:
     sides = frame[side_col].astype(str).str.lower().to_numpy()
     unknown = sorted(set(sides) - {"long", "short"})
     if unknown:
-        raise ValueError("side values must be long/short; got " + ", ".join(unknown[:10]))
+        raise ValueError(
+            "side values must be long/short; got " + ", ".join(unknown[:10])
+        )
     return sides
 
 
@@ -182,9 +184,8 @@ def _is_forbidden_downstream_input(name: str, spec: FeatureProvenance) -> bool:
     """
 
     lowered = name.lower()
-    if (
-        spec.family == "base_archetype_labels"
-        and name.startswith(BASE_ARCHETYPE_FEATURE_PREFIX)
+    if spec.family == "base_archetype_labels" and name.startswith(
+        BASE_ARCHETYPE_FEATURE_PREFIX
     ):
         return False
     if lowered.startswith(("pred_", "oof_", "frozen_", "score_")):
@@ -214,7 +215,9 @@ def _validate_downstream_feature_provenance(
         and not _is_forbidden_downstream_input(name, provenance[name])
         and not name.lower().startswith(("pred_", "oof_", "frozen_", "score_"))
     ]
-    standard = [name for name in feature_names if name not in declared_future_predictions]
+    standard = [
+        name for name in feature_names if name not in declared_future_predictions
+    ]
     if standard:
         validate_execution_ev_feature_provenance(
             frame,
@@ -266,7 +269,8 @@ def validate_execution_ev_model_ablation_contract(
         )
 
     by_family = {
-        family: _family_columns(provenance, family) for family in REQUIRED_INPUT_FAMILIES
+        family: _family_columns(provenance, family)
+        for family in REQUIRED_INPUT_FAMILIES
     }
     missing = [family for family, names in by_family.items() if not names]
     if missing:
@@ -353,18 +357,22 @@ def validate_execution_ev_model_ablation_contract(
         require_model_input=False,
     )
 
-    probabilities = frame.loc[:, probability_columns].apply(
-        pd.to_numeric, errors="coerce"
-    ).to_numpy(dtype=np.float64)
+    probabilities = (
+        frame.loc[:, probability_columns]
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=np.float64)
+    )
     if not np.isfinite(probabilities).all():
         raise ValueError("CatBoost probability inputs must be finite")
     if (probabilities < -1e-6).any() or (probabilities > 1.0 + 1e-6).any():
         raise ValueError("CatBoost probability inputs must lie in [0, 1]")
     if not np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-4, rtol=1e-4):
         raise ValueError("CatBoost probability inputs must sum to one per row")
-    entropy = frame.loc[:, by_family["catboost_entropy"]].apply(
-        pd.to_numeric, errors="coerce"
-    ).to_numpy(dtype=np.float64)
+    entropy = (
+        frame.loc[:, by_family["catboost_entropy"]]
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=np.float64)
+    )
     expected_entropy = -np.sum(
         np.clip(probabilities, 1e-12, 1.0) * np.log(np.clip(probabilities, 1e-12, 1.0)),
         axis=1,
@@ -478,7 +486,9 @@ def _randomized_hpo_params(
     """
 
     algorithm_seed = ALGORITHM_NAMES.index(algorithm) * 10_007
-    rng = np.random.default_rng(int(config.random_state) + algorithm_seed + int(trial_number))
+    rng = np.random.default_rng(
+        int(config.random_state) + algorithm_seed + int(trial_number)
+    )
     if algorithm == "lgbm":
         return {
             "objective": "huber",
@@ -542,19 +552,25 @@ def _fit_regressor(
         try:
             import lightgbm as lgb
         except ImportError as exc:  # pragma: no cover - dependency boundary
-            raise RuntimeError("LightGBM is required for the lgbm ablation arm") from exc
+            raise RuntimeError(
+                "LightGBM is required for the lgbm ablation arm"
+            ) from exc
         model = lgb.LGBMRegressor(**dict(params))
     elif algorithm == "catboost":
         try:
             from catboost import CatBoostRegressor
         except ImportError as exc:  # pragma: no cover - dependency boundary
-            raise RuntimeError("CatBoost is required for the catboost ablation arm") from exc
+            raise RuntimeError(
+                "CatBoost is required for the catboost ablation arm"
+            ) from exc
         model = CatBoostRegressor(**dict(params))
     elif algorithm == "extra_trees":
         try:
             from sklearn.ensemble import ExtraTreesRegressor
         except ImportError as exc:  # pragma: no cover - dependency boundary
-            raise RuntimeError("scikit-learn is required for the ExtraTrees ablation arm") from exc
+            raise RuntimeError(
+                "scikit-learn is required for the ExtraTrees ablation arm"
+            ) from exc
         model = ExtraTreesRegressor(**dict(params))
     else:
         raise ValueError(f"Unsupported execution-EV ablation algorithm {algorithm!r}")
@@ -615,11 +631,7 @@ def _ranking_metrics(
     scale = max(float(np.nanmedian(np.abs(net))), 1e-4)
     # Model and feature selection optimize only observable rank and economic
     # tail ordering. Calibration loss remains a diagnostic, never an objective.
-    objective = (
-        2.0 * gross_mean / scale
-        + 2.0 * net_mean / scale
-        + rank_correlation
-    )
+    objective = 2.0 * gross_mean / scale + 2.0 * net_mean / scale + rank_correlation
     return {
         **base,
         "top_k_mean_gross_ev": gross_mean,
@@ -644,10 +656,19 @@ def _absolute_net_ev_prediction(
     raise ValueError(f"Unsupported execution-EV target mode: {target_mode!r}")
 
 
-def _aggregate_fold_metrics(rows: Sequence[Mapping[str, float | int]]) -> dict[str, Any]:
+def _aggregate_fold_metrics(
+    rows: Sequence[Mapping[str, float | int]],
+) -> dict[str, Any]:
     if not rows:
-        return {"status": "no_inner_folds", "objective_mean": float("nan"), "objective_se": float("nan"), "folds": []}
-    objectives = np.asarray([float(row["ranking_objective"]) for row in rows], dtype=float)
+        return {
+            "status": "no_inner_folds",
+            "objective_mean": float("nan"),
+            "objective_se": float("nan"),
+            "folds": [],
+        }
+    objectives = np.asarray(
+        [float(row["ranking_objective"]) for row in rows], dtype=float
+    )
     mean = float(np.nanmean(objectives))
     if len(objectives) > 1:
         se = float(np.nanstd(objectives, ddof=1) / np.sqrt(len(objectives)))
@@ -657,8 +678,12 @@ def _aggregate_fold_metrics(rows: Sequence[Mapping[str, float | int]]) -> dict[s
         "status": "ok",
         "objective_mean": mean,
         "objective_se": se,
-        "top_k_mean_gross_ev": float(np.nanmean([float(row["top_k_mean_gross_ev"]) for row in rows])),
-        "top_k_mean_net_ev": float(np.nanmean([float(row["top_k_mean_net_ev"]) for row in rows])),
+        "top_k_mean_gross_ev": float(
+            np.nanmean([float(row["top_k_mean_gross_ev"]) for row in rows])
+        ),
+        "top_k_mean_net_ev": float(
+            np.nanmean([float(row["top_k_mean_net_ev"]) for row in rows])
+        ),
         "spearman": float(np.nanmean([float(row["spearman"]) for row in rows])),
         "huber": float(np.nanmean([float(row["huber"]) for row in rows])),
         "folds": [dict(row) for row in rows],
@@ -714,7 +739,9 @@ def _evaluate_inner_feature_set(
             _ranking_metrics(
                 actual_net_ev[valid],
                 gross_ev[valid],
-                _absolute_net_ev_prediction(prediction, alpha[valid], target_mode=target_mode),
+                _absolute_net_ev_prediction(
+                    prediction, alpha[valid], target_mode=target_mode
+                ),
                 top_k_fraction=top_k_fraction,
             )
         )
@@ -760,7 +787,10 @@ def _permutation_mda(
         for feature_number, name in enumerate(features):
             for repeat in range(max(1, int(repeats))):
                 rng = np.random.default_rng(
-                    int(random_state) + 1009 * fold_number + 37 * feature_number + repeat
+                    int(random_state)
+                    + 1009 * fold_number
+                    + 37 * feature_number
+                    + repeat
                 )
                 permuted = valid_x.copy()
                 permuted[name] = rng.permutation(permuted[name].to_numpy())
@@ -772,8 +802,13 @@ def _permutation_mda(
                     ),
                     top_k_fraction=top_k_fraction,
                 )
-                drops[name].append(baseline_objective - float(score["ranking_objective"]))
-    return {name: float(np.mean(values)) if values else float("nan") for name, values in drops.items()}
+                drops[name].append(
+                    baseline_objective - float(score["ranking_objective"])
+                )
+    return {
+        name: float(np.mean(values)) if values else float("nan")
+        for name, values in drops.items()
+    }
 
 
 def select_features_by_mda_one_se(
@@ -864,7 +899,9 @@ def select_features_by_mda_one_se(
     eligible = [row for row in finite if float(row["objective_mean"]) >= threshold]
     # The one-SE rule chooses the smallest model within one standard error of
     # the best inner ranking result.  A stable step tie-break keeps it explicit.
-    selected = min(eligible, key=lambda row: (int(row["feature_count"]), -int(row["step"])))
+    selected = min(
+        eligible, key=lambda row: (int(row["feature_count"]), -int(row["step"]))
+    )
     selected_features = list(selected["features"])
     return selected_features, {
         "status": "one_se_selected",
@@ -1030,7 +1067,9 @@ def apply_execution_ev_causal_recent_ev_correction(
             policy=policy,
         )
         values = pd.to_numeric(meta["corrected_expected_ev"], errors="coerce")
-        corrected[current["__position__"].to_numpy(dtype=int)] = values.to_numpy(dtype=np.float64)
+        corrected[current["__position__"].to_numpy(dtype=int)] = values.to_numpy(
+            dtype=np.float64
+        )
         days.append(
             {
                 "snapshot_utc": snapshot.isoformat(),
@@ -1147,14 +1186,20 @@ def _tune_params(
                 "trial": number,
                 "params": params,
                 "early_stopping": (
-                    "nested_purged_inner_train" if algorithm in {"lgbm", "catboost"} else "not_available"
+                    "nested_purged_inner_train"
+                    if algorithm in {"lgbm", "catboost"}
+                    else "not_available"
                 ),
                 **{key: value for key, value in score.items() if key != "folds"},
             }
         )
     valid_trials = [row for row in trials if np.isfinite(float(row["objective_mean"]))]
     if not valid_trials:
-        return fallback, {"status": "randomized_hpo_no_score", "trials": trials, "params": fallback}
+        return fallback, {
+            "status": "randomized_hpo_no_score",
+            "trials": trials,
+            "params": fallback,
+        }
     best = max(valid_trials, key=lambda row: float(row["objective_mean"]))
     return dict(best["params"]), {
         "status": "deterministic_randomized_purged_oof_hpo",
@@ -1200,17 +1245,35 @@ def _oof_provenance(
     decision = _utc(frame[decision_time_col], name=decision_time_col)
     result = pd.DataFrame(
         {
-            "execution_ev_model_ablation_oof_fold": pd.Series(pd.NA, index=frame.index, dtype="Int64"),
-            "execution_ev_model_ablation_oof_validation_start_utc": pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"),
-            "execution_ev_model_ablation_oof_train_decision_cutoff_utc": pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"),
+            "execution_ev_model_ablation_oof_fold": pd.Series(
+                pd.NA, index=frame.index, dtype="Int64"
+            ),
+            "execution_ev_model_ablation_oof_validation_start_utc": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
+            "execution_ev_model_ablation_oof_train_decision_cutoff_utc": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
         }
     )
     for split in folds:
         train = np.asarray(split.train_indices, dtype=int)
         valid = np.asarray(split.validation_indices, dtype=int)
-        result.iloc[valid, result.columns.get_loc("execution_ev_model_ablation_oof_fold")] = int(split.fold)
-        result.iloc[valid, result.columns.get_loc("execution_ev_model_ablation_oof_validation_start_utc")] = split.validation_start
-        result.iloc[valid, result.columns.get_loc("execution_ev_model_ablation_oof_train_decision_cutoff_utc")] = decision.iloc[train].max()
+        result.iloc[
+            valid, result.columns.get_loc("execution_ev_model_ablation_oof_fold")
+        ] = int(split.fold)
+        result.iloc[
+            valid,
+            result.columns.get_loc(
+                "execution_ev_model_ablation_oof_validation_start_utc"
+            ),
+        ] = split.validation_start
+        result.iloc[
+            valid,
+            result.columns.get_loc(
+                "execution_ev_model_ablation_oof_train_decision_cutoff_utc"
+            ),
+        ] = decision.iloc[train].max()
     return result
 
 
@@ -1292,7 +1355,9 @@ def _fit_outer_side_arm(
     model = _fit_regressor(
         algorithm, local_x.loc[:, selected], local_target, params=params
     )
-    raw_valid = np.asarray(model.predict(x.iloc[outer_valid].loc[:, selected]), dtype=np.float64)
+    raw_valid = np.asarray(
+        model.predict(x.iloc[outer_valid].loc[:, selected]), dtype=np.float64
+    )
     prediction = mapper.predict(
         _absolute_net_ev_prediction(
             raw_valid, alpha_ev[outer_valid], target_mode=target_mode
@@ -1302,8 +1367,12 @@ def _fit_outer_side_arm(
     return prediction, {
         "train_rows": int(len(outer_train)),
         "valid_rows": int(len(outer_valid)),
-        "train_sides": sorted(set(frame.iloc[outer_train][config.side_col].astype(str).str.lower())),
-        "validation_sides": sorted(set(frame.iloc[outer_valid][config.side_col].astype(str).str.lower())),
+        "train_sides": sorted(
+            set(frame.iloc[outer_train][config.side_col].astype(str).str.lower())
+        ),
+        "validation_sides": sorted(
+            set(frame.iloc[outer_valid][config.side_col].astype(str).str.lower())
+        ),
         "train_decision_cutoff_utc": decision.iloc[outer_train].max().isoformat(),
         "validation_start_utc": decision.iloc[outer_valid].min().isoformat(),
         "inner_fold_count": int(len(inner)),
@@ -1339,7 +1408,11 @@ def _fit_final_side_arm(
     inner = _inner_splits(local_frame, config)
     if arm == "all_features":
         selected = list(local_x.columns)
-        selection = {"status": "all_features_reference", "selected_features": selected, "steps": []}
+        selection = {
+            "status": "all_features_reference",
+            "selected_features": selected,
+            "steps": [],
+        }
     else:
         selected, selection = select_features_by_mda_one_se(
             algorithm,
@@ -1406,12 +1479,16 @@ def _leaderboard(
     *,
     top_k_fraction: float,
     evaluation_mask: np.ndarray,
+    promotion_eligible_columns: frozenset[str] = frozenset(),
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for column in predictions.columns:
         prediction = predictions[column].to_numpy(dtype=np.float64)[evaluation_mask]
         metrics = _ranking_metrics(
-            net_ev[evaluation_mask], gross_ev[evaluation_mask], prediction, top_k_fraction=top_k_fraction
+            net_ev[evaluation_mask],
+            gross_ev[evaluation_mask],
+            prediction,
+            top_k_fraction=top_k_fraction,
         )
         parts = column.split("__")
         is_model_arm = len(parts) >= 4 and parts[2] in {"without_hpo", "with_hpo"}
@@ -1425,14 +1502,31 @@ def _leaderboard(
                 "recent_ev_route": "__".join(parts[4:]) if len(parts) > 4 else "none",
                 "arm": "__".join(parts[1:]) if is_model_arm else "baseline",
                 "oof_rows": int(evaluation_mask.sum()),
+                "ranking_scope": "global_shared_outer_oof",
+                "ranking_stage": (
+                    "after_causal_21d_admission_calibrator"
+                    if column in promotion_eligible_columns
+                    else "before_admission_calibrator_diagnostic_only"
+                ),
+                "promotion_eligible": column in promotion_eligible_columns,
                 **metrics,
             }
         )
-    return pd.DataFrame(rows).sort_values(
-        ["ranking_objective", "top_k_mean_gross_ev", "top_k_mean_net_ev", "spearman"],
-        ascending=[False, False, False, False],
-        kind="stable",
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(
+            [
+                "promotion_eligible",
+                "ranking_objective",
+                "top_k_mean_gross_ev",
+                "top_k_mean_net_ev",
+                "spearman",
+            ],
+            ascending=[False, False, False, False, False],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
 
 
 def train_execution_ev_model_ablation(
@@ -1461,7 +1555,9 @@ def train_execution_ev_model_ablation(
         - {"catboost_predicted_archetype", "gmm_archetype"}
     )
     if unknown_routes:
-        raise ValueError("Unsupported recent-EV correction routes: " + ", ".join(unknown_routes))
+        raise ValueError(
+            "Unsupported recent-EV correction routes: " + ", ".join(unknown_routes)
+        )
 
     raw_columns, archetype_levels = validate_execution_ev_model_ablation_contract(
         frame,
@@ -1479,15 +1575,18 @@ def train_execution_ev_model_ablation(
             "alpha EV column as a declared alpha_score model input"
         )
     absolute_net_ev = build_execution_ev_target(
-        frame, ExecutionEVTargetSpec(
+        frame,
+        ExecutionEVTargetSpec(
             net_ev_col=config.target_spec.net_ev_col,
             alpha_ev_col=config.target_spec.alpha_ev_col,
             mode="direct",
             target_col=config.target_spec.target_col,
             horizon_hours=config.target_spec.horizon_hours,
-        )
+        ),
     ).to_numpy(dtype=np.float64)
-    alpha_ev = _finite_numeric(frame, config.target_spec.alpha_ev_col, role="existing alpha EV")
+    alpha_ev = _finite_numeric(
+        frame, config.target_spec.alpha_ev_col, role="existing alpha EV"
+    )
     targets = {
         mode: build_execution_ev_target(
             frame,
@@ -1508,9 +1607,13 @@ def train_execution_ev_model_ablation(
     gross_ev = _finite_numeric(frame, config.gross_ev_col, role="gross EV")
     if config.label_end_time_col is not None:
         decision = _utc(frame[config.decision_time_col], name=config.decision_time_col)
-        resolved = _utc(frame[config.label_end_time_col], name=config.label_end_time_col)
+        resolved = _utc(
+            frame[config.label_end_time_col], name=config.label_end_time_col
+        )
         if (resolved < decision).any():
-            raise ValueError("execution label end time cannot precede the decision time")
+            raise ValueError(
+                "execution label end time cannot precede the decision time"
+            )
     sides = _side_values(frame, config.side_col)
     x = _materialize_feature_matrix(
         frame,
@@ -1550,14 +1653,26 @@ def train_execution_ev_model_ablation(
                     for split in folds:
                         for side in ("long", "short"):
                             train = np.asarray(
-                                [index for index in split.train_indices if sides[index] == side],
+                                [
+                                    index
+                                    for index in split.train_indices
+                                    if sides[index] == side
+                                ],
                                 dtype=int,
                             )
                             valid = np.asarray(
-                                [index for index in split.validation_indices if sides[index] == side],
+                                [
+                                    index
+                                    for index in split.validation_indices
+                                    if sides[index] == side
+                                ],
                                 dtype=int,
                             )
-                            audit: dict[str, Any] = {"fold": int(split.fold), "side": side, "target_mode": target_mode}
+                            audit: dict[str, Any] = {
+                                "fold": int(split.fold),
+                                "side": side,
+                                "target_mode": target_mode,
+                            }
                             if len(train) < int(config.min_fit_rows) or not len(valid):
                                 audit.update(
                                     {
@@ -1566,7 +1681,9 @@ def train_execution_ev_model_ablation(
                                         "valid_rows": int(len(valid)),
                                     }
                                 )
-                                audits[algorithm][target_mode][hpo_arm][arm].append(audit)
+                                audits[algorithm][target_mode][hpo_arm][arm].append(
+                                    audit
+                                )
                                 continue
                             prediction, detail = _fit_outer_side_arm(
                                 algorithm,
@@ -1586,7 +1703,9 @@ def train_execution_ev_model_ablation(
                             output[valid] = prediction
                             audit.update({"status": "ok", **detail})
                             audits[algorithm][target_mode][hpo_arm][arm].append(audit)
-                    predictions[f"{algorithm}__{target_mode}__{hpo_arm}__{arm}"] = output
+                    predictions[f"{algorithm}__{target_mode}__{hpo_arm}__{arm}"] = (
+                        output
+                    )
 
     model_prediction_columns = [
         column for column in predictions.columns if column.count("__") == 3
@@ -1610,17 +1729,20 @@ def train_execution_ev_model_ablation(
         )
 
     recent_ev_correction: dict[str, Any] = {}
+    promotion_eligible_columns: set[str] = set()
     if bool(config.recent_ev_correction_enabled):
         for column in model_prediction_columns:
             recent_ev_correction[column] = {}
             for route in config.recent_ev_correction_routes:
-                corrected, route_report = apply_execution_ev_causal_recent_ev_correction(
-                    frame,
-                    predictions[column].to_numpy(dtype=np.float64),
-                    absolute_net_ev,
-                    provenance,
-                    route=str(route),
-                    config=config,
+                corrected, route_report = (
+                    apply_execution_ev_causal_recent_ev_correction(
+                        frame,
+                        predictions[column].to_numpy(dtype=np.float64),
+                        absolute_net_ev,
+                        provenance,
+                        route=str(route),
+                        config=config,
+                    )
                 )
                 prediction_name = f"{column}__recent_ev_{route}"
                 predictions[prediction_name] = corrected
@@ -1628,9 +1750,15 @@ def train_execution_ev_model_ablation(
                     "prediction": prediction_name,
                     **route_report,
                 }
+                if route_report.get("status") == "available":
+                    promotion_eligible_columns.add(prediction_name)
 
-    final_models: dict[str, dict[str, dict[str, dict[str, dict[str, dict[str, Any]]]]]] = {}
-    final_feature_sets: dict[str, dict[str, dict[str, dict[str, dict[str, list[str]]]]]] = {}
+    final_models: dict[
+        str, dict[str, dict[str, dict[str, dict[str, dict[str, Any]]]]]
+    ] = {}
+    final_feature_sets: dict[
+        str, dict[str, dict[str, dict[str, dict[str, list[str]]]]]
+    ] = {}
     final_audit: dict[str, dict[str, dict[str, dict[str, dict[str, Any]]]]] = {}
     for algorithm in algorithms:
         final_models[algorithm] = {}
@@ -1652,7 +1780,8 @@ def train_execution_ev_model_ablation(
                         positions = np.flatnonzero(sides == side)
                         if len(positions) < int(config.min_fit_rows):
                             final_audit[algorithm][target_mode][hpo_arm][arm][side] = {
-                                "status": "insufficient_side_rows", "rows": int(len(positions))
+                                "status": "insufficient_side_rows",
+                                "rows": int(len(positions)),
                             }
                             continue
                         fitted, detail = _fit_final_side_arm(
@@ -1669,9 +1798,16 @@ def train_execution_ev_model_ablation(
                             frame,
                             config=config,
                         )
-                        final_models[algorithm][target_mode][hpo_arm][arm][side] = fitted
-                        final_feature_sets[algorithm][target_mode][hpo_arm][arm][side] = list(fitted["features"])
-                        final_audit[algorithm][target_mode][hpo_arm][arm][side] = {"status": "ok", **detail}
+                        final_models[algorithm][target_mode][hpo_arm][arm][side] = (
+                            fitted
+                        )
+                        final_feature_sets[algorithm][target_mode][hpo_arm][arm][
+                            side
+                        ] = list(fitted["features"])
+                        final_audit[algorithm][target_mode][hpo_arm][arm][side] = {
+                            "status": "ok",
+                            **detail,
+                        }
 
     leaderboard = _leaderboard(
         absolute_net_ev,
@@ -1679,6 +1815,13 @@ def train_execution_ev_model_ablation(
         predictions,
         top_k_fraction=config.top_k_fraction,
         evaluation_mask=shared_oof_mask,
+        promotion_eligible_columns=frozenset(promotion_eligible_columns),
+    )
+    promotion_leaderboard = leaderboard.loc[leaderboard["promotion_eligible"]].copy()
+    promotion_status = (
+        "eligible_post_causal_21d_admission_calibrator"
+        if not promotion_leaderboard.empty
+        else "blocked_no_available_post_calibrator_route"
     )
     report = {
         "schema": EXECUTION_EV_MODEL_ABLATION_SCHEMA,
@@ -1692,6 +1835,15 @@ def train_execution_ev_model_ablation(
             "top-k gross EV and net EV plus rank correlation only; calibration "
             "metrics are diagnostic and never used for model or feature selection"
         ),
+        "promotion_metric_contract": {
+            "status": promotion_status,
+            "top_fraction": float(config.top_k_fraction),
+            "ranking_scope": "global_shared_outer_oof",
+            "ranking_stage": "after_causal_21d_admission_calibrator",
+            "selection_unit": "rows pooled across timestamps and sides",
+            "raw_model_scores": "diagnostic_only_not_promotion_eligible",
+            "promotion_eligible_predictions": sorted(promotion_eligible_columns),
+        },
         "feature_manifest": {
             "raw_frozen_columns": raw_columns,
             "expanded_model_columns": list(x.columns),
@@ -1702,9 +1854,13 @@ def train_execution_ev_model_ablation(
                 "column": config.catboost_archetype_col,
                 "family": CATBOOST_ARGMAX_CONTEXT_FAMILY,
             },
-            "probability_vector_size": len(_family_columns(provenance, "catboost_probabilities")),
+            "probability_vector_size": len(
+                _family_columns(provenance, "catboost_probabilities")
+            ),
         },
-        "fixed_params": {algorithm: _fixed_params(algorithm, config) for algorithm in algorithms},
+        "fixed_params": {
+            algorithm: _fixed_params(algorithm, config) for algorithm in algorithms
+        },
         "hpo_arms": list(hpo_arms),
         "target_modes": list(target_modes),
         "shared_outer_oof_rows": int(shared_oof_mask.sum()),
@@ -1723,6 +1879,7 @@ def train_execution_ev_model_ablation(
         "oof_audit": audits,
         "final_fit_audit": final_audit,
         "leaderboard": leaderboard.to_dict(orient="records"),
+        "promotion_leaderboard": promotion_leaderboard.to_dict(orient="records"),
     }
     return ExecutionEVModelAblationBundle(
         schema=EXECUTION_EV_MODEL_ABLATION_SCHEMA,
@@ -1751,7 +1908,9 @@ def predict_execution_ev_model_ablation_bundle(
     """Score final fits from pre-entry features only; targets are never read."""
 
     if bundle.schema != EXECUTION_EV_MODEL_ABLATION_SCHEMA:
-        raise ValueError(f"Unsupported execution-EV ablation bundle schema {bundle.schema!r}")
+        raise ValueError(
+            f"Unsupported execution-EV ablation bundle schema {bundle.schema!r}"
+        )
     bundle_config = dict(bundle.config)
     target_spec = bundle_config.get("target_spec")
     if isinstance(target_spec, Mapping):
@@ -1780,23 +1939,31 @@ def predict_execution_ev_model_ablation_bundle(
         archetype_levels=bundle.archetype_levels,
     )
     if tuple(x.columns) != bundle.expanded_feature_columns:
-        raise ValueError("Inference expanded feature order does not match the frozen bundle")
+        raise ValueError(
+            "Inference expanded feature order does not match the frozen bundle"
+        )
     selected_algorithms = tuple(algorithms or bundle.models.keys())
     unknown = sorted(set(selected_algorithms) - set(bundle.models))
     if unknown:
         raise ValueError("Bundle does not contain algorithms: " + ", ".join(unknown))
     sides = _side_values(frame, config.side_col)
-    alpha_ev = _finite_numeric(frame, config.target_spec.alpha_ev_col, role="existing alpha EV")
+    alpha_ev = _finite_numeric(
+        frame, config.target_spec.alpha_ev_col, role="existing alpha EV"
+    )
     output = pd.DataFrame(index=frame.index)
     for algorithm in selected_algorithms:
         selected_target_modes = tuple(target_modes or bundle.models[algorithm].keys())
-        missing_modes = sorted(set(selected_target_modes) - set(bundle.models[algorithm]))
+        missing_modes = sorted(
+            set(selected_target_modes) - set(bundle.models[algorithm])
+        )
         if missing_modes:
             raise ValueError(
                 f"Bundle has no {algorithm!r} target modes: " + ", ".join(missing_modes)
             )
         for target_mode in selected_target_modes:
-            selected_hpo_arms = tuple(hpo_arms or bundle.models[algorithm][target_mode].keys())
+            selected_hpo_arms = tuple(
+                hpo_arms or bundle.models[algorithm][target_mode].keys()
+            )
             missing_hpo = sorted(
                 set(selected_hpo_arms) - set(bundle.models[algorithm][target_mode])
             )
@@ -1813,13 +1980,16 @@ def predict_execution_ev_model_ablation_bundle(
                         )
                     prediction = np.full(len(frame), np.nan, dtype=np.float64)
                     for side in ("long", "short"):
-                        fitted = bundle.models[algorithm][target_mode][hpo_arm][arm].get(side)
+                        fitted = bundle.models[algorithm][target_mode][hpo_arm][
+                            arm
+                        ].get(side)
                         positions = np.flatnonzero(sides == side)
                         if fitted is None:
                             continue
                         features = list(fitted["features"])
                         raw = np.asarray(
-                            fitted["model"].predict(x.iloc[positions].loc[:, features]), dtype=np.float64
+                            fitted["model"].predict(x.iloc[positions].loc[:, features]),
+                            dtype=np.float64,
                         )
                         absolute = _absolute_net_ev_prediction(
                             raw, alpha_ev[positions], target_mode=target_mode
@@ -1846,7 +2016,9 @@ def load_execution_ev_model_ablation_bundle(
     if not isinstance(bundle, ExecutionEVModelAblationBundle):
         raise ValueError("Artifact is not an execution-EV model-ablation bundle")
     if bundle.schema != EXECUTION_EV_MODEL_ABLATION_SCHEMA:
-        raise ValueError(f"Unsupported execution-EV ablation bundle schema {bundle.schema!r}")
+        raise ValueError(
+            f"Unsupported execution-EV ablation bundle schema {bundle.schema!r}"
+        )
     return bundle
 
 

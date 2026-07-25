@@ -2141,6 +2141,56 @@ production-approved yet:
 | Confirmed adverse trough | R² is approximately `-0.021` to `+0.020`, IC only `0.06-0.15`, and target support is incomplete | Model trough occurrence/competing risk first, then conditional timing; keep blocked from policy use |
 | Favorable slope | Positive but weak R²/IC; July is partial | Retain as diagnostic only and require incremental cost-aware EV plus two later full months |
 
+Individual-head improvement assessment:
+
+1. **Peak MFE:** keep the conditional mean, whose pooled OOF IC is `0.557`
+   long and `0.535` short. Remove the current long q80 output from model inputs:
+   its empirical coverage is `98.9%`, IC is `0.070`, and its `10 ATR` ceiling
+   has turned it into an almost constant upper bound. In the next side-local
+   training cycle compare an uncapped/wider-cap q70, q75 and q80, calibrate the
+   selected quantile on training-only OOF residuals, and require monthly
+   coverage within five percentage points of its nominal quantile. Also add
+   economically aligned probabilities of clearing the deployed take-profit
+   and trailing-activation levels.
+2. **Time to meaningful MFE:** retain the monotone CDF representation. The 2h
+   classifier is the strongest component (`0.634` AUC on both sides), while
+   discrimination weakens at longer horizons. Replace the four independent
+   binary fits with one discrete-time hazard model or a jointly constrained
+   ordinal CDF; add policy-relevant 1h, 6h and 12h/24h checkpoints only where
+   the exit policy can still be active. Select horizons by paired
+   execution-EV contribution, not target AUC alone.
+3. **MAE before meaningful MFE:** the conditional-hit rank signal is useful on
+   long (`0.277` IC) but weak on short (`0.119`); no-hit IC is only
+   `0.080/0.133`. Do not use the current conditional-mean mixture as the main
+   risk feature. Train side-local competing-risk outputs for
+   stop-before-meaningful-MFE and probabilities of crossing the actual
+   side/archetype stop, 0.5R and 1.0R before a useful move. Add conditional
+   q80/q90 adverse depth and calibrate these probabilities OOF.
+4. **Bars before price stops decreasing:** neither unconditional clock is
+   adequate. The confirmed-trough IC is `0.112/0.096`; the legacy clock has
+   higher IC (`0.200/0.229`) but measures a different, less actionable event.
+   First predict whether a confirmed trough occurs before stop, meaningful MFE
+   or timeout; then fit its interval/hazard conditionally. Compare confirmation
+   rules of one, two and three bars and 25%/50% adverse recovery on identical
+   OOF rows. The winner is chosen only through entry-timing or execution-EV
+   economics.
+5. **Future slope:** current OOF IC is positive but weak and nearly identical
+   by side (`0.160/0.159`). Replace the single endpoint-like 12h regression
+   with robust multi-horizon favorable-path efficiency: median/Huber slopes at
+   2h, 4h, 8h and the remaining policy horizon, plus time-to-50%/80% peak.
+   Orthogonalize candidate slope features against peak MFE and timing CDF on
+   each training fold, and promote only if the residual slope signal improves
+   aggregate and worst-month execution EV.
+
+These are five separate challenger studies. Each inherits the existing
+side-local feature selection/HPO and exact OOF folds, changes one head at a
+time, and is compared with its current head on identical candidate IDs. A
+better target metric alone is insufficient: the final gate is incremental
+cost-aware execution EV after the 21-day admission correction.
+
+The machine-readable assessment is
+`docs/pipeline_roadmap/20260724/r3/execution_ev_aux_head_individual_assessment_20260725_v1.json`.
+
 Short representation-missing rows are 16,400 of 106,987 OOF rows (15.3%);
 June alone is 10,192 of 41,454 (24.6%). Every execution-EV ablation must report
 this slice separately. A head can be materialized for a research OOF ablation
@@ -2341,7 +2391,9 @@ Core evaluation:
 - Net EV/trade.
 - Gross EV/trade.
 - Top 1%, 5%, 10%, 20%, and 30%.
-- Global top-k as primary.
+- Global top-k as primary: pool all identical shared outer-OOF rows across
+  timestamps and sides; do not compute a per-timestamp top decile and average
+  it.
 - Long and short separately.
 - Monthly and weekly stability.
 - Worst week and worst month.
@@ -2397,6 +2449,13 @@ Training contract:
 Promotion gate:
 
 - Top-10 execution EV improves over the alpha-only baseline.
+- Promotion top-10 is ranked only by expected EV **after** the causal 21-day
+  side x archetype admission correction. Raw model and train-only isotonic
+  scores are diagnostics and cannot win the promotion leaderboard.
+- Every promotion row must declare
+  `ranking_scope=global_shared_outer_oof` and
+  `ranking_stage=after_causal_21d_admission_calibrator`. If no observable
+  correction route is available, promotion fails closed.
 - Worst week/month do not materially degrade unless the average gain exceeds
   the allowed trade-off.
 - Long and short are both reported.
@@ -2688,8 +2747,10 @@ Until those conditions hold, the correct status is:
 Per-side directional base: available
 Side-local residual alpha: available; verify it consumes the matching side
 stream
-Path/auxiliary research: partially materialized
-Execution-EV model: trained as diagnostic; promotion blocked by wrong exit-policy target
+Path/auxiliary research: five side-local OOF/final bundles complete; individual
+head promotion remains gated by repaired-label execution-EV ablations
+Execution-EV model: diagnostic complete; exact deployed-policy 1m label repair
+and causal post-21d global top-10 rerun in progress
 New policy: not yet optimized
 New live deployment: blocked
 ```

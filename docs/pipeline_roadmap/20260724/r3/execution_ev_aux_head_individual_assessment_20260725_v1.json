@@ -1,0 +1,87 @@
+{
+  "schema": "execution_ev_aux_head_individual_assessment_v1",
+  "audit_date": "2026-07-25",
+  "status": "assessed_challengers_required_before_promotion",
+  "source_artifact": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8",
+  "evaluation_contract": {
+    "model_evidence": "side-local outer OOF only",
+    "comparison": "one head at a time on identical candidate IDs",
+    "downstream_gate": "incremental cost-aware execution EV after causal 21-day admission correction",
+    "final_refits_excluded": true
+  },
+  "heads": {
+    "peak_mfe_12h_atr": {
+      "current_assessment": "conditional_mean_learnable_q80_invalid_on_long",
+      "evidence": {
+        "conditional_mean_spearman_ic_long": 0.5569634238271269,
+        "conditional_mean_spearman_ic_short": 0.5350275988721724,
+        "q80_long_empirical_coverage": 0.9887796970771491,
+        "q80_long_spearman_ic": 0.07044162858689869,
+        "q80_short_empirical_coverage": 0.703124277857374
+      },
+      "improvements": [
+        "withhold current q80 from model inputs",
+        "compare wider-cap or uncapped q70/q75/q80 per side",
+        "calibrate the selected quantile on training-only OOF residuals",
+        "add probabilities of clearing deployed take-profit and trailing-activation levels"
+      ]
+    },
+    "time_to_first_meaningful_mfe": {
+      "current_assessment": "early_cdf_useful_longer_horizons_weaker",
+      "evidence": {
+        "hit_by_2h_auc_long": 0.6343846799552852,
+        "hit_by_2h_auc_short": 0.6344473989591515,
+        "hit_by_8h_auc_long": 0.5542665396206147,
+        "hit_by_8h_auc_short": 0.6035369112561187
+      },
+      "improvements": [
+        "replace independent classifiers with a discrete-time hazard or jointly constrained ordinal CDF",
+        "test policy-relevant 1h/6h/12h/24h checkpoints only while the exit remains active",
+        "select horizons by paired execution-EV contribution rather than target AUC alone"
+      ]
+    },
+    "mae_before_meaningful_mfe_atr": {
+      "current_assessment": "conditional_means_too_weak_for_primary_risk_feature",
+      "evidence": {
+        "if_hit_spearman_ic_long": 0.2771779085881452,
+        "if_hit_spearman_ic_short": 0.11928229212059398,
+        "if_no_hit_spearman_ic_long": 0.07991841526903326,
+        "if_no_hit_spearman_ic_short": 0.13290200088819282
+      },
+      "improvements": [
+        "train stop-before-meaningful-MFE as a competing risk",
+        "predict crossings of actual side-archetype stop, 0.5R and 1.0R",
+        "add conditional q80/q90 adverse-depth outputs",
+        "calibrate all event probabilities on outer-train OOF evidence"
+      ]
+    },
+    "bars_before_price_stops_decreasing": {
+      "current_assessment": "unconditional_clocks_not_actionable_enough",
+      "evidence": {
+        "confirmed_trough_spearman_ic_long": 0.11180776567798126,
+        "confirmed_trough_spearman_ic_short": 0.09564356565873436,
+        "legacy_clock_spearman_ic_long": 0.2000500144840353,
+        "legacy_clock_spearman_ic_short": 0.22891537475074147
+      },
+      "improvements": [
+        "predict trough occurrence before stop, meaningful MFE or timeout first",
+        "fit conditional interval or hazard timing",
+        "compare one/two/three-bar confirmation and 25%/50% recovery definitions",
+        "select only through entry-timing or execution-EV economics"
+      ]
+    },
+    "future_slope_atr_per_hour": {
+      "current_assessment": "positive_but_weak_and_redundancy_unresolved",
+      "evidence": {
+        "spearman_ic_long": 0.15964044243390507,
+        "spearman_ic_short": 0.15949654553245
+      },
+      "improvements": [
+        "use robust multi-horizon favorable-path efficiency at 2h/4h/8h and remaining policy horizon",
+        "add time-to-50%-peak and time-to-80%-peak",
+        "orthogonalize candidate slope features against peak and timing predictions inside each training fold",
+        "require positive aggregate and worst-month incremental execution EV"
+      ]
+    }
+  }
+}

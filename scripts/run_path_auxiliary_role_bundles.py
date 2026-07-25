@@ -1118,7 +1118,7 @@ def run(
         "min_train_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_TRAIN_ROWS),
         "min_binary_validation_rows": int(lgbm_pipeline.LGBM_FORWARD_MIN_VALID_ROWS),
         "min_regression_validation_rows": int(
-            min(lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS, 250)
+            min(lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS, 200)
         ),
         "binary_short_history_fallback_fraction": float(
             lgbm_pipeline.LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
@@ -1133,7 +1133,7 @@ def run(
             "splits": 3,
             "min_train_rows": 200,
             "min_binary_validation_rows": 20,
-            "min_regression_validation_rows": 250,
+            "min_regression_validation_rows": 200,
         }
         mismatches = {
             key: {

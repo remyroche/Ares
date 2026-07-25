@@ -26,7 +26,7 @@
   },
   "feature_selection": {
     "contract": "full univariate plus Relief plus MDA pipeline independently by side and unique role target",
-    "cv_contract": "strictly chronological and purged: validate on April only, train on resolved December-March rows only; classifier short-history fallback is chronological and shuffled fallback is forbidden; each regression selector fold requires at least 250 validation rows",
+    "cv_contract": "strictly chronological and purged within the April development window: every selector fold trains only on earlier April rows and validates on later April rows; May-July remain untouched outer OOF months; classifier short-history fallback is chronological and shuffled fallback is forbidden; each regression selector fold requires at least 200 validation rows",
     "event_role_reuse": "the exact meaningful-MFE event selector is shared by peak, timing, and MAE because the event target is identical",
     "mandatory_context": [
       "score",

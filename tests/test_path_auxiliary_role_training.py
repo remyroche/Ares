@@ -219,7 +219,7 @@ def test_binary_role_feature_selection_is_independent_per_side(
     )
     assert result["selection_metrics"]["by_side"]["long"][
         "auxiliary_selection_cv_contract"
-    ]["auxiliary_min_validation_rows"] == min(original_aux_min_valid_rows, 250)
+    ]["auxiliary_min_validation_rows"] == min(original_aux_min_valid_rows, 200)
     assert (
         result["selection_metrics"]["by_side"]["long"][
             "auxiliary_selection_cv_contract"

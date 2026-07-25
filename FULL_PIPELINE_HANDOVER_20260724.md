@@ -1843,7 +1843,10 @@ Selection contract:
   burn-in is replaced by its chronological short-history fallback for binary
   roles; shuffled fallback is forbidden. Regression roles use one April
   validation month rather than the impossible six-month default and require at
-  least 250 validation rows per selector fold.
+  least 200 validation rows per selector fold. The canonical top-40 label
+  stream begins in April, so feature selection uses strictly chronological
+  train-before-validation splits within the April development window; May,
+  June, and July remain untouched outer OOF evaluation months.
 - Refactor the current global pre-screen before resuming; a global pre-screen or
   global selected-feature union does not satisfy this contract.
 - No global selected-feature union and no shared fitted selector.

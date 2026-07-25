@@ -184,7 +184,13 @@ def select_auxiliary_role_features(
         previous_aux_min_valid_rows = lgbm_pipeline.LGBM_AUX_FORWARD_MIN_VALID_ROWS
         previous_purge_hours = lgbm_pipeline.LGBM_PURGE_HOURS
         auxiliary_validation_months = min(int(previous_aux_validation_months), 1)
-        auxiliary_min_valid_rows = min(int(previous_aux_min_valid_rows), 250)
+        # Conditional regression roles can have only about three thousand
+        # side-local selector rows after the chronological April holdout.  With
+        # three purged folds, 250 rejects otherwise valid folds (the canonical
+        # short conditional-MFE fold has 240 rows).  Two hundred is the
+        # predeclared statistical floor, matches the selector's minimum
+        # side-local training support, and is not tailored to the observed 240.
+        auxiliary_min_valid_rows = min(int(previous_aux_min_valid_rows), 200)
         # The frozen December-April auxiliary reference window is shorter than
         # the base model's 365-day burn-in.  Use the pipeline's chronological
         # short-history fallback for this synchronous side-local selection

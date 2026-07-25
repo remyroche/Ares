@@ -2519,6 +2519,121 @@ Required next sequence:
 The authoritative audit is
 `docs/pipeline_roadmap/20260724/r3/execution_ev_exit_policy_audit_20260725_v1.json`.
 
+#### 2026-07-25 exact-policy repair and post-admission result
+
+The bounded source repair and independent rescan completed successfully:
+
+- 106/106 affected symbols repaired with zero failed or incomplete symbols.
+- 3,076,080/3,076,080 required merged candidate-window minutes covered.
+- 127,777/127,777 exact 1m x 1,440-minute candidate paths complete.
+- Coverage is 100% for long, short, May, June, and partial July.
+- 1,251,475 source rows were fetched in 1,807 bounded requests.
+
+The signed exact-policy labels are:
+
+```text
+data_perp/artifacts/execution_ev_policy_labels_20260725_v1
+```
+
+They contain 127,777 unique rows, no nulls or duplicate candidate identities,
+and use the canonical `simple_policy_optimiser.simulate_and_score` replay,
+policy SHA-256
+`aed39b3474f06a2134ed814bccaf41e0a3fd54bd8194108dfa251f6abcdce301`,
+the deployed 1% round-trip fee, and the signed spread baseline. Gross minus fee
+equals net on every row; spread drag is already embedded in executable gross
+return. All rows use the policy's documented side-parent geometry fallback
+because the observable rank-decile archetypes in the current 31/8 handoff do
+not match the deployed local-geometry taxonomy. This is recorded row by row
+and is not silently represented as local geometry.
+
+The repaired joined handoff is:
+
+```text
+data_perp/artifacts/execution_ev_joined_handoff_policy_labels_20260725_v2
+```
+
+The production OOF run is:
+
+```text
+data_perp/reports/execution_ev_meta_policy1m_20260725_v1
+```
+
+It has 115,121 identical model OOF rows. Its standard leaderboard is explicitly
+pre-admission diagnostic only. The required causal post-processing report is:
+
+```text
+data_perp/reports/execution_ev_meta_policy1m_20260725_v1/post_admission_21d
+```
+
+The post-processing contract is now verified:
+
+- daily UTC snapshots;
+- only OOF outcomes resolved before the snapshot;
+- prior 21 causal days;
+- symmetric 10% trimming of daily realized-minus-mapped EV residuals;
+- side x OOF-CatBoost-predicted-archetype correction with side/global fallback;
+- one globally pooled top 10% across the 115,121 shared OOF rows;
+- ranking stage
+  `after_causal_21d_admission_calibrator`;
+- fixed corrected-EV admission diagnostic at `+0.007`.
+
+No arm passes. All 67 post-calibrator global top-10 means are negative, and all
+67 fixed-threshold admitted subsets have negative realized mean EV. The best
+admitted mean is still `-0.0010765` on only 253 rows.
+
+The best global top-10 arm is residual all-five auxiliary features **without**
+`time_to_first_meaningful_mfe`:
+
+```text
+gross EV/trade  +0.005010
+net EV/trade    -0.005015
+selected rows   11,513
+long net EV     -0.006060
+short net EV    -0.004675
+May net EV      -0.007269
+June net EV     -0.001658
+partial July    -0.010660
+```
+
+The model finds positive gross opportunity, but it is approximately 50 bps per
+trade short of covering the deployed fee and spread contract. It therefore
+cannot be integrated into `simple_policy_optimiser` admission. Retain the
+existing policy/admission stream unchanged and do not start entry timing from
+this execution head.
+
+Individual auxiliary-head economics after the same 21-day correction, measured
+as global top-10 net-EV change versus the matching alpha-context arm:
+
+| Head | Direct add-one delta | Residual add-one delta | Residual all-five leave-one finding |
+|---|---:|---:|---|
+| Peak MFE | `-9.19 bps` | `-20.33 bps` | Removing peak improves by `+1.31 bps` |
+| Time to meaningful MFE | `-25.69 bps` | `-15.93 bps` | Removing timing improves by `+15.78 bps`; largest harmful interaction |
+| MAE before meaningful MFE | `-4.30 bps` | `-23.01 bps` | Removing MAE improves by `+0.95 bps` |
+| Bars before adverse trough | `-15.03 bps` | `-22.60 bps` | Removing the clock improves by `+0.25 bps` |
+| Favorable slope | `-9.62 bps` | `-6.15 bps` | Removing slope improves by `+2.31 bps` |
+
+Direct all-five interactions are inconsistent: each leave-one removal makes
+that already inferior all-five arm worse, while every direct add-one is
+negative and the full direct bundle is also negative. Treat this as unstable
+feature interaction, not evidence that any head is independently valuable.
+The residual evidence is more coherent: every add-one is negative, every
+leave-one improves the bundle, and timing is the largest detractor.
+
+Consequences:
+
+1. Reject the current execution-EV head and all five current auxiliary
+   representations for production admission.
+2. Keep the exact labels and repaired handoff as the canonical challenger
+   benchmark.
+3. Run the five head-specific target improvements listed in the individual
+   assessment one at a time. Timing must use a jointly constrained hazard/CDF;
+   MAE and adverse-trough heads must become competing-risk/event-probability
+   tasks; the peak q80 ceiling must be repaired; slope must be residualized.
+4. Require each improved head to beat alpha-context on this identical
+   post-calibrator global top-10 contract before testing interactions.
+5. Entry timing remains blocked because there is no positive stable
+   execution-EV winner to optimize.
+
 ### Phase 7: Final Refit and Bundle
 
 Only after an OOF winner is selected:
@@ -2749,8 +2864,8 @@ Side-local residual alpha: available; verify it consumes the matching side
 stream
 Path/auxiliary research: five side-local OOF/final bundles complete; individual
 head promotion remains gated by repaired-label execution-EV ablations
-Execution-EV model: diagnostic complete; exact deployed-policy 1m label repair
-and causal post-21d global top-10 rerun in progress
+Execution-EV model: exact-policy OOF and causal post-21d global top-10 complete;
+all current arms rejected because every net top-10 and admitted subset is negative
 New policy: not yet optimized
 New live deployment: blocked
 ```

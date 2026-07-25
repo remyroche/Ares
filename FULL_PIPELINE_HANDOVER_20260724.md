@@ -2233,6 +2233,35 @@ each outer fold; model HPO is performed once per direct/residual target and
 side, then the named arms inherit the frozen selection/HPO contract so the
 comparison is paired and does not multiply search cost.
 
+#### 2026-07-25 execution-label lineage repair
+
+The historical execution-label artifact is not a valid canonical join source:
+it was built from an older candidate universe and matched only `63,595` of the
+`195,931` current alpha OOF identities. No fuzzy or timestamp-only join is
+allowed.
+
+Fresh labels were therefore rematerialized from the current Pack-B path-label
+population under the unchanged frozen policy and cost geometry:
+
+```text
+data_perp/reports/
+execution_ev_12h_labels_packb31_8_p90spread_fee30bps_20260725_v1
+```
+
+The run produced `201,685` labels from `222,490` complete current path rows.
+It preserves the one-hour signal-to-decision delay, 12-hour horizon, frozen
+long/short policy geometry, 30 bp round-trip fee, full per-symbol p90 spread,
+and explicit missing-spread drop policy.
+
+Before CatBoost intersection, the fresh labels match `132,644` of the
+`195,931` alpha/auxiliary OOF rows. The remaining rows are mostly candidates
+without a complete CatBoost/path target and therefore cannot enter a paired
+CatBoost execution-EV test. On the completed long CatBoost stream, `61,618`
+of `64,504` rows have execution labels; the `2,886` excluded rows are
+concentrated in symbols outside the frozen eligible-spread map. Preserve and
+report this attrition; do not invent spreads or join across different
+candidate IDs.
+
 ### Phase 6: Train Direct and Residual Execution-EV Models
 
 Goal: determine whether execution EV should be predicted directly or as a

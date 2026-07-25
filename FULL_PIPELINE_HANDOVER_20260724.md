@@ -3241,3 +3241,131 @@ Label HPO: completed per side on residual OOF
 Inference-spread training exclusion: no-op on current paired rows; causal arm blocked by missing history
 Production base/residual label: unchanged
 ```
+
+## 13. Exact-Policy Replay and Head/Ablation Ledger (2026-07-25)
+
+### Frozen winner extension and coverage
+
+The side-local label-HPO selection remains:
+
+- long: `hpo_01`, a soft 12-hour composite with normalized weights 51.57%
+  executable 12-hour outcome, 23.59% peak MFE, 15.56% clean pre-MFE MAE,
+  3.56% timing, 1.65% early-path proxy, and 4.08% future slope; soft threshold
+  0.42 and temperature 0.12;
+- short: `baseline_24h`, the incumbent 24-hour soft execution target.
+
+`scripts/extend_label_hpo_winner_for_policy_replay.py` deterministically refits
+the two missing frozen base boosters, loads the original residual boosters, EV
+maps, and 21-day admission calibrators unchanged, and refuses July scores
+unless April-June parity is exact. Both sides passed with maximum absolute
+difference `0.0` for base prediction, residual score, and calibrated EV.
+
+The requested replay endpoint was July 23, but a full July-23 claim is not
+possible from the current local stores:
+
+- canonical source labels stop on July 20 at 16:00 UTC;
+- the frozen feature-complete paired universe used by this model stops on July
+  17 at 12:00 UTC;
+- after 21-day admission and timestamp-side top-10 ranking, the last
+  replay-ready candidate is July 15 at 13:00 UTC.
+
+The artifact therefore records requested and effective cutoffs separately:
+
+`data_perp/artifacts/label_hpo_policy_replay_20260725_v1`
+
+July results below are partial through that effective candidate cutoff, not
+July-to-date through the 23rd. Backfill July 18-23 raw inputs, regenerate frozen
+features and both label stores, then rerun the parity-gated extension to obtain
+the requested complete window.
+
+### Simple-policy optimizer and constrained portfolio replay
+
+The simple-policy optimizer used April 1-30 only for HPO. May 1 through the
+effective July cutoff was excluded from every Optuna trial and replayed only
+after the policies were frozen. The canonical one-minute
+`joint_trailing_total_mfe_raw_bayesian_v1` path, 96-bar/24-hour horizon, delayed
+entry, side x archetype shrinkage, and exactly 1% round-trip cost were used.
+Twelve trials were run per fitted policy. The candidate handoff already
+contained only rows admitted by the causal 21-day calibrator and the
+timestamp-side top 10% of that admitted set.
+
+April itself did not support a profitable exit geometry. The parent-policy
+diagnostics were negative for both sides, and the frozen May-July holdout
+remained negative:
+
+| Frozen holdout policy | Candidates with valid paths | Mean net return/trade |
+|---|---:|---:|
+| long parent | 402 | -1.393% |
+| short parent | 819 | -1.344% |
+
+The global portfolio auction then fitted only its hierarchical EV curve on
+April candidates and replayed the frozen May-July policy candidates with the
+current constraint shape: maximum two new entries per bar, one concurrent
+position per symbol, 70% pre-leverage wallet cap, rank sizing, dynamic
+thresholds, and the non-enforced 64-position emergency bound. This is a
+constraint replay, not a claim that the old model's portfolio parameters were
+retuned for the new label-HPO model.
+
+| Period | Accepted trades | Mean net return/trade | Positive-trade rate |
+|---|---:|---:|---:|
+| May | 270 | -1.487% | 8.89% |
+| June | 265 | -1.266% | 14.72% |
+| July partial | 109 | -1.313% | 11.01% |
+| Combined | 644 | -1.367% | — |
+
+The constrained replay compounded to -93.69% from the normalized $10,000
+wallet, with -1.419% notional-weighted net return, -93.69% maximum drawdown,
+34.32% full-stop exits, and 56.21% timeouts. Constraints rejected 493 rows for
+symbol cooldown, 74 because the symbol was already open, two at the per-bar
+entry cap, and eight below the dynamic threshold. They did not rescue the
+negative local policy economics. **The side-local label-HPO winner is therefore
+not promotable into the execution policy.**
+
+Primary replay outputs are:
+
+- `simple_policy_optimizer/side_parent_policy_summary.csv`;
+- `simple_policy_optimizer/holdout_side_parent_policy_metrics.csv`;
+- `simple_policy_optimizer/holdout_side_archetype_policy_metrics.csv`;
+- `portfolio_replay/summary.json`;
+- `portfolio_replay/portfolio_decisions.parquet`.
+
+### Per-head rules, evidence, and verdicts
+
+All predictive metrics in this table are side-local outer OOF. Economic deltas
+are paired only within the stated execution-EV experiment. They must not be
+compared as absolute returns with the exact one-minute policy replay above:
+the current execution-EV research label used one-hour candles, a 12-hour
+side-parent geometry, and a different friction contract.
+
+| Head | Rule / representation tried | Predictive metrics | Paired economic evidence | Verdict |
+|---|---|---|---|---|
+| CatBoost path archetype, long | Per-side multiclass path-role probabilities; context/risk input only | 64,504 OOF rows; logloss 1.705; RPS 0.208; monthly prior-logloss gain 0.0033-0.0139; `dead_timeout` is 58.0% of argmax and three classes never win | Standalone fold-train-only top-20 net EV -0.858%; every outer month negative | Context-only; require strict exact-policy EV uplift |
+| CatBoost path archetype, short | Same, separately selected/HPO'd per side | 69,272 OOF rows; logloss 1.665; RPS 0.196; prior-logloss gain 0.0276-0.0419 | Standalone top-20 net EV -0.793%; every month negative | Context-only |
+| `peak_mfe_12h_atr` | Conditional mean plus quantile output, per side | Mean Spearman IC long 0.557 / short 0.535; long q80 coverage 98.9% and IC 0.070, so long q80 is invalid | No valid identical-row add-one execution-EV result | Keep conditional mean as OOF research input; recalibrate/retest q70-q80 and policy-level crossing probabilities |
+| `time_to_first_meaningful_mfe` | 12-hour censored pooled discrete hazard; hit-by-horizon probabilities | AUC at 2h 0.634/0.634 and at 8h 0.554/0.604 long/short; versus incumbent logloss delta +0.00566/+0.00307/+0.00298 at 2/4/8h and -0.00352 at 12h | Direct add-one -13.31 bps; residual add-one +17.53 bps; all-five interaction +0.24 bps; best global top-10 still -0.380% and every fixed-threshold admitted arm negative | Research timing representation only |
+| `mae_before_meaningful_mfe_atr` | Competing-risk first-event probabilities; per-side conditional depth | If-hit IC 0.277/0.119; no-hit IC 0.080/0.133; macro AUC 0.538/0.594; long adverse-0.5R AUC 0.497 | Challenger direct/residual add-one -5.20/+5.49 bps versus incumbent +1.63/+22.66 bps; challenger all-five -4.34 bps | Reject challenger; test soft policy-anchored bands and timing-only routing |
+| `bars_before_price_stops_decreasing` | Confirmed-trough and legacy clocks | Confirmed-trough IC 0.112/0.096; legacy clock IC 0.200/0.229 | No valid same-ID per-side execution-EV ablation | Blocked; reformulate as trough-before-stop/MFE/timeout hazard |
+| `future_slope_atr_per_hour` | Per-side continuous 12-hour slope | IC 0.160/0.159 | No valid incremental add-one result | Diagnostic only; use robust multi-horizon efficiency and orthogonalize to peak/timing |
+
+### Execution-EV and requested ablation ledger
+
+| Ablation / routing rule | What was tried | Result | Status |
+|---|---|---|---|
+| Execution-EV direct alpha context | Base/residual alpha plus context, strict OOF | top-10 +0.190%; MAE 0.01941; RMSE 0.02751; Spearman 0.023 | Best research comparator only |
+| Execution-EV direct all features | Add CatBoost and auxiliaries | top-10 +0.131%; MAE 0.01917; RMSE 0.02732; Spearman 0.004; -5.83 bps versus direct alpha context | Did not work |
+| Alpha plus all auxiliaries | Direct and residual routes | direct top-10 -0.207% (-39.71 bps versus direct context); residual -0.073% | Did not work |
+| Alpha plus CatBoost | Direct and residual routes | direct top-10 -0.216% (-40.54 bps); residual +0.081%, below useful comparator | Did not work |
+| Remove one execution-EV feature family | Leave-one-family-out direct/residual matrix | several residual arms stayed slightly positive, but none repaired the invalid exit target or beat the valid exact-policy gate | Diagnostic only |
+| 24h versus 12h base label | Same paired rows and frozen chronology | admitted global top-10: +17.48 bps for 24h, +23.28 bps for 12h; raw top-10 remains negative | 12h improved admission economics but not promotion-stable |
+| Time-aware 12h base label | Add MFE, MAE, timing, early-path proxy, slope | admitted global top-10 +24.22 bps; timestamp-side +8.19 bps | Improved aggregate, not selected |
+| Side-local soft-label HPO | Select recipe on Feb-Mar residual OOF only | final admitted global top-10 +35.73 bps and timestamp-side +18.83 bps; raw top-10 -29.19/-29.89 bps; June timestamp-side -5.57 bps | Selected research winner; exact-policy replay failed |
+| Remove currently spread-excluded assets | Static current blacklist | removed zero paired rows; blacklist is not point-in-time for training | No-op; causal arm not yet tested |
+| Soft-binary labels for auxiliary heads | Requested: replace/augment full regression with policy-anchored soft event bands | Only the MAE competing-risk structural challenger and timing hazard were run; a complete five-head soft-binary matrix was **not** run | Pending |
+| Route timing and MAE only to timing meta head | Requested separation from execution-EV | MAE timing-only routing is recommended, but a paired timing-meta-head-only experiment was **not** run | Pending |
+| Soft-binary execution-EV meta head | Requested economics/learnability threshold HPO around top residual decile | The base-label HPO used soft binary labels; the execution-EV meta target itself was **not** converted and tested under exact policy | Pending |
+
+The prior exact-policy coverage audit also found only 99,518 of 127,777
+candidates with complete one-minute/1,440-minute paths (77.9%). That targeted
+path backfill is distinct from the July 18-23 source/feature backfill. Both are
+required before any auxiliary, CatBoost, execution-EV, or timing arm can be
+promoted from exact-policy economics.

@@ -59,12 +59,22 @@
         "prior_rps": 0.1978238262267578,
         "rps_gain": 0.0033566798638835493
       }
+    },
+    "fold_train_only_economic_mapping": {
+      "aggregate_top20_realised_net_ev": -0.008584322143674246,
+      "aggregate_top20_positive_net_ev_fraction": 0.37508720254243855,
+      "monthly_top20_realised_net_ev": {
+        "2026-05": -0.006781997206171084,
+        "2026-06": -0.016408922371570257,
+        "2026-07_partial": -0.0007069503610661118
+      }
     }
   },
   "decision": {
     "classification_gate": "pass_with_concentration_warning",
-    "reason": "Log loss and RPS beat fold-local train priors in every untouched outer fold, but hard predictions remain concentrated and several low-support classes never win argmax.",
-    "required_next_gate": "Do not promote from classification metrics alone. Require positive strict OOF execution-EV uplift, including probability-vector ablations and month/side stability."
+    "standalone_economic_admission": "fail",
+    "reason": "Log loss and RPS beat fold-local train priors in every untouched outer fold, but hard predictions remain concentrated, several low-support classes never win argmax, and the fold-train-only probability-weighted top 20% has negative realised net EV in every outer month.",
+    "required_next_gate": "CatBoost probabilities may be used only as context/risk inputs. Do not use them as a standalone admission score; require positive strict OOF execution-EV uplift over alpha plus auxiliaries, including probability-vector ablations and month/side stability."
   },
   "artifacts": {
     "feature_selection_checkpoint_sha256": "444499d532a40c961ad444d2a8ef5d24b2e8e58498c0e0946abbd8e6993048c7",
@@ -73,6 +83,7 @@
     "class_balance_economic_oof_sha256": "a1b1a8899b98a68281ded6a73c07c162a7f09fab0bbc0fdbdb0647067b795363",
     "outer_oof_probabilities_sha256": "a640d2a1c05e76d1c319361b6517f728c6bbfdcfad6ea65702377d4678c58c6d",
     "final_classifier_sha256": "f8e3c8d9e3344c22dae6cee94f11be23c24a1bfea1b0c132466d3db33e04d463",
-    "expanded_oof_metrics_sha256": "71dac220d8e864fe585032847dd2aa51f459129a152b733649689bd3c420b456"
+    "expanded_oof_metrics_sha256": "71dac220d8e864fe585032847dd2aa51f459129a152b733649689bd3c420b456",
+    "outer_oof_economic_report_sha256": "4381a60545062caa53a52a8a39ed6440eeb68ff55d75b39e169da7a8feb25134"
   }
 }

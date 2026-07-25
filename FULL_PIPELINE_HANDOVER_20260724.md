@@ -1991,12 +1991,14 @@ is `0.120990`, and weighted F1 is `0.201114`. Against fold-local train-prior
 baselines, log loss improves by `0.004798` in May, `0.003263` in June, and
 `0.013944` in partial July; RPS improves in all three folds as well.
 
-This is a pass with an explicit concentration warning, not an unconditional
-economic promotion. `dead_timeout` receives 58.0% of aggregate hard
-predictions and three low-support classes never win argmax, even though the
-probability vector remains non-degenerate and the model beats prior baselines.
-The CatBoost branch must therefore show positive strict OOF execution-EV
-uplift in the downstream ablation before policy admission.
+This is a classification pass with an explicit concentration warning, not a
+standalone economic promotion. `dead_timeout` receives 58.0% of aggregate hard
+predictions and three low-support classes never win argmax. More importantly,
+the probability-weighted top 20% from fold-train-only economic priors has
+negative realized net EV in May (`-0.006782`), June (`-0.016409`), and partial
+July (`-0.000707`). CatBoost probabilities may therefore enter execution-EV
+only as context/risk inputs. The CatBoost branch must show positive paired OOF
+uplift over alpha plus auxiliaries before policy admission.
 
 The authoritative validation record, including hashes and monthly prior
 comparisons, is

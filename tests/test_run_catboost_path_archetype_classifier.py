@@ -524,6 +524,26 @@ def test_canonical_side_binding_accepts_candidate_side_name_alias(
     assert contract["candidate_rows_side"] == len(frame)
 
 
+def test_economic_scoring_frame_restores_canonical_side_labels() -> None:
+    balance_frame = pd.DataFrame(
+        {
+            "side": np.array([0, 0, 0], dtype=np.int8),
+            "candidate_id": ["a", "b", "c"],
+        }
+    )
+
+    economic_frame = runner._economic_scoring_frame(
+        balance_frame,
+        side_column="side",
+        canonical_side="long",
+    )
+
+    assert economic_frame is not balance_frame
+    assert economic_frame["side"].tolist() == ["long", "long", "long"]
+    assert str(economic_frame["side"].dtype) == "string"
+    assert balance_frame["side"].tolist() == [0, 0, 0]
+
+
 def test_side_candidate_identity_is_invariant_to_numeric_or_named_side() -> None:
     frame = _frame(40).loc[:, ["__ts__", "__symbol__", "side"]].copy()
     named = frame.copy()

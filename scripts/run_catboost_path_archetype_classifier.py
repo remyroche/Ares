@@ -1365,6 +1365,25 @@ def _canonical_side_series(values: pd.Series, *, source: str) -> pd.Series:
     return normalized.astype(str)
 
 
+def _economic_scoring_frame(
+    frame: pd.DataFrame,
+    *,
+    side_column: str,
+    canonical_side: str | None,
+) -> pd.DataFrame:
+    """Restore the semantic side label after numeric feature encoding."""
+
+    if canonical_side is None:
+        return frame
+    economic_frame = frame.copy()
+    economic_frame[side_column] = pd.Series(
+        canonical_side,
+        index=economic_frame.index,
+        dtype="string",
+    )
+    return economic_frame
+
+
 def _side_candidate_identity_sha256(
     frame: pd.DataFrame,
     *,
@@ -3918,29 +3937,36 @@ def run_pipeline(
         "reuse_provenance": reuse_provenance,
         "catboost_resource_contract": archetype.catboost_resource_contract(config),
     }
-    _write_json(
-        output_dir / "feature_selection_checkpoint.json",
-        {
-            "schema": RUNNER_SCHEMA,
-            "status": "feature_selection_complete",
-            "fingerprint": selection_fingerprint,
-            "selection_fingerprint": selection_fingerprint,
-            "selected_features": list(selected),
-            "selected_feature_count": int(len(selected)),
-            "selection": selector_manifest,
-            "permutation": permutation_records,
-            "permutation_stage_metrics": permutation_stage_metrics,
-            "selection_proxy_params": {
-                "iterations": int(selection_iterations),
-                "od_wait": int(selection_od_wait),
+    if not (
+        canonical_store_mode
+        and stage == "model_hpo_final"
+        and geometry_contract is not None
+    ):
+        _write_json(
+            output_dir / "feature_selection_checkpoint.json",
+            {
+                "schema": RUNNER_SCHEMA,
+                "status": "feature_selection_complete",
+                "fingerprint": selection_fingerprint,
+                "selection_fingerprint": selection_fingerprint,
+                "selected_features": list(selected),
+                "selected_feature_count": int(len(selected)),
+                "selection": selector_manifest,
+                "permutation": permutation_records,
+                "permutation_stage_metrics": permutation_stage_metrics,
+                "selection_proxy_params": {
+                    "iterations": int(selection_iterations),
+                    "od_wait": int(selection_od_wait),
+                },
+                "permutation_acceleration_contract": (
+                    archetype.staged_permutation_acceleration_contract(config)
+                ),
+                "reuse_provenance": reuse_provenance,
+                "catboost_resource_contract": archetype.catboost_resource_contract(
+                    config
+                ),
             },
-            "permutation_acceleration_contract": (
-                archetype.staged_permutation_acceleration_contract(config)
-            ),
-            "reuse_provenance": reuse_provenance,
-            "catboost_resource_contract": archetype.catboost_resource_contract(config),
-        },
-    )
+        )
     _write_json(
         output_dir / "hpo_checkpoint.json",
         {
@@ -4109,8 +4135,13 @@ def run_pipeline(
         identity_col="candidate_id",
         embargo=config.embargo,
     )
-    economic_report = score_class_balance_oof_economics(
+    economic_balance_frame = _economic_scoring_frame(
         balance_frame,
+        side_column=side_column,
+        canonical_side=canonical_side,
+    )
+    economic_report = score_class_balance_oof_economics(
+        economic_balance_frame,
         encoded_final_target.cat.codes.to_numpy(),
         sweep_arms,
         config=economic_config,

@@ -257,7 +257,15 @@ def derive_scope(
         "no_synthetic_fill": True,
         "one_pass_only": True,
     }
-    payload["scope_sha256"] = _sha256_bytes(_canonical_json(payload).encode("utf-8"))
+    # ``created_at_utc`` is provenance, not scope identity.  Hashing it would
+    # make an otherwise identical locked repair scope appear different on every
+    # invocation and prevent reproducible audit comparisons.
+    scope_identity = {
+        key: value for key, value in payload.items() if key != "created_at_utc"
+    }
+    payload["scope_sha256"] = _sha256_bytes(
+        _canonical_json(scope_identity).encode("utf-8")
+    )
     return payload
 
 
@@ -299,7 +307,7 @@ def _request_exact_chart(
     product_id: str,
     start: pd.Timestamp,
     end: pd.Timestamp,
-) -> tuple[bytes, Mapping[str, Any], dict[str, Any]]:
+) -> tuple[bytes | None, Mapping[str, Any] | None, dict[str, Any]]:
     url = f"https://futures.kraken.com/api/charts/v1/trade/{product_id}/1h"
     params = {
         "from": int(start.value // 10**9),
@@ -307,20 +315,26 @@ def _request_exact_chart(
     }
     # Do not call the repository's retry wrapper: exactly one request is the
     # repair contract, even when an exchange response is transiently bad.
-    response = session.get(
-        url,
-        params=params,
-        timeout=RESPONSE_TIMEOUT_SECONDS,
-        headers={"User-Agent": "Ares-exact-source-repair/1"},
-    )
-    response.raise_for_status()
-    raw = bytes(response.content)
     try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ExactSourceRepairError("Kraken chart response is not valid JSON") from exc
-    if not isinstance(payload, Mapping) or not isinstance(payload.get("candles"), list):
-        raise ExactSourceRepairError("Kraken chart response has no candle list")
+        response = session.get(
+            url,
+            params=params,
+            timeout=RESPONSE_TIMEOUT_SECONDS,
+            headers={"User-Agent": "Ares-exact-source-repair/1"},
+        )
+    except Exception as exc:
+        return (
+            None,
+            None,
+            {
+                "url": url,
+                "params": params,
+                "status": "request_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+    raw = bytes(response.content)
     metadata = {
         "url": url,
         "params": params,
@@ -333,7 +347,43 @@ def _request_exact_chart(
             if str(key).lower() in {"date", "content-type", "etag", "last-modified"}
         },
     }
-    return raw, payload, metadata
+    try:
+        response.raise_for_status()
+    except Exception as exc:
+        return (
+            raw,
+            None,
+            {
+                **metadata,
+                "status": "http_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return (
+            raw,
+            None,
+            {
+                **metadata,
+                "status": "invalid_json",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("candles"), list):
+        return (
+            raw,
+            None,
+            {
+                **metadata,
+                "status": "malformed_payload",
+                "error": "Kraken chart response has no candle list",
+            },
+        )
+    return raw, payload, {**metadata, "status": "response_received"}
 
 
 def stage_exact_source_patch(
@@ -404,6 +454,7 @@ def stage_exact_source_patch(
                         "product_id": product_id,
                         "requested_missing_hours": 0,
                         "accepted_candles": 0,
+                        "request_attempts": 0,
                         "status": "skipped_complete_local_window",
                     }
                 )
@@ -412,11 +463,31 @@ def stage_exact_source_patch(
             raw, payload, record = _request_exact_chart(
                 http, product_id=product_id, start=start, end=end
             )
-            filename = (
-                f"{ordinal:03d}_{product_id}_{record['response_sha256'][:16]}.json"
-            )
-            response_path = responses_dir / filename
-            response_path.write_bytes(raw)
+            filename: str | None = None
+            if raw is not None:
+                filename = (
+                    f"{ordinal:03d}_{product_id}_{record['response_sha256'][:16]}.json"
+                )
+                response_path = responses_dir / filename
+                response_path.write_bytes(raw)
+            if payload is None:
+                response_records.append(
+                    {
+                        "ordinal": ordinal,
+                        "symbol": symbol,
+                        "product_id": product_id,
+                        "requested_missing_hours": len(requested),
+                        "accepted_candles": 0,
+                        "request_attempts": 1,
+                        "response_file": (
+                            str(Path("endpoint_responses") / filename)
+                            if filename is not None
+                            else None
+                        ),
+                        **record,
+                    }
+                )
+                continue
             candles: dict[pd.Timestamp, dict[str, Any]] = {}
             rejected_duplicate_timestamps = 0
             rejected_invalid_candles = 0
@@ -459,12 +530,14 @@ def stage_exact_source_patch(
                     "product_id": product_id,
                     "requested_missing_hours": len(requested),
                     "accepted_candles": accepted_for_symbol,
+                    "request_attempts": 1,
                     "returned_candles": len(payload["candles"]),
                     "valid_unique_candles": len(candles),
                     "rejected_invalid_candles": rejected_invalid_candles,
                     "rejected_duplicate_timestamps": rejected_duplicate_timestamps,
                     "response_file": str(Path("endpoint_responses") / filename),
                     **record,
+                    "status": "inspected_response",
                 }
             )
             guard.checkpoint(f"exact_source_repair:{ordinal}:response_persisted")
@@ -526,9 +599,9 @@ def stage_exact_source_patch(
         os.replace(stage, output_dir)
         return result
     except BaseException:
-        # Preserve the baseline regardless of an endpoint failure.  The hidden
-        # stage is intentionally retained so already received raw responses are
-        # available for diagnosis, but it is never a canonical patch artifact.
+        # Endpoint and response failures are captured per symbol above. Other
+        # failures leave only the hidden stage for diagnosis, never a canonical
+        # patch artifact.
         raise
 
 

@@ -545,17 +545,26 @@ yield is consistent with much of the remaining deficit being genuine
 illiquidity/no-trade history or history the exact endpoint no longer serves,
 not a feature-store row-join failure.
 
-**Decision:** perform one bounded, exact-exchange OHLCV source repair for every
-affected candidate symbol, but do not expect backfill alone to restore June
-coverage. Persist the endpoint response and the exact accepted-candle ledger;
-accept a recovered value only when the source candle is real and the full
-required lookback becomes continuous. Then causally recompute only affected
-rolling features and rematerialize the frozen representation. Record pre/post
-coverage, recovered candidate count, and candidate hashes while retaining the
-current artifact as the immutable baseline. Stop retrying historical gaps that
-the exact exchange does not supply; pre-listing windows, no-trade hours, and
-genuine exchange outages remain unavailable. This is a source-repair
-operation, not feature imputation.
+**Decision / go-no-go:** one bounded, exact-exchange OHLCV source repair is
+warranted, but a broad or repeated historical backfill is not. Run the bounded
+repair once, before starting the remaining CatBoost production stages, because
+the source check found 94 real exchange candles that are absent locally. This
+is a low-yield integrity repair, not a route to full June coverage and not a
+reason to delay the pipeline indefinitely. Persist the endpoint response and
+the exact accepted-candle ledger; accept a recovered value only when the source
+candle is real and the full required lookback becomes continuous. Then causally
+recompute only affected rolling features and rematerialize the frozen
+representation as a challenger while retaining the current artifact as the
+immutable baseline.
+
+Promote the repaired challenger and regenerate downstream auxiliary/CatBoost
+artifacts only if it preserves candidate identity and produces a measurable
+increase in jointly finite short representation rows. If it recovers no
+additional candidate rows, keep the baseline and proceed. Regardless of the
+uplift, stop after this one exact-source pass: the endpoint supplies only 1.36%
+of the audited missing source hours, so repeated downloads have a poor expected
+return. Pre-listing windows, no-trade hours, and genuine exchange outages remain
+unavailable. This is a source-repair operation, not feature imputation.
 
 The repair is successful only if recovered candles produce additional jointly
 finite representation rows without changing candidate identity. Regardless of

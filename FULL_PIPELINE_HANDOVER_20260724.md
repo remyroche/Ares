@@ -2420,8 +2420,63 @@ Required input-family ablations:
 10. Remove adverse-path features.
 11. Remove AE/GMM/OOD/support context.
 12. Direct versus residual target.
+13. For each auxiliary head independently, replace its continuous target with
+    an economically anchored soft-binary target while holding the other four
+    heads, rows, feature contract, and HPO budget fixed.
+14. Route timing and MAE features to the entry-timing meta head only: compare
+    execution EV without those two heads against the shared-routing incumbent,
+    then test their add-one and joint value inside timing. Do not infer this
+    routing result from an execution-EV leave-one-out arm.
+15. Replace the continuous execution-net-EV regression target with a
+    cost-aware soft-binary utility target, with a train-only mapping back to a
+    comparable expected-net-EV unit.
 
 All comparisons must use identical rows and costs.
+
+Soft-binary targets are probabilities in `[0, 1]`, not hard signs and not
+globally normalized future outcomes. Their economic center and transition
+band must be fixed from the deployed policy geometry or estimated inside each
+side-local training fold only:
+
+- **Peak MFE:** soft probability that peak opportunity clears the deployed
+  trailing-activation/profit-conversion threshold, with separate 0.5R and 1R
+  diagnostics.
+- **Time to meaningful MFE:** soft probability of realization by each
+  2h/4h/8h/12h horizon; near-boundary times receive graded credit, while
+  right-censored paths remain explicit rather than being treated as long
+  regressions.
+- **MAE before meaningful MFE:** soft adverse-first probabilities around 0.5R
+  and 1R, preserving `P(stop 1R) <= P(adverse 0.5R first)`.
+- **Bars before price stops decreasing:** soft probability that adverse
+  movement stabilizes before a decision deadline and with sufficient remaining
+  stop headroom. Timeout/no-turn paths are a competing outcome, not an
+  arbitrary maximum bar count.
+- **Future favorable slope:** soft probability that favorable accumulation
+  clears a cost- and horizon-aware rate threshold; keep a separate probability
+  for failing to recover entry friction.
+
+For execution EV, the primary soft target challenger is
+`sigmoid(execution_net_ev_12h / tau_side)`, centered at after-cost break-even.
+`tau_side` is selected only from each outer-fold training population and is
+frozen before validation. Its OOF probability must be mapped monotonically
+back to expected net EV using training rows only, so it can be compared with
+the regression head and consumed by policy/timing layers in the same return
+unit. Evaluate log loss/Brier/calibration as diagnostics, but promotion still
+depends on realized net EV of the global top 10% after the causal 21-day
+admission calibrator.
+
+The routing ablation has four explicit arms:
+
+1. execution EV receives neither timing nor MAE; timing meta receives neither;
+2. execution EV receives both; timing meta receives neither;
+3. execution EV receives neither; timing meta receives both;
+4. both meta heads receive both.
+
+Arm 3 is the proposed specialization. Timing and MAE may be retained there
+even if they fail execution-EV add-one tests, but only if the timing layer
+improves cost-aware realized entry utility, adverse movement, missed-
+opportunity rate, and global post-admission top-10 economics on identical OOF
+rows.
 
 The implementation now treats heads rather than raw feature families as the
 unit of auxiliary attribution. This matters because the timing head emits both
@@ -2698,6 +2753,77 @@ Decision:
 4. Proceed to the next one-head challenger: MAE competing risks and actual
    stop/0.5R/1R crossing probabilities, with direct and residual add-one tests
    before any interaction search.
+
+#### 2026-07-25 MAE competing-risk challenger
+
+The second one-head challenger is complete. It replaces the weak expected-MAE
+mixture with side-local probabilities tied to the deployed stop geometry:
+
+- meaningful MFE before 0.5R adverse movement;
+- 0.5R adverse movement before meaningful MFE;
+- neither event before the path horizon;
+- stop at 1R before meaningful MFE.
+
+The first three outcomes share one multiclass model and sum to one. Stop
+severity is modeled conditionally and exported as
+`P(adverse 0.5R first) * P(stop 1R | adverse 0.5R first)`, so
+`P(stop 1R) <= P(adverse 0.5R first)` by construction. Long and short use
+their deployed side-parent stops (`4.0 ATR` and `3.525840973 ATR`) because the
+current observable archetypes all follow the signed side-parent fallback.
+Feature contracts are the side-local union of the incumbent event, MAE-if-hit,
+and MAE-if-no-hit selectors; multiclass and severity HPO are independent by
+side. OOF folds remain the strict May-July calendar.
+
+Artifacts:
+
+```text
+data_perp/artifacts/path_auxiliary_mae_competing_risk_20260725_v1
+data_perp/artifacts/execution_ev_joined_handoff_mae_competing_risk_20260725_v1
+data_perp/reports/execution_ev_meta_mae_competing_risk_policy1m_20260725_v1
+data_perp/reports/execution_ev_meta_mae_competing_risk_policy1m_20260725_v1/post_admission_21d
+```
+
+Coverage is 195,931 OOF prediction rows and 179,520 valid target-metric rows.
+The probability constraints have zero violations. Predictive quality is
+uneven:
+
+| Metric | Long | Short |
+|---|---:|---:|
+| Three-outcome macro OVR AUC | `0.5382` | `0.5943` |
+| 0.5R-adverse-first AUC | `0.4968` | `0.5557` |
+| 1R-stop-before-MFE AUC | `0.5594` | `0.5678` |
+
+Aggregate multiclass log loss is `1.04333` versus `1.05419` for the constant
+class-prior reference. Most of that improvement comes from short. Long
+0.5R-adverse discrimination is effectively random overall and falls to
+`0.4767` in June, so the head does not meet the learnability/stability gate.
+
+On the identical exact-policy, post-21-day, globally pooled top-10 contract:
+
+| MAE representation | Direct add-one | Residual add-one | Direct all-five interaction | Residual all-five interaction |
+|---|---:|---:|---:|---:|
+| Incumbent expected-MAE mixture | `+1.63 bps` | `+22.66 bps` | `-3.58 bps` | `+0.98 bps` |
+| Competing-risk challenger | `-5.20 bps` | `+5.49 bps` | `-4.34 bps` | `-0.69 bps` |
+
+The matching alpha-context and all-five-without-MAE control arms are identical
+across these two runs, so this is valid paired attribution rather than an
+absolute cross-run comparison. The challenger is worse in both add-one modes
+and both interaction modes. Its best complete-run global top-10 arm is still
+negative at `-0.003798`, and every fixed `+0.007` admitted subset has negative
+realized mean EV.
+
+Decision:
+
+1. Reject this challenger as an execution-EV input and retain it only as
+   research evidence.
+2. Keep the structurally coherent competing-risk target geometry.
+3. Next test policy-anchored soft-binary transition bands around 0.5R and 1R,
+   with the softness fitted inside each side-local training fold.
+4. Test the resulting MAE probabilities in the entry-timing meta head only,
+   as required by routing arm 3 above. This research ablation is allowed even
+   while production entry-timing promotion remains blocked.
+5. Require material improvement in long-side and June adverse-risk
+   discrimination before repeating an execution-EV interaction search.
 
 ### Phase 7: Final Refit and Bundle
 

@@ -54,18 +54,41 @@
       ]
     },
     "mae_before_meaningful_mfe_atr": {
-      "current_assessment": "conditional_means_too_weak_for_primary_risk_feature",
+      "current_assessment": "competing_risk_challenger_is_weak_on_long_and_degrades_paired_execution_ev",
       "evidence": {
         "if_hit_spearman_ic_long": 0.2771779085881452,
         "if_hit_spearman_ic_short": 0.11928229212059398,
         "if_no_hit_spearman_ic_long": 0.07991841526903326,
-        "if_no_hit_spearman_ic_short": 0.13290200088819282
+        "if_no_hit_spearman_ic_short": 0.13290200088819282,
+        "competing_risk_oof_rows": 195931,
+        "competing_risk_metric_rows": 179520,
+        "competing_risk_multiclass_logloss_all": 1.0433296740979163,
+        "competing_risk_multiclass_logloss_constant_prior_all": 1.054189507981339,
+        "competing_risk_macro_auc_long": 0.5381947848663634,
+        "competing_risk_macro_auc_short": 0.5943029626169901,
+        "adverse_0_5r_auc_long": 0.49678755743147485,
+        "adverse_0_5r_auc_short": 0.5556524867137795,
+        "stop_1r_auc_long": 0.5594374740252572,
+        "stop_1r_auc_short": 0.5677671503108281,
+        "challenger_direct_add_one_delta_vs_matching_alpha_context_bps": -5.195144396302996,
+        "challenger_residual_add_one_delta_vs_matching_alpha_context_bps": 5.486711417137004,
+        "challenger_direct_all_five_interaction_bps": -4.340935188088995,
+        "challenger_residual_all_five_interaction_bps": -0.6901111966959965,
+        "incumbent_direct_add_one_delta_vs_matching_alpha_context_bps": 1.6331173201929954,
+        "incumbent_residual_add_one_delta_vs_matching_alpha_context_bps": 22.663803827602003,
+        "incumbent_direct_all_five_interaction_bps": -3.5771459761199926,
+        "incumbent_residual_all_five_interaction_bps": 0.980790886660008,
+        "best_challenger_run_global_top10_net_ev": -0.003798,
+        "all_challenger_run_fixed_threshold_admitted_means_negative": true
       },
       "improvements": [
-        "train stop-before-meaningful-MFE as a competing risk",
-        "predict crossings of actual side-archetype stop, 0.5R and 1.0R",
+        "reject this first competing-risk challenger as an execution-EV input; it is weaker than the incumbent on both paired add-one modes and both all-five interactions",
+        "retain its structural target contract for research because first outcomes sum to one and P(stop 1R) cannot exceed P(adverse 0.5R first)",
+        "replace hard 0.5R and 1R crossings with policy-anchored soft-binary transition bands fitted inside each side-local training fold",
+        "test the MAE probabilities in the entry-timing meta head only, separately from execution EV",
+        "use actual observable side-archetype stop geometry when coverage exists; keep signed side-parent fallback evidence",
         "add conditional q80/q90 adverse-depth outputs",
-        "calibrate all event probabilities on outer-train OOF evidence"
+        "calibrate all event probabilities on outer-train OOF evidence and require long-side AUC materially above 0.5 in every full month"
       ]
     },
     "bars_before_price_stops_decreasing": {

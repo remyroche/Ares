@@ -356,6 +356,39 @@ def _add_signed_timing_cdf_vector(paths: dict[str, Path]) -> None:
     _resign_manifest(paths, "time")
 
 
+def _add_signed_mae_competing_risk_vector(paths: dict[str, Path]) -> None:
+    mae = pd.read_parquet(paths["mae"])
+    probabilities = {
+        "favorable_before_0_5r": [0.5, 0.4, 0.3, 0.2],
+        "adverse_0_5r_before_mfe": [0.2, 0.3, 0.4, 0.5],
+        "neither_before_horizon": [0.3, 0.3, 0.3, 0.3],
+        "stop_1r_before_mfe": [0.1, 0.2, 0.3, 0.4],
+    }
+    for name, values in probabilities.items():
+        mae[f"prediction_p_{name}"] = values
+    mae.to_parquet(paths["mae"], index=False)
+    manifest = json.loads(paths["mae_manifest"].read_text(encoding="utf-8"))
+    manifest["prediction_columns"] = {
+        "prediction": {
+            "role": "pre_entry_auxiliary_oof_prediction",
+            "target": False,
+            "head": "mae",
+            "source_prediction_column": "pred_expected_adverse_r",
+        },
+        **{
+            f"prediction_p_{name}": {
+                "role": "pre_entry_auxiliary_mae_competing_risk_probability_oof",
+                "target": False,
+                "head": "mae",
+                "source_prediction_column": f"pred_p_{name}",
+            }
+            for name in probabilities
+        },
+    }
+    paths["mae_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _resign_manifest(paths, "mae")
+
+
 def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> None:
     paths = _inputs(tmp_path)
     result = materializer.run(_args(tmp_path, paths))
@@ -566,6 +599,81 @@ def test_rejects_partial_or_target_bearing_signed_timing_cdf_vector(
     _resign_manifest(paths, "time")
     with pytest.raises(ValueError, match="not a target-free timing OOF prediction"):
         materializer.run(_args(tmp_path / "target-bearing", paths))
+
+
+def test_ingests_complete_signed_mae_competing_risk_vector_as_model_inputs(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    _add_signed_mae_competing_risk_vector(paths)
+
+    result = materializer.run(_args(tmp_path, paths))
+    handoff = pd.read_parquet(result["handoff"])
+    provenance = json.loads(result["provenance"].read_text(encoding="utf-8"))
+    expected_columns = list(materializer.MAE_RISK_JOINED_FEATURE_COLUMNS.values())
+
+    assert set(expected_columns).issubset(handoff.columns)
+    assert (
+        provenance["handoff"]["source_artifacts"]["mae_before_mfe"][
+            "mae_competing_risk_vector"
+        ]["status"]
+        == "signed_complete_mae_competing_risk_oof_vector"
+    )
+    for column in expected_columns:
+        feature = provenance["features"][column]
+        assert feature["model_input"] is True
+        assert feature["oof_or_frozen"] is True
+        assert feature["pre_entry"] is True
+    assert (
+        provenance["features"]["pred_mae_before_meaningful_mfe_atr"]["model_input"]
+        is False
+    )
+
+    feature_provenance, payload = runner._load_provenance(result["provenance"])
+    assert set(expected_columns).issubset(feature_provenance)
+    runner._validate_handoff(
+        handoff,
+        provenance=feature_provenance,
+        provenance_payload=payload,
+        id_columns=runner.DEFAULT_ID_COLUMNS,
+        timestamp_col="__ts__",
+        side_col="side_name",
+        archetype_col="catboost_archetype",
+        label_end_time_col="execution_label_end_utc",
+        target_horizon_hours=12.0,
+        max_span_days=31.0,
+    )
+
+
+def test_rejects_invalid_signed_mae_competing_risk_vector(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path / "target-bearing")
+    _add_signed_mae_competing_risk_vector(paths)
+    manifest = json.loads(paths["mae_manifest"].read_text(encoding="utf-8"))
+    manifest["prediction_columns"]["prediction_p_stop_1r_before_mfe"]["target"] = True
+    paths["mae_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _resign_manifest(paths, "mae")
+    with pytest.raises(ValueError, match="not a target-free MAE OOF prediction"):
+        materializer.run(_args(tmp_path / "target-bearing", paths))
+
+    paths = _inputs(tmp_path / "not-normalized")
+    _add_signed_mae_competing_risk_vector(paths)
+    mae = pd.read_parquet(paths["mae"])
+    mae["prediction_p_neither_before_horizon"] = 0.4
+    mae.to_parquet(paths["mae"], index=False)
+    _resign_manifest(paths, "mae")
+    with pytest.raises(ValueError, match="first-outcome probabilities must sum to one"):
+        materializer.run(_args(tmp_path / "not-normalized", paths))
+
+    paths = _inputs(tmp_path / "invalid-severity")
+    _add_signed_mae_competing_risk_vector(paths)
+    mae = pd.read_parquet(paths["mae"])
+    mae["prediction_p_stop_1r_before_mfe"] = (
+        mae["prediction_p_adverse_0_5r_before_mfe"] + 0.1
+    )
+    mae.to_parquet(paths["mae"], index=False)
+    _resign_manifest(paths, "mae")
+    with pytest.raises(ValueError, match="cannot exceed adverse-0.5R"):
+        materializer.run(_args(tmp_path / "invalid-severity", paths))
 
 
 def test_materializer_records_signed_merged_seven_class_contract(

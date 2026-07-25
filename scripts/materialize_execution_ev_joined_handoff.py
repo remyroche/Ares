@@ -85,6 +85,16 @@ TIMING_CDF_JOINED_FEATURE_COLUMNS = {
     source_column: f"pred_time_to_meaningful_mfe_p_hit_by_{hours}h"
     for source_column, hours in zip(TIMING_CDF_PREDICTION_COLUMNS, (2, 4, 8, 12))
 }
+MAE_RISK_PREDICTION_COLUMNS = (
+    "prediction_p_favorable_before_0_5r",
+    "prediction_p_adverse_0_5r_before_mfe",
+    "prediction_p_neither_before_horizon",
+    "prediction_p_stop_1r_before_mfe",
+)
+MAE_RISK_JOINED_FEATURE_COLUMNS = {
+    source_column: f"pred_mae_risk_{source_column.removeprefix('prediction_p_')}"
+    for source_column in MAE_RISK_PREDICTION_COLUMNS
+}
 
 
 @dataclass(frozen=True)
@@ -417,6 +427,42 @@ def _timing_cdf_output_columns(manifest: Mapping[str, Any]) -> dict[str, str]:
     return dict(TIMING_CDF_JOINED_FEATURE_COLUMNS)
 
 
+def _mae_risk_output_columns(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """Return a complete signed MAE competing-risk vector when declared."""
+
+    declared = manifest.get("prediction_columns")
+    if declared is None:
+        return {}
+    if not isinstance(declared, Mapping):
+        raise ValueError("mae_before_mfe: prediction_columns must be a mapping")
+    risk_like_columns = {
+        str(column) for column in declared if str(column).startswith("prediction_p_")
+    }
+    if not risk_like_columns:
+        return {}
+    if risk_like_columns != set(MAE_RISK_PREDICTION_COLUMNS):
+        raise ValueError(
+            "mae_before_mfe: signed competing-risk vector must declare exactly "
+            "favorable-before-0.5R, adverse-0.5R-before-MFE, neither-before-horizon, "
+            "and stop-1R-before-MFE probabilities"
+        )
+    for output_column in MAE_RISK_PREDICTION_COLUMNS:
+        record = declared.get(output_column)
+        expected_source = f"pred_{output_column.removeprefix('prediction_')}"
+        if not isinstance(record, Mapping) or (
+            record.get("role")
+            != "pre_entry_auxiliary_mae_competing_risk_probability_oof"
+            or record.get("target") is not False
+            or record.get("head") != "mae"
+            or record.get("source_prediction_column") != expected_source
+        ):
+            raise ValueError(
+                f"mae_before_mfe: signed competing-risk declaration for "
+                f"{output_column!r} is not a target-free MAE OOF prediction"
+            )
+    return dict(MAE_RISK_JOINED_FEATURE_COLUMNS)
+
+
 def _parse_columns(value: str) -> list[str]:
     columns = [item.strip() for item in value.split(",") if item.strip()]
     if not columns:
@@ -501,9 +547,13 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
     manifest = _load_signed_prediction_manifest(spec, verify_artifact_hash=False)
     output_columns = dict(spec.output_columns)
     timing_cdf_output_columns: dict[str, str] = {}
+    mae_risk_output_columns: dict[str, str] = {}
     if spec.name == "time_to_mfe":
         timing_cdf_output_columns = _timing_cdf_output_columns(manifest)
         output_columns.update(timing_cdf_output_columns)
+    if spec.name == "mae_before_mfe":
+        mae_risk_output_columns = _mae_risk_output_columns(manifest)
+        output_columns.update(mae_risk_output_columns)
     raw = pd.read_parquet(spec.path)
     if raw.empty:
         raise ValueError(f"{spec.name}: source parquet is empty")
@@ -692,6 +742,22 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
                 "all four p(hit by horizon) probabilities are target-free, signed timing OOF predictions"
                 if timing_cdf_output_columns
                 else "no timing CDF vector declared; retain the scalar compatibility input only"
+            ),
+        }
+    if spec.name == "mae_before_mfe":
+        metadata["mae_competing_risk_vector"] = {
+            "status": (
+                "signed_complete_mae_competing_risk_oof_vector"
+                if mae_risk_output_columns
+                else "legacy_scalar_only_no_mae_competing_risk_vector_declared"
+            ),
+            "source_columns": list(mae_risk_output_columns),
+            "joined_feature_columns": list(mae_risk_output_columns.values()),
+            "contract": (
+                "three mutually exclusive first-outcome probabilities plus a "
+                "structurally bounded stop-severity probability"
+                if mae_risk_output_columns
+                else "no MAE competing-risk vector declared; scalar remains blocked"
             ),
         }
     if spec.require_oof_fold:
@@ -1069,6 +1135,9 @@ def _provenance(
         column in joined.columns
         for column in TIMING_CDF_JOINED_FEATURE_COLUMNS.values()
     )
+    mae_risk_present = any(
+        column in joined.columns for column in MAE_RISK_JOINED_FEATURE_COLUMNS.values()
+    )
     availability = {
         source.spec.name: f"{source.spec.name}_available_at"
         for source in sources
@@ -1126,7 +1195,12 @@ def _provenance(
             "oof_or_frozen": True,
             "available_at_col": availability["mae_before_mfe"],
             "model_input": False,
-            "promotion_status": "blocked_after_learnability_audit",
+            "promotion_status": (
+                "compatibility scalar blocked; signed competing-risk probabilities "
+                "are the challenger inputs"
+                if mae_risk_present
+                else "blocked_after_learnability_audit"
+            ),
         },
         "pred_bars_before_price_stops_decreasing": {
             "family": "adverse_turn_timing",
@@ -1239,6 +1313,19 @@ def _provenance(
             "timing_cdf_horizon_hours": int(
                 source_column.removeprefix("prediction_p_hit_by_").removesuffix("h")
             ),
+            "signed_source_prediction_column": source_column,
+        }
+    for source_column, feature_column in MAE_RISK_JOINED_FEATURE_COLUMNS.items():
+        if feature_column not in joined.columns:
+            continue
+        features[feature_column] = {
+            "family": "mae_before_meaningful_mfe_competing_risk_probability",
+            "source": "side-local auxiliary OOF MAE competing-risk head; signed "
+            f"{source_column} probability",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["mae_before_mfe"],
+            "model_input": True,
             "signed_source_prediction_column": source_column,
         }
     for column in sorted(
@@ -1477,6 +1564,11 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             ],
             *[
                 column
+                for column in MAE_RISK_JOINED_FEATURE_COLUMNS.values()
+                if column in joined.columns
+            ],
+            *[
+                column
                 for column in joined.columns
                 if column.startswith(BASE_ARCHETYPE_FEATURE_PREFIX)
             ],
@@ -1497,6 +1589,25 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         if (np.diff(timing_cdf, axis=1) < -1e-6).any():
             raise ValueError(
                 "timing CDF OOF probabilities must be non-decreasing by horizon"
+            )
+    mae_risk_features = [
+        column
+        for column in MAE_RISK_JOINED_FEATURE_COLUMNS.values()
+        if column in joined.columns
+    ]
+    if mae_risk_features:
+        mae_risk = joined.loc[:, mae_risk_features].to_numpy(dtype=float)
+        if (mae_risk < -1e-6).any() or (mae_risk > 1.0 + 1e-6).any():
+            raise ValueError(
+                "MAE competing-risk OOF probabilities must be finite and bounded in [0, 1]"
+            )
+        if not np.allclose(mae_risk[:, :3].sum(axis=1), 1.0, atol=1e-4, rtol=1e-4):
+            raise ValueError(
+                "MAE competing-risk first-outcome probabilities must sum to one"
+            )
+        if (mae_risk[:, 3] > mae_risk[:, 1] + 1e-6).any():
+            raise ValueError(
+                "MAE stop-1R probability cannot exceed adverse-0.5R-first probability"
             )
     probabilities = joined.loc[
         :,

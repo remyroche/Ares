@@ -662,7 +662,18 @@ def test_catboost_predictor_early_stops_in_train_then_refits_all_sampled_rows(
     train_x = frame.loc[:, ["frozen_feature"]].iloc[positions]
     test_x = frame.loc[:, ["frozen_feature"]].iloc[fold.oos_indices]
     probabilities, classes, report = geometry_search.catboost_predictor(
-        train_x, target, test_x, {"iterations": 100, "od_wait": 17}, context
+        train_x,
+        target,
+        test_x,
+        {
+            "iterations": 100,
+            "od_wait": 17,
+            "loss_function": "MultiClass",
+            "verbose": False,
+            "random_seed": 20260722,
+            "allow_writing_files": False,
+        },
+        context,
     )
     assert probabilities.shape == (len(test_x), len(PATH_GEOMETRY_CLASSES))
     assert set(classes) == set(PATH_GEOMETRY_CLASSES)
@@ -674,6 +685,8 @@ def test_catboost_predictor_early_stops_in_train_then_refits_all_sampled_rows(
     assert fit_calls[1][0] == len(target)
     assert "eval_set" not in fit_calls[1][1]
     assert init_calls[1]["iterations"] == 5
+    assert init_calls[0]["allow_writing_files"] is False
+    assert init_calls[1]["allow_writing_files"] is False
     assert report["effective_tree_count"] == 5
     assert report["refit_rows"] == len(target)
 

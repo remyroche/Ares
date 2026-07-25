@@ -1698,12 +1698,15 @@ def _persist_final_exact_geometry_model(
         raise ValueError(
             "final exact geometry early-stop validation has unseen classes"
         )
+    constructor_params = {
+        "loss_function": "MultiClass",
+        "verbose": False,
+        "random_seed": 20260722,
+        "allow_writing_files": False,
+        **capped_params,
+    }
     early_model = CatBoostClassifier(
-        loss_function="MultiClass",
-        verbose=False,
-        random_seed=20260722,
-        allow_writing_files=False,
-        **dict(capped_params, classes_count=len(early_names)),
+        **dict(constructor_params, classes_count=len(early_names))
     )
     early_model.fit(
         feature_matrix.iloc[positions].iloc[context.early_stop_fit_indices],
@@ -1734,12 +1737,8 @@ def _persist_final_exact_geometry_model(
         )
     effective_trees = min(max(1, effective_trees), iteration_ceiling)
     model = CatBoostClassifier(
-        loss_function="MultiClass",
-        verbose=False,
-        random_seed=20260722,
-        allow_writing_files=False,
         **dict(
-            capped_params,
+            constructor_params,
             iterations=effective_trees,
             classes_count=len(EXACT_GEOMETRY_EXPORT_CLASSES),
         ),
@@ -2213,12 +2212,15 @@ def catboost_predictor(
         raise ValueError(
             "internal early-stop validation classes are absent from its fit rows"
         )
+    constructor_params = {
+        "loss_function": "MultiClass",
+        "verbose": False,
+        "random_seed": 20260722,
+        "allow_writing_files": False,
+        **capped_params,
+    }
     early_model = CatBoostClassifier(
-        loss_function="MultiClass",
-        verbose=False,
-        random_seed=20260722,
-        allow_writing_files=False,
-        **dict(capped_params, classes_count=len(early_names)),
+        **dict(constructor_params, classes_count=len(early_names))
     )
     early_model.fit(
         train_x.iloc[context.early_stop_fit_indices],
@@ -2247,12 +2249,8 @@ def catboost_predictor(
         raise ValueError("CatBoost early-stop fit did not expose a usable tree count")
     effective_trees = min(max(1, effective_trees), iteration_ceiling)
     refit_model = CatBoostClassifier(
-        loss_function="MultiClass",
-        verbose=False,
-        random_seed=20260722,
-        allow_writing_files=False,
         **dict(
-            capped_params,
+            constructor_params,
             iterations=effective_trees,
             classes_count=len(EXACT_GEOMETRY_EXPORT_CLASSES),
         ),

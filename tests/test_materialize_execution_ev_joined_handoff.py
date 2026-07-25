@@ -83,21 +83,13 @@ def _inputs(
         ),
         adverse_probability_mass=probabilities[
             :,
-            [
-                class_index[name]
-                for name in materializer.CATBOOST_ADVERSE_CLASSES
-            ],
+            [class_index[name] for name in materializer.CATBOOST_ADVERSE_CLASSES],
         ].sum(axis=1),
         favorable_probability_mass=probabilities[
             :,
-            [
-                class_index[name]
-                for name in materializer.CATBOOST_FAVORABLE_CLASSES
-            ],
+            [class_index[name] for name in materializer.CATBOOST_FAVORABLE_CLASSES],
         ].sum(axis=1),
-        predicted_path_archetype=[
-            class_order[index] for index in winning_classes
-        ],
+        predicted_path_archetype=[class_order[index] for index in winning_classes],
         oof_fold_id=[0, 0, 1, 1],
     )
     gross = np.linspace(-0.007, 0.023, len(keys))
@@ -201,34 +193,85 @@ def _inputs(
             )
             if manifest_class_order:
                 payload["path_shape_types"] = list(class_order)
-        payload["prediction_role_manifest_sha256"] = materializer._canonical_json_hash(payload)
+        payload["prediction_role_manifest_sha256"] = materializer._canonical_json_hash(
+            payload
+        )
         manifest = tmp_path / f"{name}.manifest.json"
         manifest.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
         paths[f"{name}_manifest"] = manifest
     return paths
 
 
-def _args(tmp_path: Path, paths: dict[str, Path], **overrides: object) -> SimpleNamespace:
+def _args(
+    tmp_path: Path, paths: dict[str, Path], **overrides: object
+) -> SimpleNamespace:
     values: dict[str, object] = {
-        "alpha": paths["alpha"], "time_oof": paths["time"], "peak_oof": paths["peak"],
-        "mae_oof": paths["mae"], "turn_oof": paths["turn"], "slope_oof": paths["slope"],
-        "catboost_oof": paths["catboost"], "execution_labels": paths["labels"],
-        "output": tmp_path / "joined.parquet", "provenance_json": tmp_path / "joined.json",
-        "timestamp_col": "__ts__", "symbol_col": "__symbol__", "side_col": "side_name", "candidate_id_col": "candidate_id",
-        "alpha_timestamp_col": None, "alpha_symbol_col": None, "alpha_side_col": None, "alpha_candidate_id_col": None,
-        "time_timestamp_col": None, "time_symbol_col": None, "time_side_col": None, "time_candidate_id_col": None,
-        "peak_timestamp_col": None, "peak_symbol_col": None, "peak_side_col": None, "peak_candidate_id_col": None,
-        "mae_timestamp_col": None, "mae_symbol_col": None, "mae_side_col": None, "mae_candidate_id_col": None,
-        "turn_timestamp_col": None, "turn_symbol_col": None, "turn_side_col": None, "turn_candidate_id_col": None,
-        "slope_timestamp_col": None, "slope_symbol_col": None, "slope_side_col": None, "slope_candidate_id_col": None,
-        "catboost_timestamp_col": None, "catboost_symbol_col": None, "catboost_side_col": None, "catboost_candidate_id_col": None,
-        "labels_timestamp_col": None, "labels_symbol_col": None, "labels_side_col": None, "labels_candidate_id_col": None,
-        "alpha_ev_col": "existing_alpha_ev", "alpha_uncertainty_col": "base_prediction_uncertainty", "alpha_leaf_support_col": "meta_leaf_support_log1p", "alpha_fold_col": "oof_fold", "alpha_available_at_col": None,
-        "time_prediction_col": "pred_time_to_first_meaningful_mfe_12h", "time_fold_col": "oof_fold", "time_available_at_col": "available_at",
-        "peak_prediction_col": "pred_peak_mfe_12h_atr", "peak_fold_col": "oof_fold", "peak_available_at_col": "available_at",
-        "mae_prediction_col": "prediction", "mae_fold_col": "oof_fold", "mae_available_at_col": "available_at",
-        "turn_prediction_col": "prediction", "turn_fold_col": "oof_fold", "turn_available_at_col": "available_at",
-        "slope_prediction_col": "prediction", "slope_fold_col": "oof_fold", "slope_available_at_col": "available_at",
+        "alpha": paths["alpha"],
+        "time_oof": paths["time"],
+        "peak_oof": paths["peak"],
+        "mae_oof": paths["mae"],
+        "turn_oof": paths["turn"],
+        "slope_oof": paths["slope"],
+        "catboost_oof": paths["catboost"],
+        "execution_labels": paths["labels"],
+        "output": tmp_path / "joined.parquet",
+        "provenance_json": tmp_path / "joined.json",
+        "timestamp_col": "__ts__",
+        "symbol_col": "__symbol__",
+        "side_col": "side_name",
+        "candidate_id_col": "candidate_id",
+        "alpha_timestamp_col": None,
+        "alpha_symbol_col": None,
+        "alpha_side_col": None,
+        "alpha_candidate_id_col": None,
+        "time_timestamp_col": None,
+        "time_symbol_col": None,
+        "time_side_col": None,
+        "time_candidate_id_col": None,
+        "peak_timestamp_col": None,
+        "peak_symbol_col": None,
+        "peak_side_col": None,
+        "peak_candidate_id_col": None,
+        "mae_timestamp_col": None,
+        "mae_symbol_col": None,
+        "mae_side_col": None,
+        "mae_candidate_id_col": None,
+        "turn_timestamp_col": None,
+        "turn_symbol_col": None,
+        "turn_side_col": None,
+        "turn_candidate_id_col": None,
+        "slope_timestamp_col": None,
+        "slope_symbol_col": None,
+        "slope_side_col": None,
+        "slope_candidate_id_col": None,
+        "catboost_timestamp_col": None,
+        "catboost_symbol_col": None,
+        "catboost_side_col": None,
+        "catboost_candidate_id_col": None,
+        "labels_timestamp_col": None,
+        "labels_symbol_col": None,
+        "labels_side_col": None,
+        "labels_candidate_id_col": None,
+        "alpha_ev_col": "existing_alpha_ev",
+        "alpha_uncertainty_col": "base_prediction_uncertainty",
+        "alpha_leaf_support_col": "meta_leaf_support_log1p",
+        "alpha_fold_col": "oof_fold",
+        "alpha_available_at_col": None,
+        "time_prediction_col": "pred_time_to_first_meaningful_mfe_12h",
+        "time_fold_col": "oof_fold",
+        "time_available_at_col": "available_at",
+        "peak_prediction_col": "pred_peak_mfe_12h_atr",
+        "peak_fold_col": "oof_fold",
+        "peak_available_at_col": "available_at",
+        "mae_prediction_col": "prediction",
+        "mae_fold_col": "oof_fold",
+        "mae_available_at_col": "available_at",
+        "turn_prediction_col": "prediction",
+        "turn_fold_col": "oof_fold",
+        "turn_available_at_col": "available_at",
+        "slope_prediction_col": "prediction",
+        "slope_fold_col": "oof_fold",
+        "slope_available_at_col": "available_at",
         "catboost_prob_cols": [
             f"probability__{shape}"
             for shape in materializer.MERGED_PATH_ARCHETYPE_CLASSES
@@ -242,17 +285,24 @@ def _args(tmp_path: Path, paths: dict[str, Path], **overrides: object) -> Simple
         "catboost_archetype_col": "predicted_path_archetype",
         "catboost_fold_col": "oof_fold_id",
         "catboost_available_at_col": "available_at",
-        "execution_decision_ts_col": "__decision_ts__", "execution_gross_ev_col": "execution_gross_ev_12h",
-        "execution_cost_return_col": "execution_cost_return", "execution_net_ev_col": "execution_net_ev_12h",
-        "execution_label_end_col": "execution_label_end_utc", "execution_exit_reason_col": "execution_exit_reason",
-        "execution_exit_hour_col": "execution_exit_hour", "execution_mfe_col": "execution_mfe_return_12h",
-        "execution_mae_col": "execution_mae_return_12h", "alpha_source_cost_return": 0.01,
+        "execution_decision_ts_col": "__decision_ts__",
+        "execution_gross_ev_col": "execution_gross_ev_12h",
+        "execution_cost_return_col": "execution_cost_return",
+        "execution_net_ev_col": "execution_net_ev_12h",
+        "execution_label_end_col": "execution_label_end_utc",
+        "execution_exit_reason_col": "execution_exit_reason",
+        "execution_exit_hour_col": "execution_exit_hour",
+        "execution_mfe_col": "execution_mfe_return_12h",
+        "execution_mae_col": "execution_mae_return_12h",
+        "alpha_source_cost_return": 0.01,
     }
     for source in ("alpha", "time", "peak", "mae", "turn", "slope", "catboost"):
         values[f"{source}_manifest"] = paths[f"{source}_manifest"]
         values[f"{source}_validation_start_col"] = "validation_start"
         values[f"{source}_train_decision_cutoff_col"] = "train_decision_cutoff"
-        values[f"{source}_label_resolution_available_at_col"] = "label_resolution_available_at"
+        values[f"{source}_label_resolution_available_at_col"] = (
+            "label_resolution_available_at"
+        )
     values.update(
         {
             "alpha_available_at_col": "available_at",
@@ -274,6 +324,38 @@ def _resign_manifest(paths: dict[str, Path], source: str) -> None:
     paths[f"{source}_manifest"].write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _add_signed_timing_cdf_vector(paths: dict[str, Path]) -> None:
+    time = pd.read_parquet(paths["time"])
+    for hours, values in {
+        2: [0.1, 0.2, 0.3, 0.4],
+        4: [0.2, 0.3, 0.4, 0.5],
+        8: [0.4, 0.5, 0.6, 0.7],
+        12: [0.5, 0.6, 0.7, 0.8],
+    }.items():
+        time[f"prediction_p_hit_by_{hours}h"] = values
+    time.to_parquet(paths["time"], index=False)
+    manifest = json.loads(paths["time_manifest"].read_text(encoding="utf-8"))
+    manifest["prediction_columns"] = {
+        "prediction": {
+            "role": "pre_entry_auxiliary_oof_prediction",
+            "target": False,
+            "head": "timing",
+            "source_prediction_column": "pred_time_to_first_meaningful_mfe_12h",
+        },
+        **{
+            f"prediction_p_hit_by_{hours}h": {
+                "role": "pre_entry_auxiliary_timing_cdf_probability_oof",
+                "target": False,
+                "head": "timing",
+                "source_prediction_column": f"pred_p_hit_by_{hours}h",
+            }
+            for hours in (2, 4, 8, 12)
+        },
+    }
+    paths["time_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _resign_manifest(paths, "time")
+
+
 def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> None:
     paths = _inputs(tmp_path)
     result = materializer.run(_args(tmp_path, paths))
@@ -282,11 +364,19 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     assert handoff["side_name"].tolist() == ["long", "short", "long", "short"]
     assert set(materializer.BASE_JOIN_KEYS).issubset(handoff.columns)
     assert {
-        "candidate_id", "execution_decision_utc", "execution_gross_ev_12h",
-        "execution_cost_return", "execution_net_ev_12h", "execution_label_end_utc",
-        "alpha_oof_fold", "time_to_mfe_oof_fold", "peak_mfe_oof_fold",
-        "mae_before_mfe_oof_fold", "adverse_turn_oof_fold",
-        "path_slope_oof_fold", "catboost_oof_fold",
+        "candidate_id",
+        "execution_decision_utc",
+        "execution_gross_ev_12h",
+        "execution_cost_return",
+        "execution_net_ev_12h",
+        "execution_label_end_utc",
+        "alpha_oof_fold",
+        "time_to_mfe_oof_fold",
+        "peak_mfe_oof_fold",
+        "mae_before_mfe_oof_fold",
+        "adverse_turn_oof_fold",
+        "path_slope_oof_fold",
+        "catboost_oof_fold",
         "pred_mae_before_meaningful_mfe_atr",
         "pred_bars_before_price_stops_decreasing",
         "pred_favorable_path_slope_atr_per_hour",
@@ -298,10 +388,20 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     }.issubset(handoff.columns)
     assert provenance["schema"] == "execution_ev_joined_handoff_v2"
     assert provenance["handoff"]["join_mode"] == "exact_inner_one_to_one"
-    assert provenance["handoff"]["join_keys"] == ["__ts__", "__symbol__", "side_name", "candidate_id"]
-    assert all("sha256" in source for source in provenance["handoff"]["source_artifacts"].values())
+    assert provenance["handoff"]["join_keys"] == [
+        "__ts__",
+        "__symbol__",
+        "side_name",
+        "candidate_id",
+    ]
     assert all(
-        source["signed_prediction_role_manifest"]["signed_prediction_role_manifest_sha256"]
+        "sha256" in source
+        for source in provenance["handoff"]["source_artifacts"].values()
+    )
+    assert all(
+        source["signed_prediction_role_manifest"][
+            "signed_prediction_role_manifest_sha256"
+        ]
         for source in provenance["handoff"]["source_artifacts"].values()
     )
     assert provenance["features"]["catboost_archetype"]["model_input"] is False
@@ -313,13 +413,13 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     probability_columns = [
         column for column in handoff if column.startswith("catboost_p_")
     ]
-    assert len(probability_columns) == len(
-        materializer.MERGED_PATH_ARCHETYPE_CLASSES
-    )
+    assert len(probability_columns) == len(materializer.MERGED_PATH_ARCHETYPE_CLASSES)
     np.testing.assert_allclose(handoff[probability_columns].sum(axis=1), 1.0)
     np.testing.assert_allclose(
         handoff["existing_alpha_ev"],
-        handoff["existing_alpha_ev_source_basis"] + 0.01 - handoff["execution_cost_return"],
+        handoff["existing_alpha_ev_source_basis"]
+        + 0.01
+        - handoff["execution_cost_return"],
     )
     feature_provenance, payload = runner._load_provenance(result["provenance"])
     runner._validate_handoff(
@@ -335,7 +435,71 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     )
 
 
-def test_materializer_records_signed_merged_seven_class_contract(tmp_path: Path) -> None:
+def test_ingests_complete_signed_timing_cdf_vector_as_model_inputs(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    _add_signed_timing_cdf_vector(paths)
+
+    result = materializer.run(_args(tmp_path, paths))
+    handoff = pd.read_parquet(result["handoff"])
+    provenance = json.loads(result["provenance"].read_text(encoding="utf-8"))
+    expected_columns = list(materializer.TIMING_CDF_JOINED_FEATURE_COLUMNS.values())
+
+    assert set(expected_columns).issubset(handoff.columns)
+    assert (
+        provenance["handoff"]["source_artifacts"]["time_to_mfe"]["timing_cdf_vector"][
+            "status"
+        ]
+        == "signed_complete_timing_oof_vector"
+    )
+    for column in expected_columns:
+        feature = provenance["features"][column]
+        assert feature["model_input"] is True
+        assert feature["oof_or_frozen"] is True
+        assert feature["pre_entry"] is True
+
+    feature_provenance, payload = runner._load_provenance(result["provenance"])
+    assert set(expected_columns).issubset(feature_provenance)
+    runner._validate_handoff(
+        handoff,
+        provenance=feature_provenance,
+        provenance_payload=payload,
+        id_columns=runner.DEFAULT_ID_COLUMNS,
+        timestamp_col="__ts__",
+        side_col="side_name",
+        archetype_col="catboost_archetype",
+        label_end_time_col="execution_label_end_utc",
+        max_span_days=31.0,
+    )
+
+
+def test_rejects_partial_or_target_bearing_signed_timing_cdf_vector(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path / "missing-column")
+    _add_signed_timing_cdf_vector(paths)
+    time = pd.read_parquet(paths["time"]).drop(columns="prediction_p_hit_by_8h")
+    time.to_parquet(paths["time"], index=False)
+    _resign_manifest(paths, "time")
+    with pytest.raises(
+        ValueError, match="missing required columns: prediction_p_hit_by_8h"
+    ):
+        materializer.run(_args(tmp_path / "missing-column", paths))
+
+    paths = _inputs(tmp_path / "target-bearing")
+    _add_signed_timing_cdf_vector(paths)
+    manifest = json.loads(paths["time_manifest"].read_text(encoding="utf-8"))
+    manifest["prediction_columns"]["prediction_p_hit_by_4h"]["target"] = True
+    paths["time_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+    _resign_manifest(paths, "time")
+    with pytest.raises(ValueError, match="not a target-free timing OOF prediction"):
+        materializer.run(_args(tmp_path / "target-bearing", paths))
+
+
+def test_materializer_records_signed_merged_seven_class_contract(
+    tmp_path: Path,
+) -> None:
     merged = (
         "immediate_adverse_path",
         "early_mfe_full_reversal",
@@ -358,7 +522,9 @@ def test_materializer_records_signed_merged_seven_class_contract(tmp_path: Path)
     contract = provenance["handoff"]["catboost_class_contract"]
 
     assert contract["class_order"] == list(canonical)
-    assert contract["class_order_sha256"] == materializer.catboost_class_order_sha256(canonical)
+    assert contract["class_order_sha256"] == materializer.catboost_class_order_sha256(
+        canonical
+    )
     assert contract["source"] == "merged_path_archetype_classes_from_probability_names"
     for name, feature in provenance["features"].items():
         if name.startswith("catboost_p_") or name in {
@@ -431,23 +597,40 @@ def test_joiner_defaults_match_the_canonical_auxiliary_adapter_schema() -> None:
     parser = materializer._parser()
     args = parser.parse_args(
         [
-            "--alpha", "alpha.parquet",
-            "--time-oof", "time.parquet",
-            "--peak-oof", "peak.parquet",
-            "--mae-oof", "mae.parquet",
-            "--turn-oof", "turn.parquet",
-            "--slope-oof", "slope.parquet",
-            "--catboost-oof", "catboost.parquet",
-            "--execution-labels", "labels.parquet",
-            "--output", "joined.parquet",
-            "--alpha-manifest", "alpha.json",
-            "--time-manifest", "time.json",
-            "--peak-manifest", "peak.json",
-            "--mae-manifest", "mae.json",
-            "--turn-manifest", "turn.json",
-            "--slope-manifest", "slope.json",
-            "--catboost-manifest", "catboost.json",
-            "--labels-manifest", "labels.json",
+            "--alpha",
+            "alpha.parquet",
+            "--time-oof",
+            "time.parquet",
+            "--peak-oof",
+            "peak.parquet",
+            "--mae-oof",
+            "mae.parquet",
+            "--turn-oof",
+            "turn.parquet",
+            "--slope-oof",
+            "slope.parquet",
+            "--catboost-oof",
+            "catboost.parquet",
+            "--execution-labels",
+            "labels.parquet",
+            "--output",
+            "joined.parquet",
+            "--alpha-manifest",
+            "alpha.json",
+            "--time-manifest",
+            "time.json",
+            "--peak-manifest",
+            "peak.json",
+            "--mae-manifest",
+            "mae.json",
+            "--turn-manifest",
+            "turn.json",
+            "--slope-manifest",
+            "slope.json",
+            "--catboost-manifest",
+            "catboost.json",
+            "--labels-manifest",
+            "labels.json",
         ]
     )
     assert {
@@ -458,8 +641,7 @@ def test_joiner_defaults_match_the_canonical_auxiliary_adapter_schema() -> None:
         args.slope_prediction_col,
     } == {"prediction"}
     assert args.catboost_prob_cols == [
-        f"probability__{shape}"
-        for shape in materializer.MERGED_PATH_ARCHETYPE_CLASSES
+        f"probability__{shape}" for shape in materializer.MERGED_PATH_ARCHETYPE_CLASSES
     ]
     assert {
         args.catboost_max_probability_col,
@@ -509,12 +691,18 @@ def test_rejects_duplicate_identity_and_missing_oof_fold(tmp_path: Path) -> None
 def test_rejects_target_feature_and_empty_common_intersection(tmp_path: Path) -> None:
     paths = _inputs(tmp_path / "target")
     target_time = pd.read_parquet(paths["time"]).rename(
-        columns={"pred_time_to_first_meaningful_mfe_12h": "realized_time_to_first_meaningful_mfe"}
+        columns={
+            "pred_time_to_first_meaningful_mfe_12h": "realized_time_to_first_meaningful_mfe"
+        }
     )
     target_time.to_parquet(paths["time"], index=False)
     with pytest.raises(ValueError, match="target leakage"):
         materializer.run(
-            _args(tmp_path / "target", paths, time_prediction_col="realized_time_to_first_meaningful_mfe")
+            _args(
+                tmp_path / "target",
+                paths,
+                time_prediction_col="realized_time_to_first_meaningful_mfe",
+            )
         )
 
     paths = _inputs(tmp_path / "disjoint")
@@ -522,15 +710,21 @@ def test_rejects_target_feature_and_empty_common_intersection(tmp_path: Path) ->
     disjoint["__ts__"] = disjoint["__ts__"] + pd.Timedelta(days=30)
     disjoint.to_parquet(paths["catboost"], index=False)
     _resign_manifest(paths, "catboost")
-    with pytest.raises(ValueError, match="common OOF identity intersection is too small"):
+    with pytest.raises(
+        ValueError, match="common OOF identity intersection is too small"
+    ):
         materializer.run(_args(tmp_path / "disjoint", paths))
 
 
-def test_rejects_missing_candidate_id_and_invalid_upstream_timing_evidence(tmp_path: Path) -> None:
+def test_rejects_missing_candidate_id_and_invalid_upstream_timing_evidence(
+    tmp_path: Path,
+) -> None:
     paths = _inputs(tmp_path / "missing-candidate")
     time = pd.read_parquet(paths["time"]).drop(columns="candidate_id")
     time.to_parquet(paths["time"], index=False)
-    with pytest.raises(ValueError, match="strict joined execution-EV provenance is unavailable"):
+    with pytest.raises(
+        ValueError, match="strict joined execution-EV provenance is unavailable"
+    ):
         materializer.run(_args(tmp_path / "missing-candidate", paths))
 
     paths = _inputs(tmp_path / "partial-coverage")
@@ -541,17 +735,24 @@ def test_rejects_missing_candidate_id_and_invalid_upstream_timing_evidence(tmp_p
     handoff = pd.read_parquet(result["handoff"])
     provenance = json.loads(result["provenance"].read_text(encoding="utf-8"))
     assert len(handoff) == 3
-    slope_alignment = provenance["handoff"]["population_alignment"]["sources"]["path_slope"]
+    slope_alignment = provenance["handoff"]["population_alignment"]["sources"][
+        "path_slope"
+    ]
     assert slope_alignment["input_rows"] == 3
     assert slope_alignment["retained_common_rows"] == 3
     assert slope_alignment["dropped_not_in_common_rows"] == 0
-    assert provenance["handoff"]["population_alignment"]["sources"]["alpha"][
-        "dropped_not_in_common_rows"
-    ] == 1
+    assert (
+        provenance["handoff"]["population_alignment"]["sources"]["alpha"][
+            "dropped_not_in_common_rows"
+        ]
+        == 1
+    )
 
     paths = _inputs(tmp_path / "late-resolution")
     peak = pd.read_parquet(paths["peak"])
-    peak["label_resolution_available_at"] = peak["train_decision_cutoff"] + pd.Timedelta(hours=1)
+    peak["label_resolution_available_at"] = peak[
+        "train_decision_cutoff"
+    ] + pd.Timedelta(hours=1)
     peak.to_parquet(paths["peak"], index=False)
     with pytest.raises(ValueError, match="training labels must resolve before"):
         materializer.run(_args(tmp_path / "late-resolution", paths))
@@ -560,11 +761,16 @@ def test_rejects_missing_candidate_id_and_invalid_upstream_timing_evidence(tmp_p
     mae = pd.read_parquet(paths["mae"])
     mae["train_decision_cutoff"] = mae["__ts__"]
     mae.to_parquet(paths["mae"], index=False)
-    with pytest.raises(ValueError, match="train decision cutoff must be strictly before validation start"):
+    with pytest.raises(
+        ValueError,
+        match="train decision cutoff must be strictly before validation start",
+    ):
         materializer.run(_args(tmp_path / "late-cutoff", paths))
 
 
-def test_rejects_execution_target_alias_and_unsigned_alpha_role_manifest(tmp_path: Path) -> None:
+def test_rejects_execution_target_alias_and_unsigned_alpha_role_manifest(
+    tmp_path: Path,
+) -> None:
     paths = _inputs(tmp_path / "target-alias")
     alpha = pd.read_parquet(paths["alpha"])
     alpha["execution_net_ev_12h"] = alpha["existing_alpha_ev"]
@@ -582,11 +788,15 @@ def test_rejects_execution_target_alias_and_unsigned_alpha_role_manifest(tmp_pat
     manifest = json.loads(paths["alpha_manifest"].read_text(encoding="utf-8"))
     manifest["prediction_columns"]["existing_alpha_ev"]["target"] = True
     paths["alpha_manifest"].write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(ValueError, match="signed prediction-role manifest hash does not verify"):
+    with pytest.raises(
+        ValueError, match="signed prediction-role manifest hash does not verify"
+    ):
         materializer.run(_args(tmp_path / "unsigned-alpha", paths))
 
 
-def test_rejects_missing_alpha_cost_proof_and_mismatched_override(tmp_path: Path) -> None:
+def test_rejects_missing_alpha_cost_proof_and_mismatched_override(
+    tmp_path: Path,
+) -> None:
     paths = _inputs(tmp_path / "missing-cost-proof")
     manifest = json.loads(paths["alpha_manifest"].read_text(encoding="utf-8"))
     manifest.pop("alpha_cost_basis")
@@ -600,7 +810,9 @@ def test_rejects_missing_alpha_cost_proof_and_mismatched_override(tmp_path: Path
     paths = _inputs(tmp_path / "mismatched-override")
     with pytest.raises(ValueError, match="override must exactly match"):
         materializer.run(
-            _args(tmp_path / "mismatched-override", paths, alpha_source_cost_return=0.003)
+            _args(
+                tmp_path / "mismatched-override", paths, alpha_source_cost_return=0.003
+            )
         )
 
 

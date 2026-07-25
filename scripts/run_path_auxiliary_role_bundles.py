@@ -836,6 +836,8 @@ def _promotion_contract(
             "pred_peak_mfe_if_hit_mean_atr",
             "pred_expected_peak_mfe_atr",
         ]
+        if q80["status"] == "RESEARCH_ABLATION_CANDIDATE_Q80":
+            research_columns.append("pred_peak_mfe_if_hit_q80_atr")
         components = {
             "meaningful_mfe_probability": {
                 "status": "RESEARCH_ABLATION_CANDIDATE",

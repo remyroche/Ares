@@ -74,6 +74,16 @@ CATBOOST_FAVORABLE_CLASSES = (
     "late_breakout",
     "slow_grinder",
 )
+TIMING_CDF_PREDICTION_COLUMNS = (
+    "prediction_p_hit_by_2h",
+    "prediction_p_hit_by_4h",
+    "prediction_p_hit_by_8h",
+    "prediction_p_hit_by_12h",
+)
+TIMING_CDF_JOINED_FEATURE_COLUMNS = {
+    source_column: f"pred_time_to_meaningful_mfe_p_hit_by_{hours}h"
+    for source_column, hours in zip(TIMING_CDF_PREDICTION_COLUMNS, (2, 4, 8, 12))
+}
 
 
 @dataclass(frozen=True)
@@ -131,38 +141,57 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
-def _canonical_json_hash(payload: Mapping[str, Any], *, excluded: Sequence[str] = ()) -> str:
+def _canonical_json_hash(
+    payload: Mapping[str, Any], *, excluded: Sequence[str] = ()
+) -> str:
     canonical = {
         str(key): _json_safe(value)
         for key, value in payload.items()
         if key not in set(excluded)
     }
-    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _load_signed_prediction_manifest(spec: SourceSpec) -> dict[str, Any]:
+def _load_signed_prediction_manifest(
+    spec: SourceSpec, *, verify_artifact_hash: bool = True
+) -> dict[str, Any]:
     if not spec.manifest_path.is_file():
         raise ValueError(f"{spec.name}: signed prediction-role manifest is required")
     try:
         payload = json.loads(spec.manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{spec.name}: cannot read signed prediction-role manifest") from exc
+        raise ValueError(
+            f"{spec.name}: cannot read signed prediction-role manifest"
+        ) from exc
     if not isinstance(payload, Mapping):
-        raise ValueError(f"{spec.name}: signed prediction-role manifest must be a JSON object")
+        raise ValueError(
+            f"{spec.name}: signed prediction-role manifest must be a JSON object"
+        )
     signed_hash = payload.get("prediction_role_manifest_sha256")
     if not isinstance(signed_hash, str) or not signed_hash:
         raise ValueError(f"{spec.name}: missing signed prediction-role manifest hash")
-    expected_hash = _canonical_json_hash(payload, excluded=("prediction_role_manifest_sha256",))
+    expected_hash = _canonical_json_hash(
+        payload, excluded=("prediction_role_manifest_sha256",)
+    )
     if not hmac.compare_digest(signed_hash, expected_hash):
-        raise ValueError(f"{spec.name}: signed prediction-role manifest hash does not verify")
+        raise ValueError(
+            f"{spec.name}: signed prediction-role manifest hash does not verify"
+        )
     if payload.get("prediction_role") != spec.prediction_role:
         raise ValueError(
             f"{spec.name}: prediction role must be {spec.prediction_role!r} in its signed manifest"
         )
     artifact_hash = payload.get("source_artifact_sha256", payload.get("output_sha256"))
-    if not isinstance(artifact_hash, str) or not hmac.compare_digest(artifact_hash, _sha256(spec.path)):
-        raise ValueError(f"{spec.name}: signed manifest does not bind this parquet artifact hash")
+    if verify_artifact_hash and (
+        not isinstance(artifact_hash, str)
+        or not hmac.compare_digest(artifact_hash, _sha256(spec.path))
+    ):
+        raise ValueError(
+            f"{spec.name}: signed manifest does not bind this parquet artifact hash"
+        )
     class_order: tuple[str, ...] | None = None
     class_order_source: str | None = None
     declared_orders: list[tuple[str, ...]] = []
@@ -180,7 +209,9 @@ def _load_signed_prediction_manifest(spec: SourceSpec) -> dict[str, Any]:
     probability_classes: tuple[str, ...] = ()
     if spec.name == "catboost":
         prediction_columns = payload.get("prediction_columns")
-        if prediction_columns is not None and not isinstance(prediction_columns, Mapping):
+        if prediction_columns is not None and not isinstance(
+            prediction_columns, Mapping
+        ):
             raise ValueError("catboost: prediction_columns must be a mapping")
         probability_columns = (
             [
@@ -319,14 +350,18 @@ def _alpha_cost_basis(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _assert_alpha_ev_manifest_binding(spec: SourceSpec, manifest: Mapping[str, Any]) -> None:
+def _assert_alpha_ev_manifest_binding(
+    spec: SourceSpec, manifest: Mapping[str, Any]
+) -> None:
     alpha_input_columns = [
         input_column
         for input_column, output_column in spec.output_columns.items()
         if output_column == "existing_alpha_ev"
     ]
     if len(alpha_input_columns) != 1:
-        raise ValueError("alpha: exactly one signed alpha EV prediction column is required")
+        raise ValueError(
+            "alpha: exactly one signed alpha EV prediction column is required"
+        )
     source_column = alpha_input_columns[0]
     declared = manifest.get("prediction_columns")
     if not isinstance(declared, Mapping):
@@ -336,10 +371,49 @@ def _assert_alpha_ev_manifest_binding(spec: SourceSpec, manifest: Mapping[str, A
         raise ValueError(
             f"alpha: signed manifest has no prediction-role declaration for {source_column!r}"
         )
-    if record.get("role") != "pre_entry_alpha_ev_oof_prediction" or record.get("target") is not False:
+    if (
+        record.get("role") != "pre_entry_alpha_ev_oof_prediction"
+        or record.get("target") is not False
+    ):
         raise ValueError(
             "alpha: existing_alpha_ev must be bound to a signed pre-entry alpha OOF prediction role"
         )
+
+
+def _timing_cdf_output_columns(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """Return signed timing-CDF inputs, retaining legacy scalar-only artifacts."""
+
+    declared = manifest.get("prediction_columns")
+    if declared is None:
+        return {}
+    if not isinstance(declared, Mapping):
+        raise ValueError("time_to_mfe: prediction_columns must be a mapping")
+    cdf_like_columns = {
+        str(column)
+        for column in declared
+        if str(column).startswith("prediction_p_hit_by_")
+    }
+    if not cdf_like_columns:
+        return {}
+    if cdf_like_columns != set(TIMING_CDF_PREDICTION_COLUMNS):
+        raise ValueError(
+            "time_to_mfe: signed timing CDF vector must declare exactly "
+            "p_hit_by_2h, p_hit_by_4h, p_hit_by_8h, and p_hit_by_12h"
+        )
+    for output_column in TIMING_CDF_PREDICTION_COLUMNS:
+        record = declared.get(output_column)
+        expected_source = f"pred_{output_column.removeprefix('prediction_')}"
+        if not isinstance(record, Mapping) or (
+            record.get("role") != "pre_entry_auxiliary_timing_cdf_probability_oof"
+            or record.get("target") is not False
+            or record.get("head") != "timing"
+            or record.get("source_prediction_column") != expected_source
+        ):
+            raise ValueError(
+                f"time_to_mfe: signed timing CDF declaration for {output_column!r} "
+                "is not a target-free timing OOF prediction"
+            )
+    return dict(TIMING_CDF_JOINED_FEATURE_COLUMNS)
 
 
 def _parse_columns(value: str) -> list[str]:
@@ -411,12 +485,24 @@ def _assert_auxiliary_prediction_name(column: str, *, source: str, role: str) ->
 
 def _source_key_value(args: argparse.Namespace, source: str, key: str) -> str | None:
     override = _none_if_blank(getattr(args, f"{source}_{key}_col", None))
-    return override if override is not None else _none_if_blank(getattr(args, f"{key}_col"))
+    return (
+        override
+        if override is not None
+        else _none_if_blank(getattr(args, f"{key}_col"))
+    )
 
 
 def _load_source(spec: SourceSpec) -> LoadedSource:
     if not spec.path.is_file() or spec.path.suffix.lower() not in {".parquet", ".pq"}:
-        raise ValueError(f"{spec.name}: expected an existing parquet source, got {spec.path}")
+        raise ValueError(
+            f"{spec.name}: expected an existing parquet source, got {spec.path}"
+        )
+    manifest = _load_signed_prediction_manifest(spec, verify_artifact_hash=False)
+    output_columns = dict(spec.output_columns)
+    timing_cdf_output_columns: dict[str, str] = {}
+    if spec.name == "time_to_mfe":
+        timing_cdf_output_columns = _timing_cdf_output_columns(manifest)
+        output_columns.update(timing_cdf_output_columns)
     raw = pd.read_parquet(spec.path)
     if raw.empty:
         raise ValueError(f"{spec.name}: source parquet is empty")
@@ -427,10 +513,12 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
         spec.candidate_id_col,
         spec.available_at_col,
         spec.label_resolution_available_at_col,
-        *spec.output_columns.keys(),
+        *output_columns.keys(),
     }
     if spec.require_oof_fold:
-        if not all((spec.fold_col, spec.validation_start_col, spec.train_decision_cutoff_col)):
+        if not all(
+            (spec.fold_col, spec.validation_start_col, spec.train_decision_cutoff_col)
+        ):
             raise ValueError(
                 f"{spec.name}: OOF fold, validation start, and train decision cutoff columns are required"
             )
@@ -447,7 +535,9 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
             spec.validation_start_col,
             spec.train_decision_cutoff_col,
         }
-        absent_evidence = sorted(column for column in missing if column in provenance_columns)
+        absent_evidence = sorted(
+            column for column in missing if column in provenance_columns
+        )
         if absent_evidence:
             raise ValueError(
                 f"{spec.name}: strict joined execution-EV provenance is unavailable; "
@@ -459,24 +549,34 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
 
     work = pd.DataFrame(
         {
-            "__ts__": _utc(raw[spec.timestamp_col], source=spec.name, column=spec.timestamp_col),
-            "__symbol__": _nonempty_strings(raw[spec.symbol_col], source=spec.name, column=spec.symbol_col),
-            "side_name": _canonical_side(raw[spec.side_col], source=spec.name, column=spec.side_col),
+            "__ts__": _utc(
+                raw[spec.timestamp_col], source=spec.name, column=spec.timestamp_col
+            ),
+            "__symbol__": _nonempty_strings(
+                raw[spec.symbol_col], source=spec.name, column=spec.symbol_col
+            ),
+            "side_name": _canonical_side(
+                raw[spec.side_col], source=spec.name, column=spec.side_col
+            ),
         }
     )
     work["candidate_id"] = _nonempty_strings(
         raw[spec.candidate_id_col], source=spec.name, column=spec.candidate_id_col
     )
-    for input_column, output_column in spec.output_columns.items():
+    for input_column, output_column in output_columns.items():
         if output_column in work.columns:
-            raise ValueError(f"{spec.name}: output column conflicts with identity: {output_column!r}")
+            raise ValueError(
+                f"{spec.name}: output column conflicts with identity: {output_column!r}"
+            )
         work[output_column] = raw[input_column].to_numpy()
     availability_output = f"{spec.name}_available_at"
     work[availability_output] = _utc(
         raw[spec.available_at_col], source=spec.name, column=spec.available_at_col
     )
     if spec.require_oof_fold and (work[availability_output] > work["__ts__"]).any():
-        raise ValueError(f"{spec.name}: feature availability is after the decision timestamp")
+        raise ValueError(
+            f"{spec.name}: feature availability is after the decision timestamp"
+        )
     resolution_output = f"{spec.name}_label_resolution_available_at"
     work[resolution_output] = _utc(
         raw[spec.label_resolution_available_at_col],
@@ -487,9 +587,15 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
     fold_output: str | None = None
     fold_ids: list[str] | None = None
     if spec.require_oof_fold:
-        assert spec.fold_col and spec.validation_start_col and spec.train_decision_cutoff_col
+        assert (
+            spec.fold_col
+            and spec.validation_start_col
+            and spec.train_decision_cutoff_col
+        )
         try:
-            folds = _nonempty_strings(raw[spec.fold_col], source=spec.name, column=spec.fold_col)
+            folds = _nonempty_strings(
+                raw[spec.fold_col], source=spec.name, column=spec.fold_col
+            )
         except ValueError as exc:
             raise ValueError(
                 f"{spec.name}: missing or invalid required OOF fold IDs in {spec.fold_col!r}"
@@ -499,7 +605,9 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
         validation_output = f"{spec.name}_validation_start"
         cutoff_output = f"{spec.name}_train_decision_cutoff"
         work[validation_output] = _utc(
-            raw[spec.validation_start_col], source=spec.name, column=spec.validation_start_col
+            raw[spec.validation_start_col],
+            source=spec.name,
+            column=spec.validation_start_col,
         )
         work[cutoff_output] = _utc(
             raw[spec.train_decision_cutoff_col],
@@ -511,9 +619,13 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
                 f"{spec.name}: train decision cutoff must be strictly before validation start"
             )
         if not (work[validation_output] <= work["__ts__"]).all():
-            raise ValueError(f"{spec.name}: validation start is after an OOF decision timestamp")
+            raise ValueError(
+                f"{spec.name}: validation start is after an OOF decision timestamp"
+            )
         if not (work[cutoff_output] < work["__ts__"]).all():
-            raise ValueError(f"{spec.name}: train decision cutoff must be strictly before decision")
+            raise ValueError(
+                f"{spec.name}: train decision cutoff must be strictly before decision"
+            )
         if not (work[resolution_output] <= work[cutoff_output]).all():
             raise ValueError(
                 f"{spec.name}: training labels must resolve before train decision cutoff availability"
@@ -540,7 +652,7 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
             "candidate_id": spec.candidate_id_col,
         },
         "normalized_identity_columns": identity,
-        "selected_columns": dict(spec.output_columns),
+        "selected_columns": output_columns,
         "availability": {
             "input_column": spec.available_at_col,
             "materialized_column": availability_output,
@@ -557,6 +669,21 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
         },
         "signed_prediction_role_manifest": manifest,
     }
+    if spec.name == "time_to_mfe":
+        metadata["timing_cdf_vector"] = {
+            "status": (
+                "signed_complete_timing_oof_vector"
+                if timing_cdf_output_columns
+                else "legacy_scalar_only_no_timing_cdf_vector_declared"
+            ),
+            "source_columns": list(timing_cdf_output_columns),
+            "joined_feature_columns": list(timing_cdf_output_columns.values()),
+            "contract": (
+                "all four p(hit by horizon) probabilities are target-free, signed timing OOF predictions"
+                if timing_cdf_output_columns
+                else "no timing CDF vector declared; retain the scalar compatibility input only"
+            ),
+        }
     if spec.require_oof_fold:
         metadata["oof"] = {
             "source_fold_column": spec.fold_col,
@@ -577,7 +704,9 @@ def _common_identity_hash(frame: pd.DataFrame) -> str:
         ]
         for _, row in frame.loc[:, list(JOIN_KEYS)].iterrows()
     ]
-    encoded = json.dumps(records, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(records, ensure_ascii=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -597,7 +726,9 @@ def _retain_common_intersection(
     common = alpha_keys.copy()
     for source in sources[1:]:
         source_keys = source.frame.loc[:, keys]
-        common = common.merge(source_keys, on=keys, how="inner", validate="one_to_one", sort=False)
+        common = common.merge(
+            source_keys, on=keys, how="inner", validate="one_to_one", sort=False
+        )
     common = common.sort_values(keys, kind="stable").reset_index(drop=True)
     if len(common) < min_rows:
         raise ValueError(
@@ -609,7 +740,12 @@ def _retain_common_intersection(
     for source in sources:
         source_keys = source.frame.loc[:, keys]
         alpha_coverage = alpha_keys.merge(
-            source_keys, on=keys, how="outer", indicator=True, validate="one_to_one", sort=False
+            source_keys,
+            on=keys,
+            how="outer",
+            indicator=True,
+            validate="one_to_one",
+            sort=False,
         )
         retained = source.frame.merge(
             common, on=keys, how="inner", validate="one_to_one", sort=False
@@ -619,8 +755,12 @@ def _retain_common_intersection(
             "input_rows": int(len(source.frame)),
             "retained_common_rows": int(len(retained)),
             "dropped_not_in_common_rows": dropped,
-            "missing_vs_alpha_rows": int(alpha_coverage["_merge"].eq("left_only").sum()),
-            "source_only_vs_alpha_rows": int(alpha_coverage["_merge"].eq("right_only").sum()),
+            "missing_vs_alpha_rows": int(
+                alpha_coverage["_merge"].eq("left_only").sum()
+            ),
+            "source_only_vs_alpha_rows": int(
+                alpha_coverage["_merge"].eq("right_only").sum()
+            ),
         }
         source.metadata["common_intersection"] = report
         source.frame = retained
@@ -637,11 +777,20 @@ def _retain_common_intersection(
 
 def _join(base: pd.DataFrame, source: LoadedSource) -> pd.DataFrame:
     keys = list(JOIN_KEYS)
-    _assert_unique(base, keys, source="retained joined handoff before " + source.spec.name)
+    _assert_unique(
+        base, keys, source="retained joined handoff before " + source.spec.name
+    )
     _assert_unique(source.frame, keys, source=source.spec.name)
-    source_columns = [*keys, *[column for column in source.frame.columns if column not in keys]]
+    source_columns = [
+        *keys,
+        *[column for column in source.frame.columns if column not in keys],
+    ]
     joined = base.merge(
-        source.frame.loc[:, source_columns], on=keys, how="inner", validate="one_to_one", sort=False
+        source.frame.loc[:, source_columns],
+        on=keys,
+        how="inner",
+        validate="one_to_one",
+        sort=False,
     )
     if joined.empty:
         raise ValueError(
@@ -654,7 +803,9 @@ def _numeric_features(frame: pd.DataFrame, columns: Sequence[str]) -> None:
     for column in columns:
         values = pd.to_numeric(frame[column], errors="coerce")
         if not np.isfinite(values.to_numpy(dtype=float)).all():
-            raise ValueError(f"joined handoff has non-finite required feature {column!r}")
+            raise ValueError(
+                f"joined handoff has non-finite required feature {column!r}"
+            )
         frame[column] = values.astype("float64")
 
 
@@ -678,27 +829,39 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
     ) -> SourceSpec:
         manifest_path = getattr(args, f"{source_arg}_manifest", None)
         if not isinstance(manifest_path, Path):
-            raise ValueError(f"{name}: signed prediction-role manifest path is required")
+            raise ValueError(
+                f"{name}: signed prediction-role manifest path is required"
+            )
         return SourceSpec(
             name=name,
             path=path,
-            timestamp_col=required(key(source_arg, "timestamp"), source=name, field="timestamp"),
+            timestamp_col=required(
+                key(source_arg, "timestamp"), source=name, field="timestamp"
+            ),
             symbol_col=required(key(source_arg, "symbol"), source=name, field="symbol"),
             side_col=required(key(source_arg, "side"), source=name, field="side"),
-            candidate_id_col=required(candidate(source_arg), source=name, field="candidate_id"),
+            candidate_id_col=required(
+                candidate(source_arg), source=name, field="candidate_id"
+            ),
             available_at_col=required(
                 _none_if_blank(getattr(args, f"{source_arg}_available_at_col", None)),
                 source=name,
                 field="availability",
             ),
             fold_col=(
-                required(_none_if_blank(getattr(args, f"{source_arg}_fold_col", None)), source=name, field="OOF fold")
+                required(
+                    _none_if_blank(getattr(args, f"{source_arg}_fold_col", None)),
+                    source=name,
+                    field="OOF fold",
+                )
                 if require_oof_fold
                 else None
             ),
             validation_start_col=(
                 required(
-                    _none_if_blank(getattr(args, f"{source_arg}_validation_start_col", None)),
+                    _none_if_blank(
+                        getattr(args, f"{source_arg}_validation_start_col", None)
+                    ),
                     source=name,
                     field="validation_start",
                 )
@@ -707,7 +870,9 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
             ),
             train_decision_cutoff_col=(
                 required(
-                    _none_if_blank(getattr(args, f"{source_arg}_train_decision_cutoff_col", None)),
+                    _none_if_blank(
+                        getattr(args, f"{source_arg}_train_decision_cutoff_col", None)
+                    ),
                     source=name,
                     field="train_decision_cutoff",
                 )
@@ -716,7 +881,9 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
             ),
             label_resolution_available_at_col=required(
                 _none_if_blank(
-                    getattr(args, f"{source_arg}_label_resolution_available_at_col", None)
+                    getattr(
+                        args, f"{source_arg}_label_resolution_available_at_col", None
+                    )
                 ),
                 source=name,
                 field="label resolution availability",
@@ -726,13 +893,16 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
             output_columns=output_columns,
             require_oof_fold=require_oof_fold,
         )
+
     alpha_columns = {
         args.alpha_ev_col: "existing_alpha_ev",
         args.alpha_uncertainty_col: "alpha_prediction_uncertainty",
         args.alpha_leaf_support_col: "alpha_leaf_support",
     }
     if len(alpha_columns) != 3:
-        raise ValueError("alpha EV, uncertainty, and leaf-support columns must be distinct")
+        raise ValueError(
+            "alpha EV, uncertainty, and leaf-support columns must be distinct"
+        )
     alpha_archetype_columns = sorted(
         column
         for column in pq.read_schema(args.alpha).names
@@ -746,12 +916,26 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
     for column, role in alpha_columns.items():
         if not column.startswith(BASE_ARCHETYPE_FEATURE_PREFIX):
             _assert_feature_name_safe(column, source="alpha", role=role)
-    _assert_auxiliary_prediction_name(args.time_prediction_col, source="time_oof", role="time_to_mfe")
-    _assert_auxiliary_prediction_name(args.peak_prediction_col, source="peak_oof", role="peak_mfe")
-    _assert_auxiliary_prediction_name(args.mae_prediction_col, source="mae_oof", role="mae_before_mfe")
-    _assert_auxiliary_prediction_name(args.turn_prediction_col, source="turn_oof", role="adverse_turn_bars")
-    _assert_auxiliary_prediction_name(args.slope_prediction_col, source="slope_oof", role="favorable_path_slope")
-    _assert_auxiliary_prediction_name(args.catboost_archetype_col, source="catboost_oof", role="predicted path archetype")
+    _assert_auxiliary_prediction_name(
+        args.time_prediction_col, source="time_oof", role="time_to_mfe"
+    )
+    _assert_auxiliary_prediction_name(
+        args.peak_prediction_col, source="peak_oof", role="peak_mfe"
+    )
+    _assert_auxiliary_prediction_name(
+        args.mae_prediction_col, source="mae_oof", role="mae_before_mfe"
+    )
+    _assert_auxiliary_prediction_name(
+        args.turn_prediction_col, source="turn_oof", role="adverse_turn_bars"
+    )
+    _assert_auxiliary_prediction_name(
+        args.slope_prediction_col, source="slope_oof", role="favorable_path_slope"
+    )
+    _assert_auxiliary_prediction_name(
+        args.catboost_archetype_col,
+        source="catboost_oof",
+        role="predicted path archetype",
+    )
     for column in [
         *args.catboost_prob_cols,
         args.catboost_entropy_col,
@@ -761,35 +945,104 @@ def _source_specs(args: argparse.Namespace) -> list[SourceSpec]:
         args.catboost_adverse_mass_col,
         args.catboost_favorable_mass_col,
     ]:
-        _assert_feature_name_safe(column, source="catboost_oof", role="CatBoost prediction")
+        _assert_feature_name_safe(
+            column, source="catboost_oof", role="CatBoost prediction"
+        )
     return [
-        spec("alpha", args.alpha, source_arg="alpha", output_columns=alpha_columns, require_oof_fold=True, prediction_role="alpha_ev_oof"),
-        spec("time_to_mfe", args.time_oof, source_arg="time", output_columns={args.time_prediction_col: "pred_time_to_first_meaningful_MFE"}, require_oof_fold=True, prediction_role="time_to_mfe_oof"),
-        spec("peak_mfe", args.peak_oof, source_arg="peak", output_columns={args.peak_prediction_col: "pred_peak_MFE_12h_ATR"}, require_oof_fold=True, prediction_role="peak_mfe_oof"),
-        spec("mae_before_mfe", args.mae_oof, source_arg="mae", output_columns={args.mae_prediction_col: "pred_mae_before_meaningful_mfe_atr"}, require_oof_fold=True, prediction_role="mae_before_mfe_oof"),
-        spec("adverse_turn", args.turn_oof, source_arg="turn", output_columns={args.turn_prediction_col: "pred_bars_before_price_stops_decreasing"}, require_oof_fold=True, prediction_role="adverse_turn_oof"),
-        spec("path_slope", args.slope_oof, source_arg="slope", output_columns={args.slope_prediction_col: "pred_favorable_path_slope_atr_per_hour"}, require_oof_fold=True, prediction_role="path_slope_oof"),
-        spec("catboost", args.catboost_oof, source_arg="catboost", output_columns={
-            **{column: f"catboost_p_{index}" for index, column in enumerate(args.catboost_prob_cols)},
-            args.catboost_entropy_col: "catboost_entropy",
-            args.catboost_max_probability_col: "catboost_max_probability",
-            args.catboost_normalized_entropy_col: "catboost_normalized_entropy",
-            args.catboost_top2_margin_col: "catboost_top2_probability_margin",
-            args.catboost_adverse_mass_col: "catboost_adverse_probability_mass",
-            args.catboost_favorable_mass_col: "catboost_favorable_probability_mass",
-            args.catboost_archetype_col: "catboost_archetype",
-        }, require_oof_fold=True, prediction_role="path_archetype_oof"),
-        spec("execution_labels", args.execution_labels, source_arg="labels", output_columns={
-            args.execution_decision_ts_col: "execution_decision_utc",
-            args.execution_gross_ev_col: "execution_gross_ev_12h",
-            args.execution_cost_return_col: "execution_cost_return",
-            args.execution_net_ev_col: "execution_net_ev_12h",
-            args.execution_label_end_col: "execution_label_end_utc",
-            args.execution_exit_reason_col: "execution_exit_reason",
-            args.execution_exit_hour_col: "execution_exit_hour",
-            args.execution_mfe_col: "execution_mfe_return_12h",
-            args.execution_mae_col: "execution_mae_return_12h",
-        }, require_oof_fold=False, prediction_role="execution_ev_12h_labels"),
+        spec(
+            "alpha",
+            args.alpha,
+            source_arg="alpha",
+            output_columns=alpha_columns,
+            require_oof_fold=True,
+            prediction_role="alpha_ev_oof",
+        ),
+        spec(
+            "time_to_mfe",
+            args.time_oof,
+            source_arg="time",
+            output_columns={
+                args.time_prediction_col: "pred_time_to_first_meaningful_MFE"
+            },
+            require_oof_fold=True,
+            prediction_role="time_to_mfe_oof",
+        ),
+        spec(
+            "peak_mfe",
+            args.peak_oof,
+            source_arg="peak",
+            output_columns={args.peak_prediction_col: "pred_peak_MFE_12h_ATR"},
+            require_oof_fold=True,
+            prediction_role="peak_mfe_oof",
+        ),
+        spec(
+            "mae_before_mfe",
+            args.mae_oof,
+            source_arg="mae",
+            output_columns={
+                args.mae_prediction_col: "pred_mae_before_meaningful_mfe_atr"
+            },
+            require_oof_fold=True,
+            prediction_role="mae_before_mfe_oof",
+        ),
+        spec(
+            "adverse_turn",
+            args.turn_oof,
+            source_arg="turn",
+            output_columns={
+                args.turn_prediction_col: "pred_bars_before_price_stops_decreasing"
+            },
+            require_oof_fold=True,
+            prediction_role="adverse_turn_oof",
+        ),
+        spec(
+            "path_slope",
+            args.slope_oof,
+            source_arg="slope",
+            output_columns={
+                args.slope_prediction_col: "pred_favorable_path_slope_atr_per_hour"
+            },
+            require_oof_fold=True,
+            prediction_role="path_slope_oof",
+        ),
+        spec(
+            "catboost",
+            args.catboost_oof,
+            source_arg="catboost",
+            output_columns={
+                **{
+                    column: f"catboost_p_{index}"
+                    for index, column in enumerate(args.catboost_prob_cols)
+                },
+                args.catboost_entropy_col: "catboost_entropy",
+                args.catboost_max_probability_col: "catboost_max_probability",
+                args.catboost_normalized_entropy_col: "catboost_normalized_entropy",
+                args.catboost_top2_margin_col: "catboost_top2_probability_margin",
+                args.catboost_adverse_mass_col: "catboost_adverse_probability_mass",
+                args.catboost_favorable_mass_col: "catboost_favorable_probability_mass",
+                args.catboost_archetype_col: "catboost_archetype",
+            },
+            require_oof_fold=True,
+            prediction_role="path_archetype_oof",
+        ),
+        spec(
+            "execution_labels",
+            args.execution_labels,
+            source_arg="labels",
+            output_columns={
+                args.execution_decision_ts_col: "execution_decision_utc",
+                args.execution_gross_ev_col: "execution_gross_ev_12h",
+                args.execution_cost_return_col: "execution_cost_return",
+                args.execution_net_ev_col: "execution_net_ev_12h",
+                args.execution_label_end_col: "execution_label_end_utc",
+                args.execution_exit_reason_col: "execution_exit_reason",
+                args.execution_exit_hour_col: "execution_exit_hour",
+                args.execution_mfe_col: "execution_mfe_return_12h",
+                args.execution_mae_col: "execution_mae_return_12h",
+            },
+            require_oof_fold=False,
+            prediction_role="execution_ev_12h_labels",
+        ),
     ]
 
 
@@ -802,23 +1055,141 @@ def _provenance(
     population_alignment: Mapping[str, Any],
     alpha_cost_basis: Mapping[str, Any],
 ) -> dict[str, Any]:
-    availability = {source.spec.name: f"{source.spec.name}_available_at" for source in sources if source.spec.name != "execution_labels"}
+    availability = {
+        source.spec.name: f"{source.spec.name}_available_at"
+        for source in sources
+        if source.spec.name != "execution_labels"
+    }
     features: dict[str, dict[str, Any]] = {
-        "existing_alpha_ev": {"family": "alpha_score", "source": "alpha OOF/candidate stream", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["alpha"], "model_input": True},
-        "alpha_prediction_uncertainty": {"family": "prediction_uncertainty", "source": "alpha OOF/candidate stream", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["alpha"], "model_input": True},
-        "alpha_leaf_support": {"family": "leaf_support", "source": "alpha OOF/candidate stream", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["alpha"], "model_input": True},
-        "pred_time_to_first_meaningful_MFE": {"family": "time_to_mfe", "source": "auxiliary LGBM OOF time-to-first-meaningful-MFE head", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["time_to_mfe"], "model_input": True},
-        "pred_peak_MFE_12h_ATR": {"family": "peak_mfe", "source": "auxiliary LGBM OOF peak-MFE-12h-ATR head", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["peak_mfe"], "model_input": True},
-        "pred_mae_before_meaningful_mfe_atr": {"family": "mae_before_meaningful_mfe", "source": "auxiliary LGBM OOF adverse-depth-before-meaningful-MFE head", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["mae_before_mfe"], "model_input": True},
-        "pred_bars_before_price_stops_decreasing": {"family": "adverse_turn_timing", "source": "auxiliary LGBM OOF adverse-turn timing head", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["adverse_turn"], "model_input": True},
-        "pred_favorable_path_slope_atr_per_hour": {"family": "favorable_path_slope", "source": "auxiliary LGBM OOF favorable accumulation-rate head", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["path_slope"], "model_input": True},
-        "catboost_entropy": {"family": "catboost_entropy", "source": "CatBoost OOF path-archetype classifier", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, **catboost_class_contract},
-        "catboost_max_probability": {"family": "catboost_probability_confidence", "source": "CatBoost OOF maximum raw archetype probability", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, **catboost_class_contract},
-        "catboost_normalized_entropy": {"family": "catboost_probability_uncertainty", "source": "CatBoost OOF raw probability entropy normalized by log(class_count)", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, **catboost_class_contract},
-        "catboost_top2_probability_margin": {"family": "catboost_probability_confidence", "source": "CatBoost OOF top-one minus top-two raw probability margin", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, **catboost_class_contract},
-        "catboost_adverse_probability_mass": {"family": "catboost_path_role_mass", "source": "CatBoost OOF raw probability mass over adverse path archetypes", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, "class_group": list(CATBOOST_ADVERSE_CLASSES), **catboost_class_contract},
-        "catboost_favorable_probability_mass": {"family": "catboost_path_role_mass", "source": "CatBoost OOF raw probability mass over favorable path archetypes", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, "class_group": list(CATBOOST_FAVORABLE_CLASSES), **catboost_class_contract},
-        "catboost_archetype": {"family": "predicted_path_archetype", "source": "CatBoost OOF predicted effective path archetype", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": False, **catboost_class_contract},
+        "existing_alpha_ev": {
+            "family": "alpha_score",
+            "source": "alpha OOF/candidate stream",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["alpha"],
+            "model_input": True,
+        },
+        "alpha_prediction_uncertainty": {
+            "family": "prediction_uncertainty",
+            "source": "alpha OOF/candidate stream",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["alpha"],
+            "model_input": True,
+        },
+        "alpha_leaf_support": {
+            "family": "leaf_support",
+            "source": "alpha OOF/candidate stream",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["alpha"],
+            "model_input": True,
+        },
+        "pred_time_to_first_meaningful_MFE": {
+            "family": "time_to_mfe",
+            "source": "auxiliary LGBM OOF time-to-first-meaningful-MFE head",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["time_to_mfe"],
+            "model_input": True,
+        },
+        "pred_peak_MFE_12h_ATR": {
+            "family": "peak_mfe",
+            "source": "auxiliary LGBM OOF peak-MFE-12h-ATR head",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["peak_mfe"],
+            "model_input": True,
+        },
+        "pred_mae_before_meaningful_mfe_atr": {
+            "family": "mae_before_meaningful_mfe",
+            "source": "auxiliary LGBM OOF adverse-depth-before-meaningful-MFE head",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["mae_before_mfe"],
+            "model_input": True,
+        },
+        "pred_bars_before_price_stops_decreasing": {
+            "family": "adverse_turn_timing",
+            "source": "auxiliary LGBM OOF adverse-turn timing head",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["adverse_turn"],
+            "model_input": True,
+        },
+        "pred_favorable_path_slope_atr_per_hour": {
+            "family": "favorable_path_slope",
+            "source": "auxiliary LGBM OOF favorable accumulation-rate head",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["path_slope"],
+            "model_input": True,
+        },
+        "catboost_entropy": {
+            "family": "catboost_entropy",
+            "source": "CatBoost OOF path-archetype classifier",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            **catboost_class_contract,
+        },
+        "catboost_max_probability": {
+            "family": "catboost_probability_confidence",
+            "source": "CatBoost OOF maximum raw archetype probability",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            **catboost_class_contract,
+        },
+        "catboost_normalized_entropy": {
+            "family": "catboost_probability_uncertainty",
+            "source": "CatBoost OOF raw probability entropy normalized by log(class_count)",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            **catboost_class_contract,
+        },
+        "catboost_top2_probability_margin": {
+            "family": "catboost_probability_confidence",
+            "source": "CatBoost OOF top-one minus top-two raw probability margin",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            **catboost_class_contract,
+        },
+        "catboost_adverse_probability_mass": {
+            "family": "catboost_path_role_mass",
+            "source": "CatBoost OOF raw probability mass over adverse path archetypes",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            "class_group": list(CATBOOST_ADVERSE_CLASSES),
+            **catboost_class_contract,
+        },
+        "catboost_favorable_probability_mass": {
+            "family": "catboost_path_role_mass",
+            "source": "CatBoost OOF raw probability mass over favorable path archetypes",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            "class_group": list(CATBOOST_FAVORABLE_CLASSES),
+            **catboost_class_contract,
+        },
+        "catboost_archetype": {
+            "family": "predicted_path_archetype",
+            "source": "CatBoost OOF predicted effective path archetype",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": False,
+            **catboost_class_contract,
+        },
     }
     for column in sorted(
         column
@@ -833,20 +1204,50 @@ def _provenance(
             "available_at_col": availability["alpha"],
             "model_input": True,
         }
-    for column in sorted(column for column in joined.columns if column.startswith("catboost_p_")):
-        features[column] = {"family": "catboost_probabilities", "source": "CatBoost OOF full probability vector", "pre_entry": True, "oof_or_frozen": True, "available_at_col": availability["catboost"], "model_input": True, **catboost_class_contract}
+    for source_column, feature_column in TIMING_CDF_JOINED_FEATURE_COLUMNS.items():
+        if feature_column not in joined.columns:
+            continue
+        features[feature_column] = {
+            "family": "time_to_meaningful_mfe_cdf_probability",
+            "source": "auxiliary LGBM OOF timing-CDF head; signed "
+            f"{source_column} probability",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["time_to_mfe"],
+            "model_input": True,
+            "timing_cdf_horizon_hours": int(
+                source_column.removeprefix("prediction_p_hit_by_").removesuffix("h")
+            ),
+            "signed_source_prediction_column": source_column,
+        }
+    for column in sorted(
+        column for column in joined.columns if column.startswith("catboost_p_")
+    ):
+        features[column] = {
+            "family": "catboost_probabilities",
+            "source": "CatBoost OOF full probability vector",
+            "pre_entry": True,
+            "oof_or_frozen": True,
+            "available_at_col": availability["catboost"],
+            "model_input": True,
+            **catboost_class_contract,
+        }
     return {
         "schema": HANDOFF_SCHEMA,
         "handoff": {
             "join_mode": "exact_inner_one_to_one",
             "join_keys": list(join_keys),
             "row_count": int(len(joined)),
-            "source_artifacts": {source.spec.name: source.metadata for source in sources},
+            "source_artifacts": {
+                source.spec.name: source.metadata for source in sources
+            },
             "population_alignment": dict(population_alignment),
             "catboost_class_contract": dict(catboost_class_contract),
             "availability_contract": "All model features are OOF/frozen pre-entry predictions with source availability at or before the UTC signal timestamp. Realized execution columns are retained only for target accounting and diagnostics.",
             "cost_basis": {
-                "source_alpha_cost_return": float(alpha_cost_basis["deducted_cost_return"]),
+                "source_alpha_cost_return": float(
+                    alpha_cost_basis["deducted_cost_return"]
+                ),
                 "source_alpha_cost_basis": dict(alpha_cost_basis),
                 "execution_cost_column": "execution_cost_return",
                 "aligned_alpha_formula": "existing_alpha_ev = existing_alpha_ev_source_basis + alpha_source_cost_return - execution_cost_return",
@@ -854,25 +1255,46 @@ def _provenance(
             },
         },
         "targets": {
-            "execution_net_ev_12h": {"source": "execution_labels", "decision_time_col": "execution_decision_utc", "label_end_time_col": "execution_label_end_utc", "signal_to_decision_hours": 1.0, "horizon_hours": 12.0, "role": "supervised_target_only_not_feature"},
+            "execution_net_ev_12h": {
+                "source": "execution_labels",
+                "decision_time_col": "execution_decision_utc",
+                "label_end_time_col": "execution_label_end_utc",
+                "signal_to_decision_hours": 1.0,
+                "horizon_hours": 12.0,
+                "role": "supervised_target_only_not_feature",
+            },
         },
         "features": features,
-        "materializer": {"name": Path(__file__).name, "schema": "execution_ev_joined_handoff_materializer_v1"},
+        "materializer": {
+            "name": Path(__file__).name,
+            "schema": "execution_ev_joined_handoff_materializer_v1",
+        },
     }
 
 
 def run(args: argparse.Namespace) -> dict[str, Path]:
     if args.output.exists():
-        raise ValueError(f"refusing to overwrite existing output parquet: {args.output}")
-    provenance_path = args.provenance_json or args.output.with_suffix(".provenance.json")
+        raise ValueError(
+            f"refusing to overwrite existing output parquet: {args.output}"
+        )
+    provenance_path = args.provenance_json or args.output.with_suffix(
+        ".provenance.json"
+    )
     if provenance_path.exists():
-        raise ValueError(f"refusing to overwrite existing provenance JSON: {provenance_path}")
+        raise ValueError(
+            f"refusing to overwrite existing provenance JSON: {provenance_path}"
+        )
     sources = [_load_source(spec) for spec in _source_specs(args)]
     population_alignment = _retain_common_intersection(
-        sources, min_rows=int(getattr(args, "min_common_rows", MIN_COMMON_INTERSECTION_ROWS))
+        sources,
+        min_rows=int(getattr(args, "min_common_rows", MIN_COMMON_INTERSECTION_ROWS)),
     )
-    catboost_source = next(source for source in sources if source.spec.name == "catboost")
-    catboost_class_contract = catboost_source.metadata["signed_prediction_role_manifest"]["class_contract"]
+    catboost_source = next(
+        source for source in sources if source.spec.name == "catboost"
+    )
+    catboost_class_contract = catboost_source.metadata[
+        "signed_prediction_role_manifest"
+    ]["class_contract"]
     if not isinstance(catboost_class_contract, Mapping):
         raise ValueError("catboost: signed manifest did not yield a class contract")
     if len(args.catboost_prob_cols) != len(catboost_class_contract["class_order"]):
@@ -892,7 +1314,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     alpha_cost_basis = alpha.metadata["signed_prediction_role_manifest"].get(
         "alpha_cost_basis"
     )
-    if not isinstance(alpha_cost_basis, Mapping):  # pragma: no cover - validated at load.
+    if not isinstance(
+        alpha_cost_basis, Mapping
+    ):  # pragma: no cover - validated at load.
         raise ValueError("alpha: signed manifest did not yield an alpha_cost_basis")
     override = getattr(args, "alpha_source_cost_return", None)
     if override is not None:
@@ -920,18 +1344,31 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     _numeric_features(
         joined,
         [
-            "existing_alpha_ev", "alpha_prediction_uncertainty", "alpha_leaf_support",
-            "pred_time_to_first_meaningful_MFE", "pred_peak_MFE_12h_ATR",
+            "existing_alpha_ev",
+            "alpha_prediction_uncertainty",
+            "alpha_leaf_support",
+            "pred_time_to_first_meaningful_MFE",
+            "pred_peak_MFE_12h_ATR",
             "pred_mae_before_meaningful_mfe_atr",
             "pred_bars_before_price_stops_decreasing",
             "pred_favorable_path_slope_atr_per_hour",
-            "catboost_entropy", "catboost_max_probability",
-            "catboost_normalized_entropy", "catboost_top2_probability_margin",
+            "catboost_entropy",
+            "catboost_max_probability",
+            "catboost_normalized_entropy",
+            "catboost_top2_probability_margin",
             "catboost_adverse_probability_mass",
             "catboost_favorable_probability_mass",
-            "execution_gross_ev_12h", "execution_cost_return",
-            "execution_net_ev_12h", "execution_exit_hour", "execution_mfe_return_12h",
+            "execution_gross_ev_12h",
+            "execution_cost_return",
+            "execution_net_ev_12h",
+            "execution_exit_hour",
+            "execution_mfe_return_12h",
             "execution_mae_return_12h",
+            *[
+                column
+                for column in TIMING_CDF_JOINED_FEATURE_COLUMNS.values()
+                if column in joined.columns
+            ],
             *[
                 column
                 for column in joined.columns
@@ -940,12 +1377,46 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             *[column for column in joined.columns if column.startswith("catboost_p_")],
         ],
     )
-    probabilities = joined.loc[:, sorted(column for column in joined.columns if column.startswith("catboost_p_"))].to_numpy(dtype=float)
-    if (probabilities < -1e-6).any() or (probabilities > 1.0 + 1e-6).any() or not np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-4, rtol=1e-4):
-        raise ValueError("CatBoost OOF probability vector must be finite, bounded, and normalized")
-    expected_entropy = -np.sum(np.clip(probabilities, 1e-12, 1.0) * np.log(np.clip(probabilities, 1e-12, 1.0)), axis=1)
-    if not np.allclose(joined["catboost_entropy"].to_numpy(dtype=float), expected_entropy, atol=1e-4, rtol=1e-4):
-        raise ValueError("CatBoost OOF entropy does not match its full probability vector")
+    timing_cdf_features = [
+        column
+        for column in TIMING_CDF_JOINED_FEATURE_COLUMNS.values()
+        if column in joined.columns
+    ]
+    if timing_cdf_features:
+        timing_cdf = joined.loc[:, timing_cdf_features].to_numpy(dtype=float)
+        if (timing_cdf < -1e-6).any() or (timing_cdf > 1.0 + 1e-6).any():
+            raise ValueError(
+                "timing CDF OOF probabilities must be finite and bounded in [0, 1]"
+            )
+        if (np.diff(timing_cdf, axis=1) < -1e-6).any():
+            raise ValueError(
+                "timing CDF OOF probabilities must be non-decreasing by horizon"
+            )
+    probabilities = joined.loc[
+        :,
+        sorted(column for column in joined.columns if column.startswith("catboost_p_")),
+    ].to_numpy(dtype=float)
+    if (
+        (probabilities < -1e-6).any()
+        or (probabilities > 1.0 + 1e-6).any()
+        or not np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-4, rtol=1e-4)
+    ):
+        raise ValueError(
+            "CatBoost OOF probability vector must be finite, bounded, and normalized"
+        )
+    expected_entropy = -np.sum(
+        np.clip(probabilities, 1e-12, 1.0) * np.log(np.clip(probabilities, 1e-12, 1.0)),
+        axis=1,
+    )
+    if not np.allclose(
+        joined["catboost_entropy"].to_numpy(dtype=float),
+        expected_entropy,
+        atol=1e-4,
+        rtol=1e-4,
+    ):
+        raise ValueError(
+            "CatBoost OOF entropy does not match its full probability vector"
+        )
     expected_max_probability = probabilities.max(axis=1)
     ordered_probabilities = np.sort(probabilities, axis=1)
     expected_top2_margin = ordered_probabilities[:, -1] - ordered_probabilities[:, -2]
@@ -955,8 +1426,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         for index, class_name in enumerate(catboost_class_contract["class_order"])
     }
     missing_role_classes = sorted(
-        set((*CATBOOST_ADVERSE_CLASSES, *CATBOOST_FAVORABLE_CLASSES))
-        .difference(class_indices)
+        set((*CATBOOST_ADVERSE_CLASSES, *CATBOOST_FAVORABLE_CLASSES)).difference(
+            class_indices
+        )
     )
     if missing_role_classes:
         raise ValueError(
@@ -986,20 +1458,43 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             raise ValueError(
                 f"CatBoost OOF {column} does not match its full probability vector"
             )
-    if joined["catboost_archetype"].isna().any() or (joined["catboost_archetype"].astype("string").str.strip() == "").any():
-        raise ValueError("CatBoost predicted effective path archetype must be explicit for every row")
-    joined["catboost_archetype"] = joined["catboost_archetype"].astype("string").astype(str)
+    if (
+        joined["catboost_archetype"].isna().any()
+        or (joined["catboost_archetype"].astype("string").str.strip() == "").any()
+    ):
+        raise ValueError(
+            "CatBoost predicted effective path archetype must be explicit for every row"
+        )
+    joined["catboost_archetype"] = (
+        joined["catboost_archetype"].astype("string").astype(str)
+    )
     expected_archetype = np.asarray(
         catboost_class_contract["class_order"], dtype=object
     )[np.argmax(probabilities, axis=1)]
-    if not np.array_equal(joined["catboost_archetype"].to_numpy(dtype=object), expected_archetype):
-        raise ValueError("CatBoost predicted archetype does not match argmax of its full probability vector")
-    decision = _utc(joined["execution_decision_utc"], source="execution_labels", column="execution_decision_utc")
-    label_end = _utc(joined["execution_label_end_utc"], source="execution_labels", column="execution_label_end_utc")
+    if not np.array_equal(
+        joined["catboost_archetype"].to_numpy(dtype=object), expected_archetype
+    ):
+        raise ValueError(
+            "CatBoost predicted archetype does not match argmax of its full probability vector"
+        )
+    decision = _utc(
+        joined["execution_decision_utc"],
+        source="execution_labels",
+        column="execution_decision_utc",
+    )
+    label_end = _utc(
+        joined["execution_label_end_utc"],
+        source="execution_labels",
+        column="execution_label_end_utc",
+    )
     if not (decision == joined["__ts__"] + pd.Timedelta(hours=1)).all():
-        raise ValueError("execution decision timestamp must equal signal timestamp + one hour")
+        raise ValueError(
+            "execution decision timestamp must equal signal timestamp + one hour"
+        )
     if not (label_end == decision + pd.Timedelta(hours=12)).all():
-        raise ValueError("execution label-end timestamp must equal decision timestamp + 12 hours")
+        raise ValueError(
+            "execution label-end timestamp must equal decision timestamp + 12 hours"
+        )
     accounting_error = (
         joined["execution_gross_ev_12h"]
         - joined["execution_cost_return"]
@@ -1007,7 +1502,9 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     ).abs()
     if float(accounting_error.max()) > 1e-6:
         raise ValueError("execution gross-cost-net accounting identity is inconsistent")
-    joined["existing_alpha_ev_source_basis"] = joined["existing_alpha_ev"].astype("float64")
+    joined["existing_alpha_ev_source_basis"] = joined["existing_alpha_ev"].astype(
+        "float64"
+    )
     joined["alpha_source_cost_return"] = float(alpha_cost_basis["deducted_cost_return"])
     joined["existing_alpha_ev"] = (
         joined["existing_alpha_ev_source_basis"]
@@ -1057,26 +1554,41 @@ def _parser() -> argparse.ArgumentParser:
         help="Required stable candidate identity column in every joined source.",
     )
     for source in (
-        "alpha", "time", "peak", "mae", "turn", "slope", "catboost", "labels"
+        "alpha",
+        "time",
+        "peak",
+        "mae",
+        "turn",
+        "slope",
+        "catboost",
+        "labels",
     ):
         for key in ("timestamp", "symbol", "side", "candidate_id"):
             parser.add_argument(f"--{source}-{key.replace('_', '-')}-col", default=None)
         parser.add_argument(f"--{source}-manifest", type=Path, required=True)
         parser.add_argument(
             f"--{source}-available-at-col",
-            default="execution_label_available_at" if source == "labels" else "available_at",
+            default="execution_label_available_at"
+            if source == "labels"
+            else "available_at",
         )
         parser.add_argument(
             f"--{source}-label-resolution-available-at-col",
-            default="execution_label_available_at" if source == "labels" else "label_resolution_available_at",
+            default="execution_label_available_at"
+            if source == "labels"
+            else "label_resolution_available_at",
         )
         if source != "labels":
-            parser.add_argument(f"--{source}-validation-start-col", default="validation_start")
+            parser.add_argument(
+                f"--{source}-validation-start-col", default="validation_start"
+            )
             parser.add_argument(
                 f"--{source}-train-decision-cutoff-col", default="train_decision_cutoff"
             )
     parser.add_argument("--alpha-ev-col", default="existing_alpha_ev")
-    parser.add_argument("--alpha-uncertainty-col", default="base_prediction_uncertainty")
+    parser.add_argument(
+        "--alpha-uncertainty-col", default="base_prediction_uncertainty"
+    )
     parser.add_argument("--alpha-leaf-support-col", default="meta_leaf_support_log1p")
     parser.add_argument("--alpha-fold-col", default="oof_fold")
     parser.add_argument("--time-prediction-col", default="prediction")
@@ -1092,18 +1604,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catboost-prob-cols",
         type=_parse_columns,
-        default=[
-            f"probability__{shape}" for shape in MERGED_PATH_ARCHETYPE_CLASSES
-        ],
+        default=[f"probability__{shape}" for shape in MERGED_PATH_ARCHETYPE_CLASSES],
     )
     parser.add_argument("--catboost-entropy-col", default="probability_entropy")
     parser.add_argument("--catboost-max-probability-col", default="max_probability")
     parser.add_argument(
         "--catboost-normalized-entropy-col", default="normalized_entropy"
     )
-    parser.add_argument(
-        "--catboost-top2-margin-col", default="top2_probability_margin"
-    )
+    parser.add_argument("--catboost-top2-margin-col", default="top2_probability_margin")
     parser.add_argument(
         "--catboost-adverse-mass-col", default="adverse_probability_mass"
     )
@@ -1144,7 +1652,9 @@ def main() -> None:
     try:
         paths = run(args)
     except (OSError, ValueError) as exc:
-        raise SystemExit(f"execution-EV joined-handoff materialization failed: {exc}") from exc
+        raise SystemExit(
+            f"execution-EV joined-handoff materialization failed: {exc}"
+        ) from exc
     for name, path in paths.items():
         print(f"{name}: {path}")
 

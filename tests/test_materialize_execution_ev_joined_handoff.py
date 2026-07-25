@@ -435,6 +435,25 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
     )
 
 
+def test_accepts_oof_prediction_available_at_execution_decision(
+    tmp_path: Path,
+) -> None:
+    paths = _inputs(tmp_path)
+    alpha = pd.read_parquet(paths["alpha"])
+    alpha["available_at"] = pd.to_datetime(alpha["__ts__"], utc=True) + pd.Timedelta(
+        hours=1
+    )
+    alpha.to_parquet(paths["alpha"], index=False)
+    _resign_manifest(paths, "alpha")
+
+    result = materializer.run(_args(tmp_path, paths))
+    handoff = pd.read_parquet(result["handoff"])
+    assert (
+        pd.to_datetime(handoff["alpha_available_at"], utc=True)
+        == pd.to_datetime(handoff["execution_decision_utc"], utc=True)
+    ).all()
+
+
 def test_ingests_complete_signed_timing_cdf_vector_as_model_inputs(
     tmp_path: Path,
 ) -> None:

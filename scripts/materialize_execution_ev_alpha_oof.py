@@ -80,6 +80,7 @@ DEFAULT_BASE_ARCHETYPE_SOURCE_COLUMNS = (
     "archetype_policy_key",
 )
 LEGACY_ALPHA_COST_RETURN = 0.01
+EXECUTION_DECISION_OFFSET = pd.Timedelta(hours=1)
 LEGACY_ALPHA_TARGET_MODES = frozenset({"residual_net_ev_after_1pct", "ev_after_1pct"})
 LINEAGE_MODES = frozenset({"canonical_packb", "historical_comparator"})
 LINEAGE_SIDES = ("long", "short")
@@ -379,9 +380,10 @@ def _load_oof(args: argparse.Namespace) -> pd.DataFrame:
         out[output_column] = _utc(
             raw[input_column], source=source, column=input_column
         ).to_numpy()
-    if (out["available_at"] > out["__ts__"]).any():
+    if (out["available_at"] > out["__ts__"] + EXECUTION_DECISION_OFFSET).any():
         raise ValueError(
-            f"{source}: feature availability is after the decision timestamp"
+            f"{source}: feature availability is after the execution decision "
+            "timestamp (signal timestamp + one hour)"
         )
     if not (out["train_decision_cutoff"] < out["validation_start"]).all():
         raise ValueError(
@@ -1059,7 +1061,8 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             ),
             "available_at": (
                 f"canonical residual OOF availability column {args.oof_available_at_col!r}; "
-                "required to be no later than the decision timestamp"
+                "required to be no later than the execution decision timestamp "
+                "(signal timestamp + one hour)"
             ),
             "oof_fold": (
                 f"canonical residual OOF fold column {args.oof_fold_col!r}; validated against "

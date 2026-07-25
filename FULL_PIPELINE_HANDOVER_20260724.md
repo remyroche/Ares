@@ -2161,6 +2161,42 @@ Gate:
 - Row identity and fold provenance are complete.
 - Joined rows reconcile to the intersection expected by the manifests.
 
+#### 2026-07-25 canonical alpha execution-OOF bridge
+
+The canonical alpha branch is now ready for the strict joined handoff:
+
+- `195,931` exact residual-alpha OOF rows: `88,944` long and `106,987`
+  short.
+- Fold support is `99,992` May, `73,211` June, and `22,728` partial July,
+  matching the auxiliary OOF calendar.
+- Every row is bound to the original candidate, frozen-context, residual
+  model, per-side feature/HPO, row-identity, and fold/cutoff hashes.
+- The bridge is non-mutating. It emits compact supplemental ledgers and
+  manifests; it does not rewrite the canonical Pack-B, context, or residual
+  artifacts.
+- Residual predictions preserve their observed availability at
+  `signal timestamp + 1h`, which is the execution decision timestamp required
+  by the label contract. The input validators now reject only values arriving
+  after that execution decision, rather than incorrectly rejecting valid
+  close-of-hour predictions.
+- The historical residual-alpha value remains in its proven 1%-cost basis.
+  The joined handoff must still reconcile it once to the canonical
+  p90-spread-plus-fee execution-label cost before any direct/residual
+  comparison.
+
+Artifacts:
+
+```text
+data_perp/artifacts/execution_ev_canonical_alpha_inputs_20260725_v1
+data_perp/artifacts/execution_ev_alpha_oof_20260725_v1
+```
+
+The alpha OOF Parquet SHA-256 is
+`0b30798e8dbdc228bf434b33b2aee0227e01d23fc55dad4c670824aaa6268a4d`.
+This completes only the alpha branch; CatBoost, promotion-audited auxiliary
+streams, labels, and their exact intersection still have to pass the joined
+handoff gate.
+
 ### Phase 6: Train Direct and Residual Execution-EV Models
 
 Goal: determine whether execution EV should be predicted directly or as a

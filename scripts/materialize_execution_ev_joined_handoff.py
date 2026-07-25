@@ -48,6 +48,7 @@ DEFAULT_CANDIDATE_ID_COLUMN = "candidate_id"
 JOIN_KEYS = (*BASE_JOIN_KEYS, DEFAULT_CANDIDATE_ID_COLUMN)
 MIN_COMMON_INTERSECTION_ROWS = 2
 LEGACY_ALPHA_COST_RETURN = 0.01
+EXECUTION_DECISION_OFFSET = pd.Timedelta(hours=1)
 BASE_ARCHETYPE_FEATURE_PREFIX = "base_archetype_label__"
 FORBIDDEN_FEATURE_TOKENS = (
     "realized",
@@ -573,9 +574,15 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
     work[availability_output] = _utc(
         raw[spec.available_at_col], source=spec.name, column=spec.available_at_col
     )
-    if spec.require_oof_fold and (work[availability_output] > work["__ts__"]).any():
+    if (
+        spec.require_oof_fold
+        and (
+            work[availability_output] > work["__ts__"] + EXECUTION_DECISION_OFFSET
+        ).any()
+    ):
         raise ValueError(
-            f"{spec.name}: feature availability is after the decision timestamp"
+            f"{spec.name}: feature availability is after the execution decision "
+            "timestamp (signal timestamp + one hour)"
         )
     resolution_output = f"{spec.name}_label_resolution_available_at"
     work[resolution_output] = _utc(
@@ -656,7 +663,10 @@ def _load_source(spec: SourceSpec) -> LoadedSource:
         "availability": {
             "input_column": spec.available_at_col,
             "materialized_column": availability_output,
-            "rule": "source availability <= decision timestamp",
+            "rule": (
+                "source availability <= execution decision timestamp "
+                "(signal timestamp + one hour)"
+            ),
         },
         "label_resolution": {
             "input_column": spec.label_resolution_available_at_col,

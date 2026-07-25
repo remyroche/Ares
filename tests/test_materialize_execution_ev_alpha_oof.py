@@ -367,6 +367,23 @@ def test_materializes_exact_oof_alpha_and_fold_causal_leaf_support(
     )
 
 
+def test_accepts_prediction_available_at_execution_decision(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path)
+    oof = pd.read_parquet(paths["oof"])
+    oof["available_at"] = pd.to_datetime(oof["__ts__"], utc=True) + pd.Timedelta(
+        hours=1
+    )
+    oof.to_parquet(paths["oof"], index=False)
+    _write_canonical_packb_lineage(paths)
+
+    result = materializer.run(_args(tmp_path, paths))
+    output = pd.read_parquet(result["output"])
+    assert (
+        pd.to_datetime(output["available_at"], utc=True)
+        == pd.to_datetime(output["__ts__"], utc=True) + pd.Timedelta(hours=1)
+    ).all()
+
+
 def test_leaf_support_excludes_future_candidate_rows(tmp_path: Path) -> None:
     paths = _inputs(tmp_path)
     candidates = pd.read_parquet(paths["candidates"])
@@ -544,7 +561,7 @@ def test_rejects_missing_canonical_alpha_provenance_columns(
         ),
         (
             "available_at",
-            pd.Timestamp("2026-07-01T01:00:00Z"),
+            pd.Timestamp("2026-07-01T02:00:00Z"),
             "feature availability is after",
         ),
     ],
@@ -581,7 +598,7 @@ def test_rejects_rows_outside_manifest_boundaries_and_late_leaf_availability(
     paths = _inputs(tmp_path / "late")
     candidates = pd.read_parquet(paths["candidates"])
     candidates.loc[0, "available_at"] = candidates.loc[0, "__ts__"] + pd.Timedelta(
-        hours=1
+        hours=2
     )
     candidates.to_parquet(paths["candidates"], index=False)
     with pytest.raises(ValueError, match="availability is after"):

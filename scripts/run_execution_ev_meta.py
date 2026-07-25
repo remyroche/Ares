@@ -583,6 +583,9 @@ def _winner_table(
                 "arm": arm,
                 "oof_rows": int(len(y)),
                 "top10_rows": int(tail_count),
+                "ranking_scope": "global_shared_outer_oof",
+                "ranking_stage": "before_admission_calibrator_diagnostic_only",
+                "promotion_eligible": False,
                 "top10_mean_net_ev": float(np.mean(y[tail])),
                 "top10_sum_net_ev": float(np.sum(y[tail])),
                 "mae": float(np.mean(np.abs(residual))),
@@ -873,11 +876,19 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     diagnostic_winner = leaderboard.iloc[0].to_dict()
     winner_payload = {
         "winner": winner,
+        "winner_role": "pre_admission_diagnostic_only",
         "selection_scope": "direct_vs_residual_all_features_only",
         "selection_rule": "among all_features direct/residual arms: highest aggregate OOF top10_mean_net_ev; ties use positive_week_fraction, worst_week_top10_mean_net_ev, then lower MAE",
         "best_diagnostic_arm": diagnostic_winner,
         "ablation_contract": "leave-one-family-out and reduced-input arms are diagnostics; they cannot be promoted as the direct-versus-residual winner",
-        "status": "evaluation_only_not_policy_selection",
+        "promotion_metric_contract": {
+            "status": "blocked_pending_causal_21d_admission_calibrator",
+            "ranking_scope": "global_shared_outer_oof",
+            "required_ranking_stage": "after_causal_21d_admission_calibrator",
+            "current_ranking_stage": "before_admission_calibrator_diagnostic_only",
+            "required_runner": "scripts/run_execution_ev_model_ablation.py",
+        },
+        "status": "evaluation_only_pre_admission_not_promotion_eligible",
         "regression_and_stability_diagnostics": winner,
     }
     winner_path = _write_json(args.output_dir / "winner.json", winner_payload)

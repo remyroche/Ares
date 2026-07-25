@@ -455,6 +455,20 @@ def test_runner_persists_oof_bundle_reports_and_top10_winner(
     winner = json.loads(paths["winner"].read_text())
     assert winner["winner"]["prediction"] == "direct__all_features"
     assert winner["selection_scope"] == "direct_vs_residual_all_features_only"
+    assert winner["winner_role"] == "pre_admission_diagnostic_only"
+    assert winner["status"] == "evaluation_only_pre_admission_not_promotion_eligible"
+    assert (
+        winner["promotion_metric_contract"]["required_ranking_stage"]
+        == "after_causal_21d_admission_calibrator"
+    )
+    leaderboard = pd.read_csv(paths["leaderboard"])
+    assert leaderboard["ranking_scope"].eq("global_shared_outer_oof").all()
+    assert (
+        leaderboard["ranking_stage"]
+        .eq("before_admission_calibrator_diagnostic_only")
+        .all()
+    )
+    assert not leaderboard["promotion_eligible"].any()
     ledger = pd.read_parquet(paths["oof"])
     assert {
         "direct__all_features",

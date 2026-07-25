@@ -3360,12 +3360,60 @@ side-parent geometry, and a different friction contract.
 | Time-aware 12h base label | Add MFE, MAE, timing, early-path proxy, slope | admitted global top-10 +24.22 bps; timestamp-side +8.19 bps | Improved aggregate, not selected |
 | Side-local soft-label HPO | Select recipe on Feb-Mar residual OOF only | final admitted global top-10 +35.73 bps and timestamp-side +18.83 bps; raw top-10 -29.19/-29.89 bps; June timestamp-side -5.57 bps | Selected research winner; exact-policy replay failed |
 | Remove currently spread-excluded assets | Static current blacklist | removed zero paired rows; blacklist is not point-in-time for training | No-op; causal arm not yet tested |
-| Soft-binary labels for auxiliary heads | Requested: replace/augment full regression with policy-anchored soft event bands | Only the MAE competing-risk structural challenger and timing hazard were run; a complete five-head soft-binary matrix was **not** run | Pending |
-| Route timing and MAE only to timing meta head | Requested separation from execution-EV | MAE timing-only routing is recommended, but a paired timing-meta-head-only experiment was **not** run | Pending |
-| Soft-binary execution-EV meta head | Requested economics/learnability threshold HPO around top residual decile | The base-label HPO used soft binary labels; the execution-EV meta target itself was **not** converted and tested under exact policy | Pending |
+| Soft-binary labels for auxiliary heads | Five side-local policy-anchored soft-label recalibration heads, four-model inner HPO, expanding June/July OOF with a 25-hour purge | Complete matrix; only soft timing improved global top-10 versus alpha context (+2.40 bps), but remained negative at -66.27 bps | Completed; no head promoted |
+| Route timing and MAE only to timing meta head | Paired exact-policy enter/skip router: alpha only, original timing+MAE, and soft timing+MAE; timing and MAE excluded from the execution-EV non-timing arm | Soft exclusive router was -148.08/-115.28 bps global/timestamp-side top-10, -54.19 bps global versus the original router | Completed; did not work |
+| Soft-binary execution-EV meta head | Exact one-minute policy net return transformed by threshold/temperature HPO; thresholds 0/25/50/75 bps, temperatures 30/50/100 bps, four tree geometries; June selection only | Best July alpha-context comparator -68.67/-113.21 bps global/timestamp-side top-10; all-aux -112.83/-113.60 bps | Completed; no promotable arm |
 
-The prior exact-policy coverage audit also found only 99,518 of 127,777
-candidates with complete one-minute/1,440-minute paths (77.9%). That targeted
-path backfill is distinct from the July 18-23 source/feature backfill. Both are
-required before any auxiliary, CatBoost, execution-EV, or timing arm can be
-promoted from exact-policy economics.
+### Exact-policy soft-binary ablation matrix (2026-07-25)
+
+The final paired artifact is
+`data_perp/artifacts/exact_policy_soft_binary_ablations_20260725_v4`.
+It uses all 127,777 exact candidate identities from the deployed-policy
+one-minute replay. The source manifest reports 100% path coverage, a
+1,440-minute horizon, spread-aware executable fills, and the strategy's 1%
+fee contract. This supersedes the earlier 99,518/127,777 coverage audit:
+there is no remaining targeted path-backfill blocker for this candidate set.
+
+The five auxiliary challengers are **side-local OOF recalibration layers over
+the existing frozen OOF head outputs**, not native raw-feature refits. June
+predictions train only before June and July predictions only before July, both
+with a 25-hour purge. Four LightGBM geometries are selected on the purged
+trailing 20% of each outer-training set. This produces 64,426 complete
+June-July OOF rows. The execution-EV soft-label recipe and model are selected
+on June only; the 15,167 July rows are untouched final evaluation.
+The available exact-policy July window is July 1-10, not July 1-23.
+
+| Soft auxiliary head | Soft-label rule | July OOF Brier long/short | July OOF Spearman long/short | Exact-policy global top-10: original -> soft | Soft verdict |
+|---|---|---:|---:|---:|---|
+| `peak_mfe_12h_atr` | Probability that peak MFE clears the larger of 1.5 ATR and the 1% cost hurdle; 0.25 ATR transition | 0.23379 / 0.22851 | -0.052 / -0.005 | -69.83 -> -81.76 bps (-11.93) | Worse and non-discriminating |
+| `time_to_first_meaningful_mfe` | Hit-within-12h probability weighted toward arrival before 4h; 1.5h transition | 0.10042 / 0.08351 | 0.111 / 0.166 | -81.41 -> -66.27 bps (+15.13); +2.40 bps versus alpha context | Best individual challenger, still negative |
+| `mae_before_meaningful_mfe_atr` | Probability pre-MFE MAE stays below 0.5 ATR; 0.15 ATR transition | 0.17562 / 0.15861 | -0.134 / 0.083 | -113.51 -> -122.63 bps (-9.12) | Worse; keep out of execution EV |
+| `bars_before_price_stops_decreasing` | Early confirmed adverse trough around four bars, multiplied by clean-MAE probability; missing trough censored at 12h | 0.02883 / 0.02240 | 0.012 / 0.058 | -76.71 -> -89.58 bps (-12.86) | Low ranking signal; did not work |
+| `future_slope_atr_per_hour` | Probability favorable slope is positive; 0.15 ATR/hour transition | 0.02291 / 0.02339 | 0.111 / 0.106 | -132.12 -> -80.93 bps (+51.19) | Large relative repair, still below comparator |
+
+Every economic number above is July exact-policy net return after the stated
+cost contract. Global top-10 uses 1,517 rows. Timestamp-side top-10 is also
+reported because opportunity admission is local to each decision timestamp
+and side:
+
+| Execution-EV / routing arm | Included head rule | Global top-10 | Timestamp-side top-10 | Result |
+|---|---|---:|---:|---|
+| Alpha context | Existing alpha EV, uncertainty, support, and observable archetype context | -68.67 bps | -113.21 bps | Comparator only |
+| Non-timing auxiliaries | Peak, adverse-turn, and slope; timing and MAE excluded | -87.65 bps | -108.64 bps | +25.18 bps over all-aux globally, but below comparator |
+| All auxiliaries | All five original auxiliary streams | -112.83 bps | -113.60 bps | -44.16 bps versus comparator |
+| Timing router, alpha only | Enter/skip gate from alpha context | -137.16 bps | -121.53 bps | Did not work |
+| Timing router, original | Alpha plus original timing and MAE | -93.89 bps | -127.16 bps | Did not work |
+| Timing router, exclusive soft | Alpha plus only soft timing and soft MAE | -148.08 bps | -115.28 bps | -54.19 bps globally versus original; did not work |
+
+Fixed score admission at 0.5 produced very small, unstable subsets (zero to
+592 rows depending on arm), so isolated positive means such as the one-row
+soft-peak comparator or three-row soft timing router are not promotion
+evidence. No arm clears either global or timestamp-side top-10 economics.
+This fixed-threshold diagnostic is not a new 21-day admission-calibrator fit;
+the earlier 21-day-calibrated base-label results remain separately reported in
+the ledger and must not be conflated with this July exact-policy matrix.
+
+The timing experiment tests exact-policy **enter versus skip** only. It does
+not yet generate or replay counterfactual wait-market, wait-limit, or target
+price actions. Those require the separate action layer and fill/missed-
+opportunity simulation specified above.

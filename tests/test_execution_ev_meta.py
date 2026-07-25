@@ -41,7 +41,9 @@ def _frame() -> pd.DataFrame:
             "pred_time_to_mfe_12h": np.linspace(5.0, 1.0, len(times)),
             "pred_peak_mfe_12h": np.linspace(0.01, 0.04, len(times)),
             "pred_mae_before_meaningful_mfe_atr": np.linspace(1.2, 0.2, len(times)),
-            "pred_bars_before_price_stops_decreasing": np.linspace(8.0, 1.0, len(times)),
+            "pred_bars_before_price_stops_decreasing": np.linspace(
+                8.0, 1.0, len(times)
+            ),
             "pred_favorable_path_slope_atr_per_hour": np.linspace(0.1, 1.0, len(times)),
             "catboost_p_clean": np.linspace(0.2, 0.8, len(times)),
             "catboost_entropy": np.linspace(0.8, 0.2, len(times)),
@@ -71,7 +73,9 @@ def _provenance() -> dict[str, FeatureProvenance]:
             "peak_mfe", "frozen path head", available_at_col="available_at"
         ),
         "pred_mae_before_meaningful_mfe_atr": FeatureProvenance(
-            "mae_before_meaningful_mfe", "frozen path head", available_at_col="available_at"
+            "mae_before_meaningful_mfe",
+            "frozen path head",
+            available_at_col="available_at",
         ),
         "pred_bars_before_price_stops_decreasing": FeatureProvenance(
             "adverse_turn_timing", "frozen path head", available_at_col="available_at"
@@ -190,7 +194,10 @@ def test_ablation_plan_and_oos_metric_table_show_family_contributions() -> None:
     assert plan["alpha_only"] == ("score_existing_alpha",)
     assert "without_catboost_entropy" in plan
     assert "catboost_entropy" not in plan["without_catboost_entropy"]
-    assert "pred_favorable_path_slope_atr_per_hour" not in plan["without_favorable_path_slope"]
+    assert (
+        "pred_favorable_path_slope_atr_per_hour"
+        not in plan["without_favorable_path_slope"]
+    )
     assert "pred_time_to_mfe_12h" not in plan["without_time_to_mfe"]
     actual = np.array([-0.01, 0.0, 0.01, 0.02])
     report = execution_ev_ablation_metrics(
@@ -210,7 +217,11 @@ def test_ablation_plan_and_oos_metric_table_show_family_contributions() -> None:
 
     comparison = timing_slope_ablation_comparison(
         [
-            {"arm": "without_favorable_path_slope", "top_k_mean_net_ev": 0.01, "mae": 0.02},
+            {
+                "arm": "without_favorable_path_slope",
+                "top_k_mean_net_ev": 0.01,
+                "mae": 0.02,
+            },
             {"arm": "without_time_to_mfe", "top_k_mean_net_ev": 0.02, "mae": 0.01},
         ]
     )
@@ -266,17 +277,56 @@ def _trainer_frame(
         else {}
     )
     provenance = {
-        "catboost_archetype": FeatureProvenance("predicted_path_archetype", "frozen CatBoost path classifier", available_at_col="available_at", model_input=False, **contract),
-        "pred_time_to_mfe_12h": FeatureProvenance("time_to_mfe", "frozen time path LGBM", available_at_col="available_at"),
-        "pred_peak_mfe_12h": FeatureProvenance("peak_mfe", "frozen peak path LGBM", available_at_col="available_at"),
-        "pred_mae_before_meaningful_mfe_atr": FeatureProvenance("mae_before_meaningful_mfe", "frozen adverse-depth LGBM", available_at_col="available_at"),
-        "pred_bars_before_price_stops_decreasing": FeatureProvenance("adverse_turn_timing", "frozen adverse-turn LGBM", available_at_col="available_at"),
-        "pred_favorable_path_slope_atr_per_hour": FeatureProvenance("favorable_path_slope", "frozen path-slope LGBM", available_at_col="available_at"),
-        "catboost_entropy": FeatureProvenance("catboost_entropy", "CatBoost OOF entropy", available_at_col="available_at", **contract),
-        "base_prediction_uncertainty": FeatureProvenance("prediction_uncertainty", "alpha stack OOF uncertainty", available_at_col="available_at"),
-        "meta_leaf_support_log1p": FeatureProvenance("leaf_support", "frozen alpha leaf support", available_at_col="available_at"),
-        "score_existing_alpha": FeatureProvenance("alpha_score", "frozen alpha EV", available_at_col="available_at"),
-        "base_archetype_label__family__trend": FeatureProvenance("base_archetype_labels", "frozen existing base archetype label", available_at_col="available_at"),
+        "catboost_archetype": FeatureProvenance(
+            "predicted_path_archetype",
+            "frozen CatBoost path classifier",
+            available_at_col="available_at",
+            model_input=False,
+            **contract,
+        ),
+        "pred_time_to_mfe_12h": FeatureProvenance(
+            "time_to_mfe", "frozen time path LGBM", available_at_col="available_at"
+        ),
+        "pred_peak_mfe_12h": FeatureProvenance(
+            "peak_mfe", "frozen peak path LGBM", available_at_col="available_at"
+        ),
+        "pred_mae_before_meaningful_mfe_atr": FeatureProvenance(
+            "mae_before_meaningful_mfe",
+            "frozen adverse-depth LGBM",
+            available_at_col="available_at",
+        ),
+        "pred_bars_before_price_stops_decreasing": FeatureProvenance(
+            "adverse_turn_timing",
+            "frozen adverse-turn LGBM",
+            available_at_col="available_at",
+        ),
+        "pred_favorable_path_slope_atr_per_hour": FeatureProvenance(
+            "favorable_path_slope",
+            "frozen path-slope LGBM",
+            available_at_col="available_at",
+        ),
+        "catboost_entropy": FeatureProvenance(
+            "catboost_entropy",
+            "CatBoost OOF entropy",
+            available_at_col="available_at",
+            **contract,
+        ),
+        "base_prediction_uncertainty": FeatureProvenance(
+            "prediction_uncertainty",
+            "alpha stack OOF uncertainty",
+            available_at_col="available_at",
+        ),
+        "meta_leaf_support_log1p": FeatureProvenance(
+            "leaf_support", "frozen alpha leaf support", available_at_col="available_at"
+        ),
+        "score_existing_alpha": FeatureProvenance(
+            "alpha_score", "frozen alpha EV", available_at_col="available_at"
+        ),
+        "base_archetype_label__family__trend": FeatureProvenance(
+            "base_archetype_labels",
+            "frozen existing base archetype label",
+            available_at_col="available_at",
+        ),
     }
     provenance.update(
         {
@@ -368,7 +418,11 @@ def test_side_aware_direct_residual_trainer_emits_oof_diagnostics_and_bundle(
         ),
     )
     assert set(bundle.models["direct__all_features"]) == {"long", "short"}
-    assert {"direct__all_features", "residual__all_features"}.issubset(bundle.oof_predictions)
+    assert set(bundle.calibration["direct__all_features"]) == {"long", "short"}
+    assert "__global__" not in bundle.calibration["direct__all_features"]
+    assert {"direct__all_features", "residual__all_features"}.issubset(
+        bundle.oof_predictions
+    )
     diagnostics = bundle.report["diagnostics"]
     assert {"week", "month", "side", "archetype"}.issubset(diagnostics["scope"])
     assert {
@@ -392,6 +446,18 @@ def test_side_aware_direct_residual_trainer_emits_oof_diagnostics_and_bundle(
         "execution_ev_oof_validation_start_utc",
         "execution_ev_oof_train_decision_cutoff_utc",
     }.issubset(bundle.oof_provenance.columns)
+    selection = bundle.report["audits"]["direct__all_features"]["feature_selection"]
+    assert set(selection["final"]) == {"long", "short"}
+    for side, state in bundle.models["direct__all_features"].items():
+        assert state["features"] == selection["final"][side]["selected_features"]
+        assert "score_existing_alpha" in state["features"]
+    for fold_selection in selection["outer"].values():
+        assert set(fold_selection) == {"long", "short"}
+        assert all(
+            item["method"]
+            in {"inner_oof_permutation_mda", "train_only_abs_spearman_fallback"}
+            for item in fold_selection.values()
+        )
 
     scored = predict_execution_ev_bundle(bundle, frame)
     assert {"execution_ev_direct", "execution_ev_residual"}.issubset(scored)
@@ -448,3 +514,74 @@ def test_outer_validation_targets_cannot_change_fold_predictions() -> None:
         tune=False,
     )
     np.testing.assert_allclose(original[valid], changed[valid], rtol=0.0, atol=0.0)
+
+
+def test_short_outcomes_cannot_change_long_selector_model_map_or_predictions() -> None:
+    pytest.importorskip("lightgbm")
+    frame, provenance = _trainer_frame()
+    # Enough post-warm-up long OOF rows to fit a real final same-side map,
+    # while retaining the small deterministic LightGBM settings used elsewhere
+    # in this focused suite.
+    extended = pd.concat(
+        [
+            frame.assign(__ts__=frame["__ts__"] + pd.Timedelta(hours=192 * part))
+            for part in range(3)
+        ],
+        ignore_index=True,
+    )
+    extended["label_end"] = extended["__ts__"] + pd.Timedelta(hours=12)
+    config = ExecutionEVTrainerConfig(
+        n_splits=2,
+        min_train_rows=20,
+        hpo_trials=1,
+        n_estimators=12,
+        feature_selection_n_estimators=12,
+        early_stopping_rounds=4,
+        calibration_min_rows=20,
+        calibration_min_local_rows=20,
+        run_ablations=False,
+        n_jobs=1,
+    )
+    original = train_execution_ev_meta(extended, provenance, config=config)
+    changed_frame = extended.copy()
+    short = changed_frame["side_name"].eq("short")
+    changed_frame.loc[short, "execution_net_ev_12h"] += np.linspace(
+        0.5, 1.5, int(short.sum())
+    )
+    changed = train_execution_ev_meta(changed_frame, provenance, config=config)
+
+    long = extended["side_name"].eq("long").to_numpy()
+    for mode in ("direct", "residual"):
+        key = f"{mode}__all_features"
+        original_audit = original.report["audits"][key]
+        changed_audit = changed.report["audits"][key]
+        assert (
+            original_audit["feature_selection"]["final"]["long"]
+            == changed_audit["feature_selection"]["final"]["long"]
+        )
+        for fold in original_audit["feature_selection"]["outer"]:
+            assert (
+                original_audit["feature_selection"]["outer"][fold]["long"]
+                == changed_audit["feature_selection"]["outer"][fold]["long"]
+            )
+        original_hpo = [
+            row["hpo"]
+            for row in original_audit["folds"]
+            if row["side"] == "long" and row["status"] == "ok"
+        ]
+        changed_hpo = [
+            row["hpo"]
+            for row in changed_audit["folds"]
+            if row["side"] == "long" and row["status"] == "ok"
+        ]
+        assert original_hpo == changed_hpo
+        assert original.calibration[key]["long"] is not None
+        assert changed.calibration[key]["long"] is not None
+    original_scores = predict_execution_ev_bundle(original, extended)
+    changed_scores = predict_execution_ev_bundle(changed, extended)
+    np.testing.assert_allclose(
+        original_scores.loc[long, ["execution_ev_direct", "execution_ev_residual"]],
+        changed_scores.loc[long, ["execution_ev_direct", "execution_ev_residual"]],
+        rtol=0.0,
+        atol=0.0,
+    )

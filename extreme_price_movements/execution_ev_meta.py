@@ -23,7 +23,7 @@ from .path_archetype_labels import PATH_SHAPE_TYPES
 
 TargetMode = Literal["direct", "residual"]
 
-EXECUTION_EV_BUNDLE_SCHEMA = "execution_ev_side_aware_lgbm_bundle_v1"
+EXECUTION_EV_BUNDLE_SCHEMA = "execution_ev_side_aware_lgbm_bundle_v2"
 
 # Families are intentionally semantic rather than tied to a particular model
 # implementation.  Callers register the actual materialized column names.
@@ -161,7 +161,10 @@ def validate_execution_ev_feature_provenance(
         )
     for name in requested:
         spec = provenance[name]
-        if spec.family not in (*EXECUTION_EV_FEATURE_FAMILIES, PREDICTED_PATH_ARCHETYPE_FAMILY):
+        if spec.family not in (
+            *EXECUTION_EV_FEATURE_FAMILIES,
+            PREDICTED_PATH_ARCHETYPE_FAMILY,
+        ):
             raise ValueError(
                 f"Unsupported Execution-EV feature family for {name!r}: {spec.family!r}"
             )
@@ -545,16 +548,22 @@ def execution_ev_ablation_metrics(
     # This makes leave-one-family-out output directly usable rather than
     # requiring downstream consumers to remember metric directionality.
     for metric in ("mae", "huber", "rmse"):
-        report[f"all_features_advantage__{metric}"] = report[metric] - float(full[metric])
+        report[f"all_features_advantage__{metric}"] = report[metric] - float(
+            full[metric]
+        )
     for metric in ("spearman", "top_k_mean_net_ev", "top_k_sum_net_ev"):
-        report[f"all_features_advantage__{metric}"] = float(full[metric]) - report[metric]
+        report[f"all_features_advantage__{metric}"] = (
+            float(full[metric]) - report[metric]
+        )
 
     groups: list[str] = []
     verdicts: list[str] = []
     for _, row in report.iterrows():
         arm = str(row["arm"])
-        group = arm.removeprefix("without_") if arm.startswith("without_") else (
-            "all_non_alpha_features" if arm == "alpha_only" else "all_features"
+        group = (
+            arm.removeprefix("without_")
+            if arm.startswith("without_")
+            else ("all_non_alpha_features" if arm == "alpha_only" else "all_features")
         )
         groups.append(group)
         if arm == "all_features":
@@ -613,6 +622,16 @@ class ExecutionEVTrainerConfig:
     embargo_hours: float = 12.0
     hpo_trials: int = 20
     inner_n_splits: int = 2
+    # Selection is deliberately an explicit, side-local stage rather than an
+    # incidental by-product of the fitted booster.  The selector is fit only
+    # on the relevant outer-train rows, uses its own train-only inner OOF
+    # permutation scores, then freezes the resulting side feature set before
+    # the side HPO/model fit begins.
+    feature_selection_enabled: bool = True
+    feature_selection_max_features: int = 12
+    feature_selection_min_features: int = 6
+    feature_selection_n_estimators: int = 400
+    feature_selection_min_importance: float = 0.0
     early_stopping_rounds: int = 150
     n_estimators: int = 3000
     random_state: int = 42
@@ -651,7 +670,10 @@ def _side_values(frame: pd.DataFrame, side_col: str) -> np.ndarray:
     sides = frame[side_col].astype(str).str.lower().to_numpy()
     unknown = sorted(set(sides) - {"long", "short"})
     if unknown:
-        raise ValueError("Execution-EV side values must be long/short; got " + ", ".join(unknown[:10]))
+        raise ValueError(
+            "Execution-EV side values must be long/short; got "
+            + ", ".join(unknown[:10])
+        )
     return sides
 
 
@@ -691,9 +713,7 @@ def _catboost_class_order(
     """Resolve the declared CatBoost taxonomy, with an eight-class fallback."""
 
     records = [*probability_columns, *entropy_columns, archetype_column]
-    declared = [
-        name for name in records if provenance[name].class_order is not None
-    ]
+    declared = [name for name in records if provenance[name].class_order is not None]
     declared_hashes = [
         name for name in records if provenance[name].class_order_sha256 is not None
     ]
@@ -715,7 +735,9 @@ def _catboost_class_order(
         for name in records
     }
     if len(orders) != 1:
-        raise ValueError("Execution-EV CatBoost class order disagrees across provenance")
+        raise ValueError(
+            "Execution-EV CatBoost class order disagrees across provenance"
+        )
     order = next(iter(orders))
     expected_hash = catboost_class_order_sha256(order)
     mismatched_hashes = [
@@ -768,7 +790,10 @@ def validate_execution_ev_training_contract(
     )
     missing = [family for family in required if not by_family[family]]
     if missing:
-        raise ValueError("Execution-EV trainer missing required feature families: " + ", ".join(missing))
+        raise ValueError(
+            "Execution-EV trainer missing required feature families: "
+            + ", ".join(missing)
+        )
     archetype_spec = provenance.get(predicted_path_archetype_col)
     if (
         archetype_spec is None
@@ -793,19 +818,20 @@ def validate_execution_ev_training_contract(
             f"({len(class_order)} catboost_probabilities features)"
         )
     active = _finite_target_rows(frame, ExecutionEVTargetSpec())
-    probabilities = frame.loc[:, probability_columns].apply(
-        pd.to_numeric, errors="coerce"
-    ).to_numpy(dtype=np.float64)
+    probabilities = (
+        frame.loc[:, probability_columns]
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=np.float64)
+    )
     if active.any() and not np.isfinite(probabilities[active]).all():
         raise ValueError(
             "Execution-EV CatBoost probability vector is incomplete on finite-target rows"
         )
     active_probabilities = probabilities[active]
     if active_probabilities.size:
-        if (
-            (active_probabilities < -1e-6).any()
-            or (active_probabilities > 1.0 + 1e-6).any()
-        ):
+        if (active_probabilities < -1e-6).any() or (
+            active_probabilities > 1.0 + 1e-6
+        ).any():
             raise ValueError("Execution-EV CatBoost probabilities must lie in [0, 1]")
         probability_sum = active_probabilities.sum(axis=1)
         if not np.allclose(probability_sum, 1.0, atol=1e-4, rtol=1e-4):
@@ -828,15 +854,22 @@ def validate_execution_ev_training_contract(
             raise ValueError(
                 "Execution-EV CatBoost entropy does not match the declared full probability vector"
             )
-        predicted = frame.loc[active, predicted_path_archetype_col].astype(str).to_numpy()
-        expected = np.asarray(class_order, dtype=object)[np.argmax(active_probabilities, axis=1)]
+        predicted = (
+            frame.loc[active, predicted_path_archetype_col].astype(str).to_numpy()
+        )
+        expected = np.asarray(class_order, dtype=object)[
+            np.argmax(active_probabilities, axis=1)
+        ]
         if not np.array_equal(predicted, expected):
             raise ValueError(
                 "Execution-EV predicted path archetype does not match argmax of the full probability vector"
             )
     empty_source = [name for name in names if not str(provenance[name].source).strip()]
     if empty_source:
-        raise ValueError("Execution-EV provenance requires non-empty sources: " + ", ".join(empty_source))
+        raise ValueError(
+            "Execution-EV provenance requires non-empty sources: "
+            + ", ".join(empty_source)
+        )
     validate_execution_ev_feature_provenance(
         frame,
         [predicted_path_archetype_col],
@@ -847,7 +880,9 @@ def validate_execution_ev_training_contract(
     return names
 
 
-def _lgbm_params(config: ExecutionEVTrainerConfig, trial: Any | None = None) -> dict[str, Any]:
+def _lgbm_params(
+    config: ExecutionEVTrainerConfig, trial: Any | None = None
+) -> dict[str, Any]:
     if trial is None:
         return {
             "objective": "huber",
@@ -868,7 +903,9 @@ def _lgbm_params(config: ExecutionEVTrainerConfig, trial: Any | None = None) -> 
             "verbosity": -1,
         }
     return {
-        "objective": trial.suggest_categorical("objective", ["regression", "huber", "fair"]),
+        "objective": trial.suggest_categorical(
+            "objective", ["regression", "huber", "fair"]
+        ),
         "n_estimators": int(config.n_estimators),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.06, log=True),
         "max_depth": trial.suggest_int("max_depth", 3, 7),
@@ -887,10 +924,18 @@ def _lgbm_params(config: ExecutionEVTrainerConfig, trial: Any | None = None) -> 
     }
 
 
-def _hpo_score(y: np.ndarray, prediction: np.ndarray, config: ExecutionEVTrainerConfig) -> float:
-    metrics = execution_ev_metrics(y, prediction, top_k_fraction=0.10, huber_delta=config.huber_delta)
+def _hpo_score(
+    y: np.ndarray, prediction: np.ndarray, config: ExecutionEVTrainerConfig
+) -> float:
+    metrics = execution_ev_metrics(
+        y, prediction, top_k_fraction=0.10, huber_delta=config.huber_delta
+    )
     ic = metrics["spearman"] if np.isfinite(metrics["spearman"]) else -1.0
-    tail = metrics["top_k_mean_net_ev"] if np.isfinite(metrics["top_k_mean_net_ev"]) else -1.0
+    tail = (
+        metrics["top_k_mean_net_ev"]
+        if np.isfinite(metrics["top_k_mean_net_ev"])
+        else -1.0
+    )
     return float(-metrics["huber"] + 0.25 * ic + tail)
 
 
@@ -938,7 +983,9 @@ def _fit_lgbm(
             x.iloc[train],
             y[train],
             eval_set=[(x.iloc[valid], y[valid])],
-            callbacks=[lgb.early_stopping(int(config.early_stopping_rounds), verbose=False)],
+            callbacks=[
+                lgb.early_stopping(int(config.early_stopping_rounds), verbose=False)
+            ],
         )
     return model, int(model.best_iteration_ or params["n_estimators"])
 
@@ -956,7 +1003,9 @@ def _tune_lgbm(
         import lightgbm as lgb
         import optuna
     except ImportError as exc:  # pragma: no cover - environment dependency
-        raise RuntimeError("LightGBM and Optuna are required for execution-EV HPO") from exc
+        raise RuntimeError(
+            "LightGBM and Optuna are required for execution-EV HPO"
+        ) from exc
 
     def objective(trial: Any) -> float:
         params = _lgbm_params(config, trial)
@@ -964,9 +1013,14 @@ def _tune_lgbm(
         for fold_i, fold in enumerate(inner):
             model = lgb.LGBMRegressor(**params)
             model.fit(
-                x.iloc[fold.train_indices], y[fold.train_indices],
-                eval_set=[(x.iloc[fold.validation_indices], y[fold.validation_indices])],
-                callbacks=[lgb.early_stopping(int(config.early_stopping_rounds), verbose=False)],
+                x.iloc[fold.train_indices],
+                y[fold.train_indices],
+                eval_set=[
+                    (x.iloc[fold.validation_indices], y[fold.validation_indices])
+                ],
+                callbacks=[
+                    lgb.early_stopping(int(config.early_stopping_rounds), verbose=False)
+                ],
             )
             pred = model.predict(x.iloc[fold.validation_indices])
             scores.append(_hpo_score(y[fold.validation_indices], pred, config))
@@ -978,12 +1032,260 @@ def _tune_lgbm(
     study = optuna.create_study(
         direction="maximize",
         sampler=optuna.samplers.TPESampler(seed=int(config.random_state)),
-        pruner=optuna.pruners.MedianPruner(n_startup_trials=min(8, config.hpo_trials), n_warmup_steps=1),
+        pruner=optuna.pruners.MedianPruner(
+            n_startup_trials=min(8, config.hpo_trials), n_warmup_steps=1
+        ),
     )
     study.optimize(objective, n_trials=int(config.hpo_trials), show_progress_bar=False)
     params = _lgbm_params(config)
     params.update(study.best_params)
-    return params, {"status": "tuned", "trials": int(len(study.trials)), "best_value": float(study.best_value)}
+    return params, {
+        "status": "tuned",
+        "trials": int(len(study.trials)),
+        "best_value": float(study.best_value),
+    }
+
+
+def _feature_list_sha256(features: Sequence[str]) -> str:
+    """Return a stable audit digest for an ordered feature contract."""
+
+    payload = json.dumps(list(map(str, features)), separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _selection_rank_fallback(
+    x: pd.DataFrame,
+    y: np.ndarray,
+) -> dict[str, float]:
+    """Rank inputs from authorized rows when no inner OOF slice is viable.
+
+    This is intentionally only a low-support fallback.  It is still fitted on
+    the side's outer-training rows, never outer validation rows, and records
+    its weaker contract in the selector audit rather than pretending to be
+    inner-OOF MDA.
+    """
+
+    scores: dict[str, float] = {}
+    for column in x.columns:
+        value = pd.to_numeric(x[column], errors="coerce").to_numpy(dtype=float)
+        association = _spearman(value, y)
+        scores[str(column)] = (
+            float(abs(association)) if np.isfinite(association) else 0.0
+        )
+    return scores
+
+
+def _select_side_train_only_features(
+    x: pd.DataFrame,
+    y: np.ndarray,
+    inner: Sequence[ChronologicalPurgedSplit],
+    *,
+    side: str,
+    protected_features: Sequence[str],
+    config: ExecutionEVTrainerConfig,
+) -> dict[str, Any]:
+    """Select an independent side-local contract using authorized rows only.
+
+    The normal path fits a fixed-parameter selector model on each chronological
+    inner-training slice and measures the loss of each feature by permuting it
+    in that inner validation slice.  Those validation outcomes are part of the
+    *outer training* interval, so neither selection nor its feature ranking can
+    observe the outer OOF rows.  The selected list is frozen before HPO.
+
+    No side is ever mixed into this selector: callers pass only one side's
+    outer-train matrix.  ``protected_features`` keeps the alpha baseline in
+    every fitted contract, which makes the named ablations comparable.
+    """
+
+    candidates = list(map(str, x.columns))
+    if not candidates:
+        raise ValueError(
+            "Execution-EV feature selection requires at least one candidate"
+        )
+    if len(y) != len(x):
+        raise ValueError("Execution-EV feature selection inputs have inconsistent rows")
+    canonical_side = str(side).lower()
+    if canonical_side not in {"long", "short"}:
+        raise ValueError(
+            f"Execution-EV feature selection requires long/short side, got {side!r}"
+        )
+    protected = [
+        feature
+        for feature in dict.fromkeys(map(str, protected_features))
+        if feature in candidates
+    ]
+    if not config.feature_selection_enabled:
+        selected = candidates
+        return {
+            "schema": "execution_ev_side_local_feature_selection_v1",
+            "status": "disabled_all_candidates",
+            "method": "disabled",
+            "side": canonical_side,
+            "train_rows": int(len(x)),
+            "inner_folds": 0,
+            "candidate_features": candidates,
+            "protected_features": protected,
+            "selected_features": selected,
+            "selected_features_sha256": _feature_list_sha256(selected),
+            "feature_importance_mean": {},
+        }
+
+    max_features = int(config.feature_selection_max_features)
+    if max_features <= 0:
+        max_features = len(candidates)
+    max_features = min(len(candidates), max(max_features, len(protected)))
+    min_features = min(
+        max_features,
+        max(
+            len(protected),
+            min(int(config.feature_selection_min_features), len(candidates)),
+        ),
+    )
+    # A deterministic side-specific seed makes the permutation ledger
+    # reproducible without sharing any fit state across long/short.
+    seed_bytes = hashlib.sha256(
+        f"execution-ev-selector:{config.random_state}:{canonical_side}".encode("utf-8")
+    ).digest()
+    seed = int.from_bytes(seed_bytes[:4], byteorder="little", signed=False)
+    scores: dict[str, list[float]] = {feature: [] for feature in candidates}
+    selector_params = _lgbm_params(config)
+    selector_params["n_estimators"] = max(
+        1,
+        min(
+            int(selector_params["n_estimators"]),
+            int(config.feature_selection_n_estimators),
+        ),
+    )
+
+    method = "inner_oof_permutation_mda"
+    for inner_fold in inner:
+        train = np.asarray(inner_fold.train_indices, dtype=int)
+        valid = np.asarray(inner_fold.validation_indices, dtype=int)
+        if len(train) < 4 or not len(valid):
+            continue
+        model, _ = _fit_lgbm(
+            x,
+            y,
+            fit_indices=train,
+            early_stop=None,
+            params=selector_params,
+            config=config,
+        )
+        valid_x = x.iloc[valid]
+        baseline = model.predict(valid_x)
+        baseline_score = _hpo_score(y[valid], baseline, config)
+        # Fold is included so permutation is stable but not accidentally
+        # identical across validation intervals.
+        fold_rng = np.random.default_rng(seed + int(inner_fold.fold))
+        for feature in candidates:
+            permuted = valid_x.copy()
+            values = permuted[feature].to_numpy(copy=True)
+            permuted[feature] = values[fold_rng.permutation(len(values))]
+            permuted_score = _hpo_score(y[valid], model.predict(permuted), config)
+            scores[feature].append(float(baseline_score - permuted_score))
+
+    usable_inner = sum(bool(values) for values in scores.values())
+    if not usable_inner:
+        method = "train_only_abs_spearman_fallback"
+        importance = _selection_rank_fallback(x, y)
+        inner_folds = 0
+    else:
+        importance = {
+            feature: float(np.mean(values)) if values else float("-inf")
+            for feature, values in scores.items()
+        }
+        inner_folds = len(inner)
+
+    # Stable sorting makes selection reproducible even for ties.  Negative MDA
+    # inputs are retained only when required to meet declared minimum support.
+    ranked = sorted(
+        (feature for feature in candidates if feature not in protected),
+        key=lambda feature: (-importance[feature], candidates.index(feature)),
+    )
+    selected = list(protected)
+    for feature in ranked:
+        if len(selected) >= max_features:
+            break
+        if importance[feature] >= float(config.feature_selection_min_importance):
+            selected.append(feature)
+    for feature in ranked:
+        if len(selected) >= min_features:
+            break
+        if feature not in selected:
+            selected.append(feature)
+    # The requested feature order, not importance order, is the model matrix
+    # contract.  This keeps final inference deterministic and audit-friendly.
+    selected = [feature for feature in candidates if feature in set(selected)]
+    if not selected:
+        raise ValueError("Execution-EV feature selection selected no inputs")
+    return {
+        "schema": "execution_ev_side_local_feature_selection_v1",
+        "status": "selected",
+        "method": method,
+        "side": canonical_side,
+        "train_rows": int(len(x)),
+        "inner_folds": int(inner_folds),
+        "candidate_features": candidates,
+        "protected_features": protected,
+        "selected_features": selected,
+        "selected_features_sha256": _feature_list_sha256(selected),
+        "feature_importance_mean": {
+            feature: float(importance[feature]) for feature in candidates
+        },
+        "selector_params": dict(selector_params),
+    }
+
+
+def _derived_ablation_selection(
+    source: Mapping[str, Any],
+    candidates: Sequence[str],
+    *,
+    protected_features: Sequence[str],
+    side: str,
+) -> dict[str, Any]:
+    """Derive a fair ablation contract from an all-feature train-only choice.
+
+    Re-running selection for every leave-one-family-out arm would turn an
+    attribution exercise into a broad feature-search and dramatically increase
+    compute.  Instead every ablation uses the matching direct/residual,
+    side-local all-feature selector that was already frozen for that same outer
+    train interval; the arm removes only its named candidates.
+    """
+
+    source_selected = list(map(str, source.get("selected_features", ())))
+    if not source_selected:
+        raise ValueError(
+            "Execution-EV ablation selection source has no selected features"
+        )
+    candidate_list = list(map(str, candidates))
+    protected = [
+        feature
+        for feature in dict.fromkeys(map(str, protected_features))
+        if feature in candidate_list
+    ]
+    selected_set = set(source_selected) | set(protected)
+    selected = [feature for feature in candidate_list if feature in selected_set]
+    if not selected:
+        # This can only happen for a malformed named arm that drops every
+        # protected feature.  Retaining its own candidates preserves the arm
+        # definition while keeping the failure explicit in the audit.
+        selected = candidate_list
+    return {
+        "schema": "execution_ev_side_local_feature_selection_v1",
+        "status": "derived_from_all_features_train_only_selection",
+        "method": "frozen_all_features_intersection",
+        "side": str(side).lower(),
+        "train_rows": int(source.get("train_rows", 0)),
+        "inner_folds": int(source.get("inner_folds", 0)),
+        "candidate_features": candidate_list,
+        "protected_features": protected,
+        "selected_features": selected,
+        "selected_features_sha256": _feature_list_sha256(selected),
+        "source_selected_features_sha256": str(
+            source.get("selected_features_sha256", "")
+        ),
+        "source_selector_method": str(source.get("method", "")),
+    }
 
 
 def _train_only_calibrator(
@@ -1003,7 +1305,10 @@ def _train_only_calibrator(
     calibration_frame = pd.DataFrame(
         {
             "side_name": frame[side_col].astype(str).to_numpy(),
-            "archetype_policy_key": frame[archetype_col].fillna("missing").astype(str).to_numpy(),
+            "archetype_policy_key": frame[archetype_col]
+            .fillna("missing")
+            .astype(str)
+            .to_numpy(),
         },
         index=frame.index,
     ).iloc[np.flatnonzero(valid)]
@@ -1032,26 +1337,41 @@ def _metric_scopes(
             "actual": actual,
             "prediction": predicted,
             "side": frame[config.side_col].astype(str).to_numpy(),
-            "archetype": frame[config.catboost_archetype_col].fillna("missing").astype(str).to_numpy(),
-            "week": (ts.dt.floor("D") - pd.to_timedelta(ts.dt.weekday, unit="D")).astype(str),
+            "archetype": frame[config.catboost_archetype_col]
+            .fillna("missing")
+            .astype(str)
+            .to_numpy(),
+            "week": (
+                ts.dt.floor("D") - pd.to_timedelta(ts.dt.weekday, unit="D")
+            ).astype(str),
             "month": ts.dt.tz_localize(None).dt.to_period("M").astype(str),
         },
         index=frame.index,
     )
     rows: list[dict[str, Any]] = []
     scopes: tuple[tuple[str, list[str]], ...] = (
-        ("overall", []), ("week", ["week"]), ("month", ["month"]),
-        ("side", ["side"]), ("archetype", ["archetype"]),
+        ("overall", []),
+        ("week", ["week"]),
+        ("month", ["month"]),
+        ("side", ["side"]),
+        ("archetype", ["archetype"]),
         ("side_archetype", ["side", "archetype"]),
     )
     for scope, keys in scopes:
         groups: Iterable[tuple[Any, pd.DataFrame]]
-        groups = [((), work)] if not keys else work.groupby(keys, observed=True, sort=True)
+        groups = (
+            [((), work)] if not keys else work.groupby(keys, observed=True, sort=True)
+        )
         for key, part in groups:
             values = key if isinstance(key, tuple) else (key,)
             row: dict[str, Any] = {"mode": mode, "arm": arm, "scope": scope}
             row.update(dict(zip(keys, values)))
-            base = execution_ev_metrics(part["actual"], part["prediction"], top_k_fraction=0.10, huber_delta=config.huber_delta)
+            base = execution_ev_metrics(
+                part["actual"],
+                part["prediction"],
+                top_k_fraction=0.10,
+                huber_delta=config.huber_delta,
+            )
             row.update(
                 {
                     key: base[key]
@@ -1075,13 +1395,16 @@ def _metric_scopes(
                 (0.20, "20"),
                 (0.30, "30"),
             ):
-                tail = execution_ev_metrics(part["actual"], part["prediction"], top_k_fraction=fraction, huber_delta=config.huber_delta)
+                tail = execution_ev_metrics(
+                    part["actual"],
+                    part["prediction"],
+                    top_k_fraction=fraction,
+                    huber_delta=config.huber_delta,
+                )
                 row[f"top_{label}pct_rows"] = tail["top_k_rows"]
                 row[f"top_{label}pct_mean_net_ev"] = tail["top_k_mean_net_ev"]
                 row[f"top_{label}pct_sum_net_ev"] = tail["top_k_sum_net_ev"]
-                row[f"top_{label}pct_positive_ev_rate"] = tail[
-                    "top_k_positive_ev_rate"
-                ]
+                row[f"top_{label}pct_positive_ev_rate"] = tail["top_k_positive_ev_rate"]
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1111,7 +1434,9 @@ def _oof_fold_provenance(
         train = np.asarray(fold.train_indices, dtype=int)
         if not len(valid) or not len(train):
             continue
-        output.iloc[valid, output.columns.get_loc("execution_ev_oof_fold")] = int(fold.fold)
+        output.iloc[valid, output.columns.get_loc("execution_ev_oof_fold")] = int(
+            fold.fold
+        )
         output.iloc[
             valid, output.columns.get_loc("execution_ev_oof_validation_start_utc")
         ] = fold.validation_start
@@ -1129,6 +1454,8 @@ def _fit_arm_mode(
     *,
     config: ExecutionEVTrainerConfig,
     tune: bool,
+    protected_features: Sequence[str] = (),
+    selection_overrides: Mapping[str, Any] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any], dict[str, Any]]:
     """Return outer-fold OOF net-EV predictions, final side models, and audit."""
     target = build_execution_ev_target(frame, target_spec).to_numpy(dtype=float)
@@ -1136,36 +1463,104 @@ def _fit_arm_mode(
     x = frame.loc[:, list(features)].apply(pd.to_numeric, errors="coerce")
     raw_oof = np.full(len(frame), np.nan, dtype=float)
     output = np.full(len(frame), np.nan, dtype=float)
-    audit: dict[str, Any] = {"folds": [], "calibration": []}
+    audit: dict[str, Any] = {
+        "folds": [],
+        "calibration": [],
+        "feature_selection": {"outer": {}, "final": {}},
+    }
     params_by_side: dict[str, list[dict[str, Any]]] = {"long": [], "short": []}
 
     for fold in folds:
-        # This vector is populated solely from inner OOF predictions generated
-        # inside the outer training interval.  Combining both sides here lets
-        # the canonical global-to-side x archetype shrinkage do its job.
-        fold_inner_oof = np.full(len(frame), np.nan, dtype=float)
-        pending_predictions: list[tuple[str, np.ndarray, np.ndarray]] = []
+        outer_selection = audit["feature_selection"]["outer"].setdefault(
+            str(fold.fold), {}
+        )
+        pending_predictions: list[tuple[str, np.ndarray, np.ndarray, Any | None]] = []
         for side in ("long", "short"):
-            train = np.asarray([i for i in fold.train_indices if sides[i] == side and np.isfinite(target[i])], dtype=int)
-            valid = np.asarray([i for i in fold.validation_indices if sides[i] == side and np.isfinite(target[i])], dtype=int)
+            train = np.asarray(
+                [
+                    i
+                    for i in fold.train_indices
+                    if sides[i] == side and np.isfinite(target[i])
+                ],
+                dtype=int,
+            )
+            valid = np.asarray(
+                [
+                    i
+                    for i in fold.validation_indices
+                    if sides[i] == side and np.isfinite(target[i])
+                ],
+                dtype=int,
+            )
             if len(train) < 4 or not len(valid):
-                audit["folds"].append({"fold": fold.fold, "side": side, "status": "insufficient_side_rows", "train_rows": int(len(train)), "valid_rows": int(len(valid))})
+                audit["folds"].append(
+                    {
+                        "fold": fold.fold,
+                        "side": side,
+                        "status": "insufficient_side_rows",
+                        "train_rows": int(len(train)),
+                        "valid_rows": int(len(valid)),
+                    }
+                )
                 continue
             outer_train = frame.iloc[train].reset_index(drop=True)
             inner = _inner_splits(outer_train, config)
             local_x = x.iloc[train].reset_index(drop=True)
             local_y = target[train]
-            params, hpo = _tune_lgbm(local_x, local_y, inner, config) if tune else (_lgbm_params(config), {"status": "reused_default_for_ablation", "trials": 0})
+            source_selection = None
+            if selection_overrides is not None:
+                source_selection = (
+                    selection_overrides.get("outer", {})
+                    .get(str(fold.fold), {})
+                    .get(side)
+                )
+            selection = (
+                _derived_ablation_selection(
+                    source_selection,
+                    local_x.columns,
+                    protected_features=protected_features,
+                    side=side,
+                )
+                if source_selection is not None
+                else _select_side_train_only_features(
+                    local_x,
+                    local_y,
+                    inner,
+                    side=side,
+                    protected_features=protected_features,
+                    config=config,
+                )
+            )
+            outer_selection[side] = selection
+            selected_features = list(selection["selected_features"])
+            selected_x = local_x.loc[:, selected_features]
+            params, hpo = (
+                _tune_lgbm(selected_x, local_y, inner, config)
+                if tune
+                else (
+                    _lgbm_params(config),
+                    {"status": "reused_default_for_ablation", "trials": 0},
+                )
+            )
             params_by_side[side].append(params)
             # Generate inner OOF predictions solely from outer-train rows for
-            # the fold's calibration map.  Validation targets never enter it.
+            # this side's fold calibration map.  Validation targets never
+            # enter it, and long/short never share a calibration sample.
             inner_oof = np.full(len(train), np.nan, dtype=float)
             for inner_fold in inner:
-                model, _ = _fit_lgbm(local_x, local_y, fit_indices=inner_fold.train_indices, early_stop=None, params=params, config=config)
-                inner_oof[inner_fold.validation_indices] = model.predict(local_x.iloc[inner_fold.validation_indices])
-            fold_inner_oof[train] = inner_oof
+                model, _ = _fit_lgbm(
+                    selected_x,
+                    local_y,
+                    fit_indices=inner_fold.train_indices,
+                    early_stop=None,
+                    params=params,
+                    config=config,
+                )
+                inner_oof[inner_fold.validation_indices] = model.predict(
+                    selected_x.iloc[inner_fold.validation_indices]
+                )
             model, best_iteration = _fit_lgbm(
-                local_x,
+                selected_x,
                 local_y,
                 fit_indices=np.arange(len(train), dtype=int),
                 early_stop=inner[-1] if inner else None,
@@ -1179,34 +1574,76 @@ def _fit_arm_mode(
                 refit_params = dict(params)
                 refit_params["n_estimators"] = max(1, int(best_iteration))
                 model, _ = _fit_lgbm(
-                    local_x,
+                    selected_x,
                     local_y,
                     fit_indices=np.arange(len(train), dtype=int),
                     early_stop=None,
                     params=refit_params,
                     config=config,
                 )
-            raw = model.predict(x.iloc[valid])
+            raw = model.predict(x.iloc[valid].loc[:, selected_features])
             raw_oof[valid] = raw
-            pending_predictions.append((side, valid, raw))
-            audit["folds"].append({"fold": fold.fold, "side": side, "status": "ok", "train_rows": int(len(train)), "valid_rows": int(len(valid)), "best_iteration": best_iteration, "hpo": hpo})
-        calibrator = _train_only_calibrator(
-            frame,
-            fold_inner_oof,
-            target,
-            side_col=config.side_col,
-            archetype_col=config.catboost_archetype_col,
-            config=config,
-        )
-        for side, valid, raw in pending_predictions:
+            calibrator = _train_only_calibrator(
+                outer_train,
+                inner_oof,
+                local_y,
+                side_col=config.side_col,
+                archetype_col=config.catboost_archetype_col,
+                config=config,
+            )
+            pending_predictions.append((side, valid, raw, calibrator))
+            audit["folds"].append(
+                {
+                    "fold": fold.fold,
+                    "side": side,
+                    "status": "ok",
+                    "train_rows": int(len(train)),
+                    "valid_rows": int(len(valid)),
+                    "best_iteration": best_iteration,
+                    "hpo": hpo,
+                    "selected_features": selected_features,
+                    "selected_features_sha256": selection["selected_features_sha256"],
+                }
+            )
+            audit["calibration"].append(
+                {
+                    "fold": fold.fold,
+                    "side": side,
+                    "scope": "side_local",
+                    "status": "fit"
+                    if calibrator is not None
+                    else "skipped_insufficient_inner_oof",
+                    "train_only_oof_rows": int(np.isfinite(inner_oof).sum()),
+                }
+            )
+        for side, valid, raw, calibrator in pending_predictions:
             if calibrator is not None:
-                mapping_frame = pd.DataFrame({"side_name": frame.iloc[valid][config.side_col].astype(str).to_numpy(), "archetype_policy_key": frame.iloc[valid][config.catboost_archetype_col].fillna("missing").astype(str).to_numpy()})
-                predicted_target = predict_side_archetype_monotonic_ev_mapping(calibrator, mapping_frame, raw)
+                mapping_frame = pd.DataFrame(
+                    {
+                        "side_name": frame.iloc[valid][config.side_col]
+                        .astype(str)
+                        .to_numpy(),
+                        "archetype_policy_key": frame.iloc[valid][
+                            config.catboost_archetype_col
+                        ]
+                        .fillna("missing")
+                        .astype(str)
+                        .to_numpy(),
+                    }
+                )
+                predicted_target = predict_side_archetype_monotonic_ev_mapping(
+                    calibrator, mapping_frame, raw
+                )
             else:
                 predicted_target = np.asarray(raw, dtype=float)
-            alpha = _numeric(frame.iloc[valid], target_spec.alpha_ev_col, role="existing alpha EV")
-            output[valid] = predicted_target if target_spec.mode == "direct" else predicted_target + alpha
-            audit["calibration"].append({"fold": fold.fold, "side": side, "status": "fit" if calibrator is not None else "skipped_insufficient_inner_oof", "train_only_oof_rows": int(np.isfinite(fold_inner_oof).sum())})
+            alpha = _numeric(
+                frame.iloc[valid], target_spec.alpha_ev_col, role="existing alpha EV"
+            )
+            output[valid] = (
+                predicted_target
+                if target_spec.mode == "direct"
+                else predicted_target + alpha
+            )
 
     final_models: dict[str, Any] = {}
     final_calibration: dict[str, Any] = {}
@@ -1214,17 +1651,72 @@ def _fit_arm_mode(
         pos = np.flatnonzero((sides == side) & np.isfinite(target))
         if len(pos) < 4:
             continue
-        params = params_by_side[side][-1] if params_by_side[side] else _lgbm_params(config)
-        model, best_iteration = _fit_lgbm(x, target, fit_indices=pos, early_stop=None, params=params, config=config)
-        final_models[side] = {"model": model, "features": list(features), "params": params, "best_iteration": best_iteration}
-    final_calibration["__global__"] = _train_only_calibrator(
-        frame,
-        raw_oof,
-        target,
-        side_col=config.side_col,
-        archetype_col=config.catboost_archetype_col,
-        config=config,
-    )
+        final_frame = frame.iloc[pos].reset_index(drop=True)
+        final_x = x.iloc[pos].reset_index(drop=True)
+        final_y = target[pos]
+        final_inner = _inner_splits(final_frame, config)
+        source_selection = None
+        if selection_overrides is not None:
+            source_selection = selection_overrides.get("final", {}).get(side)
+        selection = (
+            _derived_ablation_selection(
+                source_selection,
+                final_x.columns,
+                protected_features=protected_features,
+                side=side,
+            )
+            if source_selection is not None
+            else _select_side_train_only_features(
+                final_x,
+                final_y,
+                final_inner,
+                side=side,
+                protected_features=protected_features,
+                config=config,
+            )
+        )
+        audit["feature_selection"]["final"][side] = selection
+        selected_features = list(selection["selected_features"])
+        params = (
+            params_by_side[side][-1] if params_by_side[side] else _lgbm_params(config)
+        )
+        model, best_iteration = _fit_lgbm(
+            final_x.loc[:, selected_features],
+            final_y,
+            fit_indices=np.arange(len(pos), dtype=int),
+            early_stop=None,
+            params=params,
+            config=config,
+        )
+        final_models[side] = {
+            "model": model,
+            "features": selected_features,
+            "params": params,
+            "best_iteration": best_iteration,
+            "feature_selection": selection,
+        }
+        # The final live map is fit only on this side's outer-OOF raw scores;
+        # it does not pool long/short outcomes and is never used to revise the
+        # OOF predictions above.
+        final_calibration[side] = _train_only_calibrator(
+            final_frame,
+            raw_oof[pos],
+            final_y,
+            side_col=config.side_col,
+            archetype_col=config.catboost_archetype_col,
+            config=config,
+        )
+        audit["calibration"].append(
+            {
+                "phase": "final_refit",
+                "side": side,
+                "scope": "side_local_outer_oof",
+                "status": "fit"
+                if final_calibration[side] is not None
+                else "skipped_insufficient_outer_oof",
+                "train_only_oof_rows": int(np.isfinite(raw_oof[pos]).sum()),
+            }
+        )
     audit["raw_oof_rows"] = int(np.isfinite(raw_oof).sum())
     return output, final_models, {**audit, "final_calibration": final_calibration}
 
@@ -1252,7 +1744,9 @@ def train_execution_ev_meta(
     )
     plan = execution_ev_ablation_plan(provenance)
     for arm_features in plan.values():
-        validate_execution_ev_feature_provenance(frame, arm_features, provenance, decision_time_col=config.decision_time_col)
+        validate_execution_ev_feature_provenance(
+            frame, arm_features, provenance, decision_time_col=config.decision_time_col
+        )
     if not _finite_target_rows(frame, ExecutionEVTargetSpec()).any():
         raise ValueError("Execution-EV trainer has no finite direct target rows")
     folds = chronological_purged_splits(
@@ -1288,17 +1782,73 @@ def train_execution_ev_meta(
             arm="existing_alpha",
         )
     )
+    protected_features = plan["alpha_only"]
     for mode in ("direct", "residual"):
         spec = ExecutionEVTargetSpec(mode=mode)
+        # The all-feature arm is the sole feature-selection search for this
+        # target mode.  It independently freezes a long/short contract inside
+        # each outer fold and again for final refit *before* that side's HPO.
+        # The named ablations below inherit the matching frozen contract and
+        # remove only their declared families, avoiding a new selection search
+        # that would make their attribution unfair and needlessly expensive.
+        prediction, fitted, audit = _fit_arm_mode(
+            frame,
+            arms["all_features"],
+            spec,
+            folds,
+            config=config,
+            tune=True,
+            protected_features=protected_features,
+        )
+        key = f"{mode}__all_features"
+        prediction_table[key] = prediction
+        models[key] = fitted
+        calibration[key] = audit.pop("final_calibration")
+        audits[key] = audit
+        diagnostic_parts.append(
+            _metric_scopes(
+                frame,
+                net_ev,
+                prediction,
+                config=config,
+                mode=mode,
+                arm="all_features",
+            )
+        )
+        frozen_selection = audit["feature_selection"]
         for arm, features in arms.items():
-            prediction, fitted, audit = _fit_arm_mode(frame, features, spec, folds, config=config, tune=(arm == "all_features"))
+            if arm == "all_features":
+                continue
+            prediction, fitted, audit = _fit_arm_mode(
+                frame,
+                features,
+                spec,
+                folds,
+                config=config,
+                tune=False,
+                protected_features=protected_features,
+                selection_overrides=frozen_selection,
+            )
             key = f"{mode}__{arm}"
             prediction_table[key] = prediction
             models[key] = fitted
             calibration[key] = audit.pop("final_calibration")
             audits[key] = audit
-            diagnostic_parts.append(_metric_scopes(frame, net_ev, prediction, config=config, mode=mode, arm=arm))
-    diagnostics = pd.concat(diagnostic_parts, ignore_index=True) if diagnostic_parts else pd.DataFrame()
+            diagnostic_parts.append(
+                _metric_scopes(
+                    frame,
+                    net_ev,
+                    prediction,
+                    config=config,
+                    mode=mode,
+                    arm=arm,
+                )
+            )
+    diagnostics = (
+        pd.concat(diagnostic_parts, ignore_index=True)
+        if diagnostic_parts
+        else pd.DataFrame()
+    )
     ablations = {
         mode: execution_ev_ablation_metrics(
             net_ev,
@@ -1316,19 +1866,40 @@ def train_execution_ev_meta(
         for mode in ("direct", "residual")
     }
     comparison = compare_direct_and_residual(
-        pd.DataFrame({
-            ExecutionEVTargetSpec().net_ev_col: net_ev,
-            ExecutionEVTargetSpec().alpha_ev_col: alpha_ev,
-            "direct": prediction_table.get("direct__all_features", pd.Series(np.nan, index=frame.index)),
-            "residual": prediction_table.get("residual__all_features", pd.Series(np.nan, index=frame.index)) - alpha_ev,
-        }),
-        direct_prediction_col="direct", residual_prediction_col="residual", top_k_fraction=0.10, huber_delta=config.huber_delta,
+        pd.DataFrame(
+            {
+                ExecutionEVTargetSpec().net_ev_col: net_ev,
+                ExecutionEVTargetSpec().alpha_ev_col: alpha_ev,
+                "direct": prediction_table.get(
+                    "direct__all_features", pd.Series(np.nan, index=frame.index)
+                ),
+                "residual": prediction_table.get(
+                    "residual__all_features", pd.Series(np.nan, index=frame.index)
+                )
+                - alpha_ev,
+            }
+        ),
+        direct_prediction_col="direct",
+        residual_prediction_col="residual",
+        top_k_fraction=0.10,
+        huber_delta=config.huber_delta,
     )
     report = {
         "schema": EXECUTION_EV_BUNDLE_SCHEMA,
         "provenance_contract": "all model inputs declared pre_entry and oof_or_frozen; availability checked at decision timestamp",
-        "oof_contract": "outer expanding purged folds; fold HPO/early-stop/calibration are training-only",
-        "folds": [{"fold": split.fold, "validation_start": split.validation_start.isoformat(), "validation_end": split.validation_end.isoformat(), "purge_hours": split.purge_hours, "embargo_hours": split.embargo_hours} for split in folds],
+        "oof_contract": "outer expanding purged folds; per-side feature selection, HPO, early-stop, and calibration are training-only",
+        "feature_selection_contract": "per-side inner-OOF permutation MDA on outer-train rows, frozen before that side's HPO; named ablations intersect the matching frozen all-feature contract",
+        "calibration_contract": "separate long/short monotonic maps fit only on same-side inner OOF rows per outer fold and same-side outer OOF rows for final refit; no pooled map",
+        "folds": [
+            {
+                "fold": split.fold,
+                "validation_start": split.validation_start.isoformat(),
+                "validation_end": split.validation_end.isoformat(),
+                "purge_hours": split.purge_hours,
+                "embargo_hours": split.embargo_hours,
+            }
+            for split in folds
+        ],
         "direct_vs_residual": comparison,
         "existing_alpha_baseline": execution_ev_metrics(
             net_ev,
@@ -1354,7 +1925,9 @@ def train_execution_ev_meta(
     )
 
 
-def predict_execution_ev_bundle(bundle: ExecutionEVModelBundle, frame: pd.DataFrame, *, arm: str = "all_features") -> pd.DataFrame:
+def predict_execution_ev_bundle(
+    bundle: ExecutionEVModelBundle, frame: pd.DataFrame, *, arm: str = "all_features"
+) -> pd.DataFrame:
     """Score direct/residual final heads and their frozen side calibration maps."""
     config = ExecutionEVTrainerConfig(**bundle.config)
     _side_values(frame, config.side_col)
@@ -1366,18 +1939,45 @@ def predict_execution_ev_bundle(bundle: ExecutionEVModelBundle, frame: pd.DataFr
             continue
         output = np.full(len(frame), np.nan, dtype=float)
         for side, state in bundle.models[key].items():
-            pos = np.flatnonzero(frame[config.side_col].astype(str).str.lower().to_numpy() == side)
+            pos = np.flatnonzero(
+                frame[config.side_col].astype(str).str.lower().to_numpy() == side
+            )
             if not len(pos):
                 continue
             features = state["features"]
-            validate_execution_ev_feature_provenance(frame, features, bundle.provenance, decision_time_col=config.decision_time_col)
-            raw = state["model"].predict(frame.iloc[pos].loc[:, features].apply(pd.to_numeric, errors="coerce"))
-            calibrator = bundle.calibration.get(key, {}).get("__global__")
+            validate_execution_ev_feature_provenance(
+                frame,
+                features,
+                bundle.provenance,
+                decision_time_col=config.decision_time_col,
+            )
+            raw = state["model"].predict(
+                frame.iloc[pos].loc[:, features].apply(pd.to_numeric, errors="coerce")
+            )
+            calibrator = bundle.calibration.get(key, {}).get(side)
             if calibrator is not None:
-                mapper = pd.DataFrame({"side_name": frame.iloc[pos][config.side_col].astype(str).to_numpy(), "archetype_policy_key": frame.iloc[pos][config.catboost_archetype_col].fillna("missing").astype(str).to_numpy()})
-                raw = predict_side_archetype_monotonic_ev_mapping(calibrator, mapper, raw)
+                mapper = pd.DataFrame(
+                    {
+                        "side_name": frame.iloc[pos][config.side_col]
+                        .astype(str)
+                        .to_numpy(),
+                        "archetype_policy_key": frame.iloc[pos][
+                            config.catboost_archetype_col
+                        ]
+                        .fillna("missing")
+                        .astype(str)
+                        .to_numpy(),
+                    }
+                )
+                raw = predict_side_archetype_monotonic_ev_mapping(
+                    calibrator, mapper, raw
+                )
             if mode == "residual":
-                raw = raw + _numeric(frame.iloc[pos], ExecutionEVTargetSpec().alpha_ev_col, role="existing alpha EV")
+                raw = raw + _numeric(
+                    frame.iloc[pos],
+                    ExecutionEVTargetSpec().alpha_ev_col,
+                    role="existing alpha EV",
+                )
             output[pos] = raw
         result[f"execution_ev_{mode}"] = output
     return result
@@ -1386,6 +1986,7 @@ def predict_execution_ev_bundle(bundle: ExecutionEVModelBundle, frame: pd.DataFr
 def save_execution_ev_bundle(bundle: ExecutionEVModelBundle, path: str | Path) -> Path:
     """Persist models plus the OOF ledger with joblib; caller owns retention."""
     import joblib
+
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, target, compress=3)
@@ -1394,13 +1995,19 @@ def save_execution_ev_bundle(bundle: ExecutionEVModelBundle, path: str | Path) -
 
 def load_execution_ev_bundle(path: str | Path) -> ExecutionEVModelBundle:
     import joblib
+
     bundle = joblib.load(path)
-    if not isinstance(bundle, ExecutionEVModelBundle) or bundle.schema != EXECUTION_EV_BUNDLE_SCHEMA:
+    if (
+        not isinstance(bundle, ExecutionEVModelBundle)
+        or bundle.schema != EXECUTION_EV_BUNDLE_SCHEMA
+    ):
         raise ValueError("not an execution-EV side-aware LGBM bundle")
     return bundle
 
 
-def write_execution_ev_report(bundle: ExecutionEVModelBundle, output_dir: str | Path) -> dict[str, Path]:
+def write_execution_ev_report(
+    bundle: ExecutionEVModelBundle, output_dir: str | Path
+) -> dict[str, Path]:
     """Write a JSON audit summary and flat diagnostics/OOF tables."""
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -1415,8 +2022,14 @@ def write_execution_ev_report(bundle: ExecutionEVModelBundle, output_dir: str | 
     except (ImportError, ValueError):
         oof_path = root / "execution_ev_oof_predictions.pkl"
         oof.to_pickle(oof_path)
-    payload = {key: value for key, value in bundle.report.items() if key != "diagnostics"}
+    payload = {
+        key: value for key, value in bundle.report.items() if key != "diagnostics"
+    }
     payload["diagnostics_path"] = diagnostic_path.name
     payload["oof_predictions_path"] = oof_path.name
     report_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    return {"report": report_path, "diagnostics": diagnostic_path, "oof_predictions": oof_path}
+    return {
+        "report": report_path,
+        "diagnostics": diagnostic_path,
+        "oof_predictions": oof_path,
+    }

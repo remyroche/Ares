@@ -9,7 +9,9 @@ import pytest
 from extreme_price_movements.data_store import PartitionedOHLCVStore
 from scripts.stage_kraken_futures_exact_source_repair import (
     ExactSourceRepairError,
+    _parse_response_series,
     derive_scope,
+    revalidate_staged_exact_source_patch,
     stage_exact_source_patch,
 )
 
@@ -307,3 +309,98 @@ def test_stage_records_failed_request_and_continues_without_retry(
         len(pd.read_parquet(tmp_path / "partial-patch/accepted_candle_ledger.parquet"))
         == 1
     )
+
+
+def test_response_series_rejects_linked_zero_carry_but_keeps_isolated_no_trade() -> (
+    None
+):
+    start = pd.Timestamp("2026-06-01T00:00:00Z")
+    milliseconds = lambda hours: int((start + pd.Timedelta(hours=hours)).value // 10**6)
+    candles, invalid, duplicates, rejected_carry_timestamps = _parse_response_series(
+        [
+            {
+                "time": milliseconds(0),
+                "open": 10,
+                "high": 10,
+                "low": 10,
+                "close": 10,
+                "volume": 0,
+            },
+            {
+                "time": milliseconds(1),
+                "open": 10,
+                "high": 10,
+                "low": 10,
+                "close": 10,
+                "volume": 0,
+            },
+            # This is an isolated genuine no-trade candle: its open differs
+            # from the preceding carry close, so the repository filter keeps it.
+            {
+                "time": milliseconds(2),
+                "open": 12,
+                "high": 12,
+                "low": 12,
+                "close": 12,
+                "volume": 0,
+            },
+        ],
+        start=start,
+        end=start + pd.Timedelta(hours=3),
+    )
+
+    assert invalid == 0
+    assert duplicates == 0
+    assert rejected_carry_timestamps == {
+        start,
+        start + pd.Timedelta(hours=1),
+    }
+    assert list(candles) == [start + pd.Timedelta(hours=2)]
+
+
+def test_offline_revalidation_is_bound_to_v1_and_does_not_change_it(
+    tmp_path: Path,
+) -> None:
+    scope = _scope(tmp_path)
+    timestamp = int(pd.Timestamp("2026-06-01T01:00:00Z").value // 10**6)
+    source_dir = tmp_path / "v1"
+    stage_exact_source_patch(
+        scope=scope,
+        output_dir=source_dir,
+        session=_Session(
+            [
+                {
+                    "candles": [
+                        {
+                            "time": timestamp,
+                            "open": "10",
+                            "high": "11",
+                            "low": "9",
+                            "close": "10.5",
+                            "volume": "2",
+                        }
+                    ]
+                }
+            ]
+        ),  # type: ignore[arg-type]
+    )
+    source_bytes = {
+        path.relative_to(source_dir): path.read_bytes()
+        for path in source_dir.rglob("*")
+        if path.is_file()
+    }
+
+    result = revalidate_staged_exact_source_patch(
+        source_dir=source_dir,
+        output_dir=tmp_path / "revalidated",
+    )
+
+    assert result["network_calls"] == 0
+    assert result["source_patch"]["scope_sha256"] == scope["scope_sha256"]
+    assert result["accepted_candle_ledger"]["rows"] == 1
+    assert result["rejected_requested_zero_volume_carry_candles"] == 0
+    assert source_bytes == {
+        path.relative_to(source_dir): path.read_bytes()
+        for path in source_dir.rglob("*")
+        if path.is_file()
+    }

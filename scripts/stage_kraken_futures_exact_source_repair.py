@@ -3,9 +3,11 @@
 
 This is deliberately *not* a general backfill runner.  Its default mode is
 read-only: it derives the exact candidate-driven scope and prints it.  The
-only write mode (``--stage``) makes one HTTP request per scoped symbol, writes
-the unmodified endpoint response and an accepted-candle ledger to a new patch
-artifact, and never touches the baseline raw store.
+only networked write mode (``--stage``) makes one HTTP request per scoped
+symbol, writes the unmodified endpoint response and an accepted-candle ledger
+to a new patch artifact, and never touches the baseline raw store. An offline
+revalidation mode can derive a stricter immutable patch from an existing stage
+without making endpoint calls.
 
 The caller must apply the staged patch to a separately cloned raw challenger
 and rematerialize a separately cloned feature/context challenger.  No fill,
@@ -34,13 +36,17 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from extreme_price_movements.data_store import PartitionedOHLCVStore  # noqa: E402
+from extreme_price_movements.data_store import (  # noqa: E402
+    PartitionedOHLCVStore,
+    _drop_suspicious_zero_volume_carry_rows,
+)
 from extreme_price_movements.training_resource_guard import (  # noqa: E402
     TrainingResourceGuard,
     TrainingResourceLimits,
 )
 
 SCHEMA = "kraken_futures_exact_source_repair_patch_v1"
+DERIVED_SCHEMA = "kraken_futures_exact_source_repair_revalidated_patch_v1"
 SCOPE_SCHEMA = "kraken_futures_exact_source_repair_scope_v1"
 DEFAULT_CONTEXT = ROOT / (
     "data_perp/artifacts/"
@@ -301,6 +307,45 @@ def _parse_exact_candle(
     return {"ts": timestamp, **values}
 
 
+def _parse_response_series(
+    candles: list[Any], *, start: pd.Timestamp, end: pd.Timestamp
+) -> tuple[dict[pd.Timestamp, dict[str, Any]], int, int, set[pd.Timestamp]]:
+    """Validate a full response and remove linked zero-volume carry runs.
+
+    The series-level filter is intentionally applied *before* intersecting the
+    local missing-hour set: a carry candle is only detectable in context of its
+    adjacent endpoint candles. This uses the same repository helper that
+    protects hourly Kraken ingestion.
+    """
+
+    parsed_by_timestamp: dict[pd.Timestamp, dict[str, Any]] = {}
+    rejected_invalid = 0
+    rejected_duplicates = 0
+    for raw_candle in candles:
+        if not isinstance(raw_candle, Mapping):
+            rejected_invalid += 1
+            continue
+        parsed = _parse_exact_candle(raw_candle, start=start, end=end)
+        if parsed is None:
+            rejected_invalid += 1
+            continue
+        timestamp = parsed["ts"]
+        if timestamp in parsed_by_timestamp:
+            rejected_duplicates += 1
+            continue
+        parsed_by_timestamp[timestamp] = parsed
+    if not parsed_by_timestamp:
+        return {}, rejected_invalid, rejected_duplicates, set()
+    frame = pd.DataFrame(parsed_by_timestamp.values()).set_index("ts").sort_index()
+    filtered = _drop_suspicious_zero_volume_carry_rows(frame)
+    rejected_carry_timestamps = set(frame.index.difference(filtered.index))
+    accepted = {
+        pd.Timestamp(timestamp): {"ts": pd.Timestamp(timestamp), **row.to_dict()}
+        for timestamp, row in filtered.iterrows()
+    }
+    return accepted, rejected_invalid, rejected_duplicates, rejected_carry_timestamps
+
+
 def _request_exact_chart(
     session: requests.Session,
     *,
@@ -488,22 +533,12 @@ def stage_exact_source_patch(
                     }
                 )
                 continue
-            candles: dict[pd.Timestamp, dict[str, Any]] = {}
-            rejected_duplicate_timestamps = 0
-            rejected_invalid_candles = 0
-            for raw_candle in payload["candles"]:
-                if not isinstance(raw_candle, Mapping):
-                    rejected_invalid_candles += 1
-                    continue
-                parsed = _parse_exact_candle(raw_candle, start=start, end=end)
-                if parsed is None:
-                    rejected_invalid_candles += 1
-                    continue
-                timestamp = parsed["ts"]
-                if timestamp in candles:
-                    rejected_duplicate_timestamps += 1
-                    continue
-                candles[timestamp] = parsed
+            (
+                candles,
+                rejected_invalid_candles,
+                rejected_duplicate_timestamps,
+                rejected_carry_timestamps,
+            ) = _parse_response_series(payload["candles"], start=start, end=end)
             accepted_for_symbol = 0
             for timestamp in sorted(requested.intersection(candles)):
                 candle = candles[timestamp]
@@ -535,6 +570,12 @@ def stage_exact_source_patch(
                     "valid_unique_candles": len(candles),
                     "rejected_invalid_candles": rejected_invalid_candles,
                     "rejected_duplicate_timestamps": rejected_duplicate_timestamps,
+                    "rejected_suspicious_zero_volume_carry_rows": len(
+                        rejected_carry_timestamps
+                    ),
+                    "rejected_requested_zero_volume_carry_candles": len(
+                        requested.intersection(rejected_carry_timestamps)
+                    ),
                     "response_file": str(Path("endpoint_responses") / filename),
                     **record,
                     "status": "inspected_response",
@@ -605,6 +646,295 @@ def stage_exact_source_patch(
         raise
 
 
+def _verified_scope_hash(scope: Mapping[str, Any]) -> str:
+    identity = {
+        key: value
+        for key, value in scope.items()
+        if key not in {"created_at_utc", "scope_sha256"}
+    }
+    return _sha256_bytes(_canonical_json(identity).encode("utf-8"))
+
+
+def _source_artifact_path(source_dir: Path, relative_path: Any) -> Path:
+    candidate = (source_dir / str(relative_path)).resolve()
+    if source_dir.resolve() not in candidate.parents:
+        raise ExactSourceRepairError(
+            "source artifact response path escapes its patch root"
+        )
+    if not candidate.is_file():
+        raise ExactSourceRepairError(
+            f"source artifact response is missing: {candidate}"
+        )
+    return candidate
+
+
+def revalidate_staged_exact_source_patch(
+    *, source_dir: Path, output_dir: Path
+) -> dict[str, Any]:
+    """Derive an offline carry-filtered patch from one immutable v1 stage.
+
+    This never calls an endpoint and never changes ``source_dir``. The output
+    contains only the newly accepted ledger plus cryptographic bindings to the
+    source scope, manifest, ledger, response manifest, and response files.
+    """
+
+    source_dir = Path(source_dir).resolve()
+    output_dir = Path(output_dir)
+    if not source_dir.is_dir():
+        raise ExactSourceRepairError(f"source staged patch is missing: {source_dir}")
+    if output_dir.exists():
+        raise FileExistsError(
+            f"refusing to overwrite revalidated patch artifact: {output_dir}"
+        )
+    scope_path = _source_artifact_path(source_dir, "scope.json")
+    manifest_path = _source_artifact_path(source_dir, "manifest.json")
+    source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    scope = json.loads(scope_path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(source_manifest, Mapping)
+        or source_manifest.get("schema") != SCHEMA
+    ):
+        raise ExactSourceRepairError(
+            "source patch is not a supported v1 staged artifact"
+        )
+    if not isinstance(scope, Mapping) or scope.get("schema") != SCOPE_SCHEMA:
+        raise ExactSourceRepairError("source patch scope has an unsupported schema")
+    scope_hash = str(scope.get("scope_sha256") or "")
+    if not scope_hash or scope_hash != _verified_scope_hash(scope):
+        raise ExactSourceRepairError("source patch scope hash does not verify")
+    if str(source_manifest.get("scope", {}).get("sha256") or "") != scope_hash:
+        raise ExactSourceRepairError("source patch manifest is not bound to its scope")
+
+    source_ledger_path = _source_artifact_path(
+        source_dir, "accepted_candle_ledger.parquet"
+    )
+    source_ledger = pd.read_parquet(source_ledger_path)
+    source_ledger_meta = source_manifest.get("accepted_candle_ledger", {})
+    if _sha256_file(source_ledger_path) != str(
+        source_ledger_meta.get("sha256") or ""
+    ) or int(source_ledger_meta.get("rows", -1)) != len(source_ledger):
+        raise ExactSourceRepairError(
+            "source patch ledger hash or row count does not verify"
+        )
+
+    response_manifest_path = _source_artifact_path(
+        source_dir, "endpoint_response_manifest.json"
+    )
+    response_manifest = json.loads(response_manifest_path.read_text(encoding="utf-8"))
+    response_meta = source_manifest.get("endpoint_responses", {})
+    if _sha256_file(response_manifest_path) != str(
+        response_meta.get("manifest_sha256") or ""
+    ):
+        raise ExactSourceRepairError("source response manifest hash does not verify")
+    records = (
+        response_manifest.get("responses")
+        if isinstance(response_manifest, Mapping)
+        else None
+    )
+    symbols = scope.get("symbols")
+    if not isinstance(records, list) or not isinstance(symbols, list):
+        raise ExactSourceRepairError("source scope or response manifest is malformed")
+    if int(response_meta.get("records", -1)) != len(records) or len(records) != len(
+        symbols
+    ):
+        raise ExactSourceRepairError(
+            "source response manifest does not cover the full scope"
+        )
+    records_by_ordinal: dict[int, Mapping[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise ExactSourceRepairError(
+                "source response manifest has a malformed record"
+            )
+        ordinal = int(record.get("ordinal", 0))
+        if ordinal < 1 or ordinal in records_by_ordinal:
+            raise ExactSourceRepairError(
+                "source response manifest has duplicate/invalid ordinal"
+            )
+        records_by_ordinal[ordinal] = record
+
+    window = scope.get("window", {})
+    start = _utc_hour(window.get("start_ts"))
+    end = _utc_hour(window.get("end_ts_exclusive"))
+    if end <= start:
+        raise ExactSourceRepairError("source patch has an invalid scope window")
+    stage = output_dir.parent / f".{output_dir.name}.staging-{uuid.uuid4().hex}"
+    stage.mkdir(parents=True, exist_ok=False)
+    accepted_rows: list[dict[str, Any]] = []
+    revalidation_records: list[dict[str, Any]] = []
+    rejected_carry_total = 0
+    rejected_requested_carry_total = 0
+    try:
+        for ordinal, item in enumerate(symbols, start=1):
+            if not isinstance(item, Mapping):
+                raise ExactSourceRepairError(
+                    "source scope has a malformed symbol entry"
+                )
+            record = records_by_ordinal.get(ordinal)
+            symbol = str(item.get("symbol") or "")
+            product_id = str(item.get("product_id") or "")
+            requested = {
+                _utc_hour(value) for value in item.get("missing_source_hours", [])
+            }
+            if (
+                record is None
+                or str(record.get("symbol") or "") != symbol
+                or str(record.get("product_id") or "") != product_id
+            ):
+                raise ExactSourceRepairError(
+                    "source response record is not bound to scope symbol"
+                )
+            if not requested:
+                revalidation_records.append(
+                    {
+                        "ordinal": ordinal,
+                        "symbol": symbol,
+                        "product_id": product_id,
+                        "status": "revalidated_skipped_complete_local_window",
+                        "accepted_candles": 0,
+                        "rejected_suspicious_zero_volume_carry_rows": 0,
+                    }
+                )
+                continue
+            response_file = record.get("response_file")
+            response_hash = str(record.get("response_sha256") or "")
+            if not response_file or not response_hash:
+                revalidation_records.append(
+                    {
+                        "ordinal": ordinal,
+                        "symbol": symbol,
+                        "product_id": product_id,
+                        "status": "revalidated_no_source_response",
+                        "accepted_candles": 0,
+                        "rejected_suspicious_zero_volume_carry_rows": 0,
+                    }
+                )
+                continue
+            response_path = _source_artifact_path(source_dir, response_file)
+            raw = response_path.read_bytes()
+            if _sha256_bytes(raw) != response_hash:
+                raise ExactSourceRepairError(
+                    "source endpoint response hash does not verify"
+                )
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ExactSourceRepairError(
+                    "source endpoint response is not valid JSON"
+                ) from exc
+            if not isinstance(payload, Mapping) or not isinstance(
+                payload.get("candles"), list
+            ):
+                raise ExactSourceRepairError(
+                    "source endpoint response has no candle list"
+                )
+            (
+                candles,
+                rejected_invalid,
+                rejected_duplicates,
+                rejected_carry_timestamps,
+            ) = _parse_response_series(payload["candles"], start=start, end=end)
+            rejected_carry_total += len(rejected_carry_timestamps)
+            rejected_requested_carry = len(
+                requested.intersection(rejected_carry_timestamps)
+            )
+            rejected_requested_carry_total += rejected_requested_carry
+            accepted_for_symbol = 0
+            for timestamp in sorted(requested.intersection(candles)):
+                candle = candles[timestamp]
+                accepted_rows.append(
+                    {
+                        "symbol": symbol,
+                        "product_id": product_id,
+                        "ts": timestamp,
+                        **{
+                            column: np.float32(candle[column])
+                            for column in OHLCV_COLUMNS
+                        },
+                        "source_endpoint_response_sha256": response_hash,
+                        "source_endpoint_response_file": str(response_file),
+                    }
+                )
+                accepted_for_symbol += 1
+            revalidation_records.append(
+                {
+                    "ordinal": ordinal,
+                    "symbol": symbol,
+                    "product_id": product_id,
+                    "status": "revalidated_response_series",
+                    "source_response_sha256": response_hash,
+                    "source_response_file": str(response_file),
+                    "requested_missing_hours": len(requested),
+                    "accepted_candles": accepted_for_symbol,
+                    "rejected_invalid_candles": rejected_invalid,
+                    "rejected_duplicate_timestamps": rejected_duplicates,
+                    "rejected_suspicious_zero_volume_carry_rows": len(
+                        rejected_carry_timestamps
+                    ),
+                    "rejected_requested_zero_volume_carry_candles": rejected_requested_carry,
+                }
+            )
+        ledger_columns = [
+            "symbol",
+            "product_id",
+            "ts",
+            *OHLCV_COLUMNS,
+            "source_endpoint_response_sha256",
+            "source_endpoint_response_file",
+        ]
+        ledger = pd.DataFrame(accepted_rows, columns=ledger_columns)
+        if not ledger.empty:
+            ledger["ts"] = pd.to_datetime(ledger["ts"], utc=True, errors="raise")
+            if ledger.duplicated(["symbol", "ts"]).any():
+                raise ExactSourceRepairError(
+                    "revalidated ledger contains duplicate source candles"
+                )
+            ledger = ledger.sort_values(["symbol", "ts"], kind="mergesort")
+        ledger_path = stage / "accepted_candle_ledger.parquet"
+        ledger.to_parquet(
+            ledger_path, index=False, compression="zstd", compression_level=5
+        )
+        audit_path = stage / "revalidation_response_audit.json"
+        _write_json(audit_path, {"responses": revalidation_records})
+        result = {
+            "schema": DERIVED_SCHEMA,
+            "status": "REVALIDATED_EXACT_SOURCE_PATCH_NOT_APPLIED",
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "baseline_raw_store_mutated": False,
+            "network_calls": 0,
+            "synthetic_fill": False,
+            "source_patch": {
+                "path": str(source_dir),
+                "manifest_sha256": _sha256_file(manifest_path),
+                "scope_sha256": scope_hash,
+                "source_ledger_sha256": _sha256_file(source_ledger_path),
+                "response_manifest_sha256": _sha256_file(response_manifest_path),
+            },
+            "zero_volume_carry_filter": "data_store._drop_suspicious_zero_volume_carry_rows",
+            "rejected_suspicious_zero_volume_carry_rows": rejected_carry_total,
+            "rejected_requested_zero_volume_carry_candles": rejected_requested_carry_total,
+            "accepted_candle_ledger": {
+                "path": str(output_dir / ledger_path.name),
+                "sha256": _sha256_file(ledger_path),
+                "rows": int(len(ledger)),
+            },
+            "response_audit": {
+                "path": str(output_dir / audit_path.name),
+                "sha256": _sha256_file(audit_path),
+                "records": len(revalidation_records),
+            },
+            "next_step": (
+                "review this derived ledger only; do not apply either v1 or this "
+                "derived patch to the baseline raw store"
+            ),
+        }
+        _write_json(stage / "manifest.json", result)
+        os.replace(stage, output_dir)
+        return result
+    except BaseException:
+        raise
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context", type=Path, default=DEFAULT_CONTEXT)
@@ -626,12 +956,38 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="perform the one-pass endpoint audit and write a patch artifact",
     )
+    parser.add_argument(
+        "--revalidate-source-dir",
+        type=Path,
+        default=None,
+        help="offline: derive a carry-filtered patch from an existing v1 stage",
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    if args.revalidate_source_dir is not None:
+        if args.stage:
+            raise ExactSourceRepairError(
+                "--stage cannot be combined with --revalidate-source-dir"
+            )
+        if args.output_dir is None:
+            raise ExactSourceRepairError(
+                "--revalidate-source-dir requires an explicit --output-dir"
+            )
+        print(
+            json.dumps(
+                revalidate_staged_exact_source_patch(
+                    source_dir=args.revalidate_source_dir,
+                    output_dir=args.output_dir,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     scope = derive_scope(
         context_path=args.context,
         raw_root=args.raw_root,

@@ -167,6 +167,29 @@ def test_chronological_splits_purge_overlapping_12h_outcomes_and_keep_timestamp_
         assert set(split.train_indices).isdisjoint(split.validation_indices)
 
 
+def test_chronological_splits_enforce_minimum_training_rows_per_side() -> None:
+    timestamps = pd.date_range("2026-01-01", periods=24, freq="h", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "__ts__": timestamps,
+            "label_end": timestamps,
+            "side_name": ["long"] * 16 + ["short"] * 8,
+        }
+    )
+    splits = chronological_purged_splits(
+        frame,
+        n_splits=1,
+        min_train_size=4,
+        min_train_group_col="side_name",
+        required_train_groups=("long", "short"),
+        label_end_time_col="label_end",
+        embargo_hours=0.0,
+    )
+    assert len(splits) == 1
+    train = frame.iloc[splits[0].train_indices]
+    assert train["side_name"].value_counts().to_dict() == {"long": 16, "short": 4}
+
+
 def test_metrics_report_regression_tail_ev_and_direct_vs_residual_comparison() -> None:
     frame = _frame()
     metrics = execution_ev_metrics(

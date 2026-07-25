@@ -254,6 +254,8 @@ def chronological_purged_splits(
     *,
     n_splits: int,
     min_train_size: int,
+    min_train_group_col: str | None = None,
+    required_train_groups: Sequence[str] | None = None,
     decision_time_col: str = "__ts__",
     label_end_time_col: str | None = None,
     horizon_hours: float = 12.0,
@@ -264,7 +266,9 @@ def chronological_purged_splits(
     Validation blocks are complete decision-timestamp groups.  The embargo is
     an explicit additional gap before each validation block; combined with the
     label-interval purge it prevents the 12-hour policy outcomes near the
-    boundary from training the fold.
+    boundary from training the fold.  When ``min_train_group_col`` is supplied,
+    every required group must independently meet ``min_train_size`` before a
+    validation boundary is eligible.
     """
 
     if n_splits < 1 or min_train_size < 1:
@@ -289,13 +293,39 @@ def chronological_purged_splits(
     # so dense cross-sections are not split apart.
     candidate_blocks: list[int] = []
     label_end_ordered = label_end.iloc[order].astype("int64").to_numpy()
+    ordered_groups: np.ndarray | None = None
+    groups: tuple[str, ...] = ()
+    if min_train_group_col is not None:
+        if min_train_group_col not in frame.columns:
+            raise ValueError(f"min_train_group_col is missing: {min_train_group_col!r}")
+        ordered_groups = frame[min_train_group_col].astype(str).to_numpy()[order]
+        groups = tuple(
+            map(
+                str,
+                required_train_groups
+                if required_train_groups is not None
+                else sorted(pd.unique(ordered_groups)),
+            )
+        )
+        if not groups:
+            raise ValueError("required_train_groups cannot be empty")
+        missing_groups = sorted(set(groups).difference(ordered_groups))
+        if missing_groups:
+            raise ValueError(
+                f"required train groups are absent from the frame: {missing_groups}"
+            )
     for block, validation_start in enumerate(unique_times):
         retained_train = (
             (ordered_decisions < validation_start)
             & (label_end_ordered <= validation_start)
             & (ordered_decisions <= int(validation_start) - int(embargo.value))
         )
-        if int(retained_train.sum()) >= int(min_train_size):
+        group_ready = ordered_groups is None or all(
+            int(np.sum(retained_train & (ordered_groups == group)))
+            >= int(min_train_size)
+            for group in groups
+        )
+        if int(retained_train.sum()) >= int(min_train_size) and group_ready:
             candidate_blocks.append(block)
     eligible = np.asarray(candidate_blocks, dtype=int)
     if len(eligible) < n_splits:
@@ -320,7 +350,12 @@ def chronological_purged_splits(
             & (label_end_ordered <= val_start_ns)
             & (ordered_decisions <= val_start_ns - int(embargo.value))
         ]
-        if len(train) < min_train_size or not len(validation):
+        group_ready = ordered_groups is None or all(
+            int(np.sum(ordered_groups[np.isin(order, train)] == group))
+            >= int(min_train_size)
+            for group in groups
+        )
+        if len(train) < min_train_size or not group_ready or not len(validation):
             continue
         splits.append(
             ChronologicalPurgedSplit(
@@ -1800,6 +1835,8 @@ def train_execution_ev_meta(
         frame,
         n_splits=config.n_splits,
         min_train_size=config.min_train_rows,
+        min_train_group_col=config.side_col,
+        required_train_groups=("long", "short"),
         decision_time_col=config.decision_time_col,
         label_end_time_col=config.label_end_time_col,
         horizon_hours=config.purge_hours,

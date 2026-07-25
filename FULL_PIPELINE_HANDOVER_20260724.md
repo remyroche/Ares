@@ -2634,6 +2634,71 @@ Consequences:
 5. Entry timing remains blocked because there is no positive stable
    execution-EV winner to optimize.
 
+#### 2026-07-25 timing-head discrete-hazard challenger
+
+The first one-head-at-a-time improvement is complete. The incumbent timing
+family already used side-local feature selection, one shared side-local HPO
+study over 2h/4h/8h/12h, strict May-July OOF folds, and post-prediction
+isotonic projection. Its remaining architectural weakness was that four
+independent binary classifiers supplied the CDF.
+
+The challenger replaces them with one pooled at-risk discrete-time hazard
+model per side. Each candidate contributes interval rows only while at risk;
+the model predicts conditional event hazards and constructs
+`CDF(t) = 1 - cumulative_product(1 - hazard)`. Monotonicity is therefore
+structural, not repaired from OOF labels. It reuses the frozen side/horizon
+feature-selection contracts, takes their side-local union, adds deterministic
+interval indicators, runs a new 12-trial pooled-hazard HPO independently per
+side, and retains the same causal May-July outer folds.
+
+Artifacts:
+
+```text
+data_perp/artifacts/path_auxiliary_timing_hazard_challenger_20260725_v1
+data_perp/artifacts/execution_ev_joined_handoff_timing_hazard_20260725_v1
+data_perp/reports/execution_ev_meta_timing_hazard_policy1m_20260725_v1
+data_perp/reports/execution_ev_meta_timing_hazard_policy1m_20260725_v1/post_admission_21d
+```
+
+Coverage is exactly the incumbent's 195,931 timing OOF rows, with 179,520
+valid target rows. Relative to the incumbent on identical target rows, the
+hazard challenger improves 12h log loss by `0.003520`, Brier by `0.001707`,
+AUC by `0.00507`, and ECE by `0.01030`. It weakens log loss at 2h by
+`0.005657`, 4h by `0.003066`, and 8h by `0.002977`; early-horizon
+discrimination therefore remains the next timing-specific modeling problem.
+
+On the identical exact-policy, post-21-day global ranking contract, its
+within-run incremental economics are:
+
+| Timing challenger comparison | Global top-10 net-EV delta |
+|---|---:|
+| Direct add-one versus matching direct alpha-context | `-13.31 bps` |
+| Residual add-one versus matching residual alpha-context | `+17.53 bps` |
+| Residual all-five minus residual all-five without timing | `+0.24 bps` |
+
+This is a material improvement over the incumbent's residual add-one
+`-15.93 bps` and residual interaction `-15.78 bps`. However, it is not a
+production winner: the best complete challenger-run arm remains negative at
+`-0.003798` net EV per globally selected top-10 trade, and every fixed `+0.007`
+admitted subset remains negative.
+
+Absolute cross-run changes in arms that exclude timing also moved materially
+because the full runner retuned every arm. Do not attribute those absolute
+changes to the timing representation without a current-code incumbent control
+rerun. The paired within-run add-one and leave-one comparisons above are the
+valid attribution evidence.
+
+Decision:
+
+1. Retain the discrete-hazard timing model as the research incumbent.
+2. Do not promote it into policy admission or start entry timing.
+3. Improve its early intervals next, preferably using policy-relevant
+   1h/6h/12h/24h hazards while each exit remains active and training-only
+   calibration.
+4. Proceed to the next one-head challenger: MAE competing risks and actual
+   stop/0.5R/1R crossing probabilities, with direct and residual add-one tests
+   before any interaction search.
+
 ### Phase 7: Final Refit and Bundle
 
 Only after an OOF winner is selected:
@@ -2863,9 +2928,11 @@ Per-side directional base: available
 Side-local residual alpha: available; verify it consumes the matching side
 stream
 Path/auxiliary research: five side-local OOF/final bundles complete; individual
-head promotion remains gated by repaired-label execution-EV ablations
+head promotion remains gated; the discrete-hazard timing challenger is retained
+for research but rejected for production economics
 Execution-EV model: exact-policy OOF and causal post-21d global top-10 complete;
-all current arms rejected because every net top-10 and admitted subset is negative
+all current and timing-hazard challenger arms rejected because every best
+net top-10 and admitted subset remains negative
 New policy: not yet optimized
 New live deployment: blocked
 ```

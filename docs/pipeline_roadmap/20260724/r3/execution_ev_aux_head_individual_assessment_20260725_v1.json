@@ -27,15 +27,28 @@
       ]
     },
     "time_to_first_meaningful_mfe": {
-      "current_assessment": "early_cdf_useful_longer_horizons_weaker",
+      "current_assessment": "discrete_hazard_challenger_reduces_harm_but_is_not_production_economic",
       "evidence": {
         "hit_by_2h_auc_long": 0.6343846799552852,
         "hit_by_2h_auc_short": 0.6344473989591515,
         "hit_by_8h_auc_long": 0.5542665396206147,
-        "hit_by_8h_auc_short": 0.6035369112561187
+        "hit_by_8h_auc_short": 0.6035369112561187,
+        "hazard_challenger_oof_rows": 195931,
+        "hazard_challenger_metric_rows": 179520,
+        "hazard_vs_incumbent_logloss_delta_2h": 0.005657,
+        "hazard_vs_incumbent_logloss_delta_4h": 0.003066,
+        "hazard_vs_incumbent_logloss_delta_8h": 0.002977,
+        "hazard_vs_incumbent_logloss_delta_12h": -0.003520,
+        "hazard_direct_add_one_delta_vs_matching_alpha_context_bps": -13.3062,
+        "hazard_residual_add_one_delta_vs_matching_alpha_context_bps": 17.5348,
+        "hazard_residual_all_five_interaction_bps": 0.2354,
+        "best_hazard_run_global_top10_net_ev": -0.003798,
+        "all_hazard_run_fixed_threshold_admitted_means_negative": true
       },
       "improvements": [
-        "replace independent classifiers with a discrete-time hazard or jointly constrained ordinal CDF",
+        "retain the pooled discrete-time hazard as the research timing representation because monotonicity is structural and its residual add-one contribution improved materially",
+        "do not promote it: the best complete exact-policy global top-10 arm and every fixed-threshold admitted subset remain net negative",
+        "re-run an incumbent control under the same current execution-EV trainer revision before attributing absolute cross-run arm changes to the hazard representation",
         "test policy-relevant 1h/6h/12h/24h checkpoints only while the exit remains active",
         "select horizons by paired execution-EV contribution rather than target AUC alone"
       ]

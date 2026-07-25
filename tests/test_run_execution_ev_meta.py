@@ -149,6 +149,7 @@ def _args(
         "side_col": "side_name",
         "archetype_col": "catboost_archetype",
         "label_end_time_col": "execution_label_end_utc",
+        "exit_policy_json": None,
         "max_rows": 128,
         "max_span_days": 10.0,
         "n_splits": 2,
@@ -188,7 +189,7 @@ def test_dry_run_requires_exact_join_and_complete_frozen_inputs(tmp_path: Path) 
 def test_dry_run_uses_provenance_join_keys_when_id_columns_are_omitted(
     tmp_path: Path,
 ) -> None:
-    handoff, provenance, _frame_value = _write_inputs(tmp_path)
+    handoff, provenance, frame_value = _write_inputs(tmp_path)
     paths = runner.run(
         _args(
             handoff,
@@ -205,7 +206,43 @@ def test_dry_run_uses_provenance_join_keys_when_id_columns_are_omitted(
 def test_production_mode_resolves_full_oof_defaults_and_defers_timing(
     tmp_path: Path,
 ) -> None:
-    handoff, provenance, _frame_value = _write_inputs(tmp_path)
+    handoff, provenance, frame_value = _write_inputs(tmp_path)
+    policy = tmp_path / "policy.json"
+    policy.write_text(
+        json.dumps(
+            {
+                "exit_geometry_contract": {
+                    "replay_timeframe": "1m",
+                    "horizon_minutes": 1440,
+                    "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+                    "trailing_activation_curve": "total_mfe",
+                },
+                "strategies": [
+                    {
+                        "selected": True,
+                        "exit_geometry_scope": "side_parent",
+                    },
+                    {
+                        "selected": True,
+                        "exit_geometry_scope": "side_archetype",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    provenance_payload = json.loads(provenance.read_text(encoding="utf-8"))
+    provenance_payload.setdefault("targets", {})["execution_net_ev_12h"] = {
+        "exit_policy_contract": {
+            **runner._expected_exit_policy_contract(policy),
+            "label_schema": "execution_policy_labels_v1",
+        }
+    }
+    provenance.write_text(json.dumps(provenance_payload), encoding="utf-8")
+    frame_value["execution_label_end_utc"] = frame_value[
+        "execution_decision_utc"
+    ] + pd.Timedelta(hours=24)
+    frame_value.to_parquet(handoff, index=False)
     paths = runner.run(
         _args(
             handoff,
@@ -224,6 +261,7 @@ def test_production_mode_resolves_full_oof_defaults_and_defers_timing(
             n_jobs=None,
             disable_timing_risk_head=False,
             enable_timing_risk_head=False,
+            exit_policy_json=policy,
         )
     )
     manifest = json.loads(paths["manifest"].read_text())
@@ -233,6 +271,91 @@ def test_production_mode_resolves_full_oof_defaults_and_defers_timing(
     assert manifest["trainer_config"]["hpo_trials"] == 40
     assert manifest["trainer_config"]["n_estimators"] == 1_500
     assert manifest["timing_risk_head_enabled"] is False
+    assert manifest["exit_policy_audit"]["status"] == "matched"
+
+
+def test_production_rejects_labels_from_wrong_exit_policy(tmp_path: Path) -> None:
+    handoff, provenance, _frame_value = _write_inputs(tmp_path)
+    policy = tmp_path / "policy.json"
+    policy.write_text(
+        json.dumps(
+            {
+                "exit_geometry_contract": {
+                    "replay_timeframe": "1m",
+                    "horizon_minutes": 1440,
+                    "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+                    "trailing_activation_curve": "total_mfe",
+                },
+                "strategies": [
+                    {"selected": True, "exit_geometry_scope": "side_parent"},
+                    {"selected": True, "exit_geometry_scope": "side_archetype"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    payload.setdefault("targets", {})["execution_net_ev_12h"] = {
+        "exit_policy_contract": {
+            **runner._expected_exit_policy_contract(policy),
+            "replay_timeframe": "1h",
+            "horizon_minutes": 720,
+            "geometry_scope": "side_parent_only",
+        }
+    }
+    provenance.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="do not match the required exit policy"):
+        runner.run(
+            _args(
+                handoff,
+                provenance,
+                tmp_path / "wrong-policy",
+                production=True,
+                exit_policy_json=policy,
+                dry_run=True,
+            )
+        )
+
+
+def test_production_rejects_target_horizon_inconsistent_with_exit_policy(
+    tmp_path: Path,
+) -> None:
+    handoff, provenance, _frame_value = _write_inputs(tmp_path)
+    policy = tmp_path / "policy.json"
+    policy.write_text(
+        json.dumps(
+            {
+                "exit_geometry_contract": {
+                    "replay_timeframe": "1m",
+                    "horizon_minutes": 1440,
+                    "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+                    "trailing_activation_curve": "total_mfe",
+                },
+                "strategies": [
+                    {"selected": True, "exit_geometry_scope": "side_parent"},
+                    {"selected": True, "exit_geometry_scope": "side_archetype"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    payload.setdefault("targets", {})["execution_net_ev_12h"] = {
+        "horizon_hours": 12.0,
+        "exit_policy_contract": runner._expected_exit_policy_contract(policy),
+    }
+    provenance.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="target.horizon_hours"):
+        runner.run(
+            _args(
+                handoff,
+                provenance,
+                tmp_path / "wrong-target-horizon",
+                production=True,
+                exit_policy_json=policy,
+                dry_run=True,
+            )
+        )
 
 
 def test_strict_handoff_rejects_late_probability_and_duplicate_identity(
@@ -275,6 +398,7 @@ def test_handoff_checks_identity_after_utc_canonicalization(tmp_path: Path) -> N
             side_col="side_name",
             archetype_col="catboost_archetype",
             label_end_time_col=None,
+            target_horizon_hours=12.0,
             max_span_days=10.0,
         )
 

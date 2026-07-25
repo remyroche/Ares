@@ -2284,6 +2284,15 @@ It preserves the one-hour signal-to-decision delay, 12-hour horizon, frozen
 long/short policy geometry, 30 bp round-trip fee, full per-symbol p90 spread,
 and explicit missing-spread drop policy.
 
+**Superseded for promotion:** the 2026-07-25 exit-policy audit proved that this
+is not the executable policy outcome. It is an hourly 12-hour approximation
+with side-parent geometry. The deployed contract is an exact one-minute,
+1,440-minute replay using observable side x policy-archetype geometry with
+side-parent fallback, the `joint_trailing_total_mfe_raw_bayesian_v1` pathway,
+and the deployed cost/executable-price handling. Keep the existing labels and
+models as diagnostics only. Do not promote, integrate with
+`simple_policy_optimiser`, or start entry-timing training from this target.
+
 Before CatBoost intersection, the fresh labels match `132,644` of the
 `195,931` alpha/auxiliary OOF rows. The remaining rows are mostly candidates
 without a complete CatBoost/path target and therefore cannot enter a paired
@@ -2306,16 +2315,16 @@ and three worker threads; and retains override flags for bounded reruns.
 The timing-risk companion is disabled unless explicitly requested, so timing
 work cannot silently run before the execution-EV winner is stable.
 
-Direct target:
+Direct target after the mandatory exit-label repair:
 
 ```text
-realized 12h causal execution EV
+realized causal net EV from the exact deployed exit-policy replay
 ```
 
-Residual target:
+Residual target after the mandatory exit-label repair:
 
 ```text
-realized 12h causal execution EV
+realized causal net EV from the exact deployed exit-policy replay
 - train-only mapped alpha expected EV
 ```
 
@@ -2348,15 +2357,28 @@ Core evaluation:
 Required input-family ablations:
 
 1. Alpha only.
-2. Alpha plus auxiliary heads.
+2. Alpha plus each auxiliary head independently.
 3. Alpha plus CatBoost.
-4. Alpha plus auxiliary heads plus CatBoost.
-5. Remove timing features.
-6. Remove adverse-path features.
-7. Remove AE/GMM/OOD/support context.
-8. Direct versus residual target.
+4. Alpha plus all five auxiliary heads.
+5. Alpha plus opportunity auxiliaries: peak, timing, and favorable slope.
+6. Alpha plus adverse-risk auxiliaries: MAE-before-MFE and adverse-turn.
+7. Leave each auxiliary head out of the all-five bundle, one at a time.
+8. Alpha plus auxiliary heads plus CatBoost.
+9. Remove timing features.
+10. Remove adverse-path features.
+11. Remove AE/GMM/OOD/support context.
+12. Direct versus residual target.
 
 All comparisons must use identical rows and costs.
+
+The implementation now treats heads rather than raw feature families as the
+unit of auxiliary attribution. This matters because the timing head emits both
+a censored scalar and 2h/4h/8h/12h CDF probabilities. Research-only auxiliary
+outputs may enter only arms prefixed `research__`; they remain excluded from
+the promotable `all_features` arm. Add-one-head arms force the tested head to
+remain present after the frozen side-local selector. All diagnostic arms reuse
+the matching all-feature fold/side tuned LightGBM parameters instead of
+silently falling back to defaults.
 
 Training contract:
 
@@ -2380,6 +2402,63 @@ Promotion gate:
 - Long and short are both reported.
 - Gains are not isolated to one month/archetype.
 - Final model emits a comparable expected-EV unit.
+
+#### 2026-07-25 corrected execution-EV run and exit-policy audit
+
+The per-side minimum-row defect is fixed. The corrected run at
+`data_perp/reports/execution_ev_meta_packb31_8_20260725_v2_side_min5000`
+contains `116,244` OOF predictions. Every direct and residual outer fold now
+has at least 5,000 training rows independently for long and short; all 12
+fold/side studies completed 40-trial HPO and every fold/side calibration map
+was fitted.
+
+On the same OOF rows, the best diagnostic arm was direct `alpha_context`:
+top-10 mean net EV `0.0018965` versus `0.0013651` for the existing alpha.
+That apparent gain is not stable enough to promote even on its own target:
+long contributes only `0.0001304`, the worst week is `-0.0048698`, and partial
+July is `-0.0034329`. Adding the currently eligible auxiliary bundle produces
+`-0.0020741`; adding CatBoost produces `-0.0021575`.
+
+More importantly, the target itself fails the executable exit-policy contract:
+
+| Contract | Current diagnostic labels | Required deployed policy |
+|---|---|---|
+| Replay resolution | 1h | exact 1m |
+| Maximum horizon | 720 minutes | 1,440 minutes |
+| Geometry | side-parent only | side x observable policy archetype, with side-parent fallback |
+| Simulator | reduced `simulate_execution_ev_12h` | canonical `simple_policy_optimiser.simulate_and_score` |
+| Costs | 30 bp fee + full p90 spread | deployed one-percent round-trip fee and executable-price spread handling |
+
+Therefore the corrected run is **non-promotable diagnostic evidence**. Its
+negative auxiliary/CatBoost aggregate tails must not be used to reject those
+branches permanently; they must be rerun against repaired labels. Production
+execution-EV runs now require `--exit-policy-json`, and the joined target must
+carry an exact `exit_policy_contract` matching replay resolution, horizon,
+geometry scope, pathway, simulator, trailing curve, and policy SHA-256.
+
+Required next sequence:
+
+1. Preserve the existing immutable one-minute store and target-backfill only
+   the missing candidate windows needed for the exact replay. The current
+   joined population has `99,518 / 127,777` complete 1m x 1,440-minute paths
+   (`77.88%`): long `79.48%`, short `76.40%`; May `69.35%`, June `86.72%`,
+   and partial July `84.80%`. The `28,259` missing execution paths warrant a
+   candidate-window backfill attempt. This is separate from the earlier
+   representation gap and does not authorize broad representation backfill,
+   synthetic candles, or manufactured continuity.
+2. Materialize exact deployed-policy labels with one-minute paths and a
+   1,440-minute label-resolution horizon.
+3. Use the observable policy archetype where available and record every
+   side-parent fallback; report coverage by side, month, archetype, and
+   representation-availability slice.
+4. Apply deployed fees and entry/exit spread handling exactly once.
+5. Rebuild the strict joined handoff with the signed exit-policy contract.
+6. Rerun direct/residual OOF using the expanded five-head add-one, grouped,
+   all-five, and leave-one-head-out auxiliary matrix.
+7. Reapply aggregate, side, month, week, and worst-period promotion gates.
+
+The authoritative audit is
+`docs/pipeline_roadmap/20260724/r3/execution_ev_exit_policy_audit_20260725_v1.json`.
 
 ### Phase 7: Final Refit and Bundle
 
@@ -2610,7 +2689,7 @@ Per-side directional base: available
 Side-local residual alpha: available; verify it consumes the matching side
 stream
 Path/auxiliary research: partially materialized
-Execution-EV model: not yet trained
+Execution-EV model: trained as diagnostic; promotion blocked by wrong exit-policy target
 New policy: not yet optimized
 New live deployment: blocked
 ```
@@ -2653,9 +2732,9 @@ The current implementation audit is:
 |---|---:|---|
 | Directional/alpha base | Historical model is per-side, but its FS/HPO/AE provenance is post-cutoff/pooled | Preserve as comparator; rebuild pre-March side-local AE, FS, HPO, models, and OOF |
 | Residual alpha experts | Yes | Refit each expert on its matching side-local base OOF stream |
-| CatBoost archetypes | No | Replace with independent long/short feature selection, geometry sweep, model HPO, and class-balance mini-HPO |
-| Five auxiliary heads | Partial | Move global pre-screening inside each side; require ten final models and ten OOF streams |
-| Execution-EV head | Partial | Add per-side FS and replace pooled calibration with independent long/short maps |
+| CatBoost archetypes | Yes, OOF/final models are side-local; economic admission blocked | Retain as context/risk inputs and re-test incremental value against repaired exit labels |
+| Five auxiliary heads | Yes for side-local OOF/final research artifacts; only peak mean and timing CDF are currently promotion-eligible inputs | Run the expanded five-head research ablation matrix against repaired exit labels; retain economic gates per head |
+| Execution-EV head | Side-local FS/HPO/calibration implemented; current fitted result is diagnostic only | Rematerialize the exact deployed-policy target, rerun OOF, and require the signed exit-policy contract |
 | Entry-timing head | Partial | Move FS, model HPO, action HPO and isotonic calibration inside each side |
 | Admission, geometry, sizing | Side-aware | Keep independent side and side x archetype estimates |
 | Portfolio manager | Global | Join the calibrated long and short streams here only |

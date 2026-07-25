@@ -1,0 +1,100 @@
+{
+  "schema": "execution_ev_exit_policy_audit_v1",
+  "status": "NON_PROMOTABLE_WRONG_EXIT_POLICY_TARGET",
+  "audit_date": "2026-07-25",
+  "label_manifest": {
+    "path": "data_perp/reports/execution_ev_12h_labels_packb31_8_p90spread_fee30bps_20260725_v1/manifest.json",
+    "sha256": "f9c34b1e7ea9711dd3cf50ff744313326d45e0d8943833920027ae34cc5eab1e",
+    "replay_timeframe": "1h",
+    "horizon_minutes": 720,
+    "geometry_scope": "side_parent_only",
+    "simulator": "simulate_execution_ev_12h",
+    "fee_round_trip_return": 0.003,
+    "spread_contract": "full_per_symbol_p90_spread_deducted_once"
+  },
+  "required_policy": {
+    "path": "data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/production_staging/best_policy_params.json",
+    "sha256": "aed39b3474f06a2134ed814bccaf41e0a3fd54bd8194108dfa251f6abcdce301",
+    "replay_timeframe": "1m",
+    "horizon_minutes": 1440,
+    "geometry_scope": "side_x_policy_archetype_with_side_parent_fallback",
+    "policy_pathway_id": "joint_trailing_total_mfe_raw_bayesian_v1",
+    "trailing_activation_curve": "total_mfe",
+    "simulator": "extreme_price_movements.simple_policy_optimiser.simulate_and_score",
+    "round_trip_cost_return": 0.01
+  },
+  "mismatches": [
+    "The label replay uses hourly candles instead of the executable one-minute engine.",
+    "The label horizon is 12 hours instead of the executable 1,440-minute horizon.",
+    "The label geometry is side-parent only instead of side x observable policy archetype with side-parent fallback.",
+    "The label simulator is a reduced approximation rather than simple_policy_optimiser.simulate_and_score.",
+    "The label cost contract is 30 bp fee plus full p90 spread rather than the deployed policy's one-percent round-trip fee with executable-price spread handling."
+  ],
+  "corrected_oof_run": {
+    "path": "data_perp/reports/execution_ev_meta_packb31_8_20260725_v2_side_min5000",
+    "oof_sha256": "df2ca7204e666dc18796b295a8f57627377eaf2125d803ad7b4b56e9e7729c7b",
+    "report_sha256": "2630f09214160ff904f534ef8a87ecdb6626f6742460122311a5a2e9ed910ed5",
+    "oof_rows": 116244,
+    "fold_side_minimum_satisfied": true,
+    "all_direct_and_residual_fold_side_hpo_status": "tuned_40_trials",
+    "all_fold_side_calibration_status": "fit",
+    "diagnostic_only": true
+  },
+  "exact_1m_1440m_path_coverage": {
+    "population": "execution_ev_joined_handoff_20260725_v1",
+    "rows": 127777,
+    "covered_rows": 99518,
+    "missing_rows": 28259,
+    "coverage": 0.7788412625120327,
+    "symbols": 120,
+    "by_side": {
+      "long": {
+        "rows": 61618,
+        "covered_rows": 48973,
+        "coverage": 0.7947839916907398
+      },
+      "short": {
+        "rows": 66159,
+        "covered_rows": 50545,
+        "coverage": 0.763992805211687
+      }
+    },
+    "by_month": {
+      "2026-05": {
+        "rows": 63303,
+        "covered_rows": 43898,
+        "coverage": 0.6934584458872407
+      },
+      "2026-06": {
+        "rows": 49244,
+        "covered_rows": 42705,
+        "coverage": 0.8672122492080253
+      },
+      "2026-07_partial": {
+        "rows": 15230,
+        "covered_rows": 12915,
+        "coverage": 0.8479973736047275
+      }
+    },
+    "backfill_decision": "TARGETED_EVENT_WINDOW_BACKFILL_RECOMMENDED",
+    "backfill_scope": "Only missing candidate-specific one-minute windows needed to complete the deployed 1,440-minute replay; do not perform a broad representation-data backfill and do not synthesize candles."
+  },
+  "diagnostic_metrics_on_wrong_target": {
+    "existing_alpha_same_rows_top10_mean_net_ev": 0.0013651035604069807,
+    "direct_alpha_context_top10_mean_net_ev": 0.0018964965781414253,
+    "direct_alpha_context_worst_week_top10_mean_net_ev": -0.0048698069206773486,
+    "direct_alpha_context_long_top10_mean_net_ev": 0.0001304101426172871,
+    "direct_alpha_context_short_top10_mean_net_ev": 0.001602592200954265,
+    "direct_alpha_context_may_top10_mean_net_ev": 0.0005548771018885621,
+    "direct_alpha_context_june_top10_mean_net_ev": 0.0034769289376976775,
+    "direct_alpha_context_partial_july_top10_mean_net_ev": -0.0034329440034773966,
+    "direct_alpha_context_plus_aux_top10_mean_net_ev": -0.0020741280549663637,
+    "direct_alpha_context_plus_catboost_top10_mean_net_ev": -0.002157530234543521
+  },
+  "decision": {
+    "promote_execution_ev": false,
+    "integrate_simple_policy_optimiser": false,
+    "start_entry_timing_training": false,
+    "required_next_step": "Target-backfill the 28,259 missing candidate-specific one-minute execution windows where the exchange can provide exact candles; rematerialize labels with the exact deployed one-minute, 1,440-minute, side/archetype exit contract and identical deployed cost handling; rebuild the joined handoff and rerun OOF head-level ablations."
+  }
+}

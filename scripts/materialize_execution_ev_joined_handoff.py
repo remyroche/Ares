@@ -1253,6 +1253,44 @@ def _provenance(
             "model_input": True,
             **catboost_class_contract,
         }
+    execution_source = next(
+        source for source in sources if source.spec.name == "execution_labels"
+    )
+    signed_label_manifest = execution_source.metadata["signed_prediction_role_manifest"]
+    execution_manifest_path = Path(signed_label_manifest["path"])
+    execution_manifest = json.loads(execution_manifest_path.read_text(encoding="utf-8"))
+    declared_exit_contract = dict(execution_manifest.get("exit_policy_contract", {}))
+    source_policy = execution_manifest.get("policy", {})
+    horizon_minutes = declared_exit_contract.get("horizon_minutes")
+    if horizon_minutes is None:
+        horizon_hours = execution_manifest.get("timing", {}).get("horizon_hours")
+        horizon_minutes = (
+            float(horizon_hours) * 60.0 if horizon_hours is not None else None
+        )
+    exit_policy_contract = {
+        **declared_exit_contract,
+        "label_schema": execution_manifest.get("schema"),
+        "replay_timeframe": declared_exit_contract.get(
+            "replay_timeframe",
+            execution_manifest.get("ohlcv", {}).get("timeframe"),
+        ),
+        "horizon_minutes": horizon_minutes,
+        "geometry_scope": declared_exit_contract.get(
+            "geometry_scope",
+            "side_parent_only"
+            if source_policy.get("long_geometry")
+            and source_policy.get("short_geometry")
+            else None,
+        ),
+        "policy_pathway_id": declared_exit_contract.get("policy_pathway_id"),
+        "simulator": declared_exit_contract.get(
+            "simulator", "simulate_execution_ev_12h"
+        ),
+        "source_policy_manifest": source_policy.get("manifest"),
+        "source_policy_manifest_sha256": source_policy.get("sha256"),
+        "source_label_manifest": str(execution_manifest_path),
+        "source_label_manifest_sha256": signed_label_manifest["sha256"],
+    }
     return {
         "schema": HANDOFF_SCHEMA,
         "handoff": {
@@ -1286,8 +1324,13 @@ def _provenance(
                 "decision_time_col": "execution_decision_utc",
                 "label_end_time_col": "execution_label_end_utc",
                 "signal_to_decision_hours": 1.0,
-                "horizon_hours": 12.0,
+                "horizon_hours": (
+                    float(horizon_minutes) / 60.0
+                    if horizon_minutes is not None
+                    else None
+                ),
                 "role": "supervised_target_only_not_feature",
+                "exit_policy_contract": exit_policy_contract,
             },
         },
         "features": features,

@@ -44,6 +44,21 @@ EXECUTION_EV_FEATURE_FAMILIES: tuple[str, ...] = (
     "alpha_score",
     "base_archetype_labels",
 )
+
+# One auxiliary head can emit more than one usable prediction family.  In
+# particular, the censored time-to-MFE head emits both a scalar expectation
+# and horizon-CDF probabilities.  Ablations must therefore operate on heads,
+# not only on individual feature families.
+EXECUTION_EV_AUXILIARY_HEAD_FAMILIES: Mapping[str, tuple[str, ...]] = {
+    "peak_mfe_12h_atr": ("peak_mfe",),
+    "time_to_first_meaningful_mfe": (
+        "time_to_mfe",
+        "time_to_meaningful_mfe_cdf_probability",
+    ),
+    "mae_before_meaningful_mfe_atr": ("mae_before_meaningful_mfe",),
+    "bars_before_price_stops_decreasing": ("adverse_turn_timing",),
+    "future_slope_atr_per_hour": ("favorable_path_slope",),
+}
 PREDICTED_PATH_ARCHETYPE_FAMILY = "predicted_path_archetype"
 BASE_ARCHETYPE_FEATURE_PREFIX = "base_archetype_label__"
 
@@ -491,8 +506,15 @@ def execution_ev_ablation_plan(
     provenance: Mapping[str, FeatureProvenance],
     *,
     include_leave_one_family_out: bool = True,
+    include_research_only_auxiliary_heads: bool = False,
 ) -> dict[str, tuple[str, ...]]:
-    """Create a reproducible baseline/full/leave-one-family-out input matrix."""
+    """Create a reproducible baseline/full and head-level ablation matrix.
+
+    ``all_features`` remains restricted to promotion-eligible ``model_input``
+    fields.  When requested, research-only auxiliary predictions are admitted
+    only to explicitly named ``research__`` diagnostic arms; they never enter
+    the promotable all-feature model.
+    """
 
     by_family = {
         family: tuple(
@@ -544,6 +566,104 @@ def execution_ev_ablation_plan(
         ),
         "all_features": full,
     }
+
+    # Add-one-head tests answer the economically relevant question: does this
+    # head improve the frozen alpha/context baseline?  Family-only leave-one-out
+    # tests cannot answer that when a head emits multiple correlated outputs.
+    eligible_head_features: dict[str, tuple[str, ...]] = {}
+    for head, families_for_head in EXECUTION_EV_AUXILIARY_HEAD_FAMILIES.items():
+        head_features = features(families_for_head)
+        if not head_features:
+            continue
+        eligible_head_features[head] = head_features
+        plan[f"alpha_context_plus_head__{head}"] = tuple(
+            dict.fromkeys((*alpha_context, *head_features))
+        )
+
+    if eligible_head_features:
+        eligible_aux = tuple(
+            dict.fromkeys(
+                name
+                for head_features in eligible_head_features.values()
+                for name in head_features
+            )
+        )
+        plan["alpha_context_plus_all_eligible_aux_heads"] = tuple(
+            dict.fromkeys((*alpha_context, *eligible_aux))
+        )
+        for head, head_features in eligible_head_features.items():
+            plan[f"eligible_aux_without_head__{head}"] = tuple(
+                dict.fromkeys(
+                    (
+                        *alpha_context,
+                        *(name for name in eligible_aux if name not in head_features),
+                    )
+                )
+            )
+
+    if include_research_only_auxiliary_heads:
+        all_declared_by_family = {
+            family: tuple(
+                name
+                for name, spec in provenance.items()
+                if spec.family == family and spec.pre_entry and spec.oof_or_frozen
+            )
+            for family in EXECUTION_EV_FEATURE_FAMILIES
+        }
+
+        def declared_features(families: Sequence[str]) -> tuple[str, ...]:
+            return tuple(
+                name for family in families for name in all_declared_by_family[family]
+            )
+
+        research_head_features = {
+            head: declared_features(families_for_head)
+            for head, families_for_head in EXECUTION_EV_AUXILIARY_HEAD_FAMILIES.items()
+        }
+        research_head_features = {
+            head: names for head, names in research_head_features.items() if names
+        }
+        all_five = tuple(
+            dict.fromkeys(
+                name
+                for head_features in research_head_features.values()
+                for name in head_features
+            )
+        )
+        for head, head_features in research_head_features.items():
+            plan[f"research__alpha_context_plus_head__{head}"] = tuple(
+                dict.fromkeys((*alpha_context, *head_features))
+            )
+        if len(research_head_features) == len(EXECUTION_EV_AUXILIARY_HEAD_FAMILIES):
+            plan["research__alpha_context_plus_all_five_aux_heads"] = tuple(
+                dict.fromkeys((*alpha_context, *all_five))
+            )
+            for head, head_features in research_head_features.items():
+                plan[f"research__all_five_aux_without_head__{head}"] = tuple(
+                    dict.fromkeys(
+                        (
+                            *alpha_context,
+                            *(name for name in all_five if name not in head_features),
+                        )
+                    )
+                )
+            opportunity = declared_features(
+                (
+                    "peak_mfe",
+                    "time_to_mfe",
+                    "time_to_meaningful_mfe_cdf_probability",
+                    "favorable_path_slope",
+                )
+            )
+            adverse_risk = declared_features(
+                ("mae_before_meaningful_mfe", "adverse_turn_timing")
+            )
+            plan["research__alpha_context_plus_opportunity_aux"] = tuple(
+                dict.fromkeys((*alpha_context, *opportunity))
+            )
+            plan["research__alpha_context_plus_adverse_risk_aux"] = tuple(
+                dict.fromkeys((*alpha_context, *adverse_risk))
+            )
     if include_leave_one_family_out:
         for family in EXECUTION_EV_FEATURE_FAMILIES:
             if family == "alpha_score" or not by_family[family]:
@@ -715,6 +835,7 @@ class ExecutionEVTrainerConfig:
     label_end_time_col: str | None = None
     huber_delta: float = 0.01
     run_ablations: bool = True
+    run_research_auxiliary_ablations: bool = True
     calibration_min_rows: int = 100
     calibration_min_local_rows: int = 400
     calibration_shrink_rows: float = 2_000.0
@@ -1538,6 +1659,7 @@ def _fit_arm_mode(
     tune: bool,
     protected_features: Sequence[str] = (),
     selection_overrides: Mapping[str, Any] | None = None,
+    params_overrides: Mapping[str, Any] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any], dict[str, Any]]:
     """Return outer-fold OOF net-EV predictions, final side models, and audit."""
     target = build_execution_ev_target(frame, target_spec).to_numpy(dtype=float)
@@ -1616,14 +1738,27 @@ def _fit_arm_mode(
             outer_selection[side] = selection
             selected_features = list(selection["selected_features"])
             selected_x = local_x.loc[:, selected_features]
-            params, hpo = (
-                _tune_lgbm(selected_x, local_y, inner, config)
-                if tune
-                else (
-                    _lgbm_params(config),
-                    {"status": "reused_default_for_ablation", "trials": 0},
-                )
+            source_params = (
+                params_overrides.get("outer", {}).get(str(fold.fold), {}).get(side)
+                if params_overrides is not None
+                else None
             )
+            if source_params is not None:
+                params = dict(source_params)
+                hpo = {
+                    "status": "reused_all_features_tuned_params_for_ablation",
+                    "trials": 0,
+                }
+            elif tune:
+                params, hpo = _tune_lgbm(selected_x, local_y, inner, config)
+            else:
+                params, hpo = (
+                    _lgbm_params(config),
+                    {
+                        "status": "reused_default_for_ablation",
+                        "trials": 0,
+                    },
+                )
             params_by_side[side].append(params)
             # Generate inner OOF predictions solely from outer-train rows for
             # this side's fold calibration map.  Validation targets never
@@ -1683,6 +1818,7 @@ def _fit_arm_mode(
                     "valid_rows": int(len(valid)),
                     "best_iteration": best_iteration,
                     "hpo": hpo,
+                    "model_params": params,
                     "selected_features": selected_features,
                     "selected_features_sha256": selection["selected_features_sha256"],
                 }
@@ -1759,8 +1895,19 @@ def _fit_arm_mode(
         )
         audit["feature_selection"]["final"][side] = selection
         selected_features = list(selection["selected_features"])
+        final_override = (
+            params_overrides.get("final", {}).get(side)
+            if params_overrides is not None
+            else None
+        )
         params = (
-            params_by_side[side][-1] if params_by_side[side] else _lgbm_params(config)
+            dict(final_override)
+            if final_override is not None
+            else (
+                params_by_side[side][-1]
+                if params_by_side[side]
+                else _lgbm_params(config)
+            )
         )
         model, best_iteration = _fit_lgbm(
             final_x.loc[:, selected_features],
@@ -1824,10 +1971,19 @@ def train_execution_ev_meta(
         decision_time_col=config.decision_time_col,
         predicted_path_archetype_col=config.catboost_archetype_col,
     )
-    plan = execution_ev_ablation_plan(provenance)
-    for arm_features in plan.values():
+    plan = execution_ev_ablation_plan(
+        provenance,
+        include_research_only_auxiliary_heads=(
+            config.run_ablations and config.run_research_auxiliary_ablations
+        ),
+    )
+    for arm, arm_features in plan.items():
         validate_execution_ev_feature_provenance(
-            frame, arm_features, provenance, decision_time_col=config.decision_time_col
+            frame,
+            arm_features,
+            provenance,
+            decision_time_col=config.decision_time_col,
+            require_model_input=not arm.startswith("research__"),
         )
     if not _finite_target_rows(frame, ExecutionEVTargetSpec()).any():
         raise ValueError("Execution-EV trainer has no finite direct target rows")
@@ -1900,9 +2056,29 @@ def train_execution_ev_meta(
             )
         )
         frozen_selection = audit["feature_selection"]
+        frozen_params = {
+            "outer": {},
+            "final": {side: dict(state["params"]) for side, state in fitted.items()},
+        }
+        for row in audit["folds"]:
+            if row.get("status") != "ok" or row.get("model_params") is None:
+                continue
+            frozen_params["outer"].setdefault(str(row["fold"]), {})[
+                str(row["side"])
+            ] = dict(row["model_params"])
         for arm, features in arms.items():
             if arm == "all_features":
                 continue
+            head_features = tuple(
+                feature
+                for feature in features
+                if provenance[feature].family
+                in {
+                    family
+                    for families_for_head in EXECUTION_EV_AUXILIARY_HEAD_FAMILIES.values()
+                    for family in families_for_head
+                }
+            )
             prediction, fitted, audit = _fit_arm_mode(
                 frame,
                 features,
@@ -1910,8 +2086,11 @@ def train_execution_ev_meta(
                 folds,
                 config=config,
                 tune=False,
-                protected_features=protected_features,
+                protected_features=tuple(
+                    dict.fromkeys((*protected_features, *head_features))
+                ),
                 selection_overrides=frozen_selection,
+                params_overrides=frozen_params,
             )
             key = f"{mode}__{arm}"
             prediction_table[key] = prediction

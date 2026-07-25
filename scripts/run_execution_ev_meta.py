@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the leakage-safe 12-hour execution-EV meta-head on a joined handoff.
+"""Run the leakage-safe policy-aligned execution-EV meta-head on a joined handoff.
 
 This entry point intentionally defaults to a bounded smoke run.  It trains the
 direct and residual side-aware ablations implemented in
@@ -84,6 +84,9 @@ REQUIRED_FAMILIES = (
     "alpha_score",
     "base_archetype_labels",
 )
+CANONICAL_EXIT_SIMULATOR = (
+    "extreme_price_movements.simple_policy_optimiser.simulate_and_score"
+)
 
 
 def _parse_columns(value: str) -> list[str]:
@@ -123,6 +126,77 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _expected_exit_policy_contract(policy_path: Path) -> dict[str, Any]:
+    payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    contract = payload.get("exit_geometry_contract")
+    if not isinstance(contract, Mapping):
+        raise ValueError("exit policy JSON is missing exit_geometry_contract")
+    strategies = payload.get("strategies")
+    if not isinstance(strategies, list) or not strategies:
+        raise ValueError("exit policy JSON is missing strategy geometry entries")
+    scopes = {
+        str(item.get("exit_geometry_scope", ""))
+        for item in strategies
+        if isinstance(item, Mapping) and item.get("selected", True)
+    }
+    geometry_scope = (
+        "side_x_policy_archetype_with_side_parent_fallback"
+        if {"side_parent", "side_archetype"}.issubset(scopes)
+        else "side_parent_only"
+    )
+    return {
+        "replay_timeframe": str(contract.get("replay_timeframe", "")),
+        "horizon_minutes": int(contract.get("horizon_minutes", 0)),
+        "geometry_scope": geometry_scope,
+        "policy_pathway_id": str(contract.get("policy_pathway_id", "")),
+        "trailing_activation_curve": str(contract.get("trailing_activation_curve", "")),
+        "simulator": CANONICAL_EXIT_SIMULATOR,
+        "source_policy_sha256": _sha256(policy_path),
+    }
+
+
+def _validate_exit_policy_contract(
+    provenance_payload: Mapping[str, Any],
+    policy_path: Path,
+) -> dict[str, Any]:
+    target = provenance_payload.get("targets", {}).get("execution_net_ev_12h", {})
+    actual = target.get("exit_policy_contract")
+    if not isinstance(actual, Mapping):
+        raise ValueError(
+            "production execution-EV target lacks an explicit exit_policy_contract"
+        )
+    expected = _expected_exit_policy_contract(policy_path)
+    mismatches = {
+        key: {"expected": value, "actual": actual.get(key)}
+        for key, value in expected.items()
+        if actual.get(key) != value
+    }
+    expected_horizon_hours = float(expected["horizon_minutes"]) / 60.0
+    declared_horizon_hours = target.get("horizon_hours")
+    if declared_horizon_hours is not None and (
+        not np.isfinite(float(declared_horizon_hours))
+        or not np.isclose(
+            float(declared_horizon_hours),
+            expected_horizon_hours,
+            rtol=0.0,
+            atol=1e-12,
+        )
+    ):
+        mismatches["target.horizon_hours"] = {
+            "expected": expected_horizon_hours,
+            "actual": declared_horizon_hours,
+        }
+    if mismatches:
+        rendered = "; ".join(
+            f"{key}: expected {values['expected']!r}, got {values['actual']!r}"
+            for key, values in mismatches.items()
+        )
+        raise ValueError(
+            "execution-EV labels do not match the required exit policy: " + rendered
+        )
+    return {"status": "matched", "expected": expected, "actual": dict(actual)}
 
 
 def _parquet_row_count(path: Path) -> int:
@@ -221,6 +295,7 @@ def _validate_handoff(
     side_col: str,
     archetype_col: str,
     label_end_time_col: str | None,
+    target_horizon_hours: float,
     max_span_days: float,
 ) -> pd.DataFrame:
     if side_col not in id_columns:
@@ -290,9 +365,13 @@ def _validate_handoff(
         work[label_end_time_col] = _utc(
             work[label_end_time_col], column=label_end_time_col
         )
-        if not (work[label_end_time_col] == decision + pd.Timedelta(hours=12)).all():
+        if not (
+            work[label_end_time_col]
+            == decision + pd.Timedelta(hours=float(target_horizon_hours))
+        ).all():
             raise ValueError(
-                "execution label-end timestamps must equal decision timestamp + 12 hours"
+                "execution label-end timestamps must equal decision timestamp + "
+                f"{float(target_horizon_hours):g} hours"
             )
 
     for column in REQUIRED_TARGET_COLUMNS:
@@ -560,6 +639,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--archetype-col", default="catboost_archetype")
     parser.add_argument("--label-end-time-col", default="execution_label_end_utc")
     parser.add_argument(
+        "--exit-policy-json",
+        type=Path,
+        default=None,
+        help=(
+            "Canonical deployed simple-policy JSON. Required in production; "
+            "the label contract must match its replay timeframe, horizon, "
+            "side/archetype geometry scope, pathway, and SHA-256."
+        ),
+    )
+    parser.add_argument(
         "--max-rows",
         type=int,
         default=None,
@@ -647,6 +736,28 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             "prepare a bounded handoff"
         )
     provenance, provenance_payload = _load_provenance(args.provenance_json)
+    target_contract = provenance_payload.get("targets", {}).get(
+        "execution_net_ev_12h", {}
+    )
+    exit_contract = target_contract.get("exit_policy_contract", {})
+    target_horizon_hours = float(
+        target_contract.get(
+            "horizon_hours",
+            float(exit_contract.get("horizon_minutes", 720.0)) / 60.0,
+        )
+    )
+    if not np.isfinite(target_horizon_hours) or target_horizon_hours <= 0.0:
+        raise ValueError("execution-EV target horizon must be finite and positive")
+    exit_policy_path = getattr(args, "exit_policy_json", None)
+    if production_mode and exit_policy_path is None:
+        raise ValueError("--exit-policy-json is required in production mode")
+    exit_policy_audit = None
+    if exit_policy_path is not None:
+        if not exit_policy_path.is_file():
+            raise ValueError("--exit-policy-json must be an existing JSON file")
+        exit_policy_audit = _validate_exit_policy_contract(
+            provenance_payload, exit_policy_path
+        )
     id_columns = (
         list(args.id_cols)
         if args.id_cols is not None
@@ -664,6 +775,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         side_col=args.side_col,
         archetype_col=args.archetype_col,
         label_end_time_col=args.label_end_time_col,
+        target_horizon_hours=target_horizon_hours,
         max_span_days=args.max_span_days,
     )
     timing_risk_enabled = bool(
@@ -683,8 +795,8 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     config = ExecutionEVTrainerConfig(
         n_splits=args.n_splits,
         min_train_rows=args.min_train_rows,
-        purge_hours=12.0,
-        embargo_hours=12.0,
+        purge_hours=target_horizon_hours,
+        embargo_hours=target_horizon_hours,
         hpo_trials=args.hpo_trials,
         early_stopping_rounds=args.early_stopping_rounds,
         n_estimators=args.n_estimators,
@@ -716,11 +828,16 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         "identity_columns": id_columns,
         "trainer_config": asdict(config),
         "timing_risk_head_enabled": timing_risk_enabled,
+        "exit_policy_audit": exit_policy_audit,
         "resource_caps": {
             "max_rows": args.max_rows,
             "max_span_days": args.max_span_days,
         },
-        "leakage_contract": "exact one-to-one handoff; finite pre-entry OOF/frozen features; feature availability <= decision time; 12h purge and embargo; OOF-only model comparison",
+        "leakage_contract": (
+            "exact one-to-one handoff; finite pre-entry OOF/frozen features; "
+            "feature availability <= decision time; "
+            f"{target_horizon_hours:g}h purge and embargo; OOF-only model comparison"
+        ),
     }
     manifest_path = _write_json(args.output_dir / "manifest.json", manifest)
     if args.dry_run:

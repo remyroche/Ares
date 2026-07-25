@@ -447,6 +447,7 @@ def test_materializes_runner_compatible_exact_oof_handoff(tmp_path: Path) -> Non
         side_col="side_name",
         archetype_col="catboost_archetype",
         label_end_time_col="execution_label_end_utc",
+        target_horizon_hours=12.0,
         max_span_days=31.0,
     )
 
@@ -509,6 +510,7 @@ def test_ingests_complete_signed_timing_cdf_vector_as_model_inputs(
         side_col="side_name",
         archetype_col="catboost_archetype",
         label_end_time_col="execution_label_end_utc",
+        target_horizon_hours=12.0,
         max_span_days=31.0,
     )
 

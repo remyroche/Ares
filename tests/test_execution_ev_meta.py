@@ -252,6 +252,31 @@ def test_ablation_plan_excludes_research_only_features() -> None:
     )
     plan = execution_ev_ablation_plan(provenance)
     assert "pred_mae_before_meaningful_mfe_atr" not in plan["all_features"]
+    assert (
+        "research__alpha_context_plus_head__mae_before_meaningful_mfe_atr" not in plan
+    )
+
+    research_plan = execution_ev_ablation_plan(
+        provenance, include_research_only_auxiliary_heads=True
+    )
+    assert "pred_mae_before_meaningful_mfe_atr" not in research_plan["all_features"]
+    assert (
+        "pred_mae_before_meaningful_mfe_atr"
+        in research_plan[
+            "research__alpha_context_plus_head__mae_before_meaningful_mfe_atr"
+        ]
+    )
+    assert "research__alpha_context_plus_all_five_aux_heads" in research_plan
+    for head in (
+        "peak_mfe_12h_atr",
+        "time_to_first_meaningful_mfe",
+        "mae_before_meaningful_mfe_atr",
+        "bars_before_price_stops_decreasing",
+        "future_slope_atr_per_hour",
+    ):
+        assert f"research__all_five_aux_without_head__{head}" in research_plan
+    assert "research__alpha_context_plus_opportunity_aux" in research_plan
+    assert "research__alpha_context_plus_adverse_risk_aux" in research_plan
 
     comparison = timing_slope_ablation_comparison(
         [

@@ -2837,6 +2837,9 @@ def run_pipeline(
         mda_progress_path.name,
         hpo_progress_path.name,
         "geometry_prerequisite.json",
+        FEATURE_SELECTION_HPO_CONTRACT_FILENAME,
+        "hpo_checkpoint.json",
+        "class_balance_mini_sweep_report.json",
     }
     guard_telemetry_path = getattr(resource_guard, "telemetry_path", None)
     if (

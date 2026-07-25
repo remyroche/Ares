@@ -1718,7 +1718,13 @@ Required side-local sequence:
 2. Run the archetype geometry sweep independently per side. Geometry class
    thresholds and support gates may differ by side.
 3. Run CatBoost HPO independently per side using the selected side contract and
-   geometry.
+   geometry. Keep three purged chronological HPO folds: the third fold is
+   required stability evidence and must not be dropped merely to shorten a
+   run. Retain the 75-trial ceiling, but stop after 15 consecutive terminal
+   trials without improvement. This bound preserves every improvement in the
+   two completed historical CatBoost traces (their longest pre-winner gaps were
+   15 and 12 trials; winners were trials 56 and 51) while avoiding their
+   unnecessary 18- and 23-trial post-winner tails.
 4. Freeze the winning structural HPO parameters, then run a separate
    class-balance mini-sweep independently per side. Evaluate every declared
    balance arm on the exact same purged chronological OOF folds and class order;

@@ -672,7 +672,7 @@ def test_smoke_runner_freezes_train_only_labels_and_persists_required_artifacts(
     hpo_manifest = json.loads((output / "hpo_manifest.json").read_text())
     assert hpo_manifest["feature_contract_frozen_before_hpo"] is True
     assert hpo_manifest["hpo_features"] == ["base_x"]
-    assert hpo_manifest["no_improvement_patience_trials"] == 30
+    assert hpo_manifest["no_improvement_patience_trials"] == 15
     resource = hpo_manifest["catboost_resource_contract"]
     assert resource["requested_thread_count"] == 4
     assert resource["effective_thread_count"] <= resource["requested_thread_count"]

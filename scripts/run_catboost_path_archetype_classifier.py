@@ -66,6 +66,7 @@ from extreme_price_movements.training_resource_guard import (  # noqa: E402
 RUNNER_SCHEMA = "run_catboost_path_archetype_classifier_v10_side_local_staged"
 FEATURE_SELECTION_HPO_CONTRACT_SCHEMA = "catboost_path_archetype_feature_selection_hpo_contract_v3_structural_hpo_balance_sweep"
 FEATURE_SELECTION_HPO_CONTRACT_FILENAME = "feature_selection_hpo_contract.json"
+DEFAULT_HPO_NO_IMPROVEMENT_TRIALS = 15
 HPO_SAMPLING_CONTRACT_VERSION = (
     "chronological_regions_time_spread_side_class_stratified_v1"
 )
@@ -2541,7 +2542,7 @@ def run_pipeline(
     hpo_folds: int = 3,
     hpo_iterations: int = 1_500,
     hpo_od_wait: int = 100,
-    hpo_no_improvement_trials: int = 30,
+    hpo_no_improvement_trials: int = DEFAULT_HPO_NO_IMPROVEMENT_TRIALS,
     selection_iterations: int = PROXY_SELECTION_ITERATIONS,
     selection_od_wait: int = PROXY_SELECTION_OD_WAIT,
     catboost_threads: int = 4,
@@ -4349,7 +4350,7 @@ def main() -> None:
     parser.add_argument(
         "--hpo-no-improvement-trials",
         type=int,
-        default=30,
+        default=DEFAULT_HPO_NO_IMPROVEMENT_TRIALS,
         help=(
             "Stop the Optuna study after this many consecutive terminal trials "
             "without a new best objective; no wall-clock timeout is used."

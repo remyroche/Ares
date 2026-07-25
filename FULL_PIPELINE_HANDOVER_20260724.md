@@ -1783,7 +1783,7 @@ python3 scripts/run_catboost_path_archetype_classifier.py \
 
 python3 scripts/run_catboost_path_archetype_geometry_search.py \
   --input "$LABELS" --side "$SIDE" \
-  --output-dir "$GEOMETRY_ROOT/side=$SIDE" \
+  --output-dir "$GEOMETRY_ROOT" \
   --geometry-prerequisite "$CLASSIFIER_ROOT/side=$SIDE/geometry_prerequisite.json" \
   --canonical-context-manifest "$CONTEXT_ROOT/manifest.json" \
   --feature-dir data_perp/features/20260711_070000 \

@@ -1090,6 +1090,20 @@ def _canonical_side(values: pd.Series) -> pd.Series:
     ).astype("int8")
 
 
+def _side_candidate_identity_sha256(
+    frame: pd.DataFrame, columns: PathGeometryColumns
+) -> str:
+    """Hash identities with the same canonical long/short representation."""
+
+    identity = frame.loc[:, [columns.timestamp, columns.symbol, columns.side]].copy()
+    identity[columns.side] = _canonical_side(identity[columns.side]).map(
+        {1: "long", -1: "short"}
+    )
+    return candidate_identity_sha256(
+        identity, columns=(columns.timestamp, columns.symbol, columns.side)
+    )
+
+
 def _static_schema(feature_dir: Path) -> set[str]:
     """Read feature-store metadata only, to avoid requesting sidecar fields."""
     try:
@@ -1172,6 +1186,11 @@ def _load_sidecar_matrix(
     )
     quote = lambda value: '"' + str(value).replace('"', '""') + '"'
     projection = ", ".join(f"s.{quote(name)} AS {quote(name)}" for name in requested)
+    normalized_side = (
+        "CASE lower(trim(CAST(s.side AS VARCHAR))) "
+        "WHEN 'long' THEN 1 WHEN 'short' THEN -1 "
+        "ELSE try_cast(s.side AS TINYINT) END"
+    )
     con = duckdb.connect()
     try:
         con.execute("SET TimeZone='UTC'")
@@ -1179,7 +1198,7 @@ def _load_sidecar_matrix(
         loaded = con.execute(
             f"SELECT l.__row_id__, {projection} FROM label_keys l JOIN read_parquet(?) s "
             "ON epoch_ns(l.__ts__) = epoch_ns(s.__ts__) AND l.__symbol__ = s.__symbol__ "
-            "AND l.side = CAST(s.side AS TINYINT) ORDER BY l.__row_id__",
+            f"AND l.side = ({normalized_side}) ORDER BY l.__row_id__",
             [str(sidecar)],
         ).fetchdf()
     finally:
@@ -1282,9 +1301,22 @@ def run(
     frame = _filter_side_before_search(
         frame, side=normalized_side, side_column=columns.side
     )
-    side_candidate_identity = candidate_identity_sha256(
-        frame, columns=(columns.timestamp, columns.symbol, columns.side)
-    )
+    rows_before_path_validity = int(len(frame))
+    if "path_arch_complete_24h" in frame.columns:
+        frame = frame.loc[
+            frame["path_arch_complete_24h"].fillna(False).astype(bool)
+        ].copy()
+    for required_positive in (columns.atr_fraction, columns.risk_fraction):
+        if required_positive in frame.columns:
+            values = pd.to_numeric(frame[required_positive], errors="coerce")
+            frame = frame.loc[
+                np.isfinite(values.to_numpy(dtype=float)) & values.gt(0.0)
+            ].copy()
+    if frame.empty:
+        raise ValueError("no complete finite path rows remain for geometry search")
+    # Match the classifier's exact prepared complete-label population before
+    # the April-only geometry-development partition is applied.
+    side_candidate_identity = _side_candidate_identity_sha256(frame, columns)
     full_side_input_rows = int(len(frame))
     short_history_holdout: dict[str, Any] | None = None
     if evaluation_mode == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY:
@@ -1332,9 +1364,9 @@ def run(
                 "label_end < 2026-05-01T00:00:00Z only"
             ),
             "may_and_later_used_for_geometry_selection": False,
-            "development_rows_before_path_validity": int(len(frame)),
+            "development_rows_after_path_validity": int(len(frame)),
             "development_input_sha256": _prepared_frame_identity(frame),
-            "untouched_rows_before_path_validity": int(len(withheld)),
+            "untouched_rows_after_path_validity": int(len(withheld)),
             "untouched_input_sha256": _prepared_frame_identity(withheld),
             "untouched_timestamp_start_utc": (
                 pd.to_datetime(
@@ -1419,21 +1451,6 @@ def run(
         raise ValueError(
             "side-local geometry checkpoint filename must include the side"
         )
-    rows_before_path_validity = int(len(frame))
-    if "path_arch_complete_24h" in frame.columns:
-        frame = frame.loc[
-            frame["path_arch_complete_24h"].fillna(False).astype(bool)
-        ].copy()
-    for required_positive in (columns.atr_fraction, columns.risk_fraction):
-        if required_positive in frame.columns:
-            values = pd.to_numeric(frame[required_positive], errors="coerce")
-            frame = frame.loc[
-                np.isfinite(values.to_numpy(dtype=float)) & values.gt(0.0)
-            ].copy()
-    if frame.empty:
-        raise ValueError("no complete finite path rows remain for geometry search")
-    if short_history_holdout is not None:
-        short_history_holdout["development_rows_after_path_validity"] = int(len(frame))
     if max_rows > 0:
         frame = frame.iloc[:max_rows].copy()
     join_columns = feature_join_columns or [

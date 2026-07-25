@@ -1369,7 +1369,7 @@ def test_geometry_runner_short_history_excludes_may_to_july_before_feature_work(
     holdout = contract["short_history_holdout"]
     assert contract["evaluation_mode"] == GEOMETRY_EVALUATION_MODE_SHORT_HISTORY
     assert holdout["may_and_later_used_for_geometry_selection"] is False
-    assert holdout["untouched_rows_before_path_validity"] == len(future)
+    assert holdout["untouched_rows_after_path_validity"] == len(future)
     assert len(holdout["development_input_sha256"]) == 64
     assert len(holdout["untouched_input_sha256"]) == 64
 
@@ -2143,3 +2143,22 @@ def test_runner_joins_frozen_features_from_separate_parquet(tmp_path: Path) -> N
         runner.PathGeometryColumns(),
     )
     assert joined["frozen_feature"].tolist() == [1.0, 2.0]
+
+
+def test_runner_sidecar_loader_normalizes_string_side(tmp_path: Path) -> None:
+    runner = _geometry_runner()
+    labels = _frame().iloc[:2].copy()
+    numeric_side = runner._canonical_side(labels["side"])
+    sidecar = labels.loc[:, ["__ts__", "__symbol__"]].copy()
+    sidecar["side"] = numeric_side.map({1: "long", -1: "short"})
+    sidecar["frozen_feature"] = [1.0, 2.0]
+    path = tmp_path / "sidecar.parquet"
+    sidecar.to_parquet(path, index=False)
+
+    loaded = runner._load_sidecar_matrix(
+        labels,
+        ["frozen_feature"],
+        path,
+        runner.PathGeometryColumns(),
+    )
+    assert loaded["frozen_feature"].tolist() == [1.0, 2.0]

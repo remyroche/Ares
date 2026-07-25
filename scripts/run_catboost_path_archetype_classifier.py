@@ -1365,6 +1365,24 @@ def _canonical_side_series(values: pd.Series, *, source: str) -> pd.Series:
     return normalized.astype(str)
 
 
+def _side_candidate_identity_sha256(
+    frame: pd.DataFrame,
+    *,
+    timestamp_column: str,
+    symbol_column: str,
+    side_column: str,
+) -> str:
+    """Hash side-local identities using canonical long/short side strings."""
+
+    identity = frame.loc[:, [timestamp_column, symbol_column, side_column]].copy()
+    identity[side_column] = _canonical_side_series(
+        identity[side_column], source="candidate identity"
+    )
+    return candidate_identity_sha256(
+        identity, columns=(timestamp_column, symbol_column, side_column)
+    )
+
+
 def _canonical_candidate_id_frame(
     frame: pd.DataFrame,
     *,
@@ -1409,6 +1427,29 @@ def _canonical_candidate_id_frame(
     return keys.sort_values(
         list(CANONICAL_CANDIDATE_KEY_COLUMNS), kind="mergesort"
     ).reset_index(drop=True)
+
+
+def _read_canonical_identity_parquet(path: Path) -> pd.DataFrame:
+    """Read narrow canonical keys while accepting the declared side alias."""
+
+    available = _schema_names(Path(path))
+    side_source = next(
+        (column for column in IDENTITY_SIDE_COLUMNS if column in available), None
+    )
+    if side_source is None:
+        raise ValueError(
+            f"{path} is missing a canonical side identity column "
+            f"({', '.join(IDENTITY_SIDE_COLUMNS)})"
+        )
+    required = {"__ts__", "__symbol__", "candidate_id", "selected_top40"}
+    missing = sorted(required.difference(available))
+    if missing:
+        raise ValueError(f"{path} is missing canonical identity columns: {missing}")
+    columns = [*sorted(required), side_source]
+    frame = pd.read_parquet(path, columns=columns)
+    if side_source != "side":
+        frame["side"] = frame[side_source]
+    return frame
 
 
 def _read_manifest_binding(path: Path, *, artifact: Path, field: str) -> dict[str, Any]:
@@ -1478,14 +1519,13 @@ def _validate_side_local_canonical_inputs(
     label_keys = _canonical_candidate_id_frame(
         labels, source="path labels", require_selected_top40=False
     )
-    canonical_columns = [*CANONICAL_CANDIDATE_KEY_COLUMNS, "selected_top40"]
     candidate_keys = _canonical_candidate_id_frame(
-        pd.read_parquet(candidate_path, columns=canonical_columns),
+        _read_canonical_identity_parquet(candidate_path),
         source=str(candidate_path),
         require_selected_top40=True,
     )
     context_keys = _canonical_candidate_id_frame(
-        pd.read_parquet(context_path, columns=canonical_columns),
+        _read_canonical_identity_parquet(context_path),
         source=str(context_path),
         require_selected_top40=True,
     )
@@ -2134,9 +2174,11 @@ def _feature_selection_hpo_fingerprint(
                 else None
             ),
         },
-        "candidate_identity_sha256": candidate_identity_sha256(
+        "candidate_identity_sha256": _side_candidate_identity_sha256(
             frame,
-            columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column),
+            timestamp_column=timestamp_column,
+            symbol_column=IDENTITY_SYMBOL_COLUMN,
+            side_column=side_column,
         ),
         "frozen_ae_gmm_sidecar_contract_sha256": _sha256_json(sidecar_contract),
         "eligible_initial_feature_contract": {
@@ -3687,8 +3729,11 @@ def run_pipeline(
                 ),
             },
         )
-        side_candidate_identity = candidate_identity_sha256(
-            frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+        side_candidate_identity = _side_candidate_identity_sha256(
+            frame,
+            timestamp_column=timestamp_column,
+            symbol_column=IDENTITY_SYMBOL_COLUMN,
+            side_column=side_column,
         )
         geometry_provenance = _side_local_geometry_provenance(canonical_input_contract)
         geometry_prerequisite = {
@@ -3794,8 +3839,11 @@ def run_pipeline(
         bound_geometry_contract = _read_side_geometry_contract(
             geometry_contract,
             side=canonical_side,
-            candidate_identity=candidate_identity_sha256(
-                frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+            candidate_identity=_side_candidate_identity_sha256(
+                frame,
+                timestamp_column=timestamp_column,
+                symbol_column=IDENTITY_SYMBOL_COLUMN,
+                side_column=side_column,
             ),
             selected_features=selected,
             selection_fingerprint=selection_fingerprint,
@@ -3815,8 +3863,11 @@ def run_pipeline(
         "side": canonical_side,
         "model_side_scope": "per_side" if canonical_side else None,
         "development_oos_routing": development_oos_routing,
-        "candidate_identity_sha256": candidate_identity_sha256(
-            frame, columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column)
+        "candidate_identity_sha256": _side_candidate_identity_sha256(
+            frame,
+            timestamp_column=timestamp_column,
+            symbol_column=IDENTITY_SYMBOL_COLUMN,
+            side_column=side_column,
         ),
         **_side_local_geometry_provenance(canonical_input_contract),
         "selected_features": list(selected),
@@ -3895,9 +3946,11 @@ def run_pipeline(
             "future_training_taxonomy": taxonomy_contract,
             "source": source,
             "rows": int(len(frame)),
-            "candidate_identity_sha256": candidate_identity_sha256(
+            "candidate_identity_sha256": _side_candidate_identity_sha256(
                 frame,
-                columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column),
+                timestamp_column=timestamp_column,
+                symbol_column=IDENTITY_SYMBOL_COLUMN,
+                side_column=side_column,
             ),
             "selected_features": list(selected),
             "effective_model_params": params,
@@ -4459,9 +4512,11 @@ def run_pipeline(
         "side": canonical_side,
         "source": source,
         "rows": int(len(frame)),
-        "candidate_identity_sha256": candidate_identity_sha256(
+        "candidate_identity_sha256": _side_candidate_identity_sha256(
             frame,
-            columns=(timestamp_column, IDENTITY_SYMBOL_COLUMN, side_column),
+            timestamp_column=timestamp_column,
+            symbol_column=IDENTITY_SYMBOL_COLUMN,
+            side_column=side_column,
         ),
         "candidate_population_contract": (
             "exact canonical OOF base top-fraction population; identity hash "

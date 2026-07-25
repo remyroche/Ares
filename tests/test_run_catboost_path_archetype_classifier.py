@@ -492,6 +492,57 @@ def test_canonical_side_binding_rejects_cross_side_ae_state(tmp_path: Path) -> N
         )
 
 
+def test_canonical_side_binding_accepts_candidate_side_name_alias(
+    tmp_path: Path,
+) -> None:
+    frame = _frame(40)
+    frame["candidate_id"] = runner.candidate_id_series(
+        frame["__ts__"], frame["__symbol__"], "1h", frame["side"]
+    )
+    bindings = _write_canonical_side_bindings(tmp_path, frame, side="long")
+    candidate_path = bindings["canonical_candidate_path"]
+    candidate = pd.read_parquet(candidate_path)
+    candidate["side_name"] = "long"
+    candidate = candidate.drop(columns=["side"])
+    candidate.to_parquet(candidate_path, index=False)
+    bindings["canonical_candidate_manifest"].write_text(
+        json.dumps({"output_sha256": runner._sha256_file(candidate_path)}),
+        encoding="utf-8",
+    )
+
+    contract = runner._validate_side_local_canonical_inputs(
+        frame,
+        side="long",
+        candidate_path=candidate_path,
+        candidate_manifest=bindings["canonical_candidate_manifest"],
+        context_path=bindings["canonical_context_path"],
+        context_manifest=bindings["canonical_context_manifest"],
+        ae_gmm_state=None,
+        ae_gmm_state_manifest=None,
+    )
+    assert contract["side"] == "long"
+    assert contract["candidate_rows_side"] == len(frame)
+
+
+def test_side_candidate_identity_is_invariant_to_numeric_or_named_side() -> None:
+    frame = _frame(40).loc[:, ["__ts__", "__symbol__", "side"]].copy()
+    named = frame.copy()
+    named["side"] = "long"
+    numeric_hash = runner._side_candidate_identity_sha256(
+        frame,
+        timestamp_column="__ts__",
+        symbol_column="__symbol__",
+        side_column="side",
+    )
+    named_hash = runner._side_candidate_identity_sha256(
+        named,
+        timestamp_column="__ts__",
+        symbol_column="__symbol__",
+        side_column="side",
+    )
+    assert numeric_hash == named_hash
+
+
 def test_geometry_contract_is_bound_to_exact_side_selection_and_population(
     tmp_path: Path,
 ) -> None:

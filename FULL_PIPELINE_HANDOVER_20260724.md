@@ -535,15 +535,24 @@ include `OPEN` (234 missing hours, maximum gap 28h), `SPK` (228, 10h),
 `CAKE` (273, 17h), and `GRIFFAIN` (335, 36h). By contrast, a high-availability
 control sample was generally complete or had only one isolated 10h gap.
 
-**2026-07-25 recoverability assessment:** the 30 symbols with the most missing
-June short candidates account for 4,227 of the 10,192 unavailable candidates
-(41.47%) and 6,917 locally absent May-June source hours. A read-only query of
-Kraken Futures' exact trade-candle endpoint found only 94 valid candles that
-are absent locally, across 17 of the 30 symbols. This is 1.36% of the audited
-source-hour deficit; 13 symbols had no currently recoverable candle. The low
-yield is consistent with much of the remaining deficit being genuine
-illiquidity/no-trade history or history the exact endpoint no longer serves,
-not a feature-store row-join failure.
+**2026-07-25 recoverability assessment:** all 41,454 June short candidates have
+a complete decision-time OHLCV candle. The 10,192 unavailable representations
+instead overlap earlier raw gaps: 10,190 have at least one gap in the preceding
+24 hours and all 10,192 do within 48 hours. The direct 24-hour causal surface
+contains 15,962 distinct gaps across 125 symbols. This overlap identifies the
+missingness mechanism but is not evidence that the gaps are recoverable.
+
+The 30 symbols with the most missing June short candidates account for 4,227
+of the 10,192 unavailable candidates (41.47%) and 6,917 locally absent
+May-June source hours. A read-only query of Kraken Futures' exact trade-candle
+endpoint recovered only 94 valid candles across 17 symbols, or 1.36% of the
+audited source-hour deficit. All 94 occur in one May 25 07:00-16:00 UTC gap;
+the pass recovered **zero** valid June candles despite covering 5,907 June
+source gaps in the 30 worst symbols. The remaining endpoint rows are
+overwhelmingly linked zero-volume carry candles rejected by canonical
+ingestion. This is strong evidence that a broad repeat backfill would mostly
+manufacture continuity from non-trade carry rows rather than restore missing
+trades.
 
 The one-pass source audit is now reproducible. The immutable network-response
 stage is:
@@ -569,37 +578,37 @@ linked carry candles and made no additional network calls. Both artifacts are
 `NOT_APPLIED`; the baseline raw, feature, and context artifacts remain
 unchanged.
 
-**Decision / go-no-go:** one bounded, exact-exchange OHLCV source repair is
-warranted, but a broad or repeated historical backfill is not. Run the bounded
-repair once, before starting the remaining CatBoost production stages, because
-the source check found 94 real exchange candles that are absent locally. This
-is a low-yield integrity repair, not a route to full June coverage and not a
-reason to delay the pipeline indefinitely. Persist the endpoint response and
-the exact accepted-candle ledger; accept a recovered value only when the source
-candle is real and the full required lookback becomes continuous. Then causally
-recompute only affected rolling features and rematerialize the frozen
-representation as a challenger while retaining the current artifact as the
-immutable baseline.
+The complete read-only reconciliation artifact is:
 
-Apply only the 94-row validated patch to a copy-on-write raw challenger,
-causally recompute only affected symbols/windows, and rematerialize a context
-challenger with the frozen AE/GMM state. Promote that challenger and regenerate
-downstream auxiliary/CatBoost artifacts only if it preserves candidate identity
-and produces a measurable increase in jointly finite short representation
-rows. If it recovers no additional candidate rows, keep the baseline and
-proceed. Regardless of the uplift, stop after this one exact-source pass: the
-validated endpoint yield is only 1.36% of the audited missing source hours, so
-repeated downloads have a poor expected return. Pre-listing windows, no-trade
-hours, and genuine exchange outages remain unavailable. This is a source-repair
-operation, not feature imputation.
+```text
+data_perp/artifacts/
+kraken_futures_june_representation_gap_audit_20260725_v1
+```
 
-The repair is successful only if recovered candles produce additional jointly
-finite representation rows without changing candidate identity. Regardless of
-the uplift, keep `gmm_representation_available` as an explicit feature and
-report OOF economics separately for available and unavailable rows. If the
-unavailable June short slice is materially worse, the next remedy is a new
-training-time representation contract with missingness masks or a smaller
-robust input set—not repeated downloads or synthetic filling.
+Its status is `READ_ONLY_NO_BROAD_BACKFILL_RECOMMENDED`; it made no network
+calls, recomputed no feature/model, and mutated no baseline artifact.
+
+**Decision / go-no-go:** do not perform a broad or repeated historical
+backfill, and do not block the pipeline on the 94-row challenger. The validated
+May patch cannot make the June windows continuous because every unavailable
+June row still has another gap within 48 hours, and all but two do within 24
+hours. In addition, the historical feature-store run did not preserve enough
+configuration/state provenance to guarantee a patch-disabled byte-parity
+recompute; the copy-on-write planner therefore remains
+`PLANNED_NOT_COMPUTED_NO_BASELINE_MUTATION`.
+
+Retain the 94-row ledger and planner as integrity evidence, not as promoted
+data. A future bounded repair is allowed only if a materially independent exact
+source is available, the sample and carry rejection are predeclared, and a
+patch-disabled clean-row parity run succeeds before any patched output is
+published. Never impute, interpolate, or forward-fill these gaps.
+
+Proceed with the immutable baseline. Keep `gmm_representation_available` as an
+explicit feature, retain native missing handling, and report OOF economics
+separately for available and unavailable rows. If the unavailable June short
+slice is materially worse, the next remedy is a newly trained gap-aware
+representation contract with missingness/staleness masks or a smaller robust
+input set—not repeated downloads or synthetic filling.
 
 The complete-label June short audit confirms that the missingness is
 economically non-random. Among 31,284 joined rows, the 5,230 representation-

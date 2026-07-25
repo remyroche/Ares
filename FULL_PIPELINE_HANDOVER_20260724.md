@@ -1977,6 +1977,31 @@ Gate:
 - No class order drift.
 - Final refit is marked as excluded from OOF metrics.
 
+#### 2026-07-25 long-side CatBoost result
+
+The long-side pipeline is complete on the canonical 31/8 handoff. It selected
+75 features, completed an independent geometry sweep, structural HPO,
+four-arm April balance sweep, fixed May/June/partial-July outer OOF, and final
+refit. The fully covered uniform arm was retained because no non-uniform arm
+passed the strict matched ML and economic promotion gates.
+
+The untouched outer OOF contains 64,504 unique long candidate IDs. Aggregate
+log loss is `1.704679`, RPS is `0.208295`, macro Brier is `0.114178`, macro F1
+is `0.120990`, and weighted F1 is `0.201114`. Against fold-local train-prior
+baselines, log loss improves by `0.004798` in May, `0.003263` in June, and
+`0.013944` in partial July; RPS improves in all three folds as well.
+
+This is a pass with an explicit concentration warning, not an unconditional
+economic promotion. `dead_timeout` receives 58.0% of aggregate hard
+predictions and three low-support classes never win argmax, even though the
+probability vector remains non-degenerate and the model beats prior baselines.
+The CatBoost branch must therefore show positive strict OOF execution-EV
+uplift in the downstream ablation before policy admission.
+
+The authoritative validation record, including hashes and monthly prior
+comparisons, is
+`docs/pipeline_roadmap/20260724/r3/catboost_long_validation_20260725_v1.json`.
+
 ### Phase 4: Finish the Five Auxiliary LGBM Heads
 
 Goal: produce OOF predictions and final models for all five targets.

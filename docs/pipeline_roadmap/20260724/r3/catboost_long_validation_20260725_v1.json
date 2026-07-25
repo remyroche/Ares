@@ -1,0 +1,78 @@
+{
+  "schema": "catboost_side_validation_v1",
+  "side": "long",
+  "status": "COMPLETE_WEAK_DOWNSTREAM_EV_GATE_REQUIRED",
+  "candidate_identity_sha256": "30379dabe0abe49c7423acd90d429664787fa8b98b4e6955297addd6cb1871d1",
+  "selected_feature_count": 75,
+  "selected_features_sha256": "22a5ce8016595cd8c2a03adffa9cda3b150533b7888cb8db52a3cbe070bb5054",
+  "hpo": {
+    "best_trial_number": 17,
+    "best_objective": 1.7171549383347204,
+    "complete_trials": 11,
+    "pruned_trials": 24,
+    "failed_trials": 0,
+    "total_terminal_trials": 35,
+    "selected_balance_arm": "uniform",
+    "balance_reason": "no non-uniform arm passed the strict matched OOF ML and economic gates"
+  },
+  "outer_oof": {
+    "rows": 64504,
+    "aggregate": {
+      "logloss": 1.7046790028670682,
+      "ranked_probability_score": 0.20829535624098042,
+      "brier_macro": 0.11417776197105807,
+      "f1_macro": 0.1209900795855178,
+      "f1_weighted": 0.201114251342198,
+      "dominant_predicted_class": "dead_timeout",
+      "dominant_predicted_class_share": 0.5802585886146595,
+      "missing_argmax_classes": [
+        "early_mfe_full_reversal",
+        "fast_realization_winner",
+        "noisy_timeout_usable_mfe"
+      ]
+    },
+    "fold_local_train_prior_comparison": {
+      "2026-05": {
+        "rows": 32236,
+        "model_logloss": 1.702379173474011,
+        "prior_logloss": 1.7071772469319113,
+        "logloss_gain": 0.004798073457900287,
+        "model_rps": 0.2026903151078023,
+        "prior_rps": 0.20490189834808814,
+        "rps_gain": 0.002211583240285836
+      },
+      "2026-06": {
+        "rows": 24670,
+        "model_logloss": 1.7068768767174576,
+        "prior_logloss": 1.7101402596436805,
+        "logloss_gain": 0.0032633829262229685,
+        "model_rps": 0.21987828468131201,
+        "prior_rps": 0.22184455620305837,
+        "rps_gain": 0.00196627152174636
+      },
+      "2026-07_partial": {
+        "rows": 7598,
+        "model_logloss": 1.7073001863923996,
+        "prior_logloss": 1.7212445644111358,
+        "logloss_gain": 0.01394437801873627,
+        "model_rps": 0.19446714636287424,
+        "prior_rps": 0.1978238262267578,
+        "rps_gain": 0.0033566798638835493
+      }
+    }
+  },
+  "decision": {
+    "classification_gate": "pass_with_concentration_warning",
+    "reason": "Log loss and RPS beat fold-local train priors in every untouched outer fold, but hard predictions remain concentrated and several low-support classes never win argmax.",
+    "required_next_gate": "Do not promote from classification metrics alone. Require positive strict OOF execution-EV uplift, including probability-vector ablations and month/side stability."
+  },
+  "artifacts": {
+    "feature_selection_checkpoint_sha256": "444499d532a40c961ad444d2a8ef5d24b2e8e58498c0e0946abbd8e6993048c7",
+    "geometry_contract_sha256": "d9395f3b352728decc5cb77cc73f68d71141b1b52fb669964c990eec8d2a0bfb",
+    "hpo_manifest_sha256": "17a61a9136dbcd0161b55fc287db3f9817c0686f8b26f805d1f0c3a9ed1082d8",
+    "class_balance_economic_oof_sha256": "a1b1a8899b98a68281ded6a73c07c162a7f09fab0bbc0fdbdb0647067b795363",
+    "outer_oof_probabilities_sha256": "a640d2a1c05e76d1c319361b6517f728c6bbfdcfad6ea65702377d4678c58c6d",
+    "final_classifier_sha256": "f8e3c8d9e3344c22dae6cee94f11be23c24a1bfea1b0c132466d3db33e04d463",
+    "expanded_oof_metrics_sha256": "71dac220d8e864fe585032847dd2aa51f459129a152b733649689bd3c420b456"
+  }
+}

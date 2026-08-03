@@ -77,6 +77,11 @@ median, MAD/std, positive-cohort rate, worst-era MDA and latest-era MDA/label.
   and from the required 2024-01-01 evaluation boundary. Sporadic post-readiness
   gaps remain subject to rejection. Monthly-by-side coverage is persisted as a
   diagnostic rather than used as a noisy per-month hard gate.
+- The same first-ready contract is propagated into the frozen base/meta winner
+  manifests, selected-panel checkpoints, production input digests and strict
+  OOS coverage audit. A finite value before readiness fails closed; production
+  gates post-readiness and evaluation-window coverage instead of reapplying a
+  contradictory whole-history gate.
 - On the deterministic selector cohort, `btc_ex_eth_oi_dominance_z_ratio` and
   `btc_oi_dominance_z_ratio` have 85.30% whole-history coverage only because
   they are unavailable before 2023-03-14 15:00 UTC. They are retained as

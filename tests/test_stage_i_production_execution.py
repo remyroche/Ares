@@ -5,6 +5,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from extreme_price_movements.packb_static_point_feature_loader import (
     FrozenFeatureContract,
@@ -251,5 +252,20 @@ def test_production_coverage_rejects_sporadic_post_readiness_gap(tmp_path) -> No
             {"long": [path], "short": []},
             {"long": ["sporadic"], "short": []},
             {"long": {"sporadic": ts[0].isoformat()}, "short": {}},
+            bundle,
+        )
+
+
+def test_production_coverage_rejects_finite_value_before_readiness(tmp_path) -> None:
+    _, bundle = _fixture(tmp_path)
+    ts = pd.date_range("2023-01-01", periods=100, freq="10D", tz="UTC")
+    values = np.arange(100, dtype=float)
+    path = tmp_path / "early_value.parquet"
+    pd.DataFrame({"__ts__": ts, "oi_dominance": values}).to_parquet(path, index=False)
+    with pytest.raises(StageIProductionExecutionError, match="coverage audit failed"):
+        _coverage_records(
+            {"long": [path], "short": []},
+            {"long": ["oi_dominance"], "short": []},
+            {"long": {"oi_dominance": ts[15].isoformat()}, "short": {}},
             bundle,
         )

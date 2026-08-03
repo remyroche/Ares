@@ -395,6 +395,7 @@ def _fixed_calendar_oof_folds(
     *,
     reference_end: pd.Timestamp,
     oof_months: Sequence[str],
+    validation_timestamps: Sequence[Any] | None = None,
 ) -> list[FixedCalendarOOFFold]:
     """Build full-row monthly OOF folds, intentionally without role filtering.
 
@@ -406,6 +407,11 @@ def _fixed_calendar_oof_folds(
 
     if not oof_months:
         raise ValueError("at least one fixed outer-OOF calendar month is required")
+    validation = decision if validation_timestamps is None else _utc_series(
+        validation_timestamps, name="oof_validation_timestamps"
+    )
+    if len(validation) != len(decision):
+        raise ValueError("oof_validation_timestamps must align to decision timestamps")
     folds: list[FixedCalendarOOFFold] = []
     seen: set[str] = set()
     for month_text in oof_months:
@@ -424,7 +430,11 @@ def _fixed_calendar_oof_folds(
                 f"fixed outer-OOF month {month} starts before reference cutoff "
                 f"{reference_end.isoformat()}"
             )
-        valid_mask = decision.ge(month_start) & decision.lt(month_stop)
+        # Training remains decision-time / label-resolution purged.  The
+        # emitted outer population may instead be anchored to an immutable
+        # signal-time candidate ledger (historical residual OOF), preventing a
+        # one-hour decision handoff from shifting calendar membership.
+        valid_mask = validation.ge(month_start) & validation.lt(month_stop)
         valid_idx = np.flatnonzero(valid_mask.to_numpy())
         if not len(valid_idx):
             raise ValueError(f"fixed outer-OOF month {month} has no decision rows")
@@ -796,6 +806,7 @@ def fit_auxiliary_role_model(
     preset_params: Mapping[str, Any] | None = None,
     hpo_rows: int = 45_000,
     oof_months: Sequence[str] = FIXED_MAY_JULY_OOF_MONTHS,
+    oof_validation_timestamps: Sequence[Any] | None = None,
     quantile_alpha: float = 0.80,
     n_jobs: int | None = None,
     role_name: str = "auxiliary_role",
@@ -1030,6 +1041,7 @@ def fit_auxiliary_role_model(
         resolved,
         reference_end=cutoff,
         oof_months=oof_months,
+        validation_timestamps=oof_validation_timestamps,
     )
     oof_predictions = np.full(rows, np.nan, dtype=np.float32)
     oof_fold_ids = np.full(rows, -1, dtype=np.int16)

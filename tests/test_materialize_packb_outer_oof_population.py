@@ -14,6 +14,21 @@ materializer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(materializer)
 
 
+def test_final_outer_fold_can_extend_without_changing_prior_folds() -> None:
+    extended = materializer.resolved_outer_folds("2026-07-21T00:00:00Z")
+    assert extended[:-1] == materializer.OUTER_FOLDS[:-1]
+    assert extended[-1][:2] == materializer.OUTER_FOLDS[-1][:2]
+    assert extended[-1][2] == pd.Timestamp("2026-07-21T00:00:00Z")
+
+
+def test_final_outer_fold_extension_cannot_shorten_calendar() -> None:
+    with pytest.raises(
+        materializer.OuterPopulationMaterializationError,
+        match="cannot shorten",
+    ):
+        materializer.resolved_outer_folds("2026-07-10T00:00:00Z")
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")

@@ -49,11 +49,20 @@ def _parse_algorithms(value: str) -> tuple[str, ...]:
 
 def _parse_target_modes(value: str) -> tuple[str, ...]:
     modes = tuple(_parse_columns(value))
-    if set(modes) != {"direct", "residual"}:
+    if not set(modes) <= {"direct", "residual"}:
         raise argparse.ArgumentTypeError(
-            "--target-modes must contain exactly direct,residual"
+            "--target-modes must contain direct and/or residual"
         )
     return modes
+
+
+def _parse_feature_arms(value: str) -> tuple[str, ...]:
+    arms = tuple(_parse_columns(value))
+    if not set(arms) <= {"all_features", "mda_1se"}:
+        raise argparse.ArgumentTypeError(
+            "--feature-arms supports only all_features,mda_1se"
+        )
+    return arms
 
 
 def _utc(values: pd.Series, *, column: str) -> pd.Series:
@@ -134,6 +143,16 @@ def _load_provenance(path: Path) -> tuple[dict[str, FeatureProvenance], dict[str
             oof_or_frozen=bool(raw["oof_or_frozen"]),
             available_at_col=str(raw["available_at_col"]),
             model_input=bool(raw.get("model_input", True)),
+            class_order=(
+                tuple(map(str, raw["class_order"]))
+                if raw.get("class_order") is not None
+                else None
+            ),
+            class_order_sha256=(
+                str(raw["class_order_sha256"])
+                if raw.get("class_order_sha256") is not None
+                else None
+            ),
         )
     return parsed, payload
 
@@ -205,6 +224,7 @@ def _validate_handoff(
         decision_time_col=config.decision_time_col,
         side_col=config.side_col,
         catboost_archetype_col=config.catboost_archetype_col,
+        additional_input_families=config.additional_input_families,
     )
     return work
 
@@ -251,7 +271,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--gross-ev-col", default="execution_gross_ev_12h")
     parser.add_argument("--algorithms", type=_parse_algorithms, default=ALGORITHM_NAMES)
     parser.add_argument(
+        "--additional-input-families",
+        type=_parse_columns,
+        default=[],
+        help="Explicit provenance families to add to the canonical frozen inputs.",
+    )
+    parser.add_argument(
         "--target-modes", type=_parse_target_modes, default=("direct", "residual")
+    )
+    parser.add_argument(
+        "--feature-arms",
+        type=_parse_feature_arms,
+        default=("all_features", "mda_1se"),
     )
     parser.add_argument("--max-rows", type=int, default=5_000)
     parser.add_argument("--max-span-days", type=float, default=31.0)
@@ -306,6 +337,8 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         gmm_archetype_col=args.gmm_archetype_col,
         algorithms=tuple(args.algorithms),
         target_modes=tuple(args.target_modes),
+        additional_input_families=tuple(args.additional_input_families),
+        feature_arms=tuple(args.feature_arms),
     )
     frame = _validate_handoff(
         pd.read_parquet(args.input),

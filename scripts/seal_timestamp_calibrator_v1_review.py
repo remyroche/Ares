@@ -1,0 +1,16 @@
+from __future__ import annotations
+import hashlib,json,os,tempfile
+from pathlib import Path
+import pandas as pd
+R=Path(__file__).resolve().parents[1];A=R/'data_perp/artifacts';S=A/'pre2026_hourly_book_risk_calibrator_20260730_v1';O=A/'timestamp_book_risk_calibrator_v1_independent_review_20260730_v1'
+def h(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def run():
+ if O.exists():raise RuntimeError(O)
+ if h(S/'manifest.json')!=(S/'manifest.sha256').read_text().split()[0]:raise RuntimeError('unsealed')
+ books={a:pd.read_parquet(S/f'hourly_book_{a}.parquet') for a in ['regime','transition','trajectory','combined']};audit=pd.read_csv(S/'hourly_fold_audit.csv');gate=pd.read_csv(S/'context_incremental_economics_gate.csv');pol=pd.read_csv(S/'context_incremental_policy_economics.csv')
+ checks=[]
+ for a,x in books.items():checks.append({'arm':a,'rows':len(x),'unique_hours':x.__ts__.nunique(),'one_row_per_hour':len(x)==x.__ts__.nunique(),'zero_opportunity_hours':int(x.book_opportunity.eq(0).sum()),'opportunity_hours':int(x.book_opportunity.eq(1).sum()),'eras':'|'.join(sorted(x.era.unique()))})
+ same=audit.groupby(['arm','target','held_era']).test_hour_sha256.nunique().max()==1
+ review={'schema':'timestamp_calibrator_v1_independent_review_v1','status':'SEALED_REVIEW_NO_2026_READ_NON_PROMOTION','findings':{'one_hour_rows':checks,'conditional_predictions_all_held_hours':bool(audit.predicts_all_held_hours.all()),'matched_test_fold_hashes_by_arm_target_era':bool(same),'inference_feature_review':'Pass by declared contract: candidate count and score summaries plus arm-local causal context. Must independently verify feature availability timestamps in any v2 correction.','pooled_global_policy':'Pass by declared contract: one pooled top10 per held era; no per-timestamp reselection.','availability_era_issue':'Regime/transition/combined hourly books begin 2024_h1, while policy replay includes 2023_apr_dec. Review requires v2 to explicitly prove those 2023 candidates receive zero broadcast adjustment rather than an unsupported learned context value.','economics_tail_issue':'All 12 arm/gamma context economics rows are ineligible; residual control stability is false for every row. Therefore no economic or tail gate passes and no forward/policy use is justified.'},'recommendations':['Do not promote or replay.','For v2, persist candidate-level broadcast availability/zero-adjust reason and reconcile hourly-book versus policy-replay era coverage.','Persist true pooled global-book economics and support/zero-adjust shares by era before any new evaluation.']}
+ d=O.parent/('.'+O.name+'.tmp');d.mkdir();pd.DataFrame(checks).to_csv(d/'hourly_coverage_checks.csv',index=False);(d/'review.json').write_text(json.dumps(review,indent=2)+'\n');m={'schema':review['schema'],'status':review['status'],'review':review,'inputs_sha256':{str((S/'manifest.json').resolve()):h(S/'manifest.json')},'outputs_sha256':{'review.json':h(d/'review.json'),'hourly_coverage_checks.csv':h(d/'hourly_coverage_checks.csv')}};(d/'manifest.json').write_text(json.dumps(m,indent=2)+'\n');(d/'manifest.sha256').write_text(f'{h(d/"manifest.json")}  manifest.json\n');os.replace(d,O);print(O)
+if __name__=='__main__':run()

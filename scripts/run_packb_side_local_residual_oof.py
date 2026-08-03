@@ -151,6 +151,8 @@ def _validate_population(
     population_path: Path,
     manifest_path: Path,
     outer_root: Path,
+    *,
+    expected_source_rows: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if (
@@ -168,7 +170,7 @@ def _validate_population(
     if (
         not source.is_file()
         or manifest.get("source", {}).get("sha256") != _sha256(source)
-        or manifest.get("source_rows") != 744251
+        or manifest.get("source_rows") != int(expected_source_rows)
     ):
         raise ResidualOOFError("canonical base OOF source binding changed")
     frame = pd.read_parquet(population_path)
@@ -677,6 +679,9 @@ def run(
     max_selected_features: int,
     outer_train_rows: int,
     seed: int,
+    expected_source_rows: int = 744251,
+    last_validation_end: str = "2026-07-11T00:00:00Z",
+    frozen_contract_root: Path | None = None,
 ) -> dict[str, Any]:
     if destination.exists():
         raise FileExistsError(f"refusing to overwrite residual artifact: {destination}")
@@ -690,8 +695,21 @@ def run(
     )
     label_files = _canonical_label_files(Path(labels_dir), inner_manifest)
     frame, population_manifest = _validate_population(
-        population_path, population_manifest_path, outer_root
+        population_path,
+        population_manifest_path,
+        outer_root,
+        expected_source_rows=expected_source_rows,
     )
+    folds = list(FOLDS)
+    requested_end = pd.Timestamp(last_validation_end)
+    if requested_end.tzinfo is None:
+        requested_end = requested_end.tz_localize("UTC")
+    else:
+        requested_end = requested_end.tz_convert("UTC")
+    original_end = pd.Timestamp(FOLDS[-1][2])
+    if requested_end < original_end:
+        raise ResidualOOFError("last validation end cannot shorten the frozen calendar")
+    folds[-1] = (folds[-1][0], folds[-1][1], requested_end.isoformat())
     stage = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
     stage.mkdir(parents=True)
     guard = TrainingResourceGuard(
@@ -721,55 +739,86 @@ def run(
                     guard=guard,
                 )
             )
-            april = side_frame.loc[
-                side_frame["__ts__"].ge("2026-04-01")
-                & side_frame["__ts__"].lt("2026-05-01")
-            ].copy()
-            april_selection = _bounded_beginning_middle_end_sample(
-                april,
-                max_rows=int(selection_rows),
-                name=f"{side}_residual_april_selection",
-            )
-            guard.checkpoint(f"packb_residual:{side}:load_selection_features")
-            selection_representation = _load_representation(
-                representation_loader, april_selection, representation_candidates
-            )
-            selection_matrix = _add_anchors(april_selection, selection_representation)
-            active = _active_features(
-                selection_matrix,
-                [*representation_candidates, *ANCHORS],
-                minimum_finite_fraction=0.95,
-            )
-            features, feature_report = _select_features(
-                april_selection,
-                selection_matrix,
-                active,
-                seed=seed + side_index * 1000,
-                max_features=max_selected_features,
-            )
-            hpo_frame = _bounded_beginning_middle_end_sample(
-                april,
-                max_rows=int(hpo_rows),
-                name=f"{side}_residual_april_hpo",
-            )
-            hpo_representation_features = [
-                feature for feature in features if feature not in ANCHORS
-            ]
-            hpo_matrix = _add_anchors(
-                hpo_frame,
-                _load_representation(
-                    representation_loader, hpo_frame, hpo_representation_features
-                ),
-            )
-            params, rounds, alpha, trials = _hpo(
-                hpo_frame,
-                hpo_matrix,
-                features,
-                trials=hpo_trials,
-                patience=hpo_patience,
-                seed=seed + side_index * 1000 + 100,
-                guard=guard,
-            )
+            if frozen_contract_root is not None:
+                frozen_side = Path(frozen_contract_root) / side
+                feature_contract = json.loads(
+                    (frozen_side / "feature_contract.json").read_text(encoding="utf-8")
+                )
+                hpo_contract = json.loads(
+                    (frozen_side / "hpo_contract.json").read_text(encoding="utf-8")
+                )
+                features = list(feature_contract["features"])
+                params = dict(hpo_contract["params"])
+                rounds = int(hpo_contract["rounds"])
+                alpha = float(hpo_contract["alpha"])
+                if (
+                    feature_contract.get("side") != side
+                    or hpo_contract.get("side") != side
+                    or feature_contract.get("sha256") != _stable_hash(features)
+                    or hpo_contract.get("sha256")
+                    != _stable_hash(
+                        {"params": params, "rounds": rounds, "alpha": alpha}
+                    )
+                ):
+                    raise ResidualOOFError(
+                        f"{side} frozen feature/HPO contract hash changed"
+                    )
+                feature_report = pd.read_csv(frozen_side / "feature_selection.csv")
+                trials = pd.read_csv(frozen_side / "hpo_trials.csv")
+            else:
+                april = side_frame.loc[
+                    side_frame["__ts__"].ge("2026-04-01")
+                    & side_frame["__ts__"].lt("2026-05-01")
+                ].copy()
+                april_selection = _bounded_beginning_middle_end_sample(
+                    april,
+                    max_rows=int(selection_rows),
+                    name=f"{side}_residual_april_selection",
+                )
+                guard.checkpoint(f"packb_residual:{side}:load_selection_features")
+                selection_representation = _load_representation(
+                    representation_loader, april_selection, representation_candidates
+                )
+                selection_matrix = _add_anchors(
+                    april_selection, selection_representation
+                )
+                active = _active_features(
+                    selection_matrix,
+                    [*representation_candidates, *ANCHORS],
+                    minimum_finite_fraction=0.95,
+                )
+                features, feature_report = _select_features(
+                    april_selection,
+                    selection_matrix,
+                    active,
+                    seed=seed + side_index * 1000,
+                    max_features=max_selected_features,
+                )
+                hpo_frame = _bounded_beginning_middle_end_sample(
+                    april,
+                    max_rows=int(hpo_rows),
+                    name=f"{side}_residual_april_hpo",
+                )
+                hpo_representation_features = [
+                    feature for feature in features if feature not in ANCHORS
+                ]
+                hpo_matrix = _add_anchors(
+                    hpo_frame,
+                    _load_representation(
+                        representation_loader,
+                        hpo_frame,
+                        hpo_representation_features,
+                    ),
+                )
+                params, rounds, alpha, trials = _hpo(
+                    hpo_frame,
+                    hpo_matrix,
+                    features,
+                    trials=hpo_trials,
+                    patience=hpo_patience,
+                    seed=seed + side_index * 1000 + 100,
+                    guard=guard,
+                )
             side_root = stage / side
             side_root.mkdir(parents=True)
             feature_report.to_csv(side_root / "feature_selection.csv", index=False)
@@ -808,7 +857,7 @@ def run(
                 ),
             )
             fold_reports: list[dict[str, Any]] = []
-            for fold_index, (fold_id, start_text, end_text) in enumerate(FOLDS):
+            for fold_index, (fold_id, start_text, end_text) in enumerate(folds):
                 start = pd.Timestamp(start_text)
                 end = pd.Timestamp(end_text)
                 train_mask = side_frame["__ts__"].lt(start) & side_frame[
@@ -995,13 +1044,9 @@ def run(
                 },
             }
             _atomic_json(side_root / "manifest.json", side_reports[side])
-            del (
-                selection_representation,
-                selection_matrix,
-                hpo_matrix,
-                full_matrix,
-                representation_loader,
-            )
+            del full_matrix, representation_loader
+            if frozen_contract_root is None:
+                del selection_representation, selection_matrix, hpo_matrix
             guard.checkpoint(f"packb_residual:{side}:released")
         predictions = pd.concat(all_predictions, ignore_index=True)
         predictions = predictions.sort_values(
@@ -1040,9 +1085,22 @@ def run(
                 "april": "development_only_base_passthrough_warmup",
                 "oof_folds": [
                     {"fold": fold, "start": start, "end": end}
-                    for fold, start, end in FOLDS
+                    for fold, start, end in folds
                 ],
+                "extension_status": (
+                    "frozen_contract_diagnostic_extension"
+                    if requested_end > original_end
+                    else "canonical_calendar"
+                ),
             },
+            "feature_hpo_contract": (
+                {
+                    "mode": "frozen_reuse",
+                    "source_root": str(Path(frozen_contract_root)),
+                }
+                if frozen_contract_root is not None
+                else {"mode": "selected_and_tuned_in_run"}
+            ),
             "cost_contract": (
                 "__first_touch_capture_net__ already includes fixed 1% round-trip "
                 "cost exactly once"
@@ -1086,6 +1144,11 @@ def main() -> None:
     parser.add_argument("--max-selected-features", type=int, default=64)
     parser.add_argument("--outer-train-rows", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=20260724)
+    parser.add_argument("--expected-source-rows", type=int, default=744251)
+    parser.add_argument(
+        "--last-validation-end", default="2026-07-11T00:00:00Z"
+    )
+    parser.add_argument("--frozen-contract-root", type=Path, default=None)
     args = parser.parse_args()
     manifest = run(
         population_path=args.population,
@@ -1105,6 +1168,9 @@ def main() -> None:
         max_selected_features=args.max_selected_features,
         outer_train_rows=args.outer_train_rows,
         seed=args.seed,
+        expected_source_rows=args.expected_source_rows,
+        last_validation_end=args.last_validation_end,
+        frozen_contract_root=args.frozen_contract_root,
     )
     print(json.dumps(_jsonable(manifest), sort_keys=True))
 

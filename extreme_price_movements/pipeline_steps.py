@@ -3907,6 +3907,33 @@ def _resolve_available_context_symbols(
     return apply_hardcoded_universe_exclusions(resolved)
 
 
+def _feature_subset_context_symbols(
+    requested_symbols: list[str],
+    available_symbols: list[str],
+    output_symbols: list[str],
+    *,
+    strict_subset: bool,
+) -> list[str]:
+    """Return optional context symbols without bypassing a strict PIT universe.
+
+    The normal subset path adds market-basket symbols so cross-asset features
+    retain broad context.  Retrospective point-in-time repairs may instead
+    supply an exact raw-coverage universe.  In that mode, adding symbols outside
+    the allowlist can silently reintroduce stale funding/OI through the saved
+    microdata loader's forward-fill behavior, so the context expansion must be
+    disabled explicitly.
+    """
+
+    if strict_subset:
+        return []
+    resolved = _resolve_available_context_symbols(
+        requested_symbols,
+        available_symbols,
+    )
+    output_set = set(output_symbols)
+    return [symbol for symbol in resolved if symbol not in output_set]
+
+
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
     _preselected_strategy_defs = [
         dict(s)
@@ -9080,13 +9107,20 @@ def run_feature_generation_step(
             "BTC/USDC",
             "ETH/USDC",
         ]
-        context_candidates = _resolve_available_context_symbols(
+        strict_feature_subset = str(
+            os.environ.get("EPM_FEATURE_CONTEXT_STRICT_SUBSET", "0")
+        ).strip().lower() in {"1", "true", "yes", "y", "on"}
+        feature_context_syms = _feature_subset_context_symbols(
             context_candidates,
             local_context_symbols,
+            output_syms,
+            strict_subset=strict_feature_subset,
         )
-        feature_context_syms = [
-            sym for sym in context_candidates if sym not in set(output_syms)
-        ]
+        if strict_feature_subset:
+            tprint(
+                "Feature subset mode: strict context enabled; no symbols outside "
+                "the explicit point-in-time universe will be added."
+            )
         if feature_context_syms:
             tprint(
                 f"Feature subset mode: adding {len(feature_context_syms)} context symbols "

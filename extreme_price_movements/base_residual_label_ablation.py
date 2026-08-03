@@ -357,17 +357,16 @@ def economic_metrics(
 
 
 def label_hpo_objective(metrics_by_month: Sequence[Mapping[str, float]]) -> float:
-    """Stable training-only objective emphasizing residual top-10 economics."""
+    """Training-only objective for the deployed pooled-global top-10 policy.
+
+    The execution policy ranks all admitted candidates together after its
+    recent-EV calibrator.  Timestamp- or side-local top-k metrics remain useful
+    diagnostics, but must not select a label recipe because they describe a
+    different trading policy.
+    """
 
     if not metrics_by_month:
         return float("-inf")
-    top = np.asarray(
-        [
-            float(row["timestamp_side_top10_mean_net_return"])
-            for row in metrics_by_month
-        ],
-        dtype=np.float64,
-    )
     global_top = np.asarray(
         [float(row["global_top10_mean_net_return"]) for row in metrics_by_month],
         dtype=np.float64,
@@ -375,13 +374,12 @@ def label_hpo_objective(metrics_by_month: Sequence[Mapping[str, float]]) -> floa
     rank_ic = np.asarray(
         [float(row["rank_ic"]) for row in metrics_by_month], dtype=np.float64
     )
-    if not np.isfinite(np.r_[top, global_top, rank_ic]).all():
+    if not np.isfinite(np.r_[global_top, rank_ic]).all():
         return float("-inf")
-    downside = max(0.0, -float(np.min(top)))
+    downside = max(0.0, -float(np.min(global_top)))
     return float(
-        0.50 * np.median(top)
-        + 0.25 * np.median(global_top)
-        + 0.15 * np.min(top)
+        0.70 * np.median(global_top)
+        + 0.20 * np.min(global_top)
         + 0.10 * np.median(rank_ic)
         - 0.50 * downside
     )

@@ -1,0 +1,235 @@
+{
+  "schema": "canonical_execution_reliability_exit_hurdle_workstream_v1",
+  "status": "FROZEN_RESEARCH_CONTRACT_NO_PROMOTION_NO_PORTFOLIO_REPLAY",
+  "feature_input": {
+    "artifact": "data_perp/artifacts/canonical_execution_reliability_input_20260730_v4",
+    "schema": "canonical_execution_reliability_input_v4"
+  },
+  "target_input": {
+    "artifact": "data_perp/artifacts/canonical_execution_reliability_target_pack_20260730_v1",
+    "schema": "canonical_execution_reliability_target_pack_v1",
+    "target_only": true
+  },
+  "parent_evidence": {
+    "ablation": "data_perp/artifacts/canonical_execution_reliability_ablation_20260730_v2",
+    "decision": "data_perp/artifacts/canonical_execution_reliability_ablation_summary_20260730_v1",
+    "research_parent": "A5__A2__context__timestamp_side_relative",
+    "mapped_control": "A0__score_residual_expected_ev"
+  },
+  "population": {
+    "rows": 110730,
+    "development_rows": 41472,
+    "reused_diagnostic_rows": 69258,
+    "identity": [
+      "candidate_id",
+      "side_name"
+    ],
+    "admission": "one random-tie-expected pooled-global top-k book across sides and timestamps after each score's own causal recent-EV map"
+  },
+  "outer_folds": [
+    {
+      "name": "mapping_calibration",
+      "validation_start_utc": "2025-03-20T00:00:00Z",
+      "validation_end_utc": "2025-03-23T00:00:00Z",
+      "role": "OOF mapping history only"
+    },
+    {
+      "name": "selection_1",
+      "validation_start_utc": "2025-03-23T00:00:00Z",
+      "validation_end_utc": "2025-03-26T00:00:00Z",
+      "role": "architecture selection"
+    },
+    {
+      "name": "selection_2",
+      "validation_start_utc": "2025-03-26T00:00:00Z",
+      "validation_end_utc": "2025-03-29T00:00:00Z",
+      "role": "architecture selection"
+    },
+    {
+      "name": "selection_3",
+      "validation_start_utc": "2025-03-29T00:00:00Z",
+      "validation_end_utc": "2025-04-01T00:00:00Z",
+      "role": "architecture selection and latest-fold gate"
+    }
+  ],
+  "purge": {
+    "outer": "execution_decision_utc < validation_start AND execution_label_end_utc < validation_start",
+    "inner": "last chronological 25% of legal outer training timestamps; fit labels resolve strictly before inner validation start",
+    "april": "all HPO and PVC selection use only labels resolved before 2025-04-01T00:00:00Z"
+  },
+  "feature_contract": {
+    "side_local_models": true,
+    "base_fields": [
+      "raw_score",
+      "score_base_alpha",
+      "score_residual_expected_ev",
+      "direct_q25_return",
+      "support__direct_net__S0__compact_d4",
+      "support__hard0__S0__compact_d4",
+      "support__hard25__S0__deep_d6",
+      "support__soft__S0__compact_d4",
+      "support__direct_net__S1+B__compact_d4",
+      "support__hard0__S1+B__fixed_d5",
+      "support__hard25__S1+B__fixed_d5",
+      "support__soft__S1+B__compact_d4",
+      "base_rank_pct_timestamp_side",
+      "base_score_z_timestamp_side"
+    ],
+    "bounded_interactions": [
+      "base_oof_score x preentry_transition__range_24h_pct__delta_12h",
+      "base_oof_score x preentry_transition__meta_raw__volatility_zscore__delta_12h",
+      "base_oof_score x preentry_transition__trend_r2_24__delta_12h",
+      "base_oof_score x preentry_transition__jump_intensity__delta_12h",
+      "base_oof_score x preentry_transition__meta_raw__chop_score__delta_12h"
+    ],
+    "interaction_rule": "standardize each transition on the legal fold/side training rows, multiply by base_oof_score and clip to [-1,1]",
+    "dropped_context": [
+      "cutoff margin and z",
+      "timestamp-global rank and z",
+      "candidate group size",
+      "rank decile",
+      "archetype-relative z"
+    ],
+    "forbidden": [
+      "all target-pack columns",
+      "realized exit class or reason",
+      "mapped score coordinates",
+      "DAE/GMM outputs",
+      "timing, MAE, target-price, wait or reprice fields"
+    ]
+  },
+  "architectures": {
+    "H0_controls": {
+      "scores": [
+        "A0__score_residual_expected_ev",
+        "A5__A2__context__timestamp_side_relative"
+      ],
+      "rule": "reuse sealed scores and remap identically; no refit"
+    },
+    "H1_cost_aware_opportunity": {
+      "opportunity_variants": [
+        "target_pre_exit_opportunity_0bps",
+        "target_pre_exit_opportunity_25bps",
+        "target_pre_exit_opportunity_50bps"
+      ],
+      "primary": "target_pre_exit_opportunity_25bps",
+      "robustness_only": [
+        "target_pre_exit_opportunity_0bps",
+        "target_pre_exit_opportunity_50bps"
+      ],
+      "heads": {
+        "opportunity": "P(cost-aware pre-exit opportunity) on all rows",
+        "success_given_opportunity": "P(successful deployed trailing | opportunity)",
+        "gain_given_success": "positive net magnitude | successful deployed trailing",
+        "payoff_given_opportunity_failure": "signed exact net | opportunity AND not successful trailing",
+        "payoff_without_opportunity": "signed exact net | no opportunity"
+      },
+      "combination": "p_opp * (p_success_given_opp * gain + (1-p_success_given_opp) * signed_payoff_given_opp_failure) + (1-p_opp) * signed_payoff_without_opp"
+    },
+    "H2_deployed_outcome_multiclass": {
+      "class_target": "target_deployed_exit_economics_class",
+      "classes": [
+        "successful_trailing",
+        "trailing_nonpositive",
+        "hard_adverse",
+        "timeout"
+      ],
+      "payoff": "one conditional signed exact-net regressor per class",
+      "combination": "sum over class probability times class-conditional signed net payoff"
+    },
+    "H3_deployed_outcome_hierarchical": {
+      "first_stage": "P(successful deployed trailing)",
+      "second_stage": "three-class trailing_nonpositive / hard_adverse / timeout conditional on not successful trailing",
+      "payoff": "one conditional signed exact-net regressor for success and each non-success class",
+      "combination": "p_success * success_payoff + (1-p_success) * sum conditional risk-class probability times conditional payoff"
+    },
+    "H4_severe_loss_hurdle": {
+      "event": "target_severe_loss_100bps",
+      "severity": "target_conditional_severe_loss_log1p_100bps under target_conditional_severe_loss_mask",
+      "nonsevere_payoff": "signed exact-net regressor conditional on not severe",
+      "inverse_severity": "0.01 * expm1(prediction)",
+      "combination": "(1-p_severe) * nonsevere_signed_payoff - p_severe * inverse_predicted_severity"
+    }
+  },
+  "unsupported_target_rule": {
+    "target_deployed_other_adverse_exit_attribution_only": "FORBIDDEN as a standalone side-local probability head; merge only through target_deployed_hard_adverse",
+    "reason": "zero March short events and inadequate March long support"
+  },
+  "catboost_hpo": {
+    "geometries": [
+      {
+        "name": "compact_d4",
+        "iterations": 160,
+        "depth": 4,
+        "learning_rate": 0.05,
+        "l2_leaf_reg": 10.0
+      },
+      {
+        "name": "standard_d6",
+        "iterations": 220,
+        "depth": 6,
+        "learning_rate": 0.04,
+        "l2_leaf_reg": 16.0
+      }
+    ],
+    "classifier_selection": "minimum inner log loss, then Brier, then shallower geometry",
+    "multiclass_selection": "minimum inner multiclass log loss, then shallower geometry",
+    "regressor_selection": "minimum inner MAE, then maximum rank IC, then shallower geometry",
+    "april_use": "forbidden"
+  },
+  "feature_selection": {
+    "method": "fold/side/head-local CatBoost PredictionValuesChange on the winning inner model",
+    "rule": "positive importance, cumulative 90%, minimum 8, maximum 24, force the four score anchors",
+    "april_use": "forbidden"
+  },
+  "mapping": {
+    "primary": "current separate score-specific daily 21-day pooled isotonic anchor plus shrunk-side residual",
+    "selection": "architecture selection always uses the primary mapper; alternative mapping research remains a separate no-retrain artifact",
+    "causality": "only labels resolved and scores available strictly before each daily snapshot",
+    "minimum_support": {
+      "pooled_rows": 2000,
+      "side_rows": 1000
+    }
+  },
+  "selection": {
+    "book": "random-tie-expected pooled-global top 10%",
+    "objective": "selection-fold mean net bps - 0.5*std + 0.25*worst fold",
+    "tie_break": "fewer selected features, shallower mean geometry, lexical name",
+    "freeze_before_april": true
+  },
+  "required_metrics": {
+    "heads": [
+      "support and prevalence",
+      "ROC-AUC or macro one-vs-rest AUC",
+      "average precision",
+      "log loss",
+      "Brier",
+      "10-bin ECE",
+      "bias",
+      "conditional MAE/RMSE/rank IC"
+    ],
+    "economics": [
+      "raw and causally mapped pooled-global top 1/5/10/20 gross/cost/net",
+      "selection mean/latest/worst/objective",
+      "April aggregate and latest seven decision days",
+      "cutoff tie population and selected share",
+      "side, asset, frozen regime and realised-exit attribution from the one global book"
+    ]
+  },
+  "promotion_gates": [
+    "March aggregate, latest and worst-fold mapped top10 > 0",
+    "April reused diagnostic aggregate and latest-seven-day mapped top10 > 0",
+    "both side contributions > 0 without quotas",
+    "aggregate and every selection-fold cutoff tie selected share <= 5%",
+    "better than identically mapped residual and A5 controls",
+    "new untouched forward evidence remains required"
+  ],
+  "action_layer_exclusions": [
+    "time-to-MFE",
+    "MAE path timing",
+    "bars-before-price-stops-decreasing",
+    "target price",
+    "wait or reprice action"
+  ],
+  "portfolio_replay": "forbidden until every promotion gate passes on new untouched forward evidence"
+}

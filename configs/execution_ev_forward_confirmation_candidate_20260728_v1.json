@@ -1,0 +1,348 @@
+{
+  "schema": "execution_ev_forward_confirmation_candidate_v1",
+  "first_decision_exclusive_utc": "2026-07-27T23:59:59.999999Z",
+  "requested_last_decision_utc": "2026-08-10T23:59:59.999999Z",
+  "label_horizon_hours": 12,
+  "coverage_gate": {
+    "window_mode": "fixed_window_all_gates_required",
+    "minimum_scored_rows": 5000,
+    "minimum_global_topk_rows": 500,
+    "minimum_complete_utc_days": 14
+  },
+  "frozen_confirmation_manifest": {
+    "path": "data_perp/artifacts/execution_ev_frozen_forward_confirmation_20260727_v1/manifest.json",
+    "sha256": "842c03b0d4b455e89bc1740acbc14a3ded50dc51825be54e2db52372124fdd52"
+  },
+  "training_lineage": {
+    "path": "data_perp/artifacts/execution_ev_forward_model_lineage_20260728_v1/lineage.json",
+    "sha256": "57f9ce01ac6f6474f24163a8a4c59f3fce538eaac61caac37b03a4ded42b279f"
+  },
+  "models": [
+    {
+      "role": "base_long",
+      "path": "data_perp/artifacts/packb_side_local_outer_oof_july20_20260726_v1_31_8/long/final_refit/model.txt",
+      "sha256": "ee0cb914d2698d919dfbf9254fa4a5b187e707b7a3e4c2c580ed39f99114320a",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-21T17:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_outer_oof_july20_20260726_v1_31_8/long/manifest.json",
+        "sha256": "e255ff79cb0867bdf2dbcfe4ccc0091c75c15ce180e7957442b54dc8b1022ef8"
+      }
+    },
+    {
+      "role": "base_short",
+      "path": "data_perp/artifacts/packb_side_local_outer_oof_july20_20260726_v1_31_8/short/final_refit/model.txt",
+      "sha256": "5baf5c7b92073dcef74882a5b04a0f49f57c95429db64426bf70fb3e93c5059f",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-21T17:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_outer_oof_july20_20260726_v1_31_8/short/manifest.json",
+        "sha256": "81de62fda2a5c9d39bfdd8e080b882e46e904b9c23b87621cadf92230f08dd0e"
+      }
+    },
+    {
+      "role": "residual_long",
+      "path": "data_perp/artifacts/packb_side_local_residual_oof_july20_20260726_v1_31_8/long/final_refit/residual_model.txt",
+      "sha256": "6180a5b144d78efbb33fba8c276c518c053b371a717c25a4bffb8b3b5104ba42",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T16:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_residual_oof_july20_20260726_v1_31_8/long/final_refit/contract.json",
+        "sha256": "7083fc527827cc15119b0020cfef4f2f4fc186f504cbe554e55c14b7c01d9234"
+      }
+    },
+    {
+      "role": "residual_short",
+      "path": "data_perp/artifacts/packb_side_local_residual_oof_july20_20260726_v1_31_8/short/final_refit/residual_model.txt",
+      "sha256": "d1aaa9bace9545eeef0c342c5ea9fcdcca72dadf8f44521e5d1b6115bde6ba06",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T16:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_residual_oof_july20_20260726_v1_31_8/short/final_refit/contract.json",
+        "sha256": "83d7990d57d573b61e842119fa80b2ba3a8eab0ffeb9931e03984d3cd0b7a025"
+      }
+    },
+    {
+      "role": "frozen_representation_long",
+      "path": "data_perp/artifacts/packb_side_local_ae_20260724_v1/long/ae_gmm/ae_gmm_state.pkl",
+      "sha256": "13bbdf2f3d2d4acd23ccc859d1f98cd87323decd4c498aaca7f8a752447de4c9",
+      "serialized_final_refit": true,
+      "provenance": "frozen_outcome_free_representation",
+      "outcome_free": true,
+      "reference_data_max_utc": "2025-10-31T23:59:59Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_ae_20260724_v1/long/loader_evidence/frozen_feature_contract.json",
+        "sha256": "05159f17af2e3a9db2e4c6b6275c763deff2a88003bb9bbb9bee85f83a146b34"
+      }
+    },
+    {
+      "role": "frozen_representation_short",
+      "path": "data_perp/artifacts/packb_side_local_ae_20260724_v1/short/ae_gmm/ae_gmm_state.pkl",
+      "sha256": "1bcf7048e542392b1ae02aac5cd09991e9d897e3137b6e954b75dff04de1d5cb",
+      "serialized_final_refit": true,
+      "provenance": "frozen_outcome_free_representation",
+      "outcome_free": true,
+      "reference_data_max_utc": "2025-10-31T23:59:59Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_side_local_ae_20260724_v1/short/loader_evidence/frozen_feature_contract.json",
+        "sha256": "0b9f0527e4c55e27e89cc979db1d86967207a5edfdde200c679eb639ab769568"
+      }
+    },
+    {
+      "role": "peak_mfe_long",
+      "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/roles/peak_mfe_12h_atr__conditional_mean/long/role_bundle.joblib",
+      "sha256": "d0e911103a5fd3c511d4f3a10c0edf40df3b2ee75c44816838a22c8ea67495dd",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T12:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/roles/peak_mfe_12h_atr__conditional_mean/manifest.json",
+        "sha256": "ed3c3d5a558ba8568f0d97243ddf496f27cab9072941d934f248a695a4c8b291"
+      }
+    },
+    {
+      "role": "peak_mfe_short",
+      "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/roles/peak_mfe_12h_atr__conditional_mean/short/role_bundle.joblib",
+      "sha256": "d9a8bbeec5619bb0665b783942ce1c9b2aac55e0eaec7ebbd05f40f9577ee910",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T12:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/roles/peak_mfe_12h_atr__conditional_mean/manifest.json",
+        "sha256": "ed3c3d5a558ba8568f0d97243ddf496f27cab9072941d934f248a695a4c8b291"
+      }
+    },
+    {
+      "role": "path_catboost_long",
+      "path": "data_perp/reports/catboost_path_archetype_packb31_8_structural_balance_20260725_v1/side=long/path_archetype_classifier.joblib",
+      "sha256": "f8e3c8d9e3344c22dae6cee94f11be23c24a1bfea1b0c132466d3db33e04d463",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T23:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/reports/catboost_path_archetype_packb31_8_structural_balance_20260725_v1/side=long/feature_selection_hpo_contract.json",
+        "sha256": "df30ae7915d96505d358868c65ba03b3c657376226f250d54ffb2f15f01f97b5"
+      }
+    },
+    {
+      "role": "path_catboost_short",
+      "path": "data_perp/reports/catboost_path_archetype_packb31_8_structural_balance_20260725_v1/side=short/path_archetype_classifier.joblib",
+      "sha256": "422516c11c9d91cb2d038a5d0cc42ad974be24fbd5c37d930f86193f395d796b",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T23:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/reports/catboost_path_archetype_packb31_8_structural_balance_20260725_v1/side=short/feature_selection_hpo_contract.json",
+        "sha256": "67a39159472141fdd214828f628e0d205785ee732e953eacb5c1488221aa16a1"
+      }
+    },
+    {
+      "role": "clean_favorable_event_long",
+      "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/shared/meaningful_mfe_event/long/timing_cdf_family.joblib",
+      "sha256": "ac7b0ddfbeb81ca23e2b350046f80153d097642a356fd8de000b14a8a47ad297",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T12:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/shared/meaningful_mfe_event/manifest.json",
+        "sha256": "169d728bcb535080ce9647013d60654244ae19ba1e81d8823585786f8f5bbc56"
+      }
+    },
+    {
+      "role": "clean_favorable_event_short",
+      "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/shared/meaningful_mfe_event/short/timing_cdf_family.joblib",
+      "sha256": "4b50382970690836551071a63722a1a4a24edaa49828953d4bc8ddce530dc651",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-11T12:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/packb_path_auxiliary_role_bundles_20260725_v1_31_8/shared/meaningful_mfe_event/manifest.json",
+        "sha256": "169d728bcb535080ce9647013d60654244ae19ba1e81d8823585786f8f5bbc56"
+      }
+    },
+    {
+      "role": "direct_exact_net_ev_long",
+      "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/direct_exact_net_residual_long.cbm",
+      "sha256": "3c1ad816fdedaa8b81c2d8c5eb947c903088d0dfe37ddfb4821464279fe33f1f",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T04:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/feature_contract.json",
+        "sha256": "f6da91d7953e0d766dcc8312330174161b2e044cd2a47ae13d6e9cf52593d82a"
+      }
+    },
+    {
+      "role": "direct_exact_net_ev_short",
+      "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/direct_exact_net_residual_short.cbm",
+      "sha256": "e44ad4231c500db2e0a4f7febba954596f56450badb35d3d569da5791753db9c",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T04:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/feature_contract.json",
+        "sha256": "f6da91d7953e0d766dcc8312330174161b2e044cd2a47ae13d6e9cf52593d82a"
+      }
+    },
+    {
+      "role": "capture_probability_long",
+      "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/capture_probability_long.cbm",
+      "sha256": "61c14e6ff4ee19ccd84e180ff55c6a91f79a3f5305cada9cc49e6e2b34842020",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T04:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/feature_contract.json",
+        "sha256": "f6da91d7953e0d766dcc8312330174161b2e044cd2a47ae13d6e9cf52593d82a"
+      }
+    },
+    {
+      "role": "capture_probability_short",
+      "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/capture_probability_short.cbm",
+      "sha256": "00b0e70064e4fa069f7df6cfbe7c9fe7be51be07b9d716c69a10307d440d9f73",
+      "serialized_final_refit": true,
+      "provenance": "frozen_final_refit",
+      "training_label_end_max_utc": "2026-07-20T04:00:00Z",
+      "feature_contract": {
+        "path": "data_perp/artifacts/execution_ev_forward_final_heads_20260728_v1/feature_contract.json",
+        "sha256": "f6da91d7953e0d766dcc8312330174161b2e044cd2a47ae13d6e9cf52593d82a"
+      }
+    }
+  ],
+  "scored_population": {
+    "path": "data_perp/artifacts/execution_ev_forward_preoutcome_20260728_v1/scored_population.parquet",
+    "sha256": null,
+    "identity_columns": [
+      "candidate_id",
+      "__ts__",
+      "__symbol__",
+      "side_name"
+    ],
+    "decision_column": "execution_decision_utc",
+    "admitted_column": "globally_admitted",
+    "coverage_member_column": "global_top10_capacity_member",
+    "mapped_score_column": "mapped_execution_ev",
+    "availability_columns": [
+      "feature_available_at",
+      "base_available_at",
+      "residual_available_at",
+      "peak_mfe_available_at",
+      "path_catboost_available_at",
+      "clean_probability_available_at",
+      "direct_ev_available_at",
+      "capture_probability_available_at",
+      "mapping_available_at"
+    ],
+    "daily_coverage": {
+      "path": "data_perp/artifacts/execution_ev_forward_preoutcome_20260728_v1/daily_coverage.csv",
+      "sha256": null,
+      "date_column": "utc_date",
+      "complete_column": "complete",
+      "both_sides_column": "both_sides"
+    },
+    "preoutcome_seal": {
+      "path": "data_perp/artifacts/execution_ev_forward_preoutcome_20260728_v1/preoutcome_seal.json",
+      "sha256": null
+    }
+  },
+  "calibrator": {
+    "path": "data_perp/artifacts/execution_ev_forward_calibrator_seed_20260728_v1/causal_recent_ev_state.json",
+    "sha256": "d8d046831af614306cce0957eda4b28cbca476a85e8fee54606e53888feef1a9",
+    "mapping": "causal_recent_side_isotonic_ev_21d",
+    "lookback_days": 21,
+    "resolved_label_max_utc": "2026-07-20T04:00:00Z",
+    "sequential_updates_only_after_resolution": true
+  },
+  "policy": {
+    "path": "data_perp/reports/simple_policy_1m_joint_trailing_raw_bayesian_champion_20260718_v1/production_staging/best_policy_params.json",
+    "sha256": "aed39b3474f06a2134ed814bccaf41e0a3fd54bd8194108dfa251f6abcdce301"
+  },
+  "spread_baseline": {
+    "path": "data_perp/exchanges/krakenfutures/spread_model/per_asset_spread_baseline_latest.csv",
+    "sha256": "5861c28dadf81ad1351d83c3a101ad79c901856002b01e6cdf115baca08a2597"
+  },
+  "source_code": [
+    {
+      "name": "forward_preoutcome_orchestrator",
+      "path": "scripts/run_execution_ev_forward_preoutcome.py",
+      "sha256": "b82ea9541293042318012255ad3ba0f634cc052519886d9acd9ecbd7cb7a7c32"
+    },
+    {
+      "name": "packb_final_refit_forward_scorer",
+      "path": "scripts/score_packb_final_refits_forward.py",
+      "sha256": "d45bd0b9c566f9e4a7831b0fae2f392189b15cd9a10cc428431931a222f09e79"
+    },
+    {
+      "name": "execution_ev_forward_preentry_materializer",
+      "path": "scripts/materialize_execution_ev_forward_preentry.py",
+      "sha256": "f6e3ba54ff78f4482fb66ab566eea5db54abc4c8c7a33ee50cacf409c93da727"
+    },
+    {
+      "name": "forward_final_head_fitter",
+      "path": "scripts/fit_execution_ev_forward_final_heads.py",
+      "sha256": "a61fb5c5a79d819b56e9557dd28625c3e7bf5e10524b9078be3c4da7022c6e11"
+    },
+    {
+      "name": "forward_calibrator_seed_builder",
+      "path": "scripts/build_execution_ev_forward_calibrator_seed.py",
+      "sha256": "69bdc80a8dfbe05221b3cd91d0e41b347d840a4a853fc6314edd987b8a76d00f"
+    },
+    {
+      "name": "forward_population_scorer",
+      "path": "scripts/score_execution_ev_forward_population.py",
+      "sha256": "b35fc8eacbcd3d395031b1d6d54d0c10372e3f97ef5db8185258421a9a094020"
+    },
+    {
+      "name": "readiness_auditor",
+      "path": "scripts/audit_execution_ev_forward_confirmation_readiness.py",
+      "sha256": "46ac9d66da24b5703051abc276ffc289522be6ee2a063ad6d3977fa5dea67268"
+    },
+    {
+      "name": "integrated_oof_reference_runner",
+      "path": "scripts/run_exact_policy_capture_support_ablation.py",
+      "sha256": "a4041c3c08cbbfb8a70211ff5b11494538bca055e0a42c1da89c2fe392ec6861"
+    },
+    {
+      "name": "policy_label_materializer",
+      "path": "scripts/materialize_execution_ev_policy_labels.py",
+      "sha256": "bdd182d44442728cdb7e05015b337044beffba67979d0d122c0c5fbb725e0a51"
+    },
+    {
+      "name": "canonical_join_builder",
+      "path": "scripts/build_canonical_exact_policy_regime_input.py",
+      "sha256": "ae76bd3df0394efe739f2f6278beb185cc6052aab525f832e183d0b645134bcf"
+    },
+    {
+      "name": "capture_label_materializer",
+      "path": "scripts/materialize_exact_policy_capture_labels.py",
+      "sha256": "3093717d4eb5eb9357ed8ec70528a4245b9c73f97b58352d747a248e85f7ec9d"
+    }
+  ],
+  "ranking_contract": {
+    "mapping": "causal_recent_side_isotonic_ev_21d",
+    "scope": "one_pooled_global_top_k_across_timestamps_and_sides",
+    "top_k_fraction": 0.1,
+    "per_timestamp_quota": false,
+    "side_quota": false,
+    "asset_quota": false,
+    "allow_zero_trades": true
+  },
+  "confirmation_outcomes": {
+    "path": "data_perp/artifacts/execution_ev_forward_confirmation_20260811_v1/exact_policy_outcomes.parquet",
+    "sha256": null
+  },
+  "canonical_schema_parity": {
+    "reference": {
+      "path": "data_perp/artifacts/execution_ev_canonical_exact_policy_regime_input_20260727_v3/joined.parquet",
+      "sha256": "b736827fc941badc709cd4f3795033176959a1c275b1636b916a62d42c673799"
+    },
+    "candidate": {
+      "path": "data_perp/artifacts/execution_ev_forward_confirmation_20260811_v1/joined.parquet",
+      "sha256": null
+    }
+  }
+}

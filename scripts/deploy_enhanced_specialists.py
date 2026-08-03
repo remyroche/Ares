@@ -100,23 +100,7 @@ class EnhancedSpecialistDeployer:
         'model_type': 'xgboost',
         'feature_type': 'meso_regime'
     }
-},
-            'enhanced_ml_smc_regime_step': {
-                'class_path': 'src.training.steps.market_analysis.enhanced_ml_smc_regime_step_enhanced.EnhancedMLSMCRegimeStep',
-                'model_type': 'xgboost',
-                'feature_type': 'smc_regime'
-            },
-            'enhanced_ml_volatility_burst_step': {
-                'class_path': 'src.training.steps.market_analysis.enhanced_ml_volatility_burst_step_enhanced.EnhancedMLVolatilityBurstStep',
-                'model_type': 'lightgbm',
-                'feature_type': 'volatility_burst'
-            },
-            'enhanced_ml_volume_force_step': {
-                'class_path': 'src.training.steps.market_analysis.enhanced_ml_volume_force_step_enhanced.EnhancedMLVolumeForceStep',
-                'model_type': 'xgboost',
-                'feature_type': 'volume_force'
-            }
-        }
+}
         
         deployment_results = {}
         

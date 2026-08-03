@@ -106,6 +106,12 @@ class ExecutionEVModelAblationConfig:
     recent_ev_local_support_target: float = 160.0
     recent_ev_correction_cap: float = 0.03
     algorithms: tuple[str, ...] = ALGORITHM_NAMES
+    additional_input_families: tuple[str, ...] = ()
+    feature_arms: tuple[FeatureArm, ...] = ("all_features", "mda_1se")
+    require_latest_period_stability: bool = True
+    min_latest_period_selected_rows: int = 100
+    min_latest_period_selection_share: float = 0.01
+    min_latest_period_top_k_net_ev: float = 0.0
 
 
 @dataclass
@@ -250,6 +256,7 @@ def validate_execution_ev_model_ablation_contract(
     decision_time_col: str = "__ts__",
     side_col: str = "side_name",
     catboost_archetype_col: str = "catboost_archetype",
+    additional_input_families: Sequence[str] = (),
 ) -> tuple[list[str], tuple[str, ...]]:
     """Validate the exact frozen alpha, five-auxiliary, CatBoost handoff.
 
@@ -268,9 +275,17 @@ def validate_execution_ev_model_ablation_contract(
             f"column {catboost_archetype_col!r}"
         )
 
+    extra_families = tuple(dict.fromkeys(map(str, additional_input_families)))
+    overlap = sorted(set(extra_families) & set(REQUIRED_INPUT_FAMILIES))
+    if overlap:
+        raise ValueError(
+            "additional input families duplicate required families: "
+            + ", ".join(overlap)
+        )
+    input_families = (*REQUIRED_INPUT_FAMILIES, *extra_families)
     by_family = {
         family: _family_columns(provenance, family)
-        for family in REQUIRED_INPUT_FAMILIES
+        for family in input_families
     }
     missing = [family for family, names in by_family.items() if not names]
     if missing:
@@ -279,27 +294,36 @@ def validate_execution_ev_model_ablation_contract(
             + ", ".join(missing)
         )
     probability_columns = by_family["catboost_probabilities"]
-    if len(probability_columns) != len(PATH_SHAPE_TYPES):
+    declared_orders = {
+        tuple(map(str, provenance[name].class_order))
+        for name in [*probability_columns, catboost_archetype_col]
+        if provenance[name].class_order is not None
+    }
+    if len(declared_orders) > 1:
+        raise ValueError("CatBoost probability/archetype class orders disagree")
+    archetype_levels = (
+        next(iter(declared_orders))
+        if declared_orders
+        else tuple(map(str, PATH_SHAPE_TYPES))
+    )
+    if len(probability_columns) != len(archetype_levels):
         raise ValueError(
             "Execution-EV ablation requires the complete ordered CatBoost "
-            f"probability vector ({len(PATH_SHAPE_TYPES)} columns)"
+            f"probability vector ({len(archetype_levels)} columns)"
         )
     raw_feature_columns = [
         name
-        for family in REQUIRED_INPUT_FAMILIES
+        for family in input_families
         for name in by_family[family]
         if provenance[name].model_input
     ]
-    missing_model_input = [
-        name
-        for family in REQUIRED_INPUT_FAMILIES
-        for name in by_family[family]
-        if not provenance[name].model_input
+    disabled_probability_features = [
+        name for name in probability_columns if not provenance[name].model_input
     ]
-    if missing_model_input:
+    if disabled_probability_features:
         raise ValueError(
-            "Execution-EV ablation input features must be declared model_input: "
-            + ", ".join(missing_model_input)
+            "CatBoost probability-vector columns cannot be disabled model inputs: "
+            + ", ".join(disabled_probability_features)
         )
     empty_sources = [
         name for name in raw_feature_columns if not str(provenance[name].source).strip()
@@ -381,7 +405,7 @@ def validate_execution_ev_model_ablation_contract(
         entropy[:, 0], expected_entropy, atol=1e-4, rtol=1e-4
     ):
         raise ValueError("CatBoost entropy input does not match the probability vector")
-    expected_archetype = np.asarray(PATH_SHAPE_TYPES, dtype=object)[
+    expected_archetype = np.asarray(archetype_levels, dtype=object)[
         np.argmax(probabilities, axis=1)
     ]
     observed_archetype = frame[catboost_archetype_col].astype(str).to_numpy()
@@ -390,7 +414,7 @@ def validate_execution_ev_model_ablation_contract(
             "pre-entry CatBoost archetype must equal the argmax of the declared "
             "ordered probability vector"
         )
-    return list(dict.fromkeys(raw_feature_columns)), tuple(map(str, PATH_SHAPE_TYPES))
+    return list(dict.fromkeys(raw_feature_columns)), archetype_levels
 
 
 def _materialize_feature_matrix(
@@ -1479,11 +1503,44 @@ def _leaderboard(
     *,
     top_k_fraction: float,
     evaluation_mask: np.ndarray,
-    promotion_eligible_columns: frozenset[str] = frozenset(),
+    frame: pd.DataFrame | None = None,
+    oof_provenance: pd.DataFrame | None = None,
+    config: ExecutionEVModelAblationConfig | None = None,
+    post_calibrator_columns: frozenset[str] = frozenset(),
+    promotion_eligible_columns: frozenset[str] | None = None,
 ) -> pd.DataFrame:
+    if promotion_eligible_columns is not None:
+        post_calibrator_columns = frozenset(promotion_eligible_columns)
+    stability_available = (
+        frame is not None and oof_provenance is not None and config is not None
+    )
+    if stability_available:
+        decision = _utc(
+            frame[config.decision_time_col], name=config.decision_time_col
+        )
+        fold_values = oof_provenance[
+            "execution_ev_model_ablation_oof_fold"
+        ]
+        valid_folds = fold_values.loc[evaluation_mask].dropna().astype(int)
+        latest_fold = int(valid_folds.max())
+        latest_month = decision.loc[evaluation_mask].dt.strftime("%Y-%m").max()
+        latest_fold_mask = (
+            evaluation_mask
+            & fold_values.fillna(-1).astype(int).eq(latest_fold).to_numpy()
+        )
+        latest_month_mask = (
+            evaluation_mask
+            & decision.dt.strftime("%Y-%m").eq(latest_month).to_numpy()
+        )
+    else:
+        latest_fold = -1
+        latest_month = "not_available"
+        latest_fold_mask = evaluation_mask.copy()
+        latest_month_mask = evaluation_mask.copy()
     rows: list[dict[str, Any]] = []
     for column in predictions.columns:
-        prediction = predictions[column].to_numpy(dtype=np.float64)[evaluation_mask]
+        full_prediction = predictions[column].to_numpy(dtype=np.float64)
+        prediction = full_prediction[evaluation_mask]
         metrics = _ranking_metrics(
             net_ev[evaluation_mask],
             gross_ev[evaluation_mask],
@@ -1492,6 +1549,57 @@ def _leaderboard(
         )
         parts = column.split("__")
         is_model_arm = len(parts) >= 4 and parts[2] in {"without_hpo", "with_hpo"}
+        latest_fold_metrics = _ranking_metrics(
+            net_ev[latest_fold_mask],
+            gross_ev[latest_fold_mask],
+            full_prediction[latest_fold_mask],
+            top_k_fraction=top_k_fraction,
+        )
+        latest_month_metrics = _ranking_metrics(
+            net_ev[latest_month_mask],
+            gross_ev[latest_month_mask],
+            full_prediction[latest_month_mask],
+            top_k_fraction=top_k_fraction,
+        )
+        top_count = max(1, int(np.ceil(len(prediction) * top_k_fraction)))
+        evaluation_positions = np.flatnonzero(evaluation_mask)
+        global_top_positions = evaluation_positions[
+            np.argsort(prediction, kind="stable")[-top_count:]
+        ]
+        pooled_latest_fold_rows = int(latest_fold_mask[global_top_positions].sum())
+        pooled_latest_month_rows = int(latest_month_mask[global_top_positions].sum())
+        minimum_rows = (
+            int(config.min_latest_period_selected_rows)
+            if config is not None
+            else 0
+        )
+        minimum_share = (
+            float(config.min_latest_period_selection_share)
+            if config is not None
+            else 0.0
+        )
+        minimum_ev = (
+            float(config.min_latest_period_top_k_net_ev)
+            if config is not None
+            else -np.inf
+        )
+        stability_gate = (
+            not stability_available
+            or (
+                float(latest_fold_metrics["top_k_mean_net_ev"]) >= minimum_ev
+                and float(latest_month_metrics["top_k_mean_net_ev"]) >= minimum_ev
+                and pooled_latest_fold_rows >= minimum_rows
+                and pooled_latest_month_rows >= minimum_rows
+                and pooled_latest_fold_rows / top_count >= minimum_share
+                and pooled_latest_month_rows / top_count >= minimum_share
+            )
+        )
+        post_calibrator = column in post_calibrator_columns
+        promotion_eligible = post_calibrator and (
+            stability_gate
+            or config is None
+            or not bool(config.require_latest_period_stability)
+        )
         rows.append(
             {
                 "prediction": column,
@@ -1505,10 +1613,32 @@ def _leaderboard(
                 "ranking_scope": "global_shared_outer_oof",
                 "ranking_stage": (
                     "after_causal_21d_admission_calibrator"
-                    if column in promotion_eligible_columns
+                    if post_calibrator
                     else "before_admission_calibrator_diagnostic_only"
                 ),
-                "promotion_eligible": column in promotion_eligible_columns,
+                "post_calibrator_route_available": post_calibrator,
+                "promotion_eligible": promotion_eligible,
+                "latest_fold": latest_fold,
+                "latest_fold_rows": int(latest_fold_mask.sum()),
+                "latest_fold_top_k_rows": int(latest_fold_metrics["top_k_rows"]),
+                "latest_fold_top_k_mean_net_ev": float(
+                    latest_fold_metrics["top_k_mean_net_ev"]
+                ),
+                "latest_month": latest_month,
+                "latest_month_rows": int(latest_month_mask.sum()),
+                "latest_month_top_k_rows": int(latest_month_metrics["top_k_rows"]),
+                "latest_month_top_k_mean_net_ev": float(
+                    latest_month_metrics["top_k_mean_net_ev"]
+                ),
+                "pooled_global_top_k_latest_fold_rows": pooled_latest_fold_rows,
+                "pooled_global_top_k_latest_month_rows": pooled_latest_month_rows,
+                "pooled_global_top_k_latest_fold_share": (
+                    pooled_latest_fold_rows / top_count
+                ),
+                "pooled_global_top_k_latest_month_share": (
+                    pooled_latest_month_rows / top_count
+                ),
+                "latest_period_stability_gate": bool(stability_gate),
                 **metrics,
             }
         )
@@ -1544,10 +1674,13 @@ def train_execution_ev_model_ablation(
     if not algorithms:
         raise ValueError("At least one ablation algorithm is required")
     target_modes = tuple(dict.fromkeys(config.target_modes))
-    if set(target_modes) != {"direct", "residual"}:
+    if not target_modes or not set(target_modes) <= {"direct", "residual"}:
         raise ValueError(
-            "Execution-EV model ablation must compare exactly the direct and residual target modes"
+            "Execution-EV model ablation target_modes must contain direct and/or residual"
         )
+    feature_arms = tuple(dict.fromkeys(config.feature_arms))
+    if not feature_arms or not set(feature_arms) <= {"all_features", "mda_1se"}:
+        raise ValueError("feature_arms must contain all_features and/or mda_1se")
     if not 0.0 < float(config.top_k_fraction) <= 1.0:
         raise ValueError("top_k_fraction must be in (0, 1]")
     unknown_routes = sorted(
@@ -1565,6 +1698,7 @@ def train_execution_ev_model_ablation(
         decision_time_col=config.decision_time_col,
         side_col=config.side_col,
         catboost_archetype_col=config.catboost_archetype_col,
+        additional_input_families=config.additional_input_families,
     )
     if (
         config.target_spec.alpha_ev_col not in raw_columns
@@ -1642,13 +1776,13 @@ def train_execution_ev_model_ablation(
     for algorithm in algorithms:
         audits[algorithm] = {
             target_mode: {
-                hpo_arm: {"all_features": [], "mda_1se": []} for hpo_arm in hpo_arms
+                hpo_arm: {arm: [] for arm in feature_arms} for hpo_arm in hpo_arms
             }
             for target_mode in target_modes
         }
         for target_mode in target_modes:
             for hpo_arm in hpo_arms:
-                for arm in ("all_features", "mda_1se"):
+                for arm in feature_arms:
                     output = np.full(len(frame), np.nan, dtype=np.float64)
                     for split in folds:
                         for side in ("long", "short"):
@@ -1766,16 +1900,16 @@ def train_execution_ev_model_ablation(
         final_audit[algorithm] = {}
         for target_mode in target_modes:
             final_models[algorithm][target_mode] = {
-                hpo_arm: {"all_features": {}, "mda_1se": {}} for hpo_arm in hpo_arms
+                hpo_arm: {arm: {} for arm in feature_arms} for hpo_arm in hpo_arms
             }
             final_feature_sets[algorithm][target_mode] = {
-                hpo_arm: {"all_features": {}, "mda_1se": {}} for hpo_arm in hpo_arms
+                hpo_arm: {arm: {} for arm in feature_arms} for hpo_arm in hpo_arms
             }
             final_audit[algorithm][target_mode] = {
-                hpo_arm: {"all_features": {}, "mda_1se": {}} for hpo_arm in hpo_arms
+                hpo_arm: {arm: {} for arm in feature_arms} for hpo_arm in hpo_arms
             }
             for hpo_arm in hpo_arms:
-                for arm in ("all_features", "mda_1se"):
+                for arm in feature_arms:
                     for side in ("long", "short"):
                         positions = np.flatnonzero(sides == side)
                         if len(positions) < int(config.min_fit_rows):
@@ -1815,7 +1949,10 @@ def train_execution_ev_model_ablation(
         predictions,
         top_k_fraction=config.top_k_fraction,
         evaluation_mask=shared_oof_mask,
-        promotion_eligible_columns=frozenset(promotion_eligible_columns),
+        frame=frame,
+        oof_provenance=oof_provenance,
+        config=config,
+        post_calibrator_columns=frozenset(promotion_eligible_columns),
     )
     promotion_leaderboard = leaderboard.loc[leaderboard["promotion_eligible"]].copy()
     promotion_status = (
@@ -1842,7 +1979,23 @@ def train_execution_ev_model_ablation(
             "ranking_stage": "after_causal_21d_admission_calibrator",
             "selection_unit": "rows pooled across timestamps and sides",
             "raw_model_scores": "diagnostic_only_not_promotion_eligible",
-            "promotion_eligible_predictions": sorted(promotion_eligible_columns),
+            "post_calibrator_route_predictions": sorted(promotion_eligible_columns),
+            "promotion_eligible_predictions": promotion_leaderboard[
+                "prediction"
+            ].astype(str).tolist(),
+            "latest_period_gate": {
+                "required": bool(config.require_latest_period_stability),
+                "minimum_pooled_selected_rows": int(
+                    config.min_latest_period_selected_rows
+                ),
+                "minimum_pooled_selection_share": float(
+                    config.min_latest_period_selection_share
+                ),
+                "minimum_local_top_k_mean_net_ev": float(
+                    config.min_latest_period_top_k_net_ev
+                ),
+                "periods": ["latest_outer_fold", "latest_calendar_month"],
+            },
         },
         "feature_manifest": {
             "raw_frozen_columns": raw_columns,
@@ -1850,6 +2003,7 @@ def train_execution_ev_model_ablation(
             "catboost_archetype_levels": list(archetype_levels),
             "five_auxiliary_families": list(FIVE_AUXILIARY_FAMILIES),
             "required_input_families": list(REQUIRED_INPUT_FAMILIES),
+            "additional_input_families": list(config.additional_input_families),
             "catboost_argmax_context": {
                 "column": config.catboost_archetype_col,
                 "family": CATBOOST_ARGMAX_CONTEXT_FAMILY,
@@ -1917,6 +2071,12 @@ def predict_execution_ev_model_ablation_bundle(
         bundle_config["target_spec"] = ExecutionEVTargetSpec(**target_spec)
     if "target_modes" in bundle_config:
         bundle_config["target_modes"] = tuple(bundle_config["target_modes"])
+    if "additional_input_families" in bundle_config:
+        bundle_config["additional_input_families"] = tuple(
+            bundle_config["additional_input_families"]
+        )
+    if "feature_arms" in bundle_config:
+        bundle_config["feature_arms"] = tuple(bundle_config["feature_arms"])
     config = ExecutionEVModelAblationConfig(**bundle_config)
     validate_execution_ev_model_ablation_contract(
         frame,
@@ -1924,6 +2084,7 @@ def predict_execution_ev_model_ablation_bundle(
         decision_time_col=config.decision_time_col,
         side_col=config.side_col,
         catboost_archetype_col=config.catboost_archetype_col,
+        additional_input_families=config.additional_input_families,
     )
     if (
         config.target_spec.alpha_ev_col not in bundle.raw_feature_columns

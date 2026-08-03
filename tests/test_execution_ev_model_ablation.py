@@ -195,6 +195,51 @@ def test_contract_allows_frozen_oof_future_slope_but_not_raw_future_target() -> 
         ablation.validate_execution_ev_model_ablation_contract(frame, raw)
 
 
+def test_contract_includes_only_explicit_additional_families() -> None:
+    frame, provenance = _frame()
+    frame["oof_literal_reach_probability"] = np.linspace(0.1, 0.9, len(frame))
+    augmented = {
+        **provenance,
+        "oof_literal_reach_probability": FeatureProvenance(
+            "literal_reach_probability",
+            "strict outer-OOF literal classifier",
+            available_at_col="available_at",
+        ),
+    }
+    baseline, _ = ablation.validate_execution_ev_model_ablation_contract(
+        frame, augmented
+    )
+    repaired, _ = ablation.validate_execution_ev_model_ablation_contract(
+        frame,
+        augmented,
+        additional_input_families=("literal_reach_probability",),
+    )
+    assert "oof_literal_reach_probability" not in baseline
+    assert "oof_literal_reach_probability" in repaired
+
+
+def test_contract_uses_signed_catboost_class_order() -> None:
+    frame, provenance = _frame()
+    signed_order = tuple(PATH_SHAPE_TYPES[:-1])
+    keep = frame["catboost_archetype"].isin(signed_order)
+    frame = frame.loc[keep].drop(columns=f"catboost_p_{len(PATH_SHAPE_TYPES) - 1}")
+    frame = frame.reset_index(drop=True)
+    probability_columns = [f"catboost_p_{index}" for index in range(len(signed_order))]
+    probabilities = frame[probability_columns].to_numpy(dtype=float)
+    probabilities /= probabilities.sum(axis=1, keepdims=True)
+    frame.loc[:, probability_columns] = probabilities
+    frame["catboost_entropy"] = -np.sum(
+        probabilities * np.log(probabilities), axis=1
+    )
+    signed = {
+        name: replace(spec, class_order=signed_order)
+        for name, spec in provenance.items()
+        if name != f"catboost_p_{len(PATH_SHAPE_TYPES) - 1}"
+    }
+    _, levels = ablation.validate_execution_ev_model_ablation_contract(frame, signed)
+    assert levels == signed_order
+
+
 def test_side_local_oof_has_purge_cutoff_and_train_only_isotonic() -> None:
     frame, provenance = _frame()
     bundle = ablation.train_execution_ev_model_ablation(
@@ -245,6 +290,20 @@ def test_oof_and_final_prediction_do_not_require_outcomes_at_inference() -> None
         "extra_trees__residual__without_hpo__mda_1se",
     }
     assert np.isfinite(scored.to_numpy(dtype=float)).all()
+
+
+def test_residual_only_post_screening_run_skips_direct_target() -> None:
+    frame, provenance = _frame()
+    bundle = ablation.train_execution_ev_model_ablation(
+        frame,
+        provenance,
+        config=replace(_config(), target_modes=("residual",)),
+    )
+    assert bundle.oof_predictions.columns.tolist() == [
+        "baseline__frozen_alpha",
+        "extra_trees__residual__without_hpo__all_features",
+        "extra_trees__residual__without_hpo__mda_1se",
+    ]
 
 
 def test_leaderboard_keeps_fixed_and_hpo_arms_distinct() -> None:

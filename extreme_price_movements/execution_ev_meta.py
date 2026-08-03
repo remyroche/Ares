@@ -43,6 +43,22 @@ EXECUTION_EV_FEATURE_FAMILIES: tuple[str, ...] = (
     "leaf_support",
     "alpha_score",
     "base_archetype_labels",
+    "literal_reach_probability",
+    "clean_event_probability",
+    "competing_risk_probability",
+    "conditional_path_quality",
+    "probability_magnitude_economics",
+    "representation_context",
+    "representation_dae",
+    "representation_gmm_posterior",
+    "representation_gmm_geometry",
+    "representation_risk_summary",
+    "alpha_candidate_raw_score",
+    "alpha_candidate_cutoff_context",
+    "alpha_candidate_timestamp_relative",
+    "alpha_candidate_archetype_z",
+    "alpha_candidate_decile_group",
+    "alpha_candidate_cutoff_score_control",
 )
 
 # One auxiliary head can emit more than one usable prediction family.  In
@@ -1627,6 +1643,9 @@ def _oof_fold_provenance(
             "execution_ev_oof_validation_start_utc": pd.Series(
                 pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
             ),
+            "execution_ev_oof_available_at": pd.Series(
+                pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
+            ),
             "execution_ev_oof_train_decision_cutoff_utc": pd.Series(
                 pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]"
             ),
@@ -1642,6 +1661,9 @@ def _oof_fold_provenance(
         )
         output.iloc[
             valid, output.columns.get_loc("execution_ev_oof_validation_start_utc")
+        ] = fold.validation_start
+        output.iloc[
+            valid, output.columns.get_loc("execution_ev_oof_available_at")
         ] = fold.validation_start
         output.iloc[
             valid, output.columns.get_loc("execution_ev_oof_train_decision_cutoff_utc")

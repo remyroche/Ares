@@ -1,5 +1,21 @@
 # Central config. Keep it deterministic and explicit.
 from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
+from extreme_price_movements.continuation_features import (
+    CONTINUATION_COMPOSITE_FEATURE_KEYS,
+    CONTINUATION_CROSS_SECTIONAL_FEATURE_KEYS,
+    CONTINUATION_FEATURE_GROUPS,
+    CONTINUATION_FUNDING_FEATURE_KEYS,
+    CONTINUATION_OI_FEATURE_KEYS,
+    CONTINUATION_PRICE_FEATURE_KEYS,
+    CONTINUATION_REGIME_FEATURE_KEYS,
+    CONTINUATION_SIDE_PRICE_FEATURE_KEYS,
+    CONTINUATION_SIDE_VOLATILITY_FEATURE_KEYS,
+    CONTINUATION_VOLATILITY_FEATURE_KEYS,
+    CONTINUATION_VOLUME_FEATURE_KEYS,
+)
+from extreme_price_movements.market_microstructure_features import (
+    NATIVE_L2_CONTINUATION_FEATURE_KEYS,
+)
 from extreme_price_movements.features_oi import (
     ASSET_MARKET_LIFECYCLE_RESIDUAL_KEYS,
     ASSET_OI_LIFECYCLE_FEATURE_KEYS,
@@ -42,6 +58,7 @@ from extreme_price_movements.residual_event_archetypes import (
     residual_event_feature_names,
     residual_event_market_feature_names,
 )
+from extreme_price_movements.stage_ii_meta_archetypes import stage_ii_feature_names
 from extreme_price_movements.unsupervised_regime_learning.feature_registry import (
     UNSUPERVISED_REGIME_LEARNING_DEFAULTS,
 )
@@ -277,6 +294,37 @@ RESIDUAL_META_FEATURE_KEYS = [
     "xasset_ob_liquidity_ts_resid",
     "path_efficiency_24_ts_resid",
 ]
+# Research-only context for the sequential H12 T2 funnel.  A row-level cost
+# estimate may be admitted only after it is separately materialised with an
+# entry-time availability contract.  The historical ``execution_cost_return``
+# target ledger is not such a feature source and must never be aliased into
+# this list.
+T2_FUNNEL_BASE_CONTEXT_FEATURE_KEYS = [
+    "side_is_long",
+]
+# A residual fit may additionally consume stopped-gradient base outputs.  The
+# runner creates these fields only after strict base OOF prediction generation.
+T2_FUNNEL_META_CONTEXT_FEATURE_KEYS = [
+    *T2_FUNNEL_BASE_CONTEXT_FEATURE_KEYS,
+    "base_expected_net_bps",
+    "base_p_upper",
+    "base_p_lower",
+    "base_p_timeout",
+    "base_probability_width",
+]
+# Stage-C only.  These are deliberately separate from the production base,
+# residual and general meta registries: they are admissible solely for the
+# conditional P(retain | clear) research head until a frozen hierarchy test
+# passes every predeclared gate.
+RETENTION_CONTINUATION_F1_FEATURE_KEYS = CONTINUATION_PRICE_FEATURE_KEYS + CONTINUATION_SIDE_PRICE_FEATURE_KEYS
+RETENTION_CONTINUATION_F2_FEATURE_KEYS = CONTINUATION_VOLUME_FEATURE_KEYS
+RETENTION_CONTINUATION_F3_FEATURE_KEYS = CONTINUATION_VOLATILITY_FEATURE_KEYS + CONTINUATION_SIDE_VOLATILITY_FEATURE_KEYS
+RETENTION_CONTINUATION_F4_FEATURE_KEYS = CONTINUATION_OI_FEATURE_KEYS
+RETENTION_CONTINUATION_F5_FEATURE_KEYS = CONTINUATION_FUNDING_FEATURE_KEYS
+RETENTION_CONTINUATION_F6_FEATURE_KEYS = CONTINUATION_CROSS_SECTIONAL_FEATURE_KEYS
+RETENTION_CONTINUATION_F7_FEATURE_KEYS = CONTINUATION_REGIME_FEATURE_KEYS
+RETENTION_CONTINUATION_F8_FEATURE_KEYS = CONTINUATION_COMPOSITE_FEATURE_KEYS
+RETENTION_CONTINUATION_FEATURE_GROUPS = CONTINUATION_FEATURE_GROUPS
 PERP_TRADEABILITY_FEATURE_KEYS = [
     "asset_funding_rate_mean_3d",
     "asset_funding_rate_mean_7d",
@@ -4299,6 +4347,22 @@ CFG["VOLUME_FREE_PERP_META_FEATURE_KEYS"] = VOLUME_FREE_PERP_META_FEATURE_KEYS
 CFG["RESIDUAL_FEATURE_KEYS"] = RESIDUAL_FEATURE_KEYS
 CFG["RESIDUAL_BASE_FEATURE_KEYS"] = RESIDUAL_BASE_FEATURE_KEYS
 CFG["RESIDUAL_META_FEATURE_KEYS"] = RESIDUAL_META_FEATURE_KEYS
+CFG["T2_FUNNEL_BASE_CONTEXT_FEATURE_KEYS"] = T2_FUNNEL_BASE_CONTEXT_FEATURE_KEYS
+CFG["T2_FUNNEL_META_CONTEXT_FEATURE_KEYS"] = T2_FUNNEL_META_CONTEXT_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F1_FEATURE_KEYS"] = RETENTION_CONTINUATION_F1_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F2_FEATURE_KEYS"] = RETENTION_CONTINUATION_F2_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F3_FEATURE_KEYS"] = RETENTION_CONTINUATION_F3_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F4_FEATURE_KEYS"] = RETENTION_CONTINUATION_F4_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F5_FEATURE_KEYS"] = RETENTION_CONTINUATION_F5_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F6_FEATURE_KEYS"] = RETENTION_CONTINUATION_F6_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F7_FEATURE_KEYS"] = RETENTION_CONTINUATION_F7_FEATURE_KEYS
+CFG["RETENTION_CONTINUATION_F8_FEATURE_KEYS"] = RETENTION_CONTINUATION_F8_FEATURE_KEYS
+# Native L2 is intentionally registered as a research-only sidecar.  It is
+# not appended to production base/meta feature lists until a complete
+# candidate-level availability and OOF economics gate passes.
+CFG["NATIVE_L2_CONTINUATION_FEATURE_KEYS"] = list(NATIVE_L2_CONTINUATION_FEATURE_KEYS)
+CFG["NATIVE_L2_CONTINUATION_FEATURE_STATUS"] = "RESEARCH_ONLY_NATIVE_SOURCE_COHORT"
+CFG["RETENTION_CONTINUATION_FEATURE_GROUPS"] = RETENTION_CONTINUATION_FEATURE_GROUPS
 CFG["ROLLING_ALPHA_FEATURE_KEYS"] = ROLLING_ALPHA_FEATURE_KEYS
 CFG["ROLLING_ALPHA_TARGET_AUDIT_COLUMNS"] = ROLLING_ALPHA_TARGET_AUDIT_COLUMNS
 CFG["CURRENT_REGIME_AE_FEATURE_KEYS"] = CURRENT_REGIME_AE_FEATURE_KEYS
@@ -4902,6 +4966,60 @@ CFG["meta_shared_feature_keys"] += [
     "CHANGE_POINT_CONTEXT_FEATURE_KEYS",
 ]
 
+# Stage-I grouped stability MDA is intentionally restricted to the declared
+# base/meta feature-key universes.  The selector resolves these lists per
+# side/head and refuses any un-inventoried head rather than falling back to all
+# columns in an experiment panel.  Its runtime recipe lives with the reusable
+# selector in ``stage_i_feature_selection.py``.
+# Backward-compatible M6-named feature-pool key for the one active shared
+# exact-net residual expert. No inactive path-auxiliary target pools may enter.
+CFG["STAGE_I_M6_SHARED_UNION_META_FEATURE_KEYS"] = [
+    "RESIDUAL_META_FEATURE_KEYS",
+    "META_BASE_PERFORMANCE_FEATURE_KEYS",
+    "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
+    "META_RECENT_EFFECTIVENESS_FEATURE_KEYS",
+    "MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS",
+    "BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS",
+]
+# Generated only after strict same-side chronological base OOF scoring.  These
+# direct R3 outputs are deliberately separate from raw-store feature keys: the
+# meta selector/HPO and strict-OOS residual refit must consume the same ordered
+# handoff rather than replacing it with a mapped scalar or silently dropping it.
+CFG["STAGE_I_REQUIRED_SAME_SIDE_BASE_OOF_HANDOFF_FEATURE_KEYS"] = [
+    "r3_p_adverse",
+    "r3_p_weak",
+    "r3_p_clear",
+    "r3_opportunity_score",
+    "prequential_base_expected_net_bps",
+]
+CFG["STAGE_I_GROUPED_STABILITY_MDA"] = {
+    "schema": "stage_i_grouped_stability_mda_v1",
+    "layer_feature_key_groups": {
+        "base": ["base_shared_feature_keys", "base_{side}_feature_keys"],
+        "meta": [
+            "meta_shared_feature_keys",
+            "meta_product_feature_keys",
+            "STAGE_I_M6_SHARED_UNION_META_FEATURE_KEYS",
+            "STAGE_I_REQUIRED_SAME_SIDE_BASE_OOF_HANDOFF_FEATURE_KEYS",
+        ],
+    },
+    "active_cells": [
+        "base__long__R3_economic_simplex_b25",
+        "base__short__R3_economic_simplex_b25",
+        "meta__long__shared_exact_net_residual",
+        "meta__short__shared_exact_net_residual",
+    ],
+    "correlation_method": "spearman",
+    "correlation_threshold": 0.95,
+    "topk_fraction": 0.10,
+    "mda_objective": "signed_top10_trade_economics",
+    "r3_selector_status": "multiclass3_pclear_minus_padverse_required",
+    "label_availability_gate_hours": 13.0,
+    "phantom_in_fit_threshold": True,
+    "prefix_optimal_count": "smallest_within_one_se",
+}
+
 
 CFG["META_ORDERBOOK_WALL_FEATURE_KEYS"] = [
     "obw_wall_skew_book_r005",
@@ -5330,6 +5448,12 @@ CFG["RESIDUAL_EVENT_AEGMM_META_FEATURE_KEYS"] = list(
     )
 )
 CFG["meta_shared_feature_keys"] += ["RESIDUAL_EVENT_AEGMM_META_FEATURE_KEYS"]
+# Stage-II conversion-archetype values are generated only after the strict
+# base-OOF handoff: side-local realised-path discovery -> causal soft
+# memberships -> train-only residual prior.  They are meta-only context for a
+# shared residual expert, never raw-store features and never base inputs.
+CFG["STAGE_II_META_CONVERSION_ARCHETYPE_FEATURE_KEYS"] = stage_ii_feature_names(4)
+CFG["meta_shared_feature_keys"] += ["STAGE_II_META_CONVERSION_ARCHETYPE_FEATURE_KEYS"]
 CFG["BASE_LGBM_AE_GMM_FEATURE_KEYS"] = [
     f"base_lgbm_{key}" for key in CFG["LGBM_AE_GMM_FEATURE_KEYS"]
 ]

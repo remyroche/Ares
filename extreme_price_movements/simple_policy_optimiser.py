@@ -2300,6 +2300,7 @@ def simulate_and_score(
     trailing_activation_decay_start_bars: int = 0,
     trailing_activation_min_mult: float = 1.0,
     trailing_activation_max_bars: int = 0,
+    partial_exit_on_first_trailing_activation_fraction: float = 0.0,
     fixed_trailing_gap_mult: float = 0.0,
     trailing_power: float = 1.5,
     trailing_squash_divisor: float = 2.0,
@@ -2347,6 +2348,17 @@ def simulate_and_score(
     Fully self-contained, vectorized, bar-by-bar simulator.
     Checks TP/SL pessimistically, computes fees properly per trade.
     """
+    partial_exit_fraction = float(
+        partial_exit_on_first_trailing_activation_fraction or 0.0
+    )
+    if (
+        not np.isfinite(partial_exit_fraction)
+        or partial_exit_fraction < 0.0
+        or partial_exit_fraction > 1.0
+    ):
+        raise ValueError(
+            "partial_exit_on_first_trailing_activation_fraction must be in [0, 1]"
+        )
     input_row_count = int(len(df_sub))
     explicit_exit_quote_half_spread_bps = (
         max(0.0, float(exit_quote_half_spread_bps))
@@ -2404,6 +2416,15 @@ def simulate_and_score(
             "entry_reanchor_bps": np.array([], dtype=np.float32),
             "sl_return": np.array([], dtype=np.float32),
             "trailing_activation_return": np.array([], dtype=np.float32),
+            "partial_exit_mask": np.array([], dtype=bool),
+            "partial_exit_bars": np.array([], dtype=np.int16),
+            "partial_exit_prices": np.array([], dtype=np.float32),
+            "partial_exit_returns": np.array([], dtype=np.float32),
+            "p50_gross_returns": np.array([], dtype=np.float32),
+            "p50_fee_returns": np.array([], dtype=np.float32),
+            "p50_net_returns": np.array([], dtype=np.float32),
+            "p50_gross_gains": np.array([], dtype=np.float32),
+            "p50_net_gains": np.array([], dtype=np.float32),
             "entry_reanchor_source": "side_aware_expected_half_spread_plus_entry_slippage",
             **_holding_time_metrics([]),
         }
@@ -2473,6 +2494,15 @@ def simulate_and_score(
                 "entry_reanchor_bps": np.array([], dtype=np.float32),
                 "sl_return": np.array([], dtype=np.float32),
                 "trailing_activation_return": np.array([], dtype=np.float32),
+                "partial_exit_mask": np.array([], dtype=bool),
+                "partial_exit_bars": np.array([], dtype=np.int16),
+                "partial_exit_prices": np.array([], dtype=np.float32),
+                "partial_exit_returns": np.array([], dtype=np.float32),
+                "p50_gross_returns": np.array([], dtype=np.float32),
+                "p50_fee_returns": np.array([], dtype=np.float32),
+                "p50_net_returns": np.array([], dtype=np.float32),
+                "p50_gross_gains": np.array([], dtype=np.float32),
+                "p50_net_gains": np.array([], dtype=np.float32),
                 "entry_reanchor_source": "side_aware_expected_half_spread_plus_entry_slippage",
                 **_holding_time_metrics([]),
             }
@@ -2726,6 +2756,10 @@ def simulate_and_score(
     active = np.ones(n_trades, dtype=bool)
     protect_active = np.zeros(n_trades, dtype=bool)
     trailing_armed = np.zeros(n_trades, dtype=bool)
+    partial_exit_mask = np.zeros(n_trades, dtype=bool)
+    partial_exit_bars = np.full(n_trades, -1, dtype=np.int16)
+    partial_exit_prices = np.full(n_trades, np.nan, dtype=np.float32)
+    partial_exit_rets = np.zeros(n_trades, dtype=np.float32)
     exit_rets = np.zeros(n_trades, dtype=np.float32)
     exit_bars = np.full(n_trades, max_bars - 1, dtype=np.int16)
     max_favorable = np.zeros(n_trades, dtype=np.float32)
@@ -2829,6 +2863,43 @@ def simulate_and_score(
                 entry_prices * trailing_activation_cap,
             )
         effective_hard_tp_dist = hard_tp_dist * latest_tightening_multiplier
+
+        # A trailing activation earned through bar j-1 is known before bar
+        # j's intrabar high/low path.  Execute the optional partial at bar j's
+        # open before any bar-j stop/target/adverse/capital exit.  The
+        # remainder keeps the unchanged legacy state and exit precedence.
+        activation_eligible = (
+            int(trailing_activation_max_bars or 0) <= 0
+            or j <= int(trailing_activation_max_bars)
+        )
+        if activation_eligible and partial_exit_fraction > 0.0:
+            first_partial = (
+                ~trailing_armed[active_idx]
+                & ~partial_exit_mask[active_idx]
+                & (max_favorable[active_idx] > effective_tp_act[active_idx])
+            )
+            partial_indices = active_idx[first_partial]
+            if len(partial_indices) > 0:
+                open_px = f_opens[partial_indices, j].astype(
+                    np.float32, copy=False
+                )
+                fill_px = _adverse_exit_fill_proxy_array(
+                    side=side[partial_indices],
+                    exit_px=open_px,
+                    trigger="close",
+                    quote_half_spread_bps=(
+                        exit_quote_half_spread_bps_arr[partial_indices]
+                    ),
+                )
+                finite_fill = np.isfinite(fill_px) & (fill_px > 0.0)
+                filled_indices = partial_indices[finite_fill]
+                if len(filled_indices) > 0:
+                    partial_exit_mask[filled_indices] = True
+                    partial_exit_bars[filled_indices] = np.int16(j)
+                    partial_exit_prices[filled_indices] = fill_px[finite_fill]
+                    partial_exit_rets[filled_indices] = side[filled_indices] * (
+                        fill_px[finite_fill] / entry_prices[filled_indices] - 1.0
+                    )
 
         # 1. Check SL (Pessimistic: happens first)
         sl_stop_long_all = entry_prices - effective_sl_dist
@@ -3063,10 +3134,6 @@ def simulate_and_score(
                 protect_active[active_idx[cap_trigger]] = True
 
         # 4. Check Trailing
-        activation_eligible = (
-            int(trailing_activation_max_bars or 0) <= 0
-            or j <= int(trailing_activation_max_bars)
-        )
         if activation_eligible:
             newly_armed = max_favorable[active_idx] > effective_tp_act[active_idx]
             if np.any(newly_armed):
@@ -3177,6 +3244,26 @@ def simulate_and_score(
     fees = sizes * cost_pct + sizes * (1 + exit_rets) * cost_pct
     gross_gain = sizes * exit_rets
     net_gain = gross_gain - fees
+    realised_partial_fraction = (
+        partial_exit_mask.astype(np.float32) * np.float32(partial_exit_fraction)
+    )
+    remainder_fraction = np.float32(1.0) - realised_partial_fraction
+    p50_gross_rets = (
+        realised_partial_fraction * partial_exit_rets
+        + remainder_fraction * exit_rets
+    )
+    p50_fee_rets = (
+        np.float32(cost_pct)
+        + realised_partial_fraction
+        * (np.float32(1.0) + partial_exit_rets)
+        * np.float32(cost_pct)
+        + remainder_fraction
+        * (np.float32(1.0) + exit_rets)
+        * np.float32(cost_pct)
+    )
+    p50_net_rets = p50_gross_rets - p50_fee_rets
+    p50_gross_gain = sizes * p50_gross_rets
+    p50_net_gain = sizes * p50_net_rets
     candidate_count = int(len(net_gain))
     selected_mask = np.ones(candidate_count, dtype=bool)
     skipped_concurrency_total = 0
@@ -3247,6 +3334,8 @@ def simulate_and_score(
             active_until_by_symbol.setdefault(symbol, []).append(until)
         net_gain = net_gain[selected_mask]
         gross_gain = gross_gain[selected_mask]
+        p50_gross_gain = p50_gross_gain[selected_mask]
+        p50_net_gain = p50_net_gain[selected_mask]
         sizes = sizes[selected_mask]
     selected_exit_bars = exit_bars[selected_mask]
     selected_size_multiplier = raw_bayesian_size_multiplier[selected_mask]
@@ -3255,6 +3344,13 @@ def simulate_and_score(
     selected_tightening_multiplier = latest_tightening_multiplier[selected_mask]
     selected_entry_prices = entry_prices[selected_mask]
     selected_exit_rets = exit_rets[selected_mask]
+    selected_partial_exit_mask = partial_exit_mask[selected_mask]
+    selected_partial_exit_bars = partial_exit_bars[selected_mask]
+    selected_partial_exit_prices = partial_exit_prices[selected_mask]
+    selected_partial_exit_rets = partial_exit_rets[selected_mask]
+    selected_p50_gross_rets = p50_gross_rets[selected_mask]
+    selected_p50_fee_rets = p50_fee_rets[selected_mask]
+    selected_p50_net_rets = p50_net_rets[selected_mask]
     selected_exit_prices = selected_entry_prices * (
         np.float32(1.0) + side[selected_mask] * selected_exit_rets
     )
@@ -3385,6 +3481,28 @@ def simulate_and_score(
             np.float32,
             copy=False,
         ),
+        "partial_exit_fraction": float(partial_exit_fraction),
+        "partial_exit_mask": selected_partial_exit_mask.astype(bool, copy=False),
+        "partial_exit_bars": selected_partial_exit_bars.astype(
+            np.int16, copy=False
+        ),
+        "partial_exit_prices": selected_partial_exit_prices.astype(
+            np.float32, copy=False
+        ),
+        "partial_exit_returns": selected_partial_exit_rets.astype(
+            np.float32, copy=False
+        ),
+        "p50_gross_returns": selected_p50_gross_rets.astype(
+            np.float32, copy=False
+        ),
+        "p50_fee_returns": selected_p50_fee_rets.astype(
+            np.float32, copy=False
+        ),
+        "p50_net_returns": selected_p50_net_rets.astype(
+            np.float32, copy=False
+        ),
+        "p50_gross_gains": p50_gross_gain.astype(np.float32, copy=False),
+        "p50_net_gains": p50_net_gain.astype(np.float32, copy=False),
         "entry_reanchor_source": "side_aware_expected_half_spread_plus_entry_slippage",
         **pressure_metrics,
         "adverse_exit_theta": (

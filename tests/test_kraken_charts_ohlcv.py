@@ -70,3 +70,22 @@ def test_kraken_futures_1m_charts_preserve_zero_volume_carry_candles(monkeypatch
     assert list(out.index) == list(pd.date_range(start, periods=3, freq="1min"))
     assert out["volume"].sum() == 0.0
     assert out["close"].tolist() == pytest.approx([0.4705, 0.4705, 0.4705])
+
+
+def test_kraken_futures_charts_uses_frozen_product_id_override(monkeypatch):
+    start = pd.Timestamp("2022-07-20T00:00:00Z")
+    session = _FakeSession({"candles": []})
+    monkeypatch.setattr(data_store, "_public_data_session", lambda: session)
+
+    data_store._fetch_kraken_futures_charts_ohlcv(
+        _FakeExchange(),
+        "BTC/USD:USD",
+        int(start.value // 10**6),
+        int((start + pd.Timedelta(minutes=1)).value // 10**6),
+        timeframe="1m",
+        product_id="PI_XBTUSD",
+    )
+
+    assert session.requests
+    assert "/trade/PI_XBTUSD/1m" in session.requests[0]["url"]
+    assert "PF_CYBERUSD" not in session.requests[0]["url"]

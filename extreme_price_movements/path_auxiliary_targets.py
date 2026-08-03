@@ -251,6 +251,7 @@ def build_path_auxiliary_targets(
     side_sign: np.ndarray,
     bar_minutes: int = 60,
     horizon_hours: int = 12,
+    include_supportive_columns: bool = True,
 ) -> PathAuxiliaryTargets:
     """Build raw 12-hour targets from the executable decision-time bar onward.
 
@@ -441,6 +442,28 @@ def build_path_auxiliary_targets(
     )
     future_slope = np.where(valid, future_slope, np.nan)
     future_slope = np.clip(future_slope, 0.0, FUTURE_SLOPE_ATR_PER_HOUR_CLIP)
+
+    # Exact historical target backfills sometimes need only the five deployed
+    # head targets and their validity/event flags.  Avoiding the diagnostic
+    # support matrix is semantically identical for those fields and prevents a
+    # large, unnecessary materialization cost.  The default remains the full
+    # established support contract for all existing callers.
+    if not include_supportive_columns:
+        return PathAuxiliaryTargets(
+            peak_mfe_return_12h=peak.astype(np.float32),
+            peak_mfe_atr_12h=peak_atr.astype(np.float32),
+            time_to_first_meaningful_mfe_hours_12h=time_hours.astype(np.float32),
+            mae_before_meaningful_mfe_atr_12h=mae_before_hit_atr.astype(np.float32),
+            bars_before_price_stops_decreasing_12h=bars_before_turning.astype(np.float32),
+            future_slope_atr_per_hour_12h=future_slope.astype(np.float32),
+            log1p_peak_mfe_atr_12h=np.log1p(peak_atr).astype(np.float32),
+            log1p_time_to_first_meaningful_mfe_hours_12h=np.log1p(time_hours).astype(np.float32),
+            log1p_mae_before_meaningful_mfe_atr_12h=np.log1p(mae_before_hit_atr).astype(np.float32),
+            log1p_bars_before_price_stops_decreasing_12h=np.log1p(bars_before_turning).astype(np.float32),
+            log1p_future_slope_atr_per_hour_12h=np.log1p(future_slope).astype(np.float32),
+            supportive_columns={}, valid=valid, timing_valid=timing_valid,
+            meaningful_mfe_reached=meaningful_reached,
+        )
 
     # Support labels use only complete post-decision bars. Invalid paths are
     # NaN; the primary timing target and trough-recovery time are right-censored.

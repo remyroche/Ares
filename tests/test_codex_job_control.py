@@ -141,3 +141,24 @@ def test_stop_signals_process_group_for_wrapper_started_job(
     assert out["results"][0]["status"] == "stopped"
     updated = codex_job_control.load_registry(registry_path)
     assert updated["jobs"]["12345"]["status"] == "stopped"
+
+
+def test_list_active_excludes_stale_pid_reuse_and_exited_entries(
+    monkeypatch, tmp_path, capsys
+):
+    registry_path = tmp_path / "registry.json"
+    monkeypatch.setenv("CODEX_JOB_CONTROL_REGISTRY", str(registry_path))
+    registry = codex_job_control._empty_registry()
+    registry["jobs"] = {
+        "100": {**_entry(100), "status": "running"},
+        "200": {**_entry(200), "status": "stale_pid_reuse"},
+        "300": {**_entry(300), "status": "exited"},
+    }
+    codex_job_control.save_registry(registry, registry_path)
+    monkeypatch.setattr(codex_job_control, "_process_alive", lambda pid: True)
+
+    rc = codex_job_control.list_jobs(Namespace(active=True))
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [row["pid"] for row in out["jobs"]] == [100]

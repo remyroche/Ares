@@ -1,0 +1,98 @@
+{
+  "schema": "frozen_transition_research_stack_v1",
+  "status": "FROZEN_CONTEXT_ONLY_NO_DIRECT_POLICY_CONTROL",
+  "effective_utc": "2026-07-29T00:00:00Z",
+  "purpose": "Preserve the completed transition stack as versioned context while economic opportunity and direct execution utility remain the active research questions.",
+  "sources": {
+    "active": {
+      "path": "data_perp/artifacts/regime_transition_active_head_chronological_oos_20260729_v2/chronological_oos.parquet",
+      "sha256": "a387025245070fe3f330d306b50899eeef306bf34727b4a835661407e5167d6a",
+      "model_input_eligible": true,
+      "fields": [
+        "prediction"
+      ],
+      "alias": "active_transition_probability",
+      "caveat": "research-only chronological label OOS over pooled upstream state geometry"
+    },
+    "destination": {
+      "path": "data_perp/artifacts/regime_transition_destination_chronological_oos_20260729_v1/destination_chronological_oos.parquet",
+      "sha256": "888f6ecff2d6625e0de80b54ed637942bad15e18f7a0dd9e055c477204d0a4f3",
+      "model_input_eligible": true,
+      "fields": [
+        "p_destination__state_0",
+        "p_destination__state_1",
+        "p_destination__state_2",
+        "p_destination__state_3",
+        "p_destination__state_4",
+        "destination_confidence",
+        "destination_entropy"
+      ],
+      "availability_field_required": "destination_available",
+      "caveat": "event-sparse research-only chronological OOS destination probabilities"
+    },
+    "bocpd": {
+      "path": "data_perp/artifacts/regime_transition_changepoint_ablation_20260727_v2/grouped_oof_predictions_and_changepoint_context.parquet",
+      "sha256": "9dd1841dd056bf1e486fc06bdef5a3e2bfe772de828916b0c595d45260e76e27",
+      "model_input_eligible": true,
+      "fields": [
+        "bocpd_context__mean_probability",
+        "bocpd_context__max_probability",
+        "bocpd_context__break_count_ge_0_10",
+        "bocpd_context__break_count_ge_0_25"
+      ],
+      "caveat": "only the four causal context fields are admitted; target/fold/model-prediction columns are forbidden"
+    },
+    "cumulative_hazard": {
+      "path": "data_perp/artifacts/regime_transition_hazard_challenger_20260727_v1/grouped_oof_cumulative_probabilities.parquet",
+      "sha256": "867bda53f7dc7e5cc8e6de902cd133346d62883faacfc48b65f112081bbf3588",
+      "model_input_eligible": false,
+      "fields": [],
+      "caveat": "frozen descriptive output only; grouped OOF and pooled future state geometry make it promotion-ineligible"
+    },
+    "historical_health_catalog": {
+      "path": "data_perp/artifacts/historical_exact_model_health_failure_20260729_v3/health_feature_catalog.csv",
+      "sha256": "dd3500331f89944de3427c086f5c8541a7a180e1da8266adcaeddcedb0ff3e9f",
+      "model_input_eligible": true,
+      "lineage": "historical_2025_raw_alpha_only"
+    },
+    "current_health_catalog": {
+      "path": "data_perp/artifacts/current_lineage_extended_model_health_20260729_v1/field_catalog.csv",
+      "sha256": "7e680eac459ca1a16d172c94fa61e4584ec85668fa2a98d2b27cc25e7cb2de2c",
+      "model_input_eligible": true,
+      "lineage": "current_2026_execution_ev_only"
+    },
+    "origin_state_context": {
+      "path": "data_perp/artifacts/regime_transition_research_20260726_v3/hourly_transition_dataset.parquet",
+      "sha256": "b6b7b8c52a3e3f8e13c248322aaef9804ef14a16f80e68db6f6dd3dbeffb48f2",
+      "model_input_eligible": false,
+      "descriptive_packet_fields": [
+        "state_context__current_state",
+        "state_context__nearest_distance",
+        "state_context__top2_margin",
+        "state_context__switch_1h",
+        "state_context__switch_count_6h",
+        "state_context__state_age_hours"
+      ],
+      "caveat": "pooled research geometry; packet metadata only, never a promoted router input"
+    }
+  },
+  "consumer_contract": {
+    "transition_scores_are_context_not_controls": true,
+    "generic_exposure_reduction_forbidden": true,
+    "generic_admission_veto_forbidden": true,
+    "historical_and_current_health_lineages_must_not_mix": true,
+    "outcome_or_target_columns_forbidden": true,
+    "direct_rank_score_must_remain_direct_execution_utility": true
+  },
+  "paused_workstreams": [
+    "generic onset HPO",
+    "additional change-point families",
+    "additional market-state cluster counts",
+    "monolithic transition-phase models",
+    "direct transition-based exposure rules",
+    "cross-era hard failure classifiers",
+    "manufactured July support",
+    "algebraic probability-times-magnitude EV composition"
+  ],
+  "reopen_condition": "Explicit review after materially new chronological independent episodes or evidence that a frozen field is invalid; do not reopen from aggregate HPO gains on the existing event set."
+}

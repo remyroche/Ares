@@ -424,7 +424,11 @@ def list_jobs(args: argparse.Namespace) -> int:
             continue
         pid = int(entry.get("pid") or 0)
         alive = _process_alive(pid) if pid > 0 else False
-        if args.active and not alive:
+        # A PID can be reused after a registered job exits. `kill(pid, 0)`
+        # alone therefore does not mean that the registered job is active.
+        # Only an explicitly running registry entry may appear in the active
+        # view; stale/stopped/exited entries remain inspectable without it.
+        if args.active and (entry.get("status") != "running" or not alive):
             continue
         out.append({**entry, "alive": alive})
     print(json.dumps({"jobs": out}, indent=2, sort_keys=True))

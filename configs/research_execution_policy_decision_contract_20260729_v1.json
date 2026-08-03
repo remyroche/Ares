@@ -1,0 +1,89 @@
+{
+  "schema": "opportunity_policy_decision_contract_spec_v1",
+  "status": "RESEARCH_SNAPSHOT_NOT_INCUMBENT",
+  "promotion_eligible": false,
+  "lineage_name": "current_2026_execution_ev_portfolio_research_snapshot",
+  "model_contract": {
+    "score_column": "catboost__residual__without_hpo__all_features__recent_ev_catboost_predicted_archetype",
+    "side_local": true,
+    "feature_contract": "bound transitively by mapped OOF/forward and combined-policy-handoff source hashes"
+  },
+  "mapping_contract": {
+    "family": "causal recent side-shrunk isotonic EV",
+    "window_days": 21,
+    "minimum_reference_rows": 500,
+    "side_support_target": 500.0,
+    "reference_rule": "only labels resolved before mapping snapshot"
+  },
+  "selection_contract": {
+    "scope": "one pooled global evaluation top 10% across timestamps and sides",
+    "top_k_fraction": 0.1,
+    "tie_break": "candidate_id ascending",
+    "per_timestamp_quota": false,
+    "side_quota": false,
+    "tranche": "single frozen May-05 through July-10 2026 retrospective research snapshot",
+    "operational_live_policy": false
+  },
+  "portfolio_contract": {
+    "arm": "baseline",
+    "portfolio_policy_version": "global_auction_v1",
+    "max_concurrent_positions": 64,
+    "max_concurrent_per_symbol": 1,
+    "max_new_entries_per_bar": 2,
+    "max_total_wallet_allocation_pct": 0.7
+  },
+  "execution_contract": {
+    "decision_time": "signal plus one hour",
+    "label_horizon_hours": 12,
+    "cost": "exact candidate gross minus net; no additional cost in registry",
+    "exit": "source exact trailing/stop/timeout policy",
+    "market": "perpetual futures"
+  },
+  "event_contract": {
+    "pre_window_hours": 12,
+    "post_window_hours": 12,
+    "persistence": "2 of next 3 hours",
+    "merge_gap_hours": 6,
+    "recovery_or_censor_hours": 72,
+    "taxonomy_reference_days": 30,
+    "taxonomy_minimum_reference_hours": 168
+  },
+  "sources": {
+    "global_topk_candidates": {
+      "path": "data_perp/artifacts/execution_ev_context_clean_global_top10_portfolio_constraints_forward_july19_20260726_v2/global_topk_candidates.parquet",
+      "sha256": "b18d1d0398d5dc282362f72ed764f2e162c4880960ebcdbc69f3ccd73a880058"
+    },
+    "baseline_portfolio_decisions": {
+      "path": "data_perp/artifacts/execution_ev_context_clean_global_top10_portfolio_constraints_forward_july19_20260726_v2/baseline_decisions.parquet",
+      "sha256": "50d8dc0c0bcd9fea118763c39a2a0f9e96ea792c29431c386da923b8d209a095"
+    },
+    "mapped_oof_and_forward": {
+      "path": "data_perp/artifacts/execution_ev_context_clean_exact_recent_correction_forward_july19_20260726_v2/mapped_oof_and_forward.parquet",
+      "sha256": "24bf10f51c410ec2e5da36dd8bcaa52f0aa64d4fb7f1508f152d35966d332c91"
+    },
+    "combined_policy_handoff": {
+      "path": "data_perp/artifacts/execution_ev_context_clean_exact_recent_correction_forward_july19_20260726_v2/combined_policy_handoff.parquet",
+      "sha256": "5926bb16e6b393b02ccad66063adf76c37d9c999b441f1088037f70000951179"
+    },
+    "portfolio_config": {
+      "path": "data_perp/artifacts/s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2/policy_params/optimized_portfolio_policy_config.json",
+      "sha256": "3e1db13869326dd13d35de61d0db7e1d804b665e1aa2b5d69e2a3727eebd4583"
+    },
+    "mapping_runner": {
+      "path": "scripts/run_execution_ev_recent_mapping_ablation.py",
+      "sha256": "c4a7041e035ddb8e258f2b5670aba33fff50f5e0a053710ef417375e263de641"
+    },
+    "portfolio_runner": {
+      "path": "scripts/ablate_execution_ev_global_topk_portfolio_constraints.py",
+      "sha256": "3a0805a6c3a9d97b5acae1fd776b3799868f9adb9a8c9a19bd0b2fa14a2ebda7"
+    },
+    "failure_label_runner": {
+      "path": "scripts/materialize_current_lineage_exact_failure_labels.py",
+      "sha256": "8dba64967effab7ba733059b862c11638dbfa8ef17a34556e50ae38aec5eb17b"
+    },
+    "packet_runner": {
+      "path": "scripts/materialize_economic_opportunity_state_packets.py",
+      "sha256": "b4364ef2e07a14c6cd17b2a2017c92fb01609c5f3ba80b3a18e804520410b05c"
+    }
+  }
+}

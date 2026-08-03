@@ -291,6 +291,8 @@ def run(
     top40_manifest_path: Path,
     outer_path: Path,
     destination: Path,
+    expected_source_rows: int = 744251,
+    expected_selected_rows: int = 300315,
 ) -> dict[str, Any]:
     if destination.exists():
         raise FileExistsError(
@@ -300,8 +302,8 @@ def run(
     if (
         manifest.get("output", {}).get("sha256") != _sha256(top40_path)
         or manifest.get("source", {}).get("sha256") != _sha256(outer_path)
-        or manifest.get("selected_rows") != 300315
-        or manifest.get("source_rows") != 744251
+        or manifest.get("selected_rows") != int(expected_selected_rows)
+        or manifest.get("source_rows") != int(expected_source_rows)
     ):
         raise DownstreamContextError("canonical top40 source binding changed")
     revision = _git_revision()
@@ -374,12 +376,16 @@ def main() -> None:
     parser.add_argument("--top40-manifest", type=Path, default=DEFAULT_TOP40_MANIFEST)
     parser.add_argument("--outer-oof", type=Path, default=DEFAULT_OUTER)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--expected-source-rows", type=int, default=744251)
+    parser.add_argument("--expected-selected-rows", type=int, default=300315)
     args = parser.parse_args()
     result = run(
         top40_path=args.top40,
         top40_manifest_path=args.top40_manifest,
         outer_path=args.outer_oof,
         destination=args.output_dir,
+        expected_source_rows=args.expected_source_rows,
+        expected_selected_rows=args.expected_selected_rows,
     )
     print(json.dumps(_jsonable(result), sort_keys=True))
 

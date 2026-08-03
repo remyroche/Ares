@@ -1,0 +1,17 @@
+{
+  "schema": "bounded_adverse_risk_overlay_workstream_v1",
+  "status": "FROZEN_RESEARCH_ONLY_NO_PROMOTION_NO_PORTFOLIO_REPLAY",
+  "sealed_exit_hurdle_artifact": "data_perp/artifacts/canonical_execution_reliability_exit_hurdle_ablation_20260730_v1",
+  "sealed_checkpoint_root": "data_perp/artifacts/canonical_execution_reliability_exit_hurdle_ablation_20260730_v1_checkpoints",
+  "residual_control": {
+    "artifact": "data_perp/artifacts/canonical_execution_reliability_ablation_20260730_v2",
+    "config": "A0__score_residual_expected_ev"
+  },
+  "components": ["h2_hard_adverse", "h4_severe"],
+  "lambda_grid": [0.25, 0.5, 1.0],
+  "clip_quantiles": [0.01, 0.99],
+  "mapping": {"name": "legal_causal_21d_arm_local", "pooled_min": 2000, "side_min": 1000},
+  "selection": {"top_fraction": 0.1, "objective": "mean - 0.5 * std + 0.25 * worst", "folds": ["selection_1", "selection_2", "selection_3"]},
+  "admission": "one pooled-global random-tie-expected top-1/5/10/20 book; no side quotas",
+  "forbidden": ["opportunity", "capture", "timing", "wait"]
+}

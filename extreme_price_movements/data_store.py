@@ -2369,9 +2369,12 @@ def _fetch_kraken_futures_charts_ohlcv(
     *,
     timeframe: str = "1h",
     tick_type: str = "trade",
+    product_id: str | None = None,
 ) -> pd.DataFrame:
-    product_id = _kraken_futures_product_id(exchange, symbol)
-    if not product_id:
+    resolved_product_id = str(product_id or "").strip()
+    if not resolved_product_id:
+        resolved_product_id = _kraken_futures_product_id(exchange, symbol)
+    if not resolved_product_id:
         return pd.DataFrame(
             columns=["ts", "open", "high", "low", "close", "volume"]
         ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
@@ -2379,7 +2382,7 @@ def _fetch_kraken_futures_charts_ohlcv(
     resolution = _kraken_charts_resolution(timeframe)
     url = (
         "https://futures.kraken.com/api/charts/v1/"
-        f"{tick}/{product_id}/{resolution}"
+        f"{tick}/{resolved_product_id}/{resolution}"
     )
     params = {
         "from": int(max(0, since_ms) // 1000),
@@ -2463,6 +2466,7 @@ def _fetch_ohlcv_paged(
     if "krakenfutures" in exchange_id:
         price_name = str((params or {}).get("price") or "trade")
         tick_type = "trade" if price_name in {"", "trade", "last"} else price_name
+        product_id = str((params or {}).get("product_id") or "").strip() or None
         return _fetch_kraken_futures_charts_ohlcv(
             exchange,
             symbol,
@@ -2470,6 +2474,7 @@ def _fetch_ohlcv_paged(
             until_ms,
             timeframe=timeframe,
             tick_type=tick_type,
+            product_id=product_id,
         )
 
     # Reduced logging: entry log removed

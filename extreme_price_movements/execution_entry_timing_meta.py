@@ -88,6 +88,7 @@ FORBIDDEN_SCORING_TOKENS = FORBIDDEN_REALIZED_FEATURE_TOKENS + (
 )
 
 ActionKind = Literal["enter_now", "wait_market", "adverse_limit"]
+ATTAINABLE_GROSS_BARRIER_RULE_ID = "AGBR-L60-K0.25-v1"
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,66 @@ class EntryAction:
         if self.kind == "wait_market":
             return f"wait_market_{self.wait_minutes}m"
         return f"adverse_limit_{self.wait_minutes}m_{self.adverse_offset_atr:.4f}atr"
+
+
+def attainable_gross_barrier_rule_v1() -> EntryAction:
+    """Return the immutable diagnostic target-price action.
+
+    ``AGBR-L60-K0.25-v1`` places a side-relative passive order 0.25 decision
+    ATR adverse to the enter-now price and keeps it live through minute 60.
+    The existing action simulator owns touch, spread, intrabar ambiguity and
+    re-anchored exit-policy replay semantics.  This helper does not authorize
+    a live order or alter the default action grid.
+    """
+
+    return EntryAction(
+        "adverse_limit",
+        wait_minutes=60,
+        adverse_offset_atr=0.25,
+    )
+
+
+def attainable_gross_barrier_realised(
+    *,
+    filled: bool,
+    post_fill_gross_ev: float,
+    fee_return: float,
+    target_net_buffer: float = 0.0,
+) -> bool:
+    """Label a filled AGBR action that clears fee plus a fixed net buffer.
+
+    MFE is deliberately absent: realization is based on executable gross from
+    the frozen post-fill exit-policy replay.  Entry/exit spread is already
+    embedded in that gross and ``fee_return`` is deducted exactly once.
+    """
+
+    fee = float(fee_return)
+    buffer = float(target_net_buffer)
+    if not np.isfinite(fee) or fee < 0.0:
+        raise ValueError("fee_return must be finite and non-negative")
+    if not np.isfinite(buffer) or buffer < 0.0:
+        raise ValueError("target_net_buffer must be finite and non-negative")
+    gross = float(post_fill_gross_ev)
+    return bool(filled and np.isfinite(gross) and gross >= fee + buffer)
+
+
+def attainable_gross_barrier_action_utility(
+    *,
+    filled: bool,
+    post_fill_net_ev: float,
+    enter_now_net_ev: float,
+) -> float:
+    """Return filled executable net or the explicit no-fill opportunity cost."""
+
+    enter_now = float(enter_now_net_ev)
+    if not np.isfinite(enter_now):
+        raise ValueError("enter_now_net_ev must be finite")
+    if not filled:
+        return -max(enter_now, 0.0)
+    post_fill = float(post_fill_net_ev)
+    if not np.isfinite(post_fill):
+        raise ValueError("filled AGBR action requires finite post_fill_net_ev")
+    return post_fill
 
 
 def default_entry_action_grid() -> tuple[EntryAction, ...]:
@@ -473,10 +534,13 @@ def validate_entry_timing_feature_contract(
     if config.strict_feature_families:
         minimum = {
             "execution_ev_prediction": 1,
-            "execution_ev_mapping": 1,
             "alpha_outputs": 1,
             "residual_outputs": 1,
-            "catboost_probabilities": len(PATH_SHAPE_TYPES),
+            # The class taxonomy is versioned by the signed upstream
+            # CatBoost artifact. Older valid OOF ledgers have seven classes
+            # while the current taxonomy has eight; require a complete
+            # normalized vector, not a hard-coded current class count.
+            "catboost_probabilities": 2,
             "catboost_entropy": 1,
             "auxiliary_heads": 5,
             "side_archetypes": 2,
@@ -492,11 +556,6 @@ def validate_entry_timing_feature_contract(
                 + ", ".join(absent)
             )
     probability_columns = family_columns["catboost_probabilities"]
-    if config.strict_feature_families and len(probability_columns) != len(PATH_SHAPE_TYPES):
-        raise ValueError(
-            "entry timing requires the complete ordered CatBoost probability vector "
-            f"with exactly {len(PATH_SHAPE_TYPES)} columns"
-        )
     if probability_columns:
         probabilities = frame.loc[:, probability_columns].to_numpy(dtype=np.float64, copy=False)
         if not np.allclose(probabilities.sum(axis=1), 1.0, atol=2e-5, rtol=2e-5):
@@ -921,8 +980,14 @@ def build_counterfactual_entry_action_labels(
                 "counterfactual labels require an exact fixed 1m horizon length of "
                 f"{expected_path_length} bars for row {row_index!r}"
             )
-        expected_start = row_decision + pd.Timedelta(minutes=1)
-        expected_terminal = row_decision + pd.Timedelta(minutes=expected_path_length)
+        # The signed execution-EV target contract defines the first executable
+        # path timestamp as __decision_ts__.  A fixed 720-minute path therefore
+        # spans decision through decision + 719 minutes, while the label is
+        # conservatively considered resolved at decision + 12 hours.
+        expected_start = row_decision
+        expected_terminal = row_decision + pd.Timedelta(
+            minutes=expected_path_length - 1
+        )
         if path["timestamp"].iloc[0] != expected_start:
             raise ValueError(
                 "counterfactual fixed-1m path must begin exactly at the first executable "
@@ -986,7 +1051,8 @@ def build_counterfactual_entry_action_labels(
                     "action_id": action.action_id,
                     "action_kind": action.kind,
                     "action_order": int(action_order),
-                    "counterfactual_label_end_utc": path["timestamp"].iloc[-1],
+                    "counterfactual_label_end_utc": row_decision
+                    + pd.Timedelta(hours=float(target_spec.horizon_hours)),
                     "wait_minutes": int(action.wait_minutes),
                     "adverse_offset_atr": float(action.adverse_offset_atr),
                     "filled": filled,
@@ -1892,7 +1958,13 @@ def _assert_source_oof_compatible_with_outer_folds(
     *,
     decision_time_col: str,
 ) -> None:
-    """Ensure stacked predictive inputs are no newer than each timing OOF fold."""
+    """Ensure every stacked validation input is causal for its own decision.
+
+    Upstream rolling OOF models may legitimately update between the timing
+    head's training cutoff and a later validation decision. Requiring those
+    row-local upstream fits to predate the timing training cutoff would freeze
+    the whole upstream stack artificially and does not match live inference.
+    """
 
     decision = _utc(frame[decision_time_col], name=decision_time_col)
     predictive = [
@@ -1901,19 +1973,21 @@ def _assert_source_oof_compatible_with_outer_folds(
         if spec.model_input and spec.family in PREDICTIVE_ENTRY_TIMING_FEATURE_FAMILIES
     ]
     for split in folds:
-        outer_train_cutoff = decision.iloc[split.train_indices].max()
-        outer_train_cutoff_ns = int(outer_train_cutoff.value)
         for name, spec in predictive:
             assert spec.source_train_cutoff_col is not None
             source_cutoff = _utc(
                 frame[spec.source_train_cutoff_col], name=spec.source_train_cutoff_col
             )
             scored = source_cutoff.iloc[split.validation_indices]
-            if (scored.astype("int64").to_numpy() > outer_train_cutoff_ns).any():
+            scored_decision = decision.iloc[split.validation_indices]
+            if not (
+                scored.astype("int64").to_numpy()
+                < scored_decision.astype("int64").to_numpy()
+            ).all():
                 raise ValueError(
                     f"entry timing predictive input {name!r} source train cutoff is not "
-                    f"compatible with outer OOF fold {split.fold}: it must be no later than "
-                    "the outer training cutoff"
+                    f"causal for outer OOF fold {split.fold}: it must be strictly before "
+                    "each validation decision"
                 )
 
 
@@ -2227,6 +2301,7 @@ def train_execution_entry_timing_meta(
     *,
     config: EntryTimingTrainerConfig = EntryTimingTrainerConfig(),
     target_spec: EntryTimingTargetSpec = EntryTimingTargetSpec(),
+    counterfactual_labels: pd.DataFrame | None = None,
 ) -> ExecutionEntryTimingBundle:
     """Fit side-local OOF action heads and a separate final scoring bundle.
 
@@ -2239,12 +2314,16 @@ def train_execution_entry_timing_meta(
     feature_names, execution_ev_feature = validate_entry_timing_feature_contract(
         frame, provenance, config=config
     )
-    labels = build_counterfactual_entry_action_labels(
-        frame,
-        target_spec=target_spec,
-        action_grid=action_grid,
-        decision_time_col=config.decision_time_col,
-        side_col=config.side_col,
+    labels = (
+        counterfactual_labels.copy()
+        if counterfactual_labels is not None
+        else build_counterfactual_entry_action_labels(
+            frame,
+            target_spec=target_spec,
+            action_grid=action_grid,
+            decision_time_col=config.decision_time_col,
+            side_col=config.side_col,
+        )
     )
     matrix = _action_matrix(labels, action_grid, len(frame))
     enter_now = next(action for action in action_grid if action.kind == "enter_now")

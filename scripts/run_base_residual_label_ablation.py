@@ -47,6 +47,7 @@ from extreme_price_movements.training_resource_guard import (  # noqa: E402
     TrainingResourceLimits,
 )
 from extreme_price_movements.universe import (  # noqa: E402
+    _normalize_symbol,
     load_spread_cost_excluded_symbols,
 )
 from scripts.run_packb_side_local_residual_oof import (  # noqa: E402
@@ -84,6 +85,16 @@ PATH_COLUMNS = (
     "__meaningful_mfe_reached_12h__",
     "__path_auxiliary_target_valid__",
 )
+
+
+def spread_exclusion_mask(
+    symbols: pd.Series, excluded_symbols: set[str]
+) -> np.ndarray:
+    """Apply the exact inference-universe symbol normalization before matching."""
+
+    normalized_excluded = {_normalize_symbol(value) for value in excluded_symbols}
+    normalized = symbols.astype(str).map(_normalize_symbol)
+    return normalized.isin(normalized_excluded).to_numpy(dtype=bool)
 
 
 class AblationError(RuntimeError):
@@ -557,9 +568,9 @@ def _evaluate_recipe(
         )
     objective = label_hpo_objective(raw_by_month)
     admitted_values = [
-        row["timestamp_side_top10_mean_net_return"]
+        row["global_top10_mean_net_return"]
         for row in admitted_by_month
-        if row["timestamp_side_top10_rows"] > 0
+        if row["global_top10_rows"] > 0
     ]
     if admitted_values:
         objective += 0.20 * float(np.median(admitted_values))
@@ -699,6 +710,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "side_local": True,
             "side_is_not_a_search_axis": True,
             "selection_period": "residual OOF after the first 21 calibration days, ending 2026-04-01",
+            "selection_policy": "one pooled-global top-10 after the 21-day admission calibrator; timestamp-side top-k is diagnostic only",
         },
         "spread_exclusion": {
             "threshold_bps": 70.0,
@@ -852,9 +864,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             models[1].booster_.save_model(str(side_root / "residual_model.txt"))
             # Static spread exclusion is a non-PIT diagnostic only.  Report its
             # exact row impact without using it to select or promote the model.
-            excluded_mask = frame["__symbol__"].astype(str).isin(spread_excluded)
+            excluded_mask = spread_exclusion_mask(
+                frame["__symbol__"], spread_excluded
+            )
             spread_eval = scored.loc[
-                ~scored["__symbol__"].astype(str).isin(spread_excluded)
+                ~spread_exclusion_mask(scored["__symbol__"], spread_excluded)
             ].reset_index(drop=True)
             spread_metrics = (
                 economic_metrics(spread_eval, spread_eval["residual_score"])

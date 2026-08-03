@@ -202,6 +202,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--early-stopping-rounds", type=int, default=40)
     parser.add_argument("--hpo-trials", type=int, default=8)
     parser.add_argument("--decision-hpo-trials", type=int, default=8)
+    parser.add_argument(
+        "--counterfactual-labels",
+        type=Path,
+        default=None,
+        help=(
+            "Reuse a previously materialized train-only action ledger. Its "
+            "action IDs, row positions, target fingerprint and source input "
+            "must match this run."
+        ),
+    )
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true", help="Validate the feature/path contract and write only the manifest.")
     return parser
@@ -287,14 +297,48 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     # This validates timestamp causality and exact fee/spread accounting before
     # model fitting.  The returned labels remain train-only and are never
     # forwarded to the scoring API.
-    labels = build_counterfactual_entry_action_labels(
-        frame,
-        target_spec=target_spec,
-        action_grid=config.action_grid,
-        decision_time_col=config.decision_time_col,
-        side_col=config.side_col,
-    )
+    cached_labels = getattr(args, "counterfactual_labels", None)
+    if cached_labels is not None:
+        if not cached_labels.is_file():
+            raise ValueError("--counterfactual-labels must be an existing parquet file")
+        cache_manifest_path = cached_labels.parent / "manifest.json"
+        if not cache_manifest_path.is_file():
+            raise ValueError("cached counterfactual labels require their runner manifest")
+        cache_manifest = json.loads(cache_manifest_path.read_text(encoding="utf-8"))
+        if cache_manifest.get("input_fingerprint") != input_fingerprint:
+            raise ValueError("cached counterfactual labels input fingerprint does not match")
+        cache_record = cache_manifest.get("counterfactual_labels", {})
+        if (
+            not isinstance(cache_record, Mapping)
+            or cache_record.get("sha256") != _sha256(cached_labels)
+        ):
+            raise ValueError("cached counterfactual label hash does not verify")
+        labels = pd.read_parquet(cached_labels)
+        expected_actions = {action.action_id for action in config.action_grid}
+        if set(labels.get("action_id", pd.Series(dtype=str)).astype(str)) != expected_actions:
+            raise ValueError("cached counterfactual labels do not match the action grid")
+        if len(labels) != len(frame) * len(config.action_grid):
+            raise ValueError("cached counterfactual labels do not cover every row/action")
+        positions = pd.to_numeric(labels.get("base_position"), errors="coerce")
+        if (
+            positions.isna().any()
+            or set(positions.astype(int)) != set(range(len(frame)))
+        ):
+            raise ValueError("cached counterfactual labels have invalid base positions")
+    else:
+        labels = build_counterfactual_entry_action_labels(
+            frame,
+            target_spec=target_spec,
+            action_grid=config.action_grid,
+            decision_time_col=config.decision_time_col,
+            side_col=config.side_col,
+        )
     args.output_dir.mkdir(parents=True, exist_ok=False)
+    if cached_labels is None:
+        labels_path = args.output_dir / "counterfactual_action_labels.parquet"
+        labels.to_parquet(labels_path, index=False, compression="zstd")
+    else:
+        labels_path = cached_labels
     manifest = {
         "schema": "execution_entry_timing_runner_v2",
         "input": {"path": str(args.input), "sha256": _sha256(args.input), "rows": int(len(frame))},
@@ -307,13 +351,25 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         "input_fingerprint": input_fingerprint,
         "fingerprint_columns": fingerprint_columns,
         "counterfactual_rows": int(len(labels)),
+        "counterfactual_labels": {
+            "path": labels_path.name,
+            "source_path": str(labels_path.resolve()),
+            "sha256": _sha256(labels_path),
+            "role": "train_only_never_scoring_input",
+        },
         "leakage_contract": "exact fixed-horizon 1m paths and all realized labels are train-only; action labels use the signed execution-EV long/short geometry reanchored at each fill; predictive upstream inputs carry row-level source fold/cutoff OOF evidence; scorer accepts only pre-entry frozen inputs; chronological purge/embargo and train-OOF isotonic calibration apply",
     }
     manifest_path = args.output_dir / "manifest.json"
     _atomic_json(manifest_path, manifest)
     if args.dry_run:
-        return {"manifest": manifest_path}
-    bundle = train_execution_entry_timing_meta(frame, provenance, config=config, target_spec=target_spec)
+        return {"manifest": manifest_path, "counterfactual_labels": labels_path}
+    bundle = train_execution_entry_timing_meta(
+        frame,
+        provenance,
+        config=config,
+        target_spec=target_spec,
+        counterfactual_labels=labels,
+    )
     paths = write_execution_entry_timing_artifacts(bundle, args.output_dir)
     manifest["status"] = "completed"
     manifest["bundle_fingerprint"] = bundle.bundle_fingerprint

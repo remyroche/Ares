@@ -315,4 +315,4 @@ def compare_geometries(artifact_dir1: str, artifact_dir2: str) -> None:
                     print(f"{key:<25} {v1:>12.4f} {v2:>12.4f} {delta:>+12.4f}")
                 else:
                     changed = "YES" if v1 != v2 else ""
-                    print(f"{key:<25} {str(v1):>12} {str(v2):>12} {changed:>12}")"
+                    print(f"{key:<25} {str(v1):>12} {str(v2):>12} {changed:>12}")

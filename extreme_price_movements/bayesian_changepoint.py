@@ -198,6 +198,85 @@ def bocpd_student_t(values: np.ndarray, config: BOCPDConfig) -> np.ndarray:
     )
 
 
+@njit(cache=True)
+def _bocpd_student_t_run_summary_kernel(
+    values: np.ndarray,
+    expected_run_hours: int,
+    max_run_hours: int,
+    prior_kappa: float,
+    prior_alpha: float,
+    prior_beta: float,
+) -> np.ndarray:
+    """Causal BOCPD posterior summaries: CP, mean/q05 run length, entropy."""
+
+    maximum = max(max_run_hours, 2)
+    size = maximum + 1
+    hazard = 1.0 / max(float(expected_run_hours), 2.0)
+    log_hazard, log_growth = log(hazard), log(1.0 - hazard)
+    log_probability = np.full(size, -np.inf, dtype=np.float64); log_probability[0] = 0.0
+    mu = np.zeros(size, dtype=np.float64); kappa = np.full(size, prior_kappa, dtype=np.float64)
+    alpha = np.full(size, prior_alpha, dtype=np.float64); beta = np.full(size, prior_beta, dtype=np.float64)
+    predictive = np.empty(size, dtype=np.float64); reset_values = np.empty(size, dtype=np.float64)
+    next_log_probability = np.empty(size, dtype=np.float64); next_mu = np.empty(size, dtype=np.float64)
+    next_kappa = np.empty(size, dtype=np.float64); next_alpha = np.empty(size, dtype=np.float64); next_beta = np.empty(size, dtype=np.float64)
+    output = np.full((values.shape[0], 4), np.nan, dtype=np.float32)
+    for index in range(values.shape[0]):
+        value = values[index]
+        if not np.isfinite(value):
+            continue
+        for run_length in range(size):
+            predictive[run_length] = _student_t_logpdf(value, mu[run_length], kappa[run_length], alpha[run_length], beta[run_length])
+            next_log_probability[run_length] = -np.inf
+            reset_values[run_length] = log_probability[run_length] + log_hazard
+        next_log_probability[0] = _logsumexp(reset_values) + _student_t_logpdf(value, 0.0, prior_kappa, prior_alpha, prior_beta)
+        for run_length in range(1, size):
+            next_log_probability[run_length] = log_probability[run_length - 1] + log_growth + predictive[run_length - 1]
+        next_log_probability[-1] = np.logaddexp(next_log_probability[-1], log_probability[-1] + log_growth + predictive[-1])
+        next_log_probability -= _logsumexp(next_log_probability)
+        for run_length in range(size):
+            next_mu[run_length] = 0.0; next_kappa[run_length] = prior_kappa
+            next_alpha[run_length] = prior_alpha; next_beta[run_length] = prior_beta
+        for run_length in range(1, size):
+            previous = run_length - 1; updated_kappa = kappa[previous] + 1.0
+            next_mu[run_length] = (kappa[previous] * mu[previous] + value) / updated_kappa
+            next_kappa[run_length] = updated_kappa; next_alpha[run_length] = alpha[previous] + 0.5
+            next_beta[run_length] = beta[previous] + 0.5 * kappa[previous] * (value - mu[previous]) ** 2 / updated_kappa
+        updated_kappa = kappa[-1] + 1.0
+        next_mu[-1] = (kappa[-1] * mu[-1] + value) / updated_kappa; next_kappa[-1] = updated_kappa
+        next_alpha[-1] = alpha[-1] + 0.5; next_beta[-1] = beta[-1] + 0.5 * kappa[-1] * (value - mu[-1]) ** 2 / updated_kappa
+        reset_kappa = prior_kappa + 1.0
+        next_mu[0] = value / reset_kappa; next_kappa[0] = reset_kappa; next_alpha[0] = prior_alpha + 0.5
+        next_beta[0] = prior_beta + 0.5 * prior_kappa * value ** 2 / reset_kappa
+        previous_log_probability = log_probability; log_probability = next_log_probability; next_log_probability = previous_log_probability
+        previous_mu = mu; mu = next_mu; next_mu = previous_mu
+        previous_kappa = kappa; kappa = next_kappa; next_kappa = previous_kappa
+        previous_alpha = alpha; alpha = next_alpha; next_alpha = previous_alpha
+        previous_beta = beta; beta = next_beta; next_beta = previous_beta
+        mean, entropy, cumulative, q05 = 0.0, 0.0, 0.0, float(maximum)
+        for run_length in range(size):
+            probability = np.exp(log_probability[run_length])
+            mean += run_length * probability
+            if probability > 0.0:
+                entropy -= probability * log(probability)
+            cumulative += probability
+            if cumulative >= 0.05 and q05 == float(maximum):
+                q05 = float(run_length)
+        output[index, 0] = np.float32(np.exp(log_probability[0]))
+        output[index, 1] = np.float32(mean)
+        output[index, 2] = np.float32(q05)
+        output[index, 3] = np.float32(entropy / log(float(size)))
+    return output
+
+
+def bocpd_student_t_run_summary(values: np.ndarray, config: BOCPDConfig) -> np.ndarray:
+    """Return causal ``[change_probability, run_mean, run_q05, entropy]``."""
+
+    return _bocpd_student_t_run_summary_kernel(
+        np.ascontiguousarray(values, dtype=np.float64), int(config.expected_run_hours),
+        int(config.max_run_hours), float(config.prior_kappa), float(config.prior_alpha), float(config.prior_beta),
+    )
+
+
 def synchronized_break_score(
     train_scores: np.ndarray,
     score_scores: np.ndarray,

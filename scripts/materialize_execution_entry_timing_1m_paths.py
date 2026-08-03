@@ -47,7 +47,8 @@ class ColumnMapping:
     side: str
     candidate_id: str
     decision: str
-    atr: str
+    atr: str | None
+    atr_fraction: str | None
     fee: str
     entry_spread: str
     exit_spread: str
@@ -125,7 +126,9 @@ def _nonnegative(values: pd.Series, *, source: str, column: str, upper: float | 
 
 
 def _required_columns(mapping: ColumnMapping) -> list[str]:
-    return list(dict.fromkeys(mapping.__dict__.values()))
+    return list(
+        dict.fromkeys(value for value in mapping.__dict__.values() if value is not None)
+    )
 
 
 def _iter_input_batches(path: Path, columns: Sequence[str], batch_rows: int) -> Iterator[pd.DataFrame]:
@@ -147,21 +150,34 @@ def _canonical_batch(
     source: str,
     decision_delay_minutes: int,
 ) -> pd.DataFrame:
-    output = pd.DataFrame(
-        {
-            "__ts__": _utc(raw[mapping.timestamp], source=source, column=mapping.timestamp),
-            "__symbol__": _strings(raw[mapping.symbol], source=source, column=mapping.symbol),
-            "side_name": _sides(raw[mapping.side], source=source, column=mapping.side),
-            "candidate_id": _strings(raw[mapping.candidate_id], source=source, column=mapping.candidate_id),
-            "__decision_ts__": _utc(raw[mapping.decision], source=source, column=mapping.decision),
-            "atr_1h": _nonnegative(raw[mapping.atr], source=source, column=mapping.atr),
-            "fee": _nonnegative(raw[mapping.fee], source=source, column=mapping.fee, upper=1.0),
-            "entry_spread": _nonnegative(raw[mapping.entry_spread], source=source, column=mapping.entry_spread),
-            "exit_spread": _nonnegative(raw[mapping.exit_spread], source=source, column=mapping.exit_spread),
-        }
-    )
-    if (output["atr_1h"] <= 0.0).any():
-        raise ValueError("input ATR must be strictly positive for every candidate")
+    if (mapping.atr is None) == (mapping.atr_fraction is None):
+        raise ValueError("configure exactly one of --atr-col or --atr-fraction-col")
+    values: dict[str, pd.Series] = {
+        "__ts__": _utc(raw[mapping.timestamp], source=source, column=mapping.timestamp),
+        "__symbol__": _strings(raw[mapping.symbol], source=source, column=mapping.symbol),
+        "side_name": _sides(raw[mapping.side], source=source, column=mapping.side),
+        "candidate_id": _strings(raw[mapping.candidate_id], source=source, column=mapping.candidate_id),
+        "__decision_ts__": _utc(raw[mapping.decision], source=source, column=mapping.decision),
+        "fee": _nonnegative(raw[mapping.fee], source=source, column=mapping.fee, upper=1.0),
+        "entry_spread": _nonnegative(raw[mapping.entry_spread], source=source, column=mapping.entry_spread),
+        "exit_spread": _nonnegative(raw[mapping.exit_spread], source=source, column=mapping.exit_spread),
+    }
+    if mapping.atr is not None:
+        values["atr_1h"] = _nonnegative(
+            raw[mapping.atr], source=source, column=mapping.atr
+        )
+    else:
+        assert mapping.atr_fraction is not None
+        values["atr_fraction"] = _nonnegative(
+            raw[mapping.atr_fraction],
+            source=source,
+            column=mapping.atr_fraction,
+            upper=1.0,
+        )
+    output = pd.DataFrame(values)
+    atr_column = "atr_1h" if mapping.atr is not None else "atr_fraction"
+    if (output[atr_column] <= 0.0).any():
+        raise ValueError(f"input {atr_column} must be strictly positive for every candidate")
     expected = output["__ts__"] + pd.Timedelta(minutes=int(decision_delay_minutes))
     if not output["__decision_ts__"].eq(expected).all():
         raise ValueError(
@@ -267,20 +283,22 @@ def _path_json(bars: pd.DataFrame) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
-def _window_path(bars: pd.DataFrame, decision: pd.Timestamp) -> tuple[str | None, str | None]:
+def _window_path(
+    bars: pd.DataFrame, decision: pd.Timestamp
+) -> tuple[str | None, str | None, float | None]:
     expected = pd.date_range(
         decision, periods=HORIZON_MINUTES, freq="min", tz="UTC"
     )
     window = bars.reindex(expected)
     if window.isna().any().any():
         missing = int(window.isna().any(axis=1).sum())
-        return None, f"missing_or_nonfinite_minutes={missing}"
+        return None, f"missing_or_nonfinite_minutes={missing}", None
     values = window.loc[:, list(PATH_COLUMNS)].to_numpy(dtype=np.float32)
     if not np.isfinite(values).all() or (values <= 0.0).any():
-        return None, "invalid_nonpositive_or_nonfinite_ohlc"
+        return None, "invalid_nonpositive_or_nonfinite_ohlc", None
     if (window["high"] < window["low"]).any():
-        return None, "high_below_low"
-    return _path_json(window), None
+        return None, "high_below_low", None
+    return _path_json(window), None, float(window["open"].iloc[0])
 
 
 def _manifest_target(path: Path) -> tuple[str, str]:
@@ -288,13 +306,45 @@ def _manifest_target(path: Path) -> tuple[str, str]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("--execution-ev-target-manifest must be readable JSON") from exc
-    if payload.get("schema") != "execution_ev_12h_hourly_policy_labels_v2":
-        raise ValueError("execution-EV target manifest must use signed v2 label schema")
+    schema = payload.get("schema")
+    if schema not in {
+        "execution_ev_12h_hourly_policy_labels_v2",
+        "execution_ev_deployed_policy_1m_labels_v1",
+    }:
+        raise ValueError("execution-EV target manifest uses an unsupported signed schema")
     if payload.get("prediction_role") != "execution_ev_12h_labels":
         raise ValueError("execution-EV target manifest has the wrong prediction role")
     signed = payload.get("prediction_role_manifest_sha256")
     if not isinstance(signed, str) or not hmac.compare_digest(signed, _manifest_hash(payload)):
         raise ValueError("execution-EV target manifest signature does not verify")
+    if schema == "execution_ev_deployed_policy_1m_labels_v1":
+        timing = payload.get("timing") or {}
+        exit_contract = payload.get("exit_policy_contract") or {}
+        lineage = payload.get("historical_lineage") or {}
+        store = payload.get("store") or {}
+        if (
+            int(timing.get("signal_to_decision_minutes", -1)) != 60
+            or int(timing.get("horizon_minutes", -1)) != HORIZON_MINUTES
+            or int(exit_contract.get("horizon_minutes", -1)) != HORIZON_MINUTES
+            or timing.get("label_available_at") != "decision + full replay horizon"
+        ):
+            raise ValueError("deployed-policy target has incompatible 1m timing")
+        if store.get("contract") != "canonical_kraken_execution_1m_immutable_read_only_v1":
+            raise ValueError("deployed-policy target lacks immutable-store coverage")
+        if (
+            lineage.get("oof_status") != "not_oof"
+            or bool(lineage.get("execution_parity_claim"))
+            or bool(lineage.get("promotion_eligible"))
+            or lineage.get("economics")
+            not in {
+                "current_frozen_spread_counterfactual",
+                "inverse_quote_notional_current_spread_counterfactual",
+            }
+        ):
+            raise ValueError(
+                "historical deployed-policy target lacks an allowed "
+                "counterfactual lineage"
+            )
     return _sha256(path), signed
 
 
@@ -319,6 +369,21 @@ def _coverage_finalize(
             stats["incomplete"] = stats["requested"] - stats["complete"]
             stats["coverage"] = stats["complete"] / max(stats["requested"], 1)
     return {"by_month": by_month, "by_symbol": by_symbol}
+
+
+def _write_records(
+    writer: pq.ParquetWriter | None,
+    temporary: Path,
+    records: list[dict[str, Any]],
+) -> pq.ParquetWriter | None:
+    if not records:
+        return writer
+    table = pa.Table.from_pandas(pd.DataFrame(records), preserve_index=False)
+    if writer is None:
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        writer = pq.ParquetWriter(temporary, table.schema, compression="zstd")
+    writer.write_table(table)
+    return writer
 
 
 def stage(args: argparse.Namespace) -> dict[str, Path]:
@@ -381,58 +446,73 @@ def materialize(args: argparse.Namespace) -> dict[str, Path]:
     temporary = output.with_name(output.name + ".partial")
     writer: pq.ParquetWriter | None = None
     try:
-        for batch in _candidate_batches(
+        candidates = _candidate_frame(
             args.input,
             mapping,
             batch_rows=args.candidate_batch_rows,
             decision_delay_minutes=args.decision_delay_minutes,
-        ):
+        )
+        # Load each symbol's immutable partitions once.  The previous
+        # candidate-batch outer loop repeatedly reopened the same yearly parts
+        # for every 500 rows and made the full timing run unnecessarily slow.
+        for symbol, group in candidates.groupby("__symbol__", sort=True):
             emitted: list[dict[str, Any]] = []
-            for symbol, group in batch.groupby("__symbol__", sort=True):
-                start = group["__decision_ts__"].min()
-                end = group["__decision_ts__"].max() + pd.Timedelta(minutes=HORIZON_MINUTES)
-                bars, parts = _load_symbol_bars(root, str(symbol), start, end)
-                for part in parts:
-                    source_parts[str(part.relative_to(root))] = _sha256(part)
-                for _, row in group.iterrows():
-                    end_time = row["__decision_ts__"] + pd.Timedelta(minutes=HORIZON_MINUTES)
-                    reason: str | None = None
-                    path: str | None = None
-                    if end_time > completed_through:
-                        reason = "window_not_known_completed"
-                    else:
-                        path, reason = _window_path(bars, row["__decision_ts__"])
-                    audit = {
-                        "__ts__": row["__ts__"],
-                        "__symbol__": row["__symbol__"],
-                        "side_name": row["side_name"],
-                        "candidate_id": row["candidate_id"],
-                        "__decision_ts__": row["__decision_ts__"],
-                        "complete": path is not None,
-                        "reason": reason,
-                    }
-                    requested_rows += 1
-                    _coverage_add(by_month, by_symbol, audit)
-                    if path is None:
-                        incomplete.append(audit)
-                    else:
-                        emitted.append(
-                            {
-                                **{key: row[key] for key in IDENTITY},
-                                "execution_future_path": path,
-                                "atr_1h": np.float32(row["atr_1h"]),
-                                "fee": np.float32(row["fee"]),
-                                "entry_spread": np.float32(row["entry_spread"]),
-                                "exit_spread": np.float32(row["exit_spread"]),
-                            }
-                        )
-            if emitted:
-                table = pa.Table.from_pandas(pd.DataFrame(emitted), preserve_index=False)
-                if writer is None:
-                    temporary.parent.mkdir(parents=True, exist_ok=True)
-                    writer = pq.ParquetWriter(temporary, table.schema, compression="zstd")
-                writer.write_table(table)
-                output_rows += len(emitted)
+            start = group["__decision_ts__"].min()
+            end = group["__decision_ts__"].max() + pd.Timedelta(
+                minutes=HORIZON_MINUTES
+            )
+            bars, parts = _load_symbol_bars(root, str(symbol), start, end)
+            for part in parts:
+                source_parts[str(part.relative_to(root))] = _sha256(part)
+            for _, row in group.iterrows():
+                end_time = row["__decision_ts__"] + pd.Timedelta(
+                    minutes=HORIZON_MINUTES
+                )
+                reason: str | None = None
+                path: str | None = None
+                decision_price: float | None = None
+                if end_time > completed_through:
+                    reason = "window_not_known_completed"
+                else:
+                    path, reason, decision_price = _window_path(
+                        bars, row["__decision_ts__"]
+                    )
+                audit = {
+                    "__ts__": row["__ts__"],
+                    "__symbol__": row["__symbol__"],
+                    "side_name": row["side_name"],
+                    "candidate_id": row["candidate_id"],
+                    "__decision_ts__": row["__decision_ts__"],
+                    "complete": path is not None,
+                    "reason": reason,
+                }
+                requested_rows += 1
+                _coverage_add(by_month, by_symbol, audit)
+                if path is None:
+                    incomplete.append(audit)
+                else:
+                    atr = (
+                        float(row["atr_1h"])
+                        if "atr_1h" in row.index
+                        else float(row["atr_fraction"]) * float(decision_price)
+                    )
+                    emitted.append(
+                        {
+                            **{key: row[key] for key in IDENTITY},
+                            "execution_future_path": path,
+                            "atr_1h": np.float32(atr),
+                            "decision_price": np.float32(decision_price),
+                            "fee": np.float32(row["fee"]),
+                            "entry_spread": np.float32(row["entry_spread"]),
+                            "exit_spread": np.float32(row["exit_spread"]),
+                        }
+                    )
+                if len(emitted) >= int(args.candidate_batch_rows):
+                    writer = _write_records(writer, temporary, emitted)
+                    output_rows += len(emitted)
+                    emitted = []
+            writer = _write_records(writer, temporary, emitted)
+            output_rows += len(emitted)
     finally:
         if writer is not None:
             writer.close()
@@ -487,6 +567,16 @@ def materialize(args: argparse.Namespace) -> dict[str, Path]:
             "encoding": "json_vector_timestamp_ns_float32_ohlc",
             "fixed_length": HORIZON_MINUTES,
         },
+        "atr": {
+            "output_column": "atr_1h",
+            "input_mode": (
+                "absolute"
+                if mapping.atr is not None
+                else "decision_price_times_atr_fraction"
+            ),
+            "input_column": mapping.atr or mapping.atr_fraction,
+            "decision_price_column": "decision_price",
+        },
         "cost_accounting": "fee_once_entry_spread_once_exit_spread_once",
         "cost_columns": {
             "fee": "fee",
@@ -510,7 +600,8 @@ def _mapping(args: argparse.Namespace) -> ColumnMapping:
         side=args.side_col,
         candidate_id=args.candidate_id_col,
         decision=args.decision_ts_col,
-        atr=args.atr_col,
+        atr=getattr(args, "atr_col", None),
+        atr_fraction=getattr(args, "atr_fraction_col", None),
         fee=args.fee_col,
         entry_spread=args.entry_spread_col,
         exit_spread=args.exit_spread_col,
@@ -524,7 +615,9 @@ def _add_mapping_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--side-col", default="side_name")
     parser.add_argument("--candidate-id-col", default="candidate_id")
     parser.add_argument("--decision-ts-col", default="__decision_ts__")
-    parser.add_argument("--atr-col", default="atr_1h")
+    atr_group = parser.add_mutually_exclusive_group(required=False)
+    atr_group.add_argument("--atr-col", default=None)
+    atr_group.add_argument("--atr-fraction-col", default=None)
     parser.add_argument("--fee-col", default="fee")
     parser.add_argument("--entry-spread-col", default="entry_spread")
     parser.add_argument("--exit-spread-col", default="exit_spread")
@@ -554,6 +647,8 @@ def main() -> None:
     args = _parser().parse_args()
     if args.candidate_batch_rows < 1 or args.decision_delay_minutes < 0:
         raise SystemExit("candidate-batch-rows must be positive and decision-delay-minutes non-negative")
+    if args.atr_col is None and args.atr_fraction_col is None:
+        args.atr_col = "atr_1h"
     try:
         paths = stage(args) if args.command == "stage" else materialize(args)
     except (OSError, ValueError) as exc:

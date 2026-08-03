@@ -86,6 +86,7 @@ def _inputs(tmp_path: Path) -> dict[str, Path]:
             {
                 "schema": materializer.HANDOFF_SCHEMA,
                 "handoff": {"join_mode": "exact_inner_one_to_one", "join_keys": list(materializer.JOIN_KEYS)},
+                "catboost": {"class_order": list(PATH_SHAPE_TYPES)},
             }
         ),
         encoding="utf-8",
@@ -148,6 +149,7 @@ def _inputs(tmp_path: Path) -> dict[str, Path]:
     timing = keys.copy()
     timing["execution_future_path"] = [_path(timestamp + pd.Timedelta(hours=1)) for timestamp in keys["__ts__"]]
     timing["atr_1h"] = 1.0
+    timing["decision_price"] = 100.0
     timing["fee"] = 0.001
     timing["entry_spread"] = 10.0
     timing["exit_spread"] = 10.0
@@ -193,7 +195,7 @@ def test_materializes_strict_post_execution_ev_timing_handoff(tmp_path: Path) ->
     output = pd.read_parquet(result["handoff"])
     provenance = json.loads(result["provenance"].read_text())
 
-    assert {"frozen_execution_ev", "frozen_ev_map", "frozen_alpha", "frozen_residual", "frozen_aux_time", "frozen_aux_peak", "frozen_aux_mae", "frozen_aux_turn", "frozen_aux_slope", "frozen_entropy", "catboost_archetype", "execution_future_path", "fee", "entry_spread", "exit_spread"}.issubset(output.columns)
+    assert {"frozen_execution_ev", "frozen_ev_map", "frozen_alpha", "frozen_residual", "frozen_aux_time", "frozen_aux_peak", "frozen_aux_mae", "frozen_aux_turn", "frozen_aux_slope", "frozen_entropy", "catboost_archetype", "execution_future_path", "decision_price", "fee", "entry_spread", "exit_spread"}.issubset(output.columns)
     assert {f"frozen_p_{index}" for index in range(len(PATH_SHAPE_TYPES))}.issubset(output.columns)
     assert output["side_name"].tolist() == ["long", "short", "long", "short"]
     assert output["frozen_side_is_long"].tolist() == [1.0, 0.0, 1.0, 0.0]
@@ -213,18 +215,20 @@ def test_rejects_exact_key_mismatch(tmp_path: Path) -> None:
     ev_map.to_parquet(paths["execution_ev_map_oof"], index=False)
     _resign_map(paths)
 
-    with pytest.raises(ValueError, match="exact candidate identity coverage mismatch"):
+    with pytest.raises(ValueError, match="declared OOF timing universe"):
         materializer.run(_args(tmp_path, paths))
 
 
-def test_rejects_non_oof_execution_ev_prediction(tmp_path: Path) -> None:
+def test_excludes_non_oof_execution_ev_prediction_from_declared_universe(tmp_path: Path) -> None:
     paths = _inputs(tmp_path)
     oof = pd.read_parquet(paths["execution_ev_oof"])
     oof.loc[0, "direct__all_features__is_oof"] = False
     oof.to_parquet(paths["execution_ev_oof"], index=False)
 
-    with pytest.raises(ValueError, match="in-sample/final-refit predictions are rejected"):
-        materializer.run(_args(tmp_path, paths))
+    result = materializer.run(_args(tmp_path, paths))
+    output = pd.read_parquet(result["handoff"])
+    assert len(output) == 3
+    assert "candidate-0" not in set(output["candidate_id"])
 
 
 def test_rejects_missing_execution_ev_map(tmp_path: Path) -> None:

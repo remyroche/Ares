@@ -772,6 +772,7 @@ def _summarize_side_relative_path_batch(
     trailing_trigger_r: np.ndarray,
     stop_r: np.ndarray,
     cost_return: np.ndarray,
+    archetype_cost_return: np.ndarray | None = None,
     activation_distance_return: np.ndarray,
     prefix: str,
 ) -> dict[str, np.ndarray]:
@@ -875,8 +876,27 @@ def _summarize_side_relative_path_batch(
     peak = np.where(peak_is_usable, raw_peak, 0.0)
     risk_fraction = risk_distance / entry_price
     raw_peak_return = np.maximum(raw_peak * risk_fraction, 0.0)
-    archetype_cost_return = CATBOOST_ARCHETYPE_COST_RETURN
-    cost_atr = archetype_cost_return / atr_fraction
+    # The established v6 corpus used a fixed 1% total cost.  Exact-policy
+    # historical replays may supply their realised per-row fee return instead;
+    # keeping this opt-in preserves the frozen v6 behaviour for every existing
+    # caller while allowing an explicitly signed execution target to retain its
+    # own cost accounting.
+    if archetype_cost_return is None:
+        effective_archetype_cost = np.full(
+            rows, CATBOOST_ARCHETYPE_COST_RETURN, dtype=np.float64
+        )
+    else:
+        effective_archetype_cost = np.asarray(
+            archetype_cost_return, dtype=np.float64
+        ).reshape(-1)
+        if len(effective_archetype_cost) != rows:
+            raise ValueError("archetype_cost_return must align one-for-one with paths")
+        effective_archetype_cost = np.where(
+            np.isfinite(effective_archetype_cost) & (effective_archetype_cost > 0.0),
+            effective_archetype_cost,
+            CATBOOST_ARCHETYPE_COST_RETURN,
+        )
+    cost_atr = effective_archetype_cost / atr_fraction
     meaningful_mfe_threshold_atr = np.maximum(
         CATBOOST_ARCHETYPE_ATR_FLOOR,
         cost_atr + CATBOOST_ARCHETYPE_NET_MARGIN_ATR,
@@ -940,8 +960,8 @@ def _summarize_side_relative_path_batch(
     mfe_12h_raw = raw_horizon_peak(12.0)
     slope_4h = atr_slope(4.0)
     slope_12h = atr_slope(12.0)
-    final_return_net = close_r[:, -1] * risk_fraction - archetype_cost_return
-    peak_net_return = raw_peak_return - archetype_cost_return
+    final_return_net = close_r[:, -1] * risk_fraction - effective_archetype_cost
+    peak_net_return = raw_peak_return - effective_archetype_cost
     peak_mfe_atr = np.clip(raw_peak_return / atr_fraction, 0.0, 10.0)
     activation_r = np.where(
         np.isfinite(trailing_trigger_r) & (trailing_trigger_r > 0.0),
@@ -1038,7 +1058,7 @@ def _summarize_side_relative_path_batch(
             f"{prefix}peak_mfe_minus_cost_atr": raw_peak_return / atr_fraction
             - cost_atr,
             f"{prefix}peak_mfe_div_cost": raw_peak_return
-            / archetype_cost_return,
+            / effective_archetype_cost,
             f"{prefix}reaches_meaningful_mfe": cost_aware_reached.astype(np.float64),
             f"{prefix}bars_to_meaningful_mfe": (cost_aware_i + 1).astype(np.float64),
             f"{prefix}bars_to_80pct_peak": (peak_80_i + 1).astype(np.float64),

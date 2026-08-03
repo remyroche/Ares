@@ -480,20 +480,22 @@ def run(
     destination: Path,
     decision_delay_hours: int = 1,
     horizon_hours: int = 12,
+    expected_source_rows: int = 744251,
+    expected_selected_rows: int = 300315,
 ) -> dict[str, Any]:
     if destination.exists():
         raise FileExistsError(f"refusing to overwrite auxiliary targets: {destination}")
     top40_manifest = json.loads(top40_manifest_path.read_text(encoding="utf-8"))
     if (
         top40_manifest.get("output", {}).get("sha256") != _sha256(top40_path)
-        or top40_manifest.get("selected_rows") != 300315
-        or top40_manifest.get("source_rows") != 744251
+        or top40_manifest.get("selected_rows") != int(expected_selected_rows)
+        or top40_manifest.get("source_rows") != int(expected_source_rows)
     ):
         raise PackBAuxiliaryTargetError("canonical top40 source binding changed")
     revision = _git_revision()
     population = pd.read_parquet(top40_path)
     if (
-        len(population) != 300315
+        len(population) != int(expected_selected_rows)
         or population["candidate_id"].astype(str).duplicated().any()
     ):
         raise PackBAuxiliaryTargetError("canonical top40 population identity changed")
@@ -671,6 +673,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--decision-delay-hours", type=int, default=1)
     parser.add_argument("--horizon-hours", type=int, default=12)
+    parser.add_argument("--expected-source-rows", type=int, default=744251)
+    parser.add_argument("--expected-selected-rows", type=int, default=300315)
     args = parser.parse_args()
     result = run(
         top40_path=args.top40,
@@ -679,6 +683,8 @@ def main() -> None:
         destination=args.output_dir,
         decision_delay_hours=args.decision_delay_hours,
         horizon_hours=args.horizon_hours,
+        expected_source_rows=args.expected_source_rows,
+        expected_selected_rows=args.expected_selected_rows,
     )
     print(json.dumps(_jsonable(result), sort_keys=True))
 

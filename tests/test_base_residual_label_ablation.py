@@ -9,6 +9,7 @@ from extreme_price_movements.base_residual_label_ablation import (
     build_soft_label,
     default_label_recipes,
     label_components,
+    label_hpo_objective,
     rank_mask,
 )
 
@@ -88,3 +89,19 @@ def test_rank_mask_is_deterministic_and_side_local() -> None:
     )
     selected = rank_mask(frame, [1.0, 1.0, 2.0, 2.0], fraction=0.5)
     assert selected.tolist() == [False, True, False, True]
+
+
+def test_label_hpo_uses_pooled_global_policy_not_timestamp_side_diagnostic() -> None:
+    shared = {
+        "global_top10_mean_net_return": 0.01,
+        "rank_ic": 0.10,
+    }
+    high_timestamp_side = [
+        {**shared, "timestamp_side_top10_mean_net_return": 0.99},
+        {**shared, "timestamp_side_top10_mean_net_return": -0.99},
+    ]
+    low_timestamp_side = [
+        {**shared, "timestamp_side_top10_mean_net_return": -0.99},
+        {**shared, "timestamp_side_top10_mean_net_return": 0.99},
+    ]
+    assert label_hpo_objective(high_timestamp_side) == label_hpo_objective(low_timestamp_side)

@@ -7782,8 +7782,20 @@ def _looks_classifier_target(y: np.ndarray) -> bool:
 
 
 def _coerce_target(
-    y: np.ndarray, classifier: bool, *, allow_soft_labels: bool = False
+    y: np.ndarray,
+    classifier: bool,
+    *,
+    allow_soft_labels: bool = False,
+    multiclass3: bool = False,
 ) -> np.ndarray:
+    if multiclass3:
+        arr = np.asarray(y, dtype=np.float64).reshape(-1)
+        if not np.isfinite(arr).all() or not np.all(np.isclose(arr, np.round(arr))):
+            raise ValueError("multiclass3 targets must be finite integer class labels 0/1/2")
+        out = arr.astype(np.int8)
+        if not np.isin(out, np.array([0, 1, 2], dtype=np.int8)).all():
+            raise ValueError("multiclass3 targets must be exactly in {0, 1, 2}")
+        return out
     if classifier:
         if allow_soft_labels:
             return np.clip(np.asarray(y, dtype=np.float32), 0.0, 1.0)
@@ -12403,6 +12415,11 @@ def _fit_lgbm_model(
 
 
 def _predict_lgbm_raw(model: Any, X: pd.DataFrame, mode: str) -> np.ndarray:
+    if mode == "multiclass3" and hasattr(model, "predict_proba"):
+        p = np.asarray(model.predict_proba(X), dtype=np.float64)
+        if p.ndim != 2 or p.shape[1] != 3:
+            raise ValueError("multiclass3 model must emit exactly three class probabilities")
+        return (p[:, 2] - p[:, 0]).astype(np.float32)
     if mode == "classifier" and hasattr(model, "predict_proba"):
         p = np.asarray(model.predict_proba(X), dtype=np.float64)
         if p.ndim == 2 and p.shape[1] > 1:
@@ -18068,7 +18085,21 @@ def _topk_mda_score(
     sample_weight: np.ndarray | None,
     cfg: Mapping[str, Any],
     archetype_labels: np.ndarray | None = None,
+    economic_outcomes: np.ndarray | None = None,
+    prediction_offset: np.ndarray | None = None,
 ) -> dict[str, float]:
+    """Score an MDA permutation on the decision tail.
+
+    ``signed_top10_trade_economics`` is deliberately not implemented through
+    negative sample weights: estimator weights must remain non-negative and
+    are not the economic score.  It measures the signed realised outcome of
+    the ranked top-k set, so selecting a losing trade reduces the objective.
+    ``prediction_offset`` is an aligned, frozen score component. It is used
+    by residual meta heads: their decision score is base expected-net plus
+    residual prediction, not the residual prediction in isolation. It is
+    never permuted here, so every feature permutation measures incremental
+    value over the identical frozen base score.
+    """
     if str(cfg.get("objective", "")).strip().lower() == "auxiliary_regression":
         y = np.asarray(y_true, dtype=np.float64).reshape(-1)
         pred = np.asarray(y_score, dtype=np.float64).reshape(-1)
@@ -18105,18 +18136,132 @@ def _topk_mda_score(
             "regression_spearman_ic": ic,
             "regression_target_scale": scale,
         }
-    overall = topk_opportunity_score(
-        y_true,
-        y_score,
-        sample_weight=sample_weight
-        if bool(cfg.get("use_sample_weight", True))
-        else None,
-        topk_fracs=cfg.get("topk_fracs", LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]),
-        topk_frac_weights=cfg.get(
-            "topk_frac_weights",
-            LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
-        ),
-        positive_label=cfg.get("positive_label", 1),
+    signed_economics = (
+        str(cfg.get("objective", "")).strip().lower()
+        == "signed_top10_trade_economics"
+    )
+    if (
+        signed_economics
+        and bool(cfg.get("require_exact_economic_outcomes", False))
+        and economic_outcomes is None
+    ):
+        raise ValueError(
+            "signed_top10_trade_economics requires an explicit exact-net economic outcome vector"
+        )
+
+    def _signed_score(
+        labels_in: np.ndarray,
+        scores_in: np.ndarray,
+        weights_in: np.ndarray | None,
+        economics_in: np.ndarray | None,
+        offset_in: np.ndarray | None = None,
+    ) -> dict[str, float]:
+        labels = np.asarray(labels_in, dtype=np.float64).reshape(-1)
+        scores = np.asarray(scores_in, dtype=np.float64).reshape(-1)
+        n = min(len(labels), len(scores))
+        labels = labels[:n]
+        scores = scores[:n]
+        if offset_in is not None:
+            offset = np.asarray(offset_in, dtype=np.float64).reshape(-1)
+            if len(offset) != n:
+                raise ValueError(
+                    "prediction_offset must be exactly aligned to the MDA validation rows"
+                )
+            if not np.isfinite(offset).all():
+                raise ValueError("prediction_offset must be finite on every MDA validation row")
+            scores = scores + offset
+        if economics_in is None:
+            # The correctness fallback stays signed.  It is appropriate only
+            # when a caller did not provide realised trade economics.
+            economics = np.where(
+                labels >= float(cfg.get("positive_label", 1)), 1.0, -1.0
+            )
+            source = "signed_correctness_fallback"
+        else:
+            economics = np.asarray(economics_in, dtype=np.float64).reshape(-1)[:n]
+            source = "realised_economic_outcome"
+        if weights_in is None or not bool(cfg.get("use_sample_weight", True)):
+            weights = np.ones(n, dtype=np.float64)
+        else:
+            weights = np.asarray(weights_in, dtype=np.float64).reshape(-1)[:n]
+            if len(weights) != n:
+                weights = np.ones(n, dtype=np.float64)
+        valid = (
+            np.isfinite(labels)
+            & np.isfinite(scores)
+            & np.isfinite(economics)
+            & np.isfinite(weights)
+            & (weights >= 0.0)
+        )
+        if int(np.sum(valid)) < 2:
+            return {"score": -999.0, "rows": float(np.sum(valid))}
+        labels = labels[valid]
+        scores = scores[valid]
+        economics = economics[valid]
+        weights = weights[valid]
+        fracs = _parse_float_list(
+            cfg.get("topk_fracs"), LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]
+        )
+        frac_weights = np.asarray(
+            _parse_float_list(
+                cfg.get("topk_frac_weights"),
+                LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
+            ),
+            dtype=np.float64,
+        )
+        if len(frac_weights) != len(fracs):
+            frac_weights = np.ones(len(fracs), dtype=np.float64)
+        frac_weights = np.maximum(frac_weights, 0.0)
+        frac_weights /= max(float(frac_weights.sum()), 1e-12)
+        order = np.argsort(scores, kind="mergesort")[::-1]
+        selected_means: list[float] = []
+        out: dict[str, float] = {
+            "rows": float(len(scores)),
+            "economic_source": source,
+            "ranking_score_space": (
+                "prediction_plus_frozen_offset"
+                if offset_in is not None
+                else "raw_prediction"
+            ),
+        }
+        for frac, weight in zip(fracs, frac_weights):
+            k = max(1, min(len(order), int(np.ceil(float(frac) * len(order)))))
+            idx = order[:k]
+            denom = float(np.sum(weights[idx]))
+            value = (
+                float(np.sum(weights[idx] * economics[idx]) / denom)
+                if denom > 0.0
+                else float(np.mean(economics[idx]))
+            )
+            pct = int(round(100.0 * float(frac)))
+            out[f"signed_trade_economics_at_{pct}"] = value
+            selected_means.append(float(weight) * value)
+        out["score"] = float(np.sum(selected_means))
+        return out
+
+    scorer = _signed_score if signed_economics else None
+    if prediction_offset is not None and not signed_economics:
+        # This prevents accidental use of residual offsets with legacy
+        # classification MDA scoring.
+        raise ValueError(
+            "prediction_offset is supported only by signed economic MDA scoring"
+        )
+    overall = (
+        scorer(y_true, y_score, sample_weight, economic_outcomes, prediction_offset)
+        if scorer is not None
+        else topk_opportunity_score(
+            y_true,
+            y_score,
+            sample_weight=sample_weight
+            if bool(cfg.get("use_sample_weight", True))
+            else None,
+            topk_fracs=cfg.get("topk_fracs", LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]),
+            topk_frac_weights=cfg.get(
+                "topk_frac_weights",
+                LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
+            ),
+            positive_label=cfg.get("positive_label", 1),
+        )
     )
     global_score = float(overall.get("score", 0.0))
     overall["global_score"] = global_score
@@ -18136,6 +18281,13 @@ def _topk_mda_score(
         if sample_weight is None
         else np.asarray(sample_weight, dtype=np.float32).reshape(-1)
     )
+    offset_arr = (
+        None
+        if prediction_offset is None
+        else np.asarray(prediction_offset, dtype=np.float64).reshape(-1)
+    )
+    if offset_arr is not None and len(offset_arr) != len(y_arr):
+        raise ValueError("prediction_offset must be aligned before archetype MDA scoring")
     if weights_arr is not None and len(weights_arr) != len(y_arr):
         weights_arr = None
     min_rows = max(16, int(cfg.get("archetype_min_rows", 64) or 64))
@@ -18146,19 +18298,40 @@ def _topk_mda_score(
         idx = np.flatnonzero(labels == label)
         if len(idx) < min_rows:
             continue
-        local = topk_opportunity_score(
-            y_arr[idx],
-            score_arr[idx],
-            sample_weight=(
-                weights_arr[idx]
-                if weights_arr is not None and bool(cfg.get("use_sample_weight", True))
-                else None
-            ),
-            topk_fracs=cfg.get("topk_fracs", LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]),
-            topk_frac_weights=cfg.get(
-                "topk_frac_weights", LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"]
-            ),
-            positive_label=cfg.get("positive_label", 1),
+        local = (
+            scorer(
+                y_arr[idx],
+                score_arr[idx],
+                (
+                    weights_arr[idx]
+                    if weights_arr is not None
+                    and bool(cfg.get("use_sample_weight", True))
+                    else None
+                ),
+                (
+                    np.asarray(economic_outcomes).reshape(-1)[idx]
+                    if economic_outcomes is not None
+                    and len(np.asarray(economic_outcomes).reshape(-1)) == len(y_arr)
+                    else None
+                ),
+                offset_arr[idx] if offset_arr is not None else None,
+            )
+            if scorer is not None
+            else topk_opportunity_score(
+                y_arr[idx],
+                score_arr[idx],
+                sample_weight=(
+                    weights_arr[idx]
+                    if weights_arr is not None
+                    and bool(cfg.get("use_sample_weight", True))
+                    else None
+                ),
+                topk_fracs=cfg.get("topk_fracs", LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]),
+                topk_frac_weights=cfg.get(
+                    "topk_frac_weights", LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"]
+                ),
+                positive_label=cfg.get("positive_label", 1),
+            )
         )
         # Sparse archetypes are shrunk toward the global score; established
         # archetypes receive equal macro weight rather than being drowned out
@@ -18372,6 +18545,7 @@ def _predict_permuted_rows(
     perm_order: np.ndarray,
     *,
     classifier: bool,
+    multiclass3: bool = False,
     feature_names: Sequence[str],
     affected_rows_by_feature: Mapping[str, np.ndarray] | None,
     mode: str,
@@ -18408,17 +18582,21 @@ def _predict_permuted_rows(
         vals = X_valid.iloc[:, column].to_numpy(dtype=np.float32, copy=False)
         X_subset[:, column] = vals[perm_order[affected_idx]]
     if hasattr(model, "booster_"):
-        predicted = np.asarray(
-            model.booster_.predict(X_subset), dtype=np.float32
-        ).reshape(-1)
-        if classifier:
+        raw_predicted = np.asarray(model.booster_.predict(X_subset), dtype=np.float32)
+        if multiclass3:
+            if raw_predicted.ndim != 2 or raw_predicted.shape[1] != 3:
+                raise ValueError("multiclass3 permutation prediction must have three probabilities")
+            predicted = raw_predicted[:, 2] - raw_predicted[:, 0]
+        else:
+            predicted = raw_predicted.reshape(-1)
+        if classifier and not multiclass3:
             predicted = np.clip(predicted, 1e-6, 1.0 - 1e-6)
     else:
         # Non-LightGBM fallback models may require named pandas columns.
         predicted = _predict_lgbm_raw(
             model,
             pd.DataFrame(X_subset, columns=list(feature_names)),
-            "classifier" if classifier else "regressor",
+            "multiclass3" if multiclass3 else ("classifier" if classifier else "regressor"),
         )
     pred_perm[affected_idx] = predicted
     return (
@@ -18437,6 +18615,7 @@ def _adaptive_mda_for_indices(
     baseline_pred: np.ndarray,
     baseline_score: float,
     classifier: bool,
+    multiclass3: bool = False,
     sample_weight_valid: np.ndarray | None,
     rng: np.random.Generator,
     feature_indices: Sequence[int],
@@ -18447,6 +18626,8 @@ def _adaptive_mda_for_indices(
     entity_id: str,
     entity_type: str,
     archetype_labels_valid: np.ndarray | None = None,
+    economic_outcomes_valid: np.ndarray | None = None,
+    prediction_offset_valid: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     imports: list[float] = []
     repeat_records: list[dict[str, Any]] = []
@@ -18477,6 +18658,7 @@ def _adaptive_mda_for_indices(
                 feature_indices,
                 perm_order,
                 classifier=classifier,
+                multiclass3=multiclass3,
                 feature_names=feature_names,
                 affected_rows_by_feature=affected_rows_by_feature,
                 mode=mode,
@@ -18487,6 +18669,8 @@ def _adaptive_mda_for_indices(
                 sample_weight=sample_weight_valid,
                 cfg=cfg,
                 archetype_labels=archetype_labels_valid,
+                economic_outcomes=economic_outcomes_valid,
+                prediction_offset=prediction_offset_valid,
             )
             importance = float(baseline_score - float(perm_metrics.get("score", 0.0)))
             imports.append(importance)
@@ -18578,11 +18762,14 @@ def _shadow_null_mda_calibration(
     y_valid: np.ndarray,
     *,
     classifier: bool,
+    multiclass3: bool = False,
     sample_weight_valid: np.ndarray | None,
     feature_names: Sequence[str],
     cfg: Mapping[str, Any],
     random_state: int,
     archetype_labels_valid: np.ndarray | None = None,
+    economic_outcomes_valid: np.ndarray | None = None,
+    prediction_offset_valid: np.ndarray | None = None,
 ) -> tuple[float, pd.DataFrame]:
     if not bool(cfg.get("shadow_null_enabled", True)) or not classifier:
         return 0.0, pd.DataFrame()
@@ -18626,7 +18813,9 @@ def _shadow_null_mda_calibration(
             classifier=classifier,
             params=dict(model_params),
         )
-        base_pred = _predict_lgbm_raw(shadow_model, Xva, "classifier")
+        base_pred = _predict_lgbm_raw(
+            shadow_model, Xva, "multiclass3" if multiclass3 else "classifier"
+        )
     except Exception as exc:
         tprint(f"WARNING: LGBM shadow-null MDA calibration failed: {exc}")
         return 0.0, pd.DataFrame()
@@ -18636,6 +18825,8 @@ def _shadow_null_mda_calibration(
         sample_weight=sample_weight_valid,
         cfg=cfg,
         archetype_labels=archetype_labels_valid,
+        economic_outcomes=economic_outcomes_valid,
+        prediction_offset=prediction_offset_valid,
     )
     baseline_score = float(baseline_metrics.get("score", 0.0))
     records: list[dict[str, Any]] = []
@@ -18654,7 +18845,10 @@ def _shadow_null_mda_calibration(
             baseline_pred=base_pred,
             baseline_score=baseline_score,
             classifier=classifier,
+            multiclass3=multiclass3,
             sample_weight_valid=sample_weight_valid,
+            economic_outcomes_valid=economic_outcomes_valid,
+            prediction_offset_valid=prediction_offset_valid,
             rng=rng,
             feature_indices=[n_real + local_i],
             feature_names=list(feature_names) + shadow_cols,
@@ -18691,26 +18885,32 @@ def _shadow_null_mda_calibration(
 
 
 def _correlation_groups_for_mda(
-    X_valid: pd.DataFrame,
+    X_train: pd.DataFrame,
     feature_names: Sequence[str],
     *,
     threshold: float,
     random_state: int,
 ) -> list[list[int]]:
-    names = [str(c) for c in feature_names if str(c) in X_valid.columns]
+    """Fit Spearman permutation groups on training rows only.
+
+    Group membership is part of feature selection.  Looking at the held-out
+    matrix here would leak the evaluation covariate distribution even though no
+    labels are used.
+    """
+    names = [str(c) for c in feature_names if str(c) in X_train.columns]
     p = len(names)
     if p <= 1:
         return []
     rng = np.random.default_rng(random_state)
-    sub_n = min(len(X_valid), 2500)
+    sub_n = min(len(X_train), 2500)
     sub = (
-        rng.choice(len(X_valid), size=sub_n, replace=False)
-        if len(X_valid) > sub_n
-        else np.arange(len(X_valid))
+        rng.choice(len(X_train), size=sub_n, replace=False)
+        if len(X_train) > sub_n
+        else np.arange(len(X_train))
     )
     try:
         ranks = (
-            X_valid.iloc[sub][names]
+            X_train.iloc[sub][names]
             .replace([np.inf, -np.inf], np.nan)
             .rank(pct=True)
             .fillna(0.5)
@@ -18772,7 +18972,10 @@ def _compute_topk_mda_audit(
     *,
     base_pred: np.ndarray,
     classifier: bool,
+    multiclass3: bool = False,
     sample_weight_valid: np.ndarray | None,
+    economic_outcomes_valid: np.ndarray | None = None,
+    prediction_offset_valid: np.ndarray | None = None,
     rng: np.random.Generator,
     cfg: Mapping[str, Any],
     feature_names: Sequence[str],
@@ -18797,6 +19000,8 @@ def _compute_topk_mda_audit(
         sample_weight=sample_weight_valid,
         cfg=cfg,
         archetype_labels=archetype_labels_valid,
+        economic_outcomes=economic_outcomes_valid,
+        prediction_offset=prediction_offset_valid,
     )
     baseline_score = float(baseline_metrics.get("score", 0.0))
     shadow_override = cfg.get("shadow_null_threshold_override")
@@ -18812,7 +19017,10 @@ def _compute_topk_mda_audit(
             X_valid,
             y_valid,
             classifier=classifier,
+            multiclass3=multiclass3,
             sample_weight_valid=sample_weight_valid,
+            economic_outcomes_valid=economic_outcomes_valid,
+            prediction_offset_valid=prediction_offset_valid,
             feature_names=feature_names,
             cfg=cfg,
             random_state=random_state + 19,
@@ -18861,7 +19069,7 @@ def _compute_topk_mda_audit(
         screen_kind = str(cfg.get("group_first_screen_kind", "feature_family")).lower()
         if screen_kind == "correlation":
             screen_groups = _correlation_groups_for_mda(
-                X_valid,
+                X_train,
                 feature_names,
                 threshold=float(cfg.get("correlation_threshold", 0.92)),
                 random_state=random_state + 313,
@@ -18880,7 +19088,10 @@ def _compute_topk_mda_audit(
                 baseline_pred=base_pred,
                 baseline_score=baseline_score,
                 classifier=classifier,
+                multiclass3=multiclass3,
                 sample_weight_valid=sample_weight_valid,
+                economic_outcomes_valid=economic_outcomes_valid,
+                prediction_offset_valid=prediction_offset_valid,
                 rng=rng,
                 feature_indices=members,
                 feature_names=feature_names,
@@ -18989,7 +19200,10 @@ def _compute_topk_mda_audit(
             baseline_pred=base_pred,
             baseline_score=baseline_score,
             classifier=classifier,
+            multiclass3=multiclass3,
             sample_weight_valid=sample_weight_valid,
+            economic_outcomes_valid=economic_outcomes_valid,
+            prediction_offset_valid=prediction_offset_valid,
             rng=rng,
             feature_indices=[j],
             feature_names=feature_names,
@@ -19038,7 +19252,7 @@ def _compute_topk_mda_audit(
     }
     if bool(cfg.get("group_mda_enabled", True)):
         groups = _correlation_groups_for_mda(
-            X_valid,
+            X_train,
             feature_names,
             threshold=float(
                 cfg.get(
@@ -19063,7 +19277,10 @@ def _compute_topk_mda_audit(
                 baseline_pred=base_pred,
                 baseline_score=baseline_score,
                 classifier=classifier,
+                multiclass3=multiclass3,
                 sample_weight_valid=sample_weight_valid,
+                economic_outcomes_valid=economic_outcomes_valid,
+                prediction_offset_valid=prediction_offset_valid,
                 rng=rng,
                 feature_indices=members,
                 feature_names=feature_names,
@@ -19204,6 +19421,13 @@ def _aggregate_mda_feature_audit(
                     "mda_upper_95": 0.0,
                     "mda_n_folds": 0,
                     "mda_n_repeats": 0,
+                    "cohort_count": 0,
+                    "mda_median": 0.0,
+                    "mda_mad": 0.0,
+                    "positive_cohort_rate": 0.0,
+                    "worst_cohort_mda": 0.0,
+                    "latest_cohort_mda": 0.0,
+                    "latest_cohort_label": "not_evaluated",
                     "mda_confidence_label": "not_evaluated",
                     "mda_final_action": "review",
                     "mda_selected": True,
@@ -19212,7 +19436,8 @@ def _aggregate_mda_feature_audit(
             )
             continue
         part = grouped.get_group(feature)
-        vals = pd.to_numeric(part.get("mda_mean"), errors="coerce").to_numpy(
+        mda_values = pd.to_numeric(part.get("mda_mean"), errors="coerce")
+        vals = mda_values.to_numpy(
             dtype=np.float64
         )
         vals = vals[np.isfinite(vals)]
@@ -19229,6 +19454,34 @@ def _aggregate_mda_feature_audit(
         shadow_vals = shadow_vals[np.isfinite(shadow_vals)]
         shadow_threshold = float(np.nanmean(shadow_vals)) if len(shadow_vals) else 0.0
         theta = max(float(cfg.get("min_effect_size", 0.0)), float(shadow_threshold))
+        median = float(np.median(vals)) if n else 0.0
+        mad = float(np.median(np.abs(vals - median))) if n else 0.0
+        positive_cohort_rate = float(np.mean(vals > theta)) if n else 0.0
+        worst_cohort_mda = float(np.min(vals)) if n else 0.0
+        cohort_count = (
+            int(part["mda_cohort_id"].astype(str).nunique())
+            if "mda_cohort_id" in part
+            else n
+        )
+        latest_sort_column = (
+            "fold_i"
+            if "fold_i" in part
+            else ("mda_cohort_id" if "mda_cohort_id" in part else None)
+        )
+        latest_part = (
+            part.sort_values(latest_sort_column, kind="stable")
+            if latest_sort_column is not None
+            else part
+        )
+        latest_row = latest_part.iloc[-1]
+        latest_cohort_mda = float(
+            pd.to_numeric(pd.Series([latest_row.get("mda_mean")]), errors="coerce").iloc[0]
+        )
+        if not np.isfinite(latest_cohort_mda):
+            latest_cohort_mda = 0.0
+        latest_cohort_label = str(
+            latest_row.get("confidence_label", "not_evaluated")
+        )
         split_vals = pd.to_numeric(part.get("split_count"), errors="coerce").to_numpy(
             dtype=np.float64
         )
@@ -19307,6 +19560,13 @@ def _aggregate_mda_feature_audit(
                 "mda_upper_95": upper,
                 "mda_n_folds": n,
                 "mda_n_repeats": n_repeats,
+                "cohort_count": cohort_count,
+                "mda_median": median,
+                "mda_mad": mad,
+                "positive_cohort_rate": positive_cohort_rate,
+                "worst_cohort_mda": worst_cohort_mda,
+                "latest_cohort_mda": latest_cohort_mda,
+                "latest_cohort_label": latest_cohort_label,
                 "negative_repeat_rate": float(
                     pd.to_numeric(
                         part.get("negative_repeat_rate"), errors="coerce"
@@ -19656,6 +19916,207 @@ def _permutation_candidate_indices(
     return np.asarray(np.sort(idx), dtype=np.int32)
 
 
+def _time_spread_mda_rows(
+    indices: np.ndarray,
+    timestamp_ns: np.ndarray,
+    *,
+    max_rows: int,
+) -> np.ndarray:
+    """Return a deterministic chronological sample spanning an era."""
+    idx = np.asarray(indices, dtype=np.int64).reshape(-1)
+    if len(idx) == 0 or int(max_rows) <= 0:
+        return np.empty(0, dtype=np.int32)
+    order = np.lexsort((idx, timestamp_ns[idx]))
+    ordered = idx[order]
+    if len(ordered) > int(max_rows):
+        positions = np.linspace(
+            0, len(ordered) - 1, int(max_rows), dtype=np.int64,
+        )
+        ordered = ordered[positions]
+    return np.asarray(ordered, dtype=np.int32)
+
+
+def _mda_index_hash(indices: np.ndarray) -> str:
+    values = np.asarray(indices, dtype="<i8").reshape(-1)
+    return hashlib.sha256(values.tobytes()).hexdigest()
+
+
+def _pairwise_overlap_rows(parts: Sequence[np.ndarray]) -> int:
+    overlap = 0
+    for left_i, left in enumerate(parts):
+        left_arr = np.asarray(left, dtype=np.int64)
+        for right in parts[left_i + 1 :]:
+            overlap += int(
+                len(np.intersect1d(left_arr, np.asarray(right, dtype=np.int64)))
+            )
+    return overlap
+
+
+def _plan_disjoint_chronological_mda_cohorts(
+    timestamps: Any,
+    *,
+    row_count: int,
+    cfg: Mapping[str, Any],
+    purge_hours: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Plan disjoint era cohorts for independently fitted MDA models.
+
+    Each era is a disjoint block of unique decision timestamps.  Its early
+    two-thirds supply training candidates and its late third supplies
+    permutation/evaluation evidence.  Training rows are strictly earlier than
+    the evaluation boundary after the declared purge, and time-spread sampling
+    keeps every independently fitted model at or below the configured cap.
+    """
+    max_train_rows = int(cfg.get("max_train_rows_per_mda_model", 0) or 0)
+    cohort_count = int(cfg.get("cohort_count", 0) or 0)
+    if max_train_rows <= 0 or cohort_count < 2:
+        raise ValueError(
+            "dedicated MDA cohorts require max_train_rows_per_mda_model > 0 "
+            "and cohort_count >= 2"
+        )
+    ns = _timestamp_ns(timestamps, int(row_count))
+    invalid_ns = np.iinfo(np.int64).min
+    if ns is None or len(ns) != int(row_count) or np.any(ns == invalid_ns):
+        raise ValueError(
+            "dedicated chronological MDA cohorts require finite aligned timestamps"
+        )
+    unique_ts = np.unique(ns)
+    if len(unique_ts) < 6:
+        raise ValueError("dedicated chronological MDA cohorts need at least six timestamps")
+    actual_cohort_count = min(cohort_count, max(2, len(unique_ts) // 2))
+    era_timestamp_parts = np.array_split(unique_ts, actual_cohort_count)
+    aggregate_train_target = max(
+        max_train_rows,
+        int(cfg.get("mda_train_rows", max_train_rows * actual_cohort_count) or 0),
+    )
+    aggregate_eval_target = max(
+        actual_cohort_count,
+        int(cfg.get("mda_eval_rows", max_train_rows) or 0),
+    )
+    train_quota = min(
+        max_train_rows,
+        int(math.ceil(aggregate_train_target / actual_cohort_count)),
+    )
+    eval_base, eval_remainder = divmod(
+        aggregate_eval_target, actual_cohort_count,
+    )
+    purge_ns = int(max(0.0, float(purge_hours)) * 3_600_000_000_000.0)
+    all_rows = np.arange(int(row_count), dtype=np.int32)
+    cohorts: list[dict[str, Any]] = []
+    available_train_support = 0
+    available_eval_support = 0
+    for cohort_i, era_ts in enumerate(era_timestamp_parts):
+        if len(era_ts) < 2:
+            continue
+        # The split is by unique timestamps, never by arbitrary rows, so one
+        # decision timestamp cannot straddle train and evaluation roles.
+        split_position = min(
+            len(era_ts) - 1,
+            max(1, int(math.floor(len(era_ts) * (2.0 / 3.0)))),
+        )
+        evaluation_start = int(era_ts[split_position])
+        era_start = int(era_ts[0])
+        era_end = int(era_ts[-1])
+        train_candidates = all_rows[
+            (ns >= era_start) & (ns < evaluation_start - purge_ns)
+        ]
+        eval_candidates = all_rows[
+            (ns >= evaluation_start) & (ns <= era_end)
+        ]
+        eval_quota = max(1, eval_base + (1 if cohort_i < eval_remainder else 0))
+        train_idx = _time_spread_mda_rows(
+            train_candidates, ns, max_rows=train_quota,
+        )
+        eval_idx = _time_spread_mda_rows(
+            eval_candidates, ns, max_rows=eval_quota,
+        )
+        available_train_support += min(len(train_candidates), train_quota)
+        available_eval_support += min(len(eval_candidates), eval_quota)
+        if len(train_idx) == 0 or len(eval_idx) == 0:
+            continue
+        if len(train_idx) > max_train_rows:
+            raise AssertionError("an MDA cohort exceeded its per-model training-row cap")
+        if int(np.max(ns[train_idx])) + purge_ns >= int(np.min(ns[eval_idx])):
+            raise AssertionError("an MDA cohort violated its strict chronological purge")
+        if actual_cohort_count == 3:
+            era_label = ("early", "middle", "late")[cohort_i]
+        else:
+            era_label = f"era_{cohort_i + 1:02d}_of_{actual_cohort_count:02d}"
+        cohorts.append(
+            {
+                "cohort_id": f"mda_cohort_{cohort_i + 1:02d}",
+                "cohort_ordinal": int(cohort_i + 1),
+                "era_label": era_label,
+                "train_indices": train_idx,
+                "evaluation_indices": eval_idx,
+                "train_rows": int(len(train_idx)),
+                "evaluation_rows": int(len(eval_idx)),
+                "train_available_rows": int(len(train_candidates)),
+                "evaluation_available_rows": int(len(eval_candidates)),
+                "train_start_utc": pd.Timestamp(
+                    int(np.min(ns[train_idx])), unit="ns", tz="UTC"
+                ).isoformat(),
+                "train_end_utc": pd.Timestamp(
+                    int(np.max(ns[train_idx])), unit="ns", tz="UTC"
+                ).isoformat(),
+                "evaluation_start_utc": pd.Timestamp(
+                    int(np.min(ns[eval_idx])), unit="ns", tz="UTC"
+                ).isoformat(),
+                "evaluation_end_utc": pd.Timestamp(
+                    int(np.max(ns[eval_idx])), unit="ns", tz="UTC"
+                ).isoformat(),
+                "train_identity_hash": _mda_index_hash(train_idx),
+                "evaluation_identity_hash": _mda_index_hash(eval_idx),
+            }
+        )
+    if len(cohorts) < 2:
+        raise ValueError("dedicated chronological MDA produced fewer than two cohorts")
+    train_parts = [np.asarray(c["train_indices"], dtype=np.int32) for c in cohorts]
+    eval_parts = [
+        np.asarray(c["evaluation_indices"], dtype=np.int32) for c in cohorts
+    ]
+    train_overlap = _pairwise_overlap_rows(train_parts)
+    evaluation_overlap = _pairwise_overlap_rows(eval_parts)
+    train_union = np.unique(np.concatenate(train_parts))
+    evaluation_union = np.unique(np.concatenate(eval_parts))
+    cross_role_overlap = int(len(np.intersect1d(train_union, evaluation_union)))
+    if bool(cfg.get("require_disjoint_cohort_training_rows", False)) and train_overlap:
+        raise AssertionError("MDA cohort training memberships overlap")
+    if bool(cfg.get("require_disjoint_cohort_evaluation_rows", False)) and evaluation_overlap:
+        raise AssertionError("MDA cohort evaluation memberships overlap")
+    if bool(
+        cfg.get(
+            "require_aggregate_training_support_over_single_model_cap_when_available",
+            False,
+        )
+    ) and available_train_support > max_train_rows and len(train_union) <= max_train_rows:
+        raise AssertionError(
+            "MDA cohorts failed to use aggregate training support beyond one-model cap"
+        )
+    metadata = {
+        "policy": "disjoint_era_chunks_internal_chronological_split",
+        "requested_cohort_count": int(cohort_count),
+        "fitted_cohort_count": int(len(cohorts)),
+        "max_train_rows_per_model": int(max_train_rows),
+        "max_observed_train_rows_per_model": int(
+            max(int(c["train_rows"]) for c in cohorts)
+        ),
+        "aggregate_unique_train_rows": int(len(train_union)),
+        "aggregate_unique_evaluation_rows": int(len(evaluation_union)),
+        "available_train_support_at_quota": int(available_train_support),
+        "available_evaluation_support_at_quota": int(available_eval_support),
+        "pairwise_train_overlap_rows": int(train_overlap),
+        "pairwise_evaluation_overlap_rows": int(evaluation_overlap),
+        "train_evaluation_cross_role_overlap_rows": int(cross_role_overlap),
+        "purge_hours": float(purge_hours),
+        "cohorts": [
+            {key: value for key, value in cohort.items() if not key.endswith("_indices")}
+            for cohort in cohorts
+        ],
+    }
+    return cohorts, metadata
+
+
 def _lgbm_stability_selection_pass(
     X: pd.DataFrame,
     y: np.ndarray,
@@ -19663,6 +20124,7 @@ def _lgbm_stability_selection_pass(
     features: list[str],
     *,
     classifier: bool,
+    multiclass3: bool = False,
     groups: Any = None,
     timestamps: Any = None,
     returns: Any = None,
@@ -19673,6 +20135,7 @@ def _lgbm_stability_selection_pass(
     preset_best_params: Optional[dict[str, Any]] = None,
     mda_config: Mapping[str, Any] | None = None,
     archetype_labels: np.ndarray | None = None,
+    prediction_offset: np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, dict[str, Any]]:
     t0 = time.perf_counter()
     if seeds is None:
@@ -19680,6 +20143,7 @@ def _lgbm_stability_selection_pass(
     Xf = X[features].reset_index(drop=True)
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
+    metric_classifier = bool(classifier and not multiclass3)
     archetype_arr = (
         np.asarray(archetype_labels).reshape(-1)
         if archetype_labels is not None
@@ -19687,6 +20151,15 @@ def _lgbm_stability_selection_pass(
         else None
     )
     ret_arr = _as_returns(y_metric, returns)
+    mda_prediction_offset = None
+    if prediction_offset is not None:
+        mda_prediction_offset = np.asarray(prediction_offset, dtype=np.float32).reshape(-1)
+        if len(mda_prediction_offset) != len(y_arr):
+            raise ValueError(
+                "prediction_offset must remain aligned with every feature-selection row"
+            )
+        if not np.isfinite(mda_prediction_offset).all():
+            raise ValueError("prediction_offset must be finite for every feature-selection row")
     ranker_groups_all = (
         _lgbm_ranker_group_keys(
             X.reset_index(drop=True), timestamps, mode=LGBM_RANKER_GROUP_MODE
@@ -19761,6 +20234,7 @@ def _lgbm_stability_selection_pass(
     fit_scores: list[float] = []
     fold_metrics_all: list[dict[str, float]] = []
     best_oof = np.full(len(y_arr), np.nan, dtype=np.float32)
+    best_oof_multiclass3_probabilities: np.ndarray | None = None
     best_score = -np.inf
     base_weight = np.asarray(sample_weight, dtype=np.float32)
     current_weight = base_weight.copy()
@@ -19778,7 +20252,7 @@ def _lgbm_stability_selection_pass(
     round_direction, round_margin = _direction_vectors_binned_mi(
         Xf,
         y_metric,
-        classifier=classifier,
+        classifier=metric_classifier,
         groups=groups,
         returns=ret_arr,
         random_state=random_state + 509,
@@ -19808,6 +20282,29 @@ def _lgbm_stability_selection_pass(
     # preserve target magnitude. Top-k MDA is still valid: the scorer treats
     # soft labels >= 0.5 as positives while model predictions remain continuous.
     mda_enabled = bool(mda_cfg.get("enabled", True))
+    dedicated_mda_cohorts: list[dict[str, Any]] = []
+    mda_cohort_plan: dict[str, Any] = {}
+    if mda_enabled and bool(
+        mda_cfg.get("dedicated_chronological_cohorts_enabled", False)
+    ):
+        dedicated_mda_cohorts, mda_cohort_plan = (
+            _plan_disjoint_chronological_mda_cohorts(
+                timestamps,
+                row_count=len(y_arr),
+                cfg=mda_cfg,
+                purge_hours=LGBM_PURGE_HOURS,
+            )
+        )
+        tprint(
+            "LGBM dedicated MDA cohort plan: "
+            f"cohorts={len(dedicated_mda_cohorts)}, "
+            f"max_train_rows_per_model="
+            f"{mda_cohort_plan['max_train_rows_per_model']}, "
+            f"aggregate_unique_train_rows="
+            f"{mda_cohort_plan['aggregate_unique_train_rows']}, "
+            f"aggregate_unique_eval_rows="
+            f"{mda_cohort_plan['aggregate_unique_evaluation_rows']}."
+        )
     mda_feature_audit_frames: list[pd.DataFrame] = []
     mda_group_audit_frames: list[pd.DataFrame] = []
     mda_shadow_frames: list[pd.DataFrame] = []
@@ -19830,6 +20327,11 @@ def _lgbm_stability_selection_pass(
         for cfg_i, cfg in enumerate(configs, start=1):
             cfg_t0 = time.perf_counter()
             cfg_oof = np.full(len(y_arr), np.nan, dtype=np.float32)
+            cfg_oof_multiclass3_probabilities = (
+                np.full((len(y_arr), 3), np.nan, dtype=np.float32)
+                if multiclass3
+                else None
+            )
             cfg_metrics: list[dict[str, float]] = []
             cfg_fold_records: list[dict[str, Any]] = []
             for fold_i, (tr, va) in enumerate(
@@ -19854,6 +20356,9 @@ def _lgbm_stability_selection_pass(
                         overrides=cfg,
                     )
                 params["n_estimators"] = int(LGBM_FEATURE_SELECTION_N_ESTIMATORS)
+                if multiclass3:
+                    params["objective"] = "multiclass"
+                    params["num_class"] = 3
                 params = _effective_lgbm_params(params, classifier=classifier)
                 tprint(
                     "LGBM stability fit params: "
@@ -19877,11 +20382,18 @@ def _lgbm_stability_selection_pass(
                     f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}, "
                     f"model_fit_elapsed={time.perf_counter() - fold_t0:.1f}s."
                 )
-                mode_name = "classifier" if classifier else "regressor"
+                mode_name = "multiclass3" if multiclass3 else ("classifier" if classifier else "regressor")
                 X_tr_fold = Xf.iloc[tr].reset_index(drop=True)
                 X_va_fold = Xf.iloc[va].reset_index(drop=True)
                 pred = _predict_lgbm_raw(model, X_va_fold, mode_name)
                 cfg_oof[va] = pred
+                if cfg_oof_multiclass3_probabilities is not None:
+                    fold_probabilities = np.asarray(
+                        model.predict_proba(X_va_fold), dtype=np.float32
+                    )
+                    if fold_probabilities.ndim != 2 or fold_probabilities.shape[1] != 3:
+                        raise ValueError("multiclass3 fold must emit three probabilities")
+                    cfg_oof_multiclass3_probabilities[va] = fold_probabilities
                 pred_train = _predict_lgbm_raw(model, X_tr_fold, mode_name)
                 fold_groups = _groups_take(groups, va)
                 fold_returns = ret_arr[va]
@@ -19890,14 +20402,14 @@ def _lgbm_stability_selection_pass(
                 train_metrics = _metric_pack(
                     y_metric[tr],
                     pred_train,
-                    classifier=classifier,
+                    classifier=metric_classifier,
                     groups=train_groups,
                     returns=train_returns,
                 )
                 valid_metrics = _metric_pack(
                     y_metric[va],
                     pred,
-                    classifier=classifier,
+                    classifier=metric_classifier,
                     groups=fold_groups,
                     returns=fold_returns,
                 )
@@ -19970,6 +20482,11 @@ def _lgbm_stability_selection_pass(
             if cfg_score > best_score:
                 best_score = cfg_score
                 best_oof = cfg_oof.copy()
+                best_oof_multiclass3_probabilities = (
+                    cfg_oof_multiclass3_probabilities.copy()
+                    if cfg_oof_multiclass3_probabilities is not None
+                    else None
+                )
             metric_fill = float(np.mean(y_metric))
             finite_cfg_oof = np.isfinite(cfg_oof)
             if _is_forward_burnin_cv_mode():
@@ -20000,7 +20517,7 @@ def _lgbm_stability_selection_pass(
                     fp_weight[active_mask] = _false_positive_avoidance_weight(
                         y_metric[active_mask],
                         pred_active,
-                        classifier=classifier,
+                        classifier=metric_classifier,
                         top_frac=_target_top_fraction(objective_mode),
                     )
             else:
@@ -20049,7 +20566,149 @@ def _lgbm_stability_selection_pass(
     )
     permuted_folds = 0
     permuted_features = 0
-    for rec in eligible_configs:
+    if dedicated_mda_cohorts:
+        if not eligible_configs:
+            raise RuntimeError("dedicated MDA cohorts have no selected parameter config")
+        # One parameter winner is frozen, then independently refitted inside
+        # every disjoint era cohort. Reusing multiple grid models on the same
+        # rows would double-count evidence and violate the cohort contract.
+        rec = eligible_configs[0]
+        cfg_i = int(rec.get("cfg_i", 0))
+        seed = int(rec.get("seed", random_state))
+        source_folds = list(rec.get("folds", []))
+        if len(source_folds) < len(dedicated_mda_cohorts):
+            raise RuntimeError(
+                "dedicated MDA needs at least one unique fit slot per era cohort: "
+                f"cohorts={len(dedicated_mda_cohorts)} slots={len(source_folds)}"
+            )
+        for cohort_i, cohort in enumerate(dedicated_mda_cohorts):
+            source_fold = source_folds[cohort_i]
+            tr = np.asarray(cohort["train_indices"], dtype=np.int32)
+            va = np.asarray(cohort["evaluation_indices"], dtype=np.int32)
+            max_train_rows = int(mda_cohort_plan["max_train_rows_per_model"])
+            if len(tr) > max_train_rows:
+                raise AssertionError(
+                    "dedicated MDA fit exceeded max_train_rows_per_model"
+                )
+            fit_id = int(source_fold["fit_id"])
+            fold_i = int(cohort["cohort_ordinal"])
+            params = dict(source_fold.get("params") or {})
+            params["random_state"] = int(seed) + 50_000 + fold_i
+            tprint(
+                "LGBM dedicated MDA fit started: "
+                f"cohort={cohort['cohort_id']}, era={cohort['era_label']}, "
+                f"train_rows={len(tr)}, evaluation_rows={len(va)}, "
+                f"max_train_rows={max_train_rows}."
+            )
+            cohort_model = _fit_lgbm_model(
+                Xf.iloc[tr].reset_index(drop=True),
+                y_arr[tr],
+                base_weight[tr],
+                classifier=classifier,
+                params=params,
+                objective_mode=objective_mode,
+                ranker_train_groups=_take_aligned(
+                    ranker_groups_all, tr, len(y_arr)
+                ),
+            )
+            mode_name = (
+                "multiclass3"
+                if multiclass3
+                else ("classifier" if classifier else "regressor")
+            )
+            cohort_pred = _predict_lgbm_raw(
+                cohort_model,
+                Xf.iloc[va].reset_index(drop=True),
+                mode_name,
+            )
+            gain, split = _feature_importances(cohort_model, p)
+            sample_weight_valid = (
+                base_weight[va]
+                if bool(mda_cfg.get("use_sample_weight", True))
+                else None
+            )
+            (
+                perm,
+                evaluated,
+                feature_audit,
+                group_audit,
+                shadow_null,
+                repeat_audit,
+                fold_mda_diag,
+            ) = _compute_topk_mda_audit(
+                cohort_model,
+                Xf.iloc[tr].reset_index(drop=True),
+                y_arr[tr],
+                base_weight[tr],
+                Xf.iloc[va].reset_index(drop=True),
+                y_metric[va],
+                base_pred=np.asarray(cohort_pred, dtype=np.float32),
+                classifier=classifier,
+                sample_weight_valid=sample_weight_valid,
+                economic_outcomes_valid=ret_arr[va],
+                prediction_offset_valid=(
+                    mda_prediction_offset[va]
+                    if mda_prediction_offset is not None
+                    else None
+                ),
+                rng=rng_perm,
+                cfg=mda_cfg,
+                feature_names=features,
+                split_counts=np.asarray(split, dtype=np.float32),
+                gain_importance=np.asarray(gain, dtype=np.float32),
+                model_params=params,
+                random_state=int(seed) + 60_000 + fold_i,
+                archetype_labels_valid=(
+                    archetype_arr[va] if archetype_arr is not None else None
+                ),
+            )
+            audit_prefix = {
+                "fit_id": int(fit_id),
+                "seed": int(seed),
+                "cfg_i": int(cfg_i),
+                "fold_i": int(fold_i),
+                "mda_cohort_id": str(cohort["cohort_id"]),
+                "mda_era_label": str(cohort["era_label"]),
+                "mda_model_train_rows": int(len(tr)),
+                "mda_evaluation_rows": int(len(va)),
+                "mda_train_identity_hash": str(cohort["train_identity_hash"]),
+                "mda_evaluation_identity_hash": str(
+                    cohort["evaluation_identity_hash"]
+                ),
+            }
+            for audit_frame, destination in (
+                (feature_audit, mda_feature_audit_frames),
+                (group_audit, mda_group_audit_frames),
+                (shadow_null, mda_shadow_frames),
+                (repeat_audit, mda_repeat_frames),
+            ):
+                if audit_frame.empty:
+                    continue
+                for position, (column, value) in enumerate(audit_prefix.items()):
+                    audit_frame.insert(position, column, value)
+                destination.append(audit_frame)
+            fold_mda_diag.update(audit_prefix)
+            fold_mda_diag.update(
+                {
+                    "mda_train_start_utc": str(cohort["train_start_utc"]),
+                    "mda_train_end_utc": str(cohort["train_end_utc"]),
+                    "mda_evaluation_start_utc": str(
+                        cohort["evaluation_start_utc"]
+                    ),
+                    "mda_evaluation_end_utc": str(cohort["evaluation_end_utc"]),
+                }
+            )
+            mda_fold_diagnostics.append(fold_mda_diag)
+            all_fit_perm[fit_id] = perm
+            all_fit_perm_evaluated[fit_id] = evaluated
+            permuted_folds += 1
+            permuted_features += int(p)
+            tprint(
+                "LGBM dedicated MDA fit complete: "
+                f"cohort={cohort['cohort_id']}, features={p}."
+            )
+    standard_eligible_configs = [] if dedicated_mda_cohorts else eligible_configs
+    for rec in standard_eligible_configs:
         cfg_i = int(rec.get("cfg_i", 0))
         seed = int(rec.get("seed", random_state))
         for fold_rec in rec.get("folds", []):
@@ -20099,6 +20758,12 @@ def _lgbm_stability_selection_pass(
                     base_pred=np.asarray(fold_rec["pred"], dtype=np.float32),
                     classifier=classifier,
                     sample_weight_valid=sample_weight_valid,
+                    economic_outcomes_valid=ret_arr[va],
+                    prediction_offset_valid=(
+                        mda_prediction_offset[va]
+                        if mda_prediction_offset is not None
+                        else None
+                    ),
                     rng=rng_perm,
                     cfg=mda_cfg,
                     feature_names=features,
@@ -20432,6 +21097,14 @@ def _lgbm_stability_selection_pass(
         agg_all["mda_objective"] = str(
             mda_cfg.get("objective", "topk_opportunity_precision")
         )
+        agg_all["mda_ranking_score_space"] = (
+            "frozen_base_expected_net_bps_plus_predicted_residual_bps"
+            if mda_prediction_offset is not None
+            else "raw_model_prediction"
+        )
+        agg_all["mda_prediction_offset_rows"] = int(
+            len(mda_prediction_offset) if mda_prediction_offset is not None else 0
+        )
         agg_all["mda_permutation_mode"] = str(mda_cfg.get("permutation_mode", ""))
         agg_all["mda_topk_fracs"] = list(mda_cfg.get("topk_fracs", []))
         agg_all["mda_topk_frac_weights"] = list(mda_cfg.get("topk_frac_weights", []))
@@ -20446,6 +21119,36 @@ def _lgbm_stability_selection_pass(
         agg_all["mda_group_audit_rows"] = int(len(mda_group_audit_all))
         agg_all["mda_shadow_null_rows"] = int(len(mda_shadow_null_all))
         agg_all["mda_repeat_importance_rows"] = int(len(mda_repeat_importances_all))
+        agg_all["mda_dedicated_chronological_cohorts_enabled"] = bool(
+            dedicated_mda_cohorts
+        )
+        if dedicated_mda_cohorts:
+            agg_all["mda_cohort_policy"] = str(mda_cohort_plan["policy"])
+            agg_all["mda_cohort_count"] = int(
+                mda_cohort_plan["fitted_cohort_count"]
+            )
+            agg_all["mda_max_train_rows_per_model"] = int(
+                mda_cohort_plan["max_train_rows_per_model"]
+            )
+            agg_all["mda_max_observed_train_rows_per_model"] = int(
+                mda_cohort_plan["max_observed_train_rows_per_model"]
+            )
+            agg_all["mda_aggregate_unique_train_rows"] = int(
+                mda_cohort_plan["aggregate_unique_train_rows"]
+            )
+            agg_all["mda_aggregate_unique_evaluation_rows"] = int(
+                mda_cohort_plan["aggregate_unique_evaluation_rows"]
+            )
+            agg_all["mda_pairwise_train_overlap_rows"] = int(
+                mda_cohort_plan["pairwise_train_overlap_rows"]
+            )
+            agg_all["mda_pairwise_evaluation_overlap_rows"] = int(
+                mda_cohort_plan["pairwise_evaluation_overlap_rows"]
+            )
+            agg_all["mda_train_evaluation_cross_role_overlap_rows"] = int(
+                mda_cohort_plan["train_evaluation_cross_role_overlap_rows"]
+            )
+            agg_all["mda_cohort_coverage"] = list(mda_cohort_plan["cohorts"])
         agg_all["mda_unused_exact_zero_count"] = int(
             (
                 stats.get("mda_confidence_label", pd.Series(dtype=str)).astype(str)
@@ -20479,6 +21182,26 @@ def _lgbm_stability_selection_pass(
             if baseline_scores:
                 agg_all["mda_baseline_topk_score_mean"] = float(
                     np.mean(baseline_scores)
+                )
+                # This is the fold-level signed-economic decision score used
+                # by Stage-I's prefix one-SE rule. It deliberately does not
+                # reuse J_final/J_se: for residual heads J describes the
+                # residual fit, while MDA ranks the reconstructed common-bps
+                # score (frozen base expected-net + predicted residual).
+                economic_std = (
+                    float(np.std(baseline_scores, ddof=1))
+                    if len(baseline_scores) > 1
+                    else 0.0
+                )
+                agg_all["mda_economic_baseline_score_mean"] = float(
+                    np.mean(baseline_scores)
+                )
+                agg_all["mda_economic_baseline_score_std"] = economic_std
+                agg_all["mda_economic_baseline_score_se"] = float(
+                    economic_std / math.sqrt(len(baseline_scores))
+                )
+                agg_all["mda_economic_baseline_score_fold_count"] = int(
+                    len(baseline_scores)
                 )
             thresholds = [
                 float(rec.get("shadow_null_threshold", np.nan))
@@ -20522,8 +21245,27 @@ def _lgbm_stability_selection_pass(
     else:
         agg_all["mda_enabled"] = False
         agg_all["mda_objective"] = "legacy_permutation_delta_J"
+    if bool(mda_cfg.get("require_economic_prefix_score", False)):
+        required_economic_fields = (
+            "mda_economic_baseline_score_mean",
+            "mda_economic_baseline_score_se",
+            "mda_economic_baseline_score_fold_count",
+        )
+        missing_economic_fields = [
+            key
+            for key in required_economic_fields
+            if not np.isfinite(float(agg_all.get(key, np.nan)))
+        ]
+        if missing_economic_fields:
+            raise RuntimeError(
+                "Stage-I requires fold-level signed-economic MDA baseline "
+                f"scores for prefix selection; missing={missing_economic_fields}"
+            )
     agg_all["J_final"] = float(raw_j_final - importance_penalty)
     agg_all["selected_objective"] = agg_all["J_final"]
+    if best_oof_multiclass3_probabilities is not None:
+        agg_all["multiclass3_oof_probabilities"] = best_oof_multiclass3_probabilities
+        agg_all["multiclass3_score_definition"] = "P(class2_clear)-P(class0_adverse)"
     mode_obj = _normalize_objective_mode(objective_mode)
     if mode_obj == "train_meta":
         agg_all["J_meta"] = agg_all["J_final"]
@@ -20578,6 +21320,7 @@ def _iterative_feature_prune(
     initial_features: list[str],
     *,
     classifier: bool,
+    multiclass3: bool = False,
     groups: Any = None,
     timestamps: Any = None,
     returns: Any = None,
@@ -20588,6 +21331,7 @@ def _iterative_feature_prune(
     mda_config: Mapping[str, Any] | None = None,
     protected_features: Sequence[str] | None = None,
     archetype_labels: np.ndarray | None = None,
+    prediction_offset: np.ndarray | None = None,
 ) -> tuple[list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]]:
     t0 = time.perf_counter()
     active = list(initial_features)
@@ -20621,6 +21365,7 @@ def _iterative_feature_prune(
             sample_weight,
             active,
             classifier=classifier,
+            multiclass3=multiclass3,
             groups=groups,
             timestamps=timestamps,
             returns=returns,
@@ -20631,6 +21376,7 @@ def _iterative_feature_prune(
             preset_best_params=preset_best_params,
             mda_config=round_mda_config,
             archetype_labels=archetype_labels,
+            prediction_offset=prediction_offset,
         )
         rec = {
             "round": int(round_id),
@@ -20649,6 +21395,21 @@ def _iterative_feature_prune(
                 metrics.get("rank_bucket_monotonicity", np.nan)
             ),
             "ndcg_at_20": float(metrics.get("ndcg_at_20", np.nan)),
+            # Stage-I consumes these explicit fold-level signed-economic MDA
+            # fields for one-SE prefix selection. J_final remains diagnostic
+            # only (and is especially not a residual-head ranking metric).
+            "mda_economic_baseline_score_mean": float(
+                metrics.get("mda_economic_baseline_score_mean", np.nan)
+            ),
+            "mda_economic_baseline_score_se": float(
+                metrics.get("mda_economic_baseline_score_se", np.nan)
+            ),
+            "mda_economic_baseline_score_fold_count": int(
+                metrics.get("mda_economic_baseline_score_fold_count", 0) or 0
+            ),
+            "mda_ranking_score_space": str(
+                metrics.get("mda_ranking_score_space", "")
+            ),
         }
         last_stats = stats.copy()
         last_oof = oof.copy()
@@ -22375,6 +23136,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
     score_map: dict[str, float],
     *,
     classifier: bool,
+    multiclass3: bool = False,
     groups: Any = None,
     timestamps: Any = None,
     returns: Any = None,
@@ -22386,11 +23148,19 @@ def _run_lgbm_side_aware_feature_selection_tail(
     protected_features: Sequence[str] | None = None,
     pre_mda_bypass_features: Sequence[str] | None = None,
     label_context: Mapping[str, Any] | None = None,
+    prediction_offset: np.ndarray | None = None,
 ) -> tuple[
     list[str], list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]
 ]:
     n = int(len(y))
     metric_arr = np.asarray(metric_y if metric_y is not None else y)
+    offset_arr = None
+    if prediction_offset is not None:
+        offset_arr = np.asarray(prediction_offset, dtype=np.float32).reshape(-1)
+        if len(offset_arr) != n or not np.isfinite(offset_arr).all():
+            raise ValueError(
+                "prediction_offset must be finite and aligned before side-aware feature selection"
+            )
     archetype_labels, archetype_mda_diag = _feature_selection_archetype_labels(
         X,
         label_context=label_context,
@@ -22425,12 +23195,22 @@ def _run_lgbm_side_aware_feature_selection_tail(
         if bool((mda_config or {}).get("skip_redundancy_cluster_filter", False)):
             cluster = list(precluster_features)
         else:
+            redundancy_kwargs: dict[str, Any] = {
+                "random_state": random_state,
+                "archetype_labels": archetype_labels,
+            }
+            corr_threshold = float(
+                (mda_config or {}).get(
+                    "correlation_threshold", LGBM_REDUNDANCY_CORR_THRESHOLD
+                )
+            )
+            # Keep the legacy call surface for ordinary callers/tests.  Stage I
+            # supplies 0.95 explicitly, thereby applying its declared
+            # Spearman prune before MDA.
+            if not np.isclose(corr_threshold, LGBM_REDUNDANCY_CORR_THRESHOLD):
+                redundancy_kwargs["corr_threshold"] = corr_threshold
             cluster = _redundancy_cluster_filter(
-                X,
-                precluster_features,
-                score_map,
-                random_state=random_state,
-                archetype_labels=archetype_labels,
+                X, precluster_features, score_map, **redundancy_kwargs
             )
         cluster = _append_lgbm_forced_selector_features(
             cluster,
@@ -22443,6 +23223,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
             sample_weight,
             cluster,
             classifier=classifier,
+            multiclass3=multiclass3,
             groups=groups,
             timestamps=timestamps,
             returns=returns,
@@ -22453,6 +23234,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
             mda_config=mda_config,
             protected_features=protected_features,
             archetype_labels=archetype_labels,
+            prediction_offset=offset_arr,
         )
         selected = _ensure_feature_family_coverage(
             selected,
@@ -22530,12 +23312,9 @@ def _run_lgbm_side_aware_feature_selection_tail(
         if bool(side_mda_config.get("skip_redundancy_cluster_filter", False)):
             cluster_side = list(precluster_features)
         else:
-            cluster_side = _redundancy_cluster_filter(
-                X_side,
-                precluster_features,
-                score_map,
-                random_state=random_state + offset * 503,
-                archetype_labels=(
+            side_redundancy_kwargs: dict[str, Any] = {
+                "random_state": random_state + offset * 503,
+                "archetype_labels": (
                     None
                     if side_tail_across_archetypes
                     else (
@@ -22544,6 +23323,16 @@ def _run_lgbm_side_aware_feature_selection_tail(
                         else None
                     )
                 ),
+            }
+            side_corr_threshold = float(
+                side_mda_config.get(
+                    "correlation_threshold", LGBM_REDUNDANCY_CORR_THRESHOLD
+                )
+            )
+            if not np.isclose(side_corr_threshold, LGBM_REDUNDANCY_CORR_THRESHOLD):
+                side_redundancy_kwargs["corr_threshold"] = side_corr_threshold
+            cluster_side = _redundancy_cluster_filter(
+                X_side, precluster_features, score_map, **side_redundancy_kwargs
             )
         # Preserve interaction-only state descriptors through redundancy
         # clustering; iterative MDA below remains the final arbiter.
@@ -22563,6 +23352,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
                 sw_side,
                 cluster_side,
                 classifier=classifier,
+                multiclass3=multiclass3,
                 groups=groups_side,
                 timestamps=ts_side,
                 returns=returns_side,
@@ -22581,6 +23371,7 @@ def _run_lgbm_side_aware_feature_selection_tail(
                         else None
                     )
                 ),
+                prediction_offset=(offset_arr[idx] if offset_arr is not None else None),
             )
         )
         selected_side = _ensure_feature_family_coverage(
@@ -22881,6 +23672,7 @@ def train_lgbm_stability_candidate(
     assessment_X: Any = None,
     assessment_timestamps: Any = None,
     assessment_assets: Any = None,
+    prediction_offset: Any = None,
 ) -> Optional[dict[str, Any]]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
@@ -22890,21 +23682,40 @@ def train_lgbm_stability_candidate(
     prescreen_config = _resolve_lgbm_archetype_prescreen_config(cfg)
     tprint(f"LGBM stability candidate training started (objective={objective_mode}).")
     t0 = time.perf_counter()
-    classifier = mode == "classifier"
+    multiclass3 = mode == "multiclass3"
+    classifier = mode in {"classifier", "multiclass3"}
+    if multiclass3:
+        distill_passes = 0
     X_raw_df = X.copy() if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
     X_raw_df.columns = [str(c) for c in X_raw_df.columns]
     X_df = _frame(X)
-    y_arr = _coerce_target(y, classifier, allow_soft_labels=bool(LGBM_TRUE_SOFT_LABELS))
-    y_metric = (
-        _coerce_target(hard_labels, classifier)
-        if hard_labels is not None
-        else _coerce_target(y, classifier)
+    if bool(mda_config.get("r3_multiclass_required", False)) and not multiclass3:
+        raw_target = pd.to_numeric(
+            pd.Series(np.asarray(y).reshape(-1)), errors="coerce"
+        ).to_numpy(dtype=np.float64)
+        if np.any(np.isfinite(raw_target) & (raw_target > 1.0)):
+            raise ValueError("R3 economic-simplex requires mode='multiclass3'")
+    y_arr = _coerce_target(
+        y, classifier, allow_soft_labels=bool(LGBM_TRUE_SOFT_LABELS), multiclass3=multiclass3
     )
-    y_hard_diag = (
-        _coerce_target(hard_labels, classifier)
-        if hard_labels is not None
-        else _coerce_target(y, classifier)
-    )
+    if multiclass3:
+        if hard_labels is None:
+            raise ValueError(
+                "multiclass3 selector requires explicit hard_labels as its predeclared ordinal/economic metric target"
+            )
+        y_metric = np.asarray(hard_labels, dtype=np.float32).reshape(-1)
+        y_hard_diag = y_metric.copy()
+    else:
+        y_metric = (
+            _coerce_target(hard_labels, classifier)
+            if hard_labels is not None
+            else _coerce_target(y, classifier)
+        )
+        y_hard_diag = (
+            _coerce_target(hard_labels, classifier)
+            if hard_labels is not None
+            else _coerce_target(y, classifier)
+        )
     _validate_input_lengths(
         X_df,
         y_arr,
@@ -22919,6 +23730,21 @@ def train_lgbm_stability_candidate(
         )
     ret_arr = _as_returns(y_metric, returns)
     n = len(y_arr)
+    prediction_offset_arr = None
+    if prediction_offset is not None:
+        prediction_offset_arr = np.asarray(
+            prediction_offset, dtype=np.float32
+        ).reshape(-1)
+        if len(prediction_offset_arr) != n:
+            raise ValueError(
+                "prediction_offset must be aligned to every candidate-training row"
+            )
+        if not np.isfinite(prediction_offset_arr).all():
+            raise ValueError("prediction_offset must be finite on every candidate-training row")
+    if bool(mda_config.get("require_prediction_offset", False)) and prediction_offset_arr is None:
+        raise ValueError(
+            "this MDA contract requires a frozen, aligned prediction_offset"
+        )
     if n < 200 or X_df.shape[1] < 2:
         tprint("LGBM stability candidate skipped: not enough rows or features.")
         return None
@@ -23310,6 +24136,11 @@ def train_lgbm_stability_candidate(
     y_metric_race = y_metric[race_idx]
     sw_race = sw[race_idx]
     ret_race = ret_arr[race_idx]
+    offset_race = (
+        prediction_offset_arr[race_idx]
+        if prediction_offset_arr is not None
+        else None
+    )
     race_groups = _stability_group_bundle(
         len(race_idx),
         timestamps=(
@@ -23549,7 +24380,7 @@ def train_lgbm_stability_candidate(
             archetype_enabled=prescreen_config[
                 "archetype_univariate_prescreen_enabled"
             ],
-            classifier=classifier,
+            classifier=(classifier and not multiclass3),
             groups=select_groups,
             returns=ret_select,
             timestamps=select_timestamps,
@@ -23602,7 +24433,7 @@ def train_lgbm_stability_candidate(
                 archetype_enabled=prescreen_config[
                     "archetype_relief_prescreen_enabled"
                 ],
-                classifier=classifier,
+                classifier=(classifier and not multiclass3),
                 random_state=random_state + 151,
                 timestamps=select_timestamps,
                 objective_mode=objective_mode,
@@ -23676,6 +24507,10 @@ def train_lgbm_stability_candidate(
             protected_features=forced_time_features,
             pre_mda_bypass_features=pre_mda_bypass_features,
             label_context=select_label_context,
+            multiclass3=multiclass3,
+            prediction_offset=(
+                offset_race[select_local] if offset_race is not None else None
+            ),
         )
         cluster_features = _append_lgbm_forced_selector_features(
             cluster_features,
@@ -23900,6 +24735,9 @@ def train_lgbm_stability_candidate(
                 random_state + 500 + i, classifier=classifier, overrides=eval_cfg
             )
         )
+        if multiclass3:
+            params["objective"] = "multiclass"
+            params["num_class"] = 3
         model = _fit_lgbm_model(
             X_select[selected_features],
             y_select,
@@ -24037,6 +24875,10 @@ def train_lgbm_stability_candidate(
     metrics["feature_pruning_rounds_completed"] = int(len(history))
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
+    metrics["mda_prediction_offset_provided"] = bool(prediction_offset_arr is not None)
+    metrics["mda_prediction_offset_rows"] = int(
+        len(prediction_offset_arr) if prediction_offset_arr is not None else 0
+    )
     metrics["oof_distillation_passes"] = int(distill_passes)
     metrics.update(_lgbm_regime_score_feature_metric_summary(regime_score_feature_diag))
     metrics.update(regime_specialist_bundle.get("metrics", {}))
@@ -24195,6 +25037,12 @@ def train_lgbm_stability_candidate(
         "metrics": metrics,
         "oof_probs": oof_full,
         "oof_for_full_fit": oof_for_fit,
+        "oof_multiclass3_probabilities": (
+            prune_metrics.get("multiclass3_oof_probabilities") if multiclass3 else None
+        ),
+        "multiclass3_score_definition": (
+            "P(class2_clear)-P(class0_adverse)" if multiclass3 else None
+        ),
         "selected_feature_names": list(selected_features),
         "selected_features_from_cv": np.asarray(
             [X_df.columns.get_loc(c) for c in selected_features if c in X_df.columns],

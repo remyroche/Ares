@@ -3,6 +3,7 @@ import numpy as np
 from extreme_price_movements.bayesian_changepoint import (
     BOCPDConfig,
     bocpd_student_t,
+    bocpd_student_t_run_summary,
     robust_scale_train_oos,
     synchronized_break_score,
 )
@@ -26,6 +27,17 @@ def test_bocpd_prefix_is_not_changed_by_future_values() -> None:
         rtol=0.0,
         atol=0.0,
     )
+
+
+def test_bocpd_run_summary_is_causal_and_bounded() -> None:
+    prefix = np.zeros(40, dtype=np.float32)
+    config = BOCPDConfig(expected_run_hours=24, max_run_hours=48)
+    left = bocpd_student_t_run_summary(np.r_[prefix, np.ones(20)], config)
+    right = bocpd_student_t_run_summary(np.r_[prefix, np.full(20, -5.0)], config)
+    np.testing.assert_allclose(left[: len(prefix)], right[: len(prefix)], rtol=0.0, atol=0.0)
+    assert np.isfinite(left).all()
+    assert np.all((left[:, 0] >= 0.0) & (left[:, 0] <= 1.0))
+    assert np.all((left[:, 3] >= 0.0) & (left[:, 3] <= 1.0))
 
 
 def test_synchronized_break_requires_multiple_train_tail_events() -> None:

@@ -1,0 +1,315 @@
+{
+  "schema": "canonical_execution_reliability_workstream_v2",
+  "status": "FROZEN_RESEARCH_CONTRACT_NO_PROMOTION_NO_PORTFOLIO_REPLAY",
+  "input_artifact": "data_perp/artifacts/canonical_execution_reliability_input_20260730_v4",
+  "population": {
+    "rows": 110730,
+    "development_rows": 41472,
+    "diagnostic_rows": 69258,
+    "sides": ["long", "short"],
+    "identity": ["candidate_id", "side_name"],
+    "admission": "one pooled-global cross-side/cross-timestamp book after each score's own causal recent-EV map"
+  },
+  "outer_folds": [
+    {
+      "name": "mapping_calibration",
+      "validation_start_utc": "2025-03-20T00:00:00Z",
+      "validation_end_utc": "2025-03-23T00:00:00Z",
+      "role": "OOF history for mapping only; excluded from architecture selection"
+    },
+    {
+      "name": "selection_1",
+      "validation_start_utc": "2025-03-23T00:00:00Z",
+      "validation_end_utc": "2025-03-26T00:00:00Z",
+      "role": "architecture selection"
+    },
+    {
+      "name": "selection_2",
+      "validation_start_utc": "2025-03-26T00:00:00Z",
+      "validation_end_utc": "2025-03-29T00:00:00Z",
+      "role": "architecture selection"
+    },
+    {
+      "name": "selection_3",
+      "validation_start_utc": "2025-03-29T00:00:00Z",
+      "validation_end_utc": "2025-04-01T00:00:00Z",
+      "role": "architecture selection and latest-fold gate"
+    }
+  ],
+  "purge": {
+    "outer": "execution_decision_utc < validation_start AND execution_label_end_utc < validation_start",
+    "inner": "last chronological 25% of each side's outer-training timestamps; fit rows require label_end < inner_validation_start"
+  },
+  "feature_arms": {
+    "score4": [
+      "raw_score",
+      "score_base_alpha",
+      "score_residual_expected_ev",
+      "direct_q25_return"
+    ],
+    "support_S0": [
+      "support__direct_net__S0__compact_d4",
+      "support__hard0__S0__compact_d4",
+      "support__hard25__S0__deep_d6",
+      "support__soft__S0__compact_d4"
+    ],
+    "support_S1B": [
+      "support__direct_net__S1+B__compact_d4",
+      "support__hard0__S1+B__fixed_d5",
+      "support__hard25__S1+B__fixed_d5",
+      "support__soft__S1+B__compact_d4"
+    ],
+    "candidate_context": [
+      "base_rank_pct_timestamp_side",
+      "base_score_z_timestamp_side",
+      "base_group_rows_timestamp_side",
+      "base_margin_to_top40_cutoff",
+      "base_margin_to_top40_cutoff_z",
+      "base_rank_pct_timestamp_global",
+      "base_score_z_timestamp_global",
+      "base_group_rows_timestamp_global"
+    ],
+    "context_ablation_variants": {
+      "context_none": [],
+      "cutoff_margin_raw": [
+        "base_margin_to_top40_cutoff"
+      ],
+      "cutoff_margin_z": [
+        "base_margin_to_top40_cutoff_z"
+      ],
+      "cutoff_margin_raw_and_z": [
+        "base_margin_to_top40_cutoff",
+        "base_margin_to_top40_cutoff_z"
+      ],
+      "timestamp_side_relative": [
+        "base_rank_pct_timestamp_side",
+        "base_score_z_timestamp_side"
+      ],
+      "timestamp_global_relative": [
+        "base_rank_pct_timestamp_global",
+        "base_score_z_timestamp_global"
+      ],
+      "timestamp_side_and_global_relative": [
+        "base_rank_pct_timestamp_side",
+        "base_score_z_timestamp_side",
+        "base_rank_pct_timestamp_global",
+        "base_score_z_timestamp_global"
+      ],
+      "rank_decile": [
+        "frozen_base_score_decile"
+      ],
+      "candidate_group_size_global": [
+        "base_group_rows_timestamp_global"
+      ],
+      "rank_decile_and_candidate_group_size": [
+        "frozen_base_score_decile",
+        "base_group_rows_timestamp_global"
+      ]
+    },
+    "candidate_context_aliases": {
+      "raw_oof_alpha": {
+        "canonical_field": "score_base_alpha",
+        "alias": "base_oof_score",
+        "rule": "verify byte equality and report as already present in score4; never add the duplicate alias as an incremental feature"
+      },
+      "side_candidate_group_size": {
+        "canonical_field": "base_group_rows_timestamp_side",
+        "alias": "frozen_base_score_decile_group_rows",
+        "rule": "verify byte equality; use only the canonical field"
+      }
+    },
+    "unavailable_candidate_context": {
+      "archetype_relative_z_score": "Unavailable in the canonical 2025 lineage. Fail closed and do not substitute DAE/GMM/posterior geometry. It requires a separately sealed, inference-time, fold-local archetype materialization before it can become an arm."
+    },
+    "transition_interaction_sources": [
+      "preentry_transition__range_24h_pct__delta_12h",
+      "preentry_transition__meta_raw__volatility_zscore__delta_12h",
+      "preentry_transition__trend_r2_24__delta_12h",
+      "preentry_transition__jump_intensity__delta_12h",
+      "preentry_transition__meta_raw__chop_score__delta_12h"
+    ]
+  },
+  "architectures": {
+    "A0": {
+      "rule": "evaluate each of the four score4 streams independently; no learned meta model",
+      "feature_variants": ["score4_individual_controls"]
+    },
+    "A1": {
+      "rule": "side-local direct-net CatBoost stack",
+      "feature_variants": [
+        "score4+support_S0",
+        "score4+support_S1B",
+        "score4+support_S0+support_S1B"
+      ]
+    },
+    "A1_context": {
+      "rule": "freeze the March-selected A1 support arm, then compare context_none with each predeclared candidate-context field group individually under the same folds, causal map and stability objective",
+      "feature_variants_from": "feature_arms.context_ablation_variants",
+      "raw_oof_alpha_rule": "score_base_alpha and base_oof_score must be byte-identical; the already-present score_base_alpha anchor is the raw-OOF-alpha arm and duplicate insertion is forbidden",
+      "winner_rule": "select context_none or one context arm on March mapped selection folds only; pass the frozen winner to A2-A5",
+      "archetype_rule": "record unavailable_candidate_context explicitly; no proxy substitution"
+    },
+    "A2": {
+      "rule": "P(pre-exit meaningful MFE) then conditional P(net-positive capture) and conditional positive/adverse net magnitudes",
+      "event_target": "target_pre_exit_meaningful_mfe",
+      "capture_target": "target_pre_exit_capture_net_positive",
+      "capture_validity_mask": "target_pre_exit_capture_valid AND target_pre_exit_meaningful_mfe",
+      "supporting_magnitude_targets": [
+        "target_pre_exit_economic_capture_ratio",
+        "target_positive_net_magnitude",
+        "target_adverse_loss_magnitude"
+      ],
+      "feature_variants": ["score4+best_A1_support_arm+best_A1_context_arm"]
+    },
+    "A3": {
+      "rule": "P(clean favorable-first) times conditional signed payoff, with complement adverse magnitude",
+      "event_target": "target_clean_favorable_first",
+      "feature_variants": ["score4+best_A1_support_arm+best_A1_context_arm"]
+    },
+    "A4": {
+      "rule": "three-class favorable-first/adverse-conflict/timeout probabilities times class-conditional signed net payoff",
+      "event_target": "target_competing_class",
+      "classes": ["favorable_first", "adverse_first_or_conflict", "timeout"],
+      "feature_variants": ["score4+best_A1_support_arm+best_A1_context_arm"]
+    },
+    "A5": {
+      "rule": "March-selected winner of A1-A4 plus exactly five fold-side-train-standardized base_oof_score x 12h transition interactions clipped to [-1,1]",
+      "feature_variants": ["winner_plus_bounded_interactions"]
+    }
+  },
+  "catboost_hpo": {
+    "side_local": true,
+    "geometries": [
+      {
+        "name": "compact_d4",
+        "iterations": 160,
+        "depth": 4,
+        "learning_rate": 0.05,
+        "l2_leaf_reg": 10.0
+      },
+      {
+        "name": "standard_d6",
+        "iterations": 220,
+        "depth": 6,
+        "learning_rate": 0.04,
+        "l2_leaf_reg": 16.0
+      }
+    ],
+    "classifier_selection": "minimum inner log loss, then Brier, then shallower geometry",
+    "multiclass_selection": "minimum inner multiclass log loss, then shallower geometry",
+    "regressor_selection": "minimum inner MAE, then maximum rank IC, then shallower geometry",
+    "april_use": "forbidden"
+  },
+  "feature_selection": {
+    "scope": "separate for every outer fold, side and head after inner geometry selection",
+    "method": "CatBoost PredictionValuesChange from the winning inner-fit model only",
+    "rule": "positive importance, cumulative 90%, minimum 8 and maximum 24; force score anchors that belong to the arm",
+    "refit": "winning geometry and selected features refit on the full legal outer-training subset",
+    "april_use": "forbidden"
+  },
+  "mapping": {
+    "rule": "separate score-specific daily 21-day pooled isotonic anchor plus shrunk-side residual",
+    "causality": "only labels resolved and scores available strictly before each daily snapshot",
+    "minimum_support": {
+      "pooled_rows": 2000,
+      "side_rows": 1000
+    }
+  },
+  "selection": {
+    "book": "random-tie-expected pooled-global top 10%",
+    "objective": "fold mean net bps - 0.5*fold std + 0.25*worst fold net bps",
+    "tie_break": "fewer selected features, shallower mean geometry, lexical config",
+    "freeze_before_april": true
+  },
+  "mandatory_ic_ev_divergence_diagnostic": {
+    "motivation": "Base-target rank IC rises from 0.155 in February to 0.162 in March and 0.226 in April while direct execution-EV pooled-global top-decile net remains negative at -59.39, -91.31 and -38.45 bps. This is an unresolved conversion anomaly, not an architectural justification.",
+    "same_cohort_score_layers": [
+      "base alpha",
+      "residual alpha",
+      "direct execution EV",
+      "causally mapped execution EV"
+    ],
+    "waterfall": [
+      "native base target rank IC",
+      "exact 12h favorable opportunity and MFE rank IC",
+      "deployed-exit gross rank IC and top-k gross bps",
+      "one explicit cost",
+      "exact deployed-policy net rank IC and top-k net bps"
+    ],
+    "tail_diagnostics": [
+      "pooled-global top 1/5/10/20% economics and tail-local rank IC",
+      "opportunity precision, recall and conditional payoff magnitude",
+      "fixed numeric cutoff versus fixed quantile migration",
+      "score range, dispersion, saturation and cutoff-tie fraction",
+      "side, asset, regime, stop and timeout composition",
+      "within-cell gross, cost and net response",
+      "matched 12h versus 24h target comparison"
+    ],
+    "required_month_deltas": [
+      "February-to-March",
+      "March-to-April"
+    ],
+    "evidence_artifacts": [
+      {
+        "path": "data_perp/artifacts/mandatory_ic_ev_waterfall_20260730_v1",
+        "schema": "mandatory_identical_row_ic_ev_waterfall_v1",
+        "role": "February-April base-alpha identical-row target-to-gross-cost-net waterfall"
+      },
+      {
+        "path": "data_perp/artifacts/canonical_execution_reliability_ic_ev_diagnostic_20260730_v3",
+        "schema": "canonical_execution_reliability_ic_ev_diagnostic_v1",
+        "role": "March-April identical-cohort base/residual/direct/raw-map comparison"
+      }
+    ],
+    "known_coverage_limit": "The canonical February lineage lacks strict residual/direct reliability layers. February-to-March is therefore base-conversion evidence only; it must not be presented as a direct-head month comparison.",
+    "interpretation_rule": "Higher aggregate rank IC is not model progress when the globally selected cost-aware tail remains negative.",
+    "closure_rule": "Keep the item open until the month-to-month IC/EV deltas are quantitatively reconciled and a frozen causally mapped challenger passes aggregate, latest-period, both-side, tie-safety and mapped-control economics gates."
+  },
+  "required_head_metrics": {
+    "binary": ["support", "prevalence", "ROC_AUC", "average_precision", "log_loss", "Brier", "ECE", "bias"],
+    "multiclass": ["class_support", "log_loss", "macro_one_vs_rest_AUC", "per_class_Brier", "ECE"],
+    "magnitude": ["conditional_support", "MAE", "RMSE", "rank_IC", "bias"],
+    "economics": ["raw_and_mapped_global_top_1_5_10_20_net_bps", "random_tie_expected_net_bps", "latest_fold", "worst_fold", "side_asset_regime_exit_attribution"]
+  },
+  "global_book_attribution": {
+    "selection": "compute the pooled-global random-tie-expected book once for each score/fraction/window; attach fractional cutoff-tie weights, then slice that fixed book without reranking or quotas",
+    "dimensions": {
+      "side": "side_name",
+      "asset": "__symbol__",
+      "regime": "__regime_source_execution_risk_score__ frozen development quintile; attribution only",
+      "exit": "execution_exit_class; realized attribution only and never a feature"
+    },
+    "metrics": [
+      "candidate support",
+      "expected selected rows and selected share",
+      "gross contribution bps",
+      "cost contribution bps",
+      "net contribution bps",
+      "positive-net rate",
+      "economic-opportunity precision and recall",
+      "conditional positive and adverse payoff magnitude"
+    ],
+    "prohibition": "never rank or select top-k within side, asset, regime or exit slices"
+  },
+  "promotion_gates": [
+    "March aggregate, latest and worst-fold mapped top10 > 0",
+    "March and April cutoff tie fraction <= 5%",
+    "April reused diagnostic mapped top10 and latest week > 0",
+    "both long and short contributions > 0 without quotas",
+    "better than identically mapped base and residual controls",
+    "new untouched forward evidence remains required"
+  ],
+  "action_layer_exclusions": [
+    "time_to_mfe",
+    "mae_path_timing",
+    "target_price",
+    "wait_or_reprice_action"
+  ],
+  "forbidden_inputs": [
+    "realized targets or path labels",
+    "mapped coordinates",
+    "DAE or GMM outputs",
+    "full_horizon_gross_to_mfe_ratio_diagnostic_only"
+  ],
+  "portfolio_replay": "forbidden until every promotion gate passes on untouched forward evidence"
+}

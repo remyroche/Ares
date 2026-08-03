@@ -8,11 +8,13 @@ Usage:
     python3 scripts/deploy_enhanced_specialists_fixed.py
 """
 
+import json
 import sys
 import os
 from pathlib import Path
 import logging
 from datetime import datetime
+from typing import Any, Dict
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -147,7 +149,9 @@ class EnhancedSpecialistDeployer:
         print(f"   Total specialists_enhanced: {len(deployment_results)}")
         print(f"   Successful deployments: {len([r for r in deployment_results.values() if r['success']])}")
         print(f"   Failed deployments: {len([r for r in deployment_results.values() if not r['success']])}")
-        print(f"   Success rate: {(len([r for r in deployment_results.values() if r['success']]) / len(deployment_results) * 100):.1f")
+        success_count = sum(bool(r.get('success')) for r in deployment_results.values())
+        success_rate = 100.0 * success_count / max(len(deployment_results), 1)
+        print(f"   Success rate: {success_rate:.1f}%")
         
         # Save deployment report
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

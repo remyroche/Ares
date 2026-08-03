@@ -7,6 +7,7 @@ labels are accepted only by ``fit`` and are never required by ``predict_proba``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import lgamma
 from typing import Any, Sequence
 
 import numpy as np
@@ -238,12 +239,131 @@ class BinaryQuantileTransform:
 
 @dataclass
 class BayesianRuleListArm:
+    """BRL challenger with an honest dependency-free MAP fallback.
+
+    The fallback is deliberately *not* described as a sampled Bayesian Rule
+    List: it searches a bounded set of ordered, low-cardinality binary rules
+    greedily under a Beta-Binomial posterior/MAP objective.  Its priors make
+    longer and wider lists less attractive, while its probabilities are the
+    posterior means of the terminal rule partitions.
+    """
+
     seed: int = 42
     max_rows: int = 2_500
     max_input_features: int = 10
+    max_rules: int = 5
+    max_rule_width: int = 2
+    list_length_prior: float = 3.0
+    list_width_prior: float = 1.0
+    beta_alpha: float = 1.0
+    beta_beta: float = 1.0
+    min_rule_support: int = 8
     transform: BinaryQuantileTransform = field(default_factory=BinaryQuantileTransform)
     selected_indices: np.ndarray | None = None
     model: Any = None
+    backend: str = "unfitted"
+    native_rules: list[tuple[int, ...]] = field(default_factory=list)
+    native_probabilities: list[float] = field(default_factory=list)
+    native_default_probability: float = 0.5
+    native_rule_stats: list[dict[str, Any]] = field(default_factory=list)
+    native_objective: float | None = None
+
+    def _partition_log_marginal(self, y: np.ndarray) -> float:
+        """Beta-Binomial log marginal for one ordered-list terminal cell."""
+
+        values = np.asarray(y, dtype=np.int8)
+        positives = float(values.sum())
+        negatives = float(len(values) - positives)
+        return float(
+            lgamma(self.beta_alpha + positives)
+            + lgamma(self.beta_beta + negatives)
+            - lgamma(self.beta_alpha + self.beta_beta + positives + negatives)
+            - (lgamma(self.beta_alpha) + lgamma(self.beta_beta) - lgamma(self.beta_alpha + self.beta_beta))
+        )
+
+    def _posterior_mean(self, y: np.ndarray) -> float:
+        values = np.asarray(y, dtype=np.int8)
+        return float((self.beta_alpha + values.sum()) / (self.beta_alpha + self.beta_beta + len(values)))
+
+    def _native_candidates(self, binary: np.ndarray) -> list[tuple[int, ...]]:
+        """Create deterministic width-one/two boolean antecedents only."""
+
+        columns = [index for index in range(binary.shape[1]) if int(binary[:, index].sum()) >= self.min_rule_support]
+        singles = [(index,) for index in columns]
+        if self.max_rule_width < 2:
+            return singles
+        # The input is capped at ten raw fields / twenty binary conditions, so
+        # this is at most 210 bounded candidate antecedents.
+        pairs = [(left, right) for left_pos, left in enumerate(columns) for right in columns[left_pos + 1:] if int((binary[:, left] & binary[:, right]).sum()) >= self.min_rule_support]
+        return singles + pairs
+
+    def _native_mask(self, binary: np.ndarray, rule: tuple[int, ...]) -> np.ndarray:
+        return np.asarray(binary[:, list(rule)].all(axis=1), dtype=bool)
+
+    def _native_objective_for(self, binary: np.ndarray, y: np.ndarray, rules: Sequence[tuple[int, ...]]) -> tuple[float, list[np.ndarray], np.ndarray]:
+        remaining = np.ones(len(y), dtype=bool)
+        cells: list[np.ndarray] = []
+        log_likelihood = 0.0
+        total_width = 0
+        for rule in rules:
+            matched = remaining & self._native_mask(binary, rule)
+            if matched.sum() < self.min_rule_support:
+                return -np.inf, [], remaining
+            cells.append(matched)
+            log_likelihood += self._partition_log_marginal(y[matched])
+            total_width += len(rule)
+            remaining &= ~matched
+        log_likelihood += self._partition_log_marginal(y[remaining])
+        # Exponential list-length/list-width priors, represented in log space.
+        prior = -len(rules) / self.list_length_prior - total_width / self.list_width_prior
+        return float(log_likelihood + prior), cells, remaining
+
+    def _fit_native(self, binary: np.ndarray, y: np.ndarray) -> None:
+        candidates = self._native_candidates(binary)
+        rules: list[tuple[int, ...]] = []
+        objective, _, _ = self._native_objective_for(binary, y, rules)
+        used: set[tuple[int, ...]] = set()
+        for _ in range(self.max_rules):
+            best_rule: tuple[int, ...] | None = None
+            best_objective = objective
+            for rule in candidates:
+                if rule in used:
+                    continue
+                candidate_objective, _, _ = self._native_objective_for(binary, y, [*rules, rule])
+                if candidate_objective > best_objective + 1e-10:
+                    best_rule, best_objective = rule, candidate_objective
+            if best_rule is None:
+                break
+            rules.append(best_rule)
+            used.add(best_rule)
+            objective = best_objective
+        objective, cells, remaining = self._native_objective_for(binary, y, rules)
+        self.native_rules = rules
+        self.native_probabilities = [self._posterior_mean(y[cell]) for cell in cells]
+        self.native_default_probability = self._posterior_mean(y[remaining])
+        self.native_objective = objective
+        self.native_rule_stats = [
+            {
+                "position": position + 1,
+                "binary_features": [self.transform.feature_names[index] for index in rule],
+                "width": len(rule),
+                "support": int(cell.sum()),
+                "positives": int(y[cell].sum()),
+                "posterior_probability": probability,
+            }
+            for position, (rule, cell, probability) in enumerate(zip(rules, cells, self.native_probabilities))
+        ]
+        self.native_rule_stats.append(
+            {
+                "position": len(rules) + 1,
+                "binary_features": ["DEFAULT"],
+                "width": 0,
+                "support": int(remaining.sum()),
+                "positives": int(y[remaining].sum()),
+                "posterior_probability": self.native_default_probability,
+            }
+        )
+        self.backend = "native_beta_binomial_map"
 
     def fit(
         self,
@@ -252,8 +372,6 @@ class BayesianRuleListArm:
         weights: np.ndarray,
         feature_names: Sequence[str],
     ) -> "BayesianRuleListArm":
-        from imodels import BayesianRuleListClassifier
-
         y = np.asarray(y, dtype=np.int8)
         effect = np.zeros(x.shape[1], dtype=np.float32)
         for index in range(x.shape[1]):
@@ -269,6 +387,11 @@ class BayesianRuleListArm:
         self.transform.fit(local_x, local_names)
         binary = self.transform.transform(local_x)
         idx = _weighted_resample_indices(weights, max_rows=self.max_rows, seed=self.seed)
+        try:
+            from imodels import BayesianRuleListClassifier
+        except ModuleNotFoundError:
+            self._fit_native(binary[idx], y[idx])
+            return self
         errors: list[str] = []
         for attempt, (iterations, chains, support) in enumerate(
             ((3_000, 2, 0.04), (8_000, 3, 0.025))
@@ -294,13 +417,36 @@ class BayesianRuleListArm:
                 self.model = None
         if self.model is None:
             raise RuntimeError("BRL posterior fitting failed; " + " | ".join(errors))
+        self.backend = "imodels_mcmc_brl"
         return self
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         local = np.asarray(x[:, self.selected_indices], dtype=np.float32)
-        return np.asarray(self.model.predict_proba(self.transform.transform(local))[:, 1], dtype=np.float32)
+        binary = self.transform.transform(local)
+        if self.backend == "native_beta_binomial_map":
+            probability = np.full(len(binary), self.native_default_probability, dtype=np.float32)
+            unassigned = np.ones(len(binary), dtype=bool)
+            for rule, value in zip(self.native_rules, self.native_probabilities):
+                matched = unassigned & self._native_mask(binary, rule)
+                probability[matched] = value
+                unassigned &= ~matched
+            return probability
+        return np.asarray(self.model.predict_proba(binary)[:, 1], dtype=np.float32)
 
     def describe(self) -> list[dict[str, Any]]:
+        if self.backend == "native_beta_binomial_map":
+            return [
+                {
+                    "backend": self.backend,
+                    "objective": self.native_objective,
+                    "list_length_prior": self.list_length_prior,
+                    "list_width_prior": self.list_width_prior,
+                    "beta_alpha": self.beta_alpha,
+                    "beta_beta": self.beta_beta,
+                    **row,
+                }
+                for row in self.native_rule_stats
+            ]
         return [{"rule_list": repr(self.model), "weight": 1.0}]
 
 

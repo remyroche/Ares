@@ -1,0 +1,147 @@
+{
+  "schema": "regime_oof_stack_contract_v1",
+  "status": "FROZEN_EXPERIMENT_CONTRACT",
+  "identity_columns": [
+    "candidate_id",
+    "__ts__",
+    "__symbol__",
+    "side_name"
+  ],
+  "selection_contract": {
+    "score_stage": "post_recent_ev_mapping",
+    "score_column": "mapped_score",
+    "top_fraction": 0.1,
+    "basis": "one pooled global top-k across sides and timestamps within each evaluation period",
+    "forbidden": [
+      "per_timestamp_selection",
+      "per_side_selection",
+      "per_regime_selection"
+    ]
+  },
+  "regime_state_layer": {
+    "namespace": "regime_state_",
+    "simplex_prefix": "regime_state_p__",
+    "method_families": [
+      "gmm",
+      "bayesian_gmm",
+      "unsupervised_regime_learning"
+    ],
+    "horizons_hours": [3, 12, 24, 72],
+    "required_outputs": [
+      "aligned_probability_simplex",
+      "state_identity",
+      "entropy",
+      "posterior_margin",
+      "ood_score",
+      "uncertainty"
+    ]
+  },
+  "transition_state_layer": {
+    "namespace": "transition_state_",
+    "simplex_prefix": "transition_state_p__",
+    "method_families": [
+      "lightgbm_transition_classifier",
+      "bayesian_rule_list",
+      "bayesian_online_changepoint",
+      "unsupervised_transition_discovery"
+    ],
+    "horizons_hours": [3, 12, 24, 72],
+    "required_outputs": [
+      "aligned_probability_simplex",
+      "transition_identity",
+      "entropy",
+      "posterior_margin",
+      "ood_score",
+      "uncertainty"
+    ]
+  },
+  "oof_provenance": {
+    "regime_required": [
+      "regime_fold_id",
+      "regime_train_end_utc",
+      "regime_available_utc"
+    ],
+    "transition_required": [
+      "transition_fold_id",
+      "transition_train_end_utc",
+      "transition_available_utc"
+    ],
+    "guards": [
+      "train_end_strictly_before_candidate_decision",
+      "feature_available_at_or_before_candidate_decision",
+      "outcome_columns_removed_before_oos_transform",
+      "exact_candidate_join_no_row_loss_or_duplication",
+      "component_alignment_frozen_within_outer_fold"
+    ]
+  },
+  "outcome_denylist": {
+    "exact": [
+      "target_soft",
+      "target_hard",
+      "clean_exec",
+      "clean_exec_label",
+      "dirty_positive",
+      "timeout",
+      "exec_margin",
+      "ev_after_1pct",
+      "execution_net_ev_12h",
+      "ret_net",
+      "u_policy_net",
+      "first_touch_net",
+      "first_touch_gross",
+      "full_path_bad_mae_1r",
+      "first_touch_bad_mae_1r"
+    ],
+    "prefixes": [
+      "target_",
+      "label_",
+      "expost_",
+      "realized_",
+      "outcome_",
+      "future_",
+      "post_entry_"
+    ]
+  },
+  "support_gates": {
+    "category_min_selected_rows": 400,
+    "category_min_weeks": 12,
+    "category_min_months": 4,
+    "category_min_same_sign_week_fraction": 0.75,
+    "category_min_same_sign_chronological_block_fraction": 0.75,
+    "promotion_requires": [
+      "fold_separated_oof_or_frozen_oos_evidence",
+      "same_row_baseline_comparison",
+      "block_bootstrap_support",
+      "stable_category_direction"
+    ]
+  },
+  "matched_arms": [
+    "baseline",
+    "regime_only",
+    "transition_only",
+    "regime_plus_transition"
+  ],
+  "reporting": {
+    "metrics": [
+      "alpha_rank_ic",
+      "execution_net_rank_ic",
+      "top10_mean_net_ev",
+      "top10_mean_gross_ev",
+      "top10_mean_cost",
+      "top10_hit_rate",
+      "top10_support",
+      "weekly_ic_q10",
+      "weekly_ic_q50",
+      "weekly_net_ev_q10",
+      "weekly_net_ev_q50",
+      "monthly_ic_q10",
+      "monthly_ic_q50",
+      "monthly_net_ev_q10",
+      "monthly_net_ev_q50",
+      "positive_week_fraction",
+      "positive_month_fraction",
+      "worst_week_net_ev",
+      "worst_month_net_ev"
+    ]
+  }
+}

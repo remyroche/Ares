@@ -80,7 +80,28 @@ def strict_outer_validation_mask(
     )
 
 
-def locked_outer_calendar() -> dict[str, Any]:
+def resolved_outer_folds(
+    last_validation_end: pd.Timestamp | str | None = None,
+) -> tuple[tuple[str, pd.Timestamp, pd.Timestamp], ...]:
+    if last_validation_end is None:
+        return OUTER_FOLDS
+    end = pd.Timestamp(last_validation_end)
+    end = end.tz_localize("UTC") if end.tzinfo is None else end.tz_convert("UTC")
+    name, start, incumbent_end = OUTER_FOLDS[-1]
+    if end < incumbent_end:
+        raise OuterPopulationMaterializationError(
+            "last validation end cannot shorten the locked outer calendar"
+        )
+    if end <= start:
+        raise OuterPopulationMaterializationError(
+            "last validation end must follow the final validation start"
+        )
+    return (*OUTER_FOLDS[:-1], (name, start, end))
+
+
+def locked_outer_calendar(
+    folds: Sequence[tuple[str, pd.Timestamp, pd.Timestamp]] = OUTER_FOLDS,
+) -> dict[str, Any]:
     return {
         "folds": [
             {
@@ -88,7 +109,7 @@ def locked_outer_calendar() -> dict[str, Any]:
                 "validation_start_utc": start.isoformat(),
                 "validation_end_utc": end.isoformat(),
             }
-            for name, start, end in OUTER_FOLDS
+            for name, start, end in folds
         ],
         "decision_contract": "__decision_ts__ = __ts__ + 1h",
         "label_resolution_contract": (
@@ -128,10 +149,13 @@ def _new_stage(output_dir: Path) -> Path:
     return output_dir.parent / f".{output_dir.name}.staging-{uuid.uuid4().hex}"
 
 
-def _writers(stage: Path) -> dict[str, inner_population._LedgerWriter]:
+def _writers(
+    stage: Path,
+    folds: Sequence[tuple[str, pd.Timestamp, pd.Timestamp]] = OUTER_FOLDS,
+) -> dict[str, inner_population._LedgerWriter]:
     result: dict[str, inner_population._LedgerWriter] = {}
     for side in CANONICAL_SIDES:
-        for name, _, _ in OUTER_FOLDS:
+        for name, _, _ in folds:
             base = stage / "folds" / name / side
             result[f"{name}/{side}/train"] = inner_population._LedgerWriter(
                 base / "train.parquet"
@@ -143,13 +167,15 @@ def _writers(stage: Path) -> dict[str, inner_population._LedgerWriter]:
 
 
 def _write_batch(
-    writers: Mapping[str, inner_population._LedgerWriter], frame: pd.DataFrame
+    writers: Mapping[str, inner_population._LedgerWriter],
+    frame: pd.DataFrame,
+    folds: Sequence[tuple[str, pd.Timestamp, pd.Timestamp]] = OUTER_FOLDS,
 ) -> None:
     for side in CANONICAL_SIDES:
         local = frame.loc[frame["side_name"].eq(side)]
         signal = local["__ts__"]
         decision = local["__decision_ts__"]
-        for name, start, end in OUTER_FOLDS:
+        for name, start, end in folds:
             writers[f"{name}/{side}/train"].write(
                 local.loc[strict_outer_train_mask(signal, decision, start)]
             )
@@ -159,13 +185,15 @@ def _write_batch(
 
 
 def _validate_disjoint_validation_ledgers(
-    records: Mapping[str, Any], stage: Path
+    records: Mapping[str, Any],
+    stage: Path,
+    folds: Sequence[tuple[str, pd.Timestamp, pd.Timestamp]] = OUTER_FOLDS,
 ) -> None:
     import pyarrow.parquet as pq
 
     for side in CANONICAL_SIDES:
         seen: set[str] = set()
-        for name, _, _ in OUTER_FOLDS:
+        for name, _, _ in folds:
             record = records[f"{name}/{side}/validation"]
             path = stage / str(record["path"])
             for batch in pq.ParquetFile(path).iter_batches(
@@ -188,6 +216,7 @@ def materialize(
     output_dir: Path = DEFAULT_OUTPUT,
     batch_rows: int = 65_536,
     contract_only: bool = False,
+    last_validation_end: pd.Timestamp | str | None = None,
     resource_guard: TrainingResourceGuard | None = None,
 ) -> dict[str, Any]:
     """Stream and publish the fixed, side-local April--July outer folds."""
@@ -196,6 +225,7 @@ def materialize(
             "batch_rows must be a positive integer"
         )
     output_dir = Path(output_dir)
+    folds = resolved_outer_folds(last_validation_end)
     stage = _new_stage(output_dir)
     guard = resource_guard or TrainingResourceGuard(
         disk_path=stage.parent,
@@ -211,7 +241,25 @@ def materialize(
             "schema": SCHEMA,
             "status": "CONTRACT_ONLY" if contract_only else "MATERIALIZING",
             "dec09": dec09,
-            "calendar": locked_outer_calendar(),
+            "calendar": locked_outer_calendar(folds),
+            "calendar_extension": (
+                {
+                    "status": "DIAGNOSTIC_FORWARD_EXTENSION",
+                    "original_final_validation_end_utc": OUTER_FOLDS[-1][
+                        2
+                    ].isoformat(),
+                    "extended_final_validation_end_utc": folds[-1][2].isoformat(),
+                    "earlier_fold_boundaries_changed": False,
+                    "final_fold_training_cutoff_changed": False,
+                    "feature_selection_hpo_repeated": False,
+                    "promotion_note": (
+                        "The extension adds later validation rows only and is not "
+                        "part of the original locked DEC-09 final-test calendar."
+                    ),
+                }
+                if folds[-1][2] != OUTER_FOLDS[-1][2]
+                else None
+            ),
             "input": {
                 "labels_dir": str(labels_dir),
                 "causal_audit_path": str(causal_audit_path),
@@ -236,7 +284,7 @@ def materialize(
 
         import pyarrow.parquet as pq
 
-        writers = _writers(stage)
+        writers = _writers(stage, folds)
         try:
             for shard in shards:
                 parquet = pq.ParquetFile(shard)
@@ -260,6 +308,7 @@ def materialize(
                         inner_population._normalise_batch(
                             batch.to_pandas(), source_name=shard.name
                         ),
+                        folds,
                     )
                 guard.checkpoint(f"packb_outer_population_shard:{shard.name}")
         finally:
@@ -267,10 +316,10 @@ def materialize(
                 writer.close()
 
         records = inner_population._ledger_records(writers, stage)
-        _validate_disjoint_validation_ledgers(records, stage)
+        _validate_disjoint_validation_ledgers(records, stage, folds)
         for side in CANONICAL_SIDES:
             prior_train_rows = -1
-            for name, _, _ in OUTER_FOLDS:
+            for name, _, _ in folds:
                 train_rows = int(records[f"{name}/{side}/train"]["rows"])
                 if train_rows <= prior_train_rows:
                     raise OuterPopulationMaterializationError(
@@ -301,6 +350,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--batch-rows", type=int, default=65_536)
     parser.add_argument("--contract-only", action="store_true")
+    parser.add_argument(
+        "--last-validation-end",
+        help=(
+            "Optional UTC-exclusive extension of only the final locked outer fold; "
+            "earlier fold boundaries and every training cutoff remain unchanged."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -314,6 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             batch_rows=args.batch_rows,
             contract_only=args.contract_only,
+            last_validation_end=args.last_validation_end,
         )
     except (OuterPopulationMaterializationError, ValueError, FileExistsError) as exc:
         print(

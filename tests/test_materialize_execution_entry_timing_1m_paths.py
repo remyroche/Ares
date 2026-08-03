@@ -84,6 +84,35 @@ def _target_manifest(path: Path) -> Path:
     return path
 
 
+def _deployed_target_manifest(
+    path: Path,
+    *,
+    economics: str = "current_frozen_spread_counterfactual",
+) -> Path:
+    payload: dict[str, object] = {
+        "schema": "execution_ev_deployed_policy_1m_labels_v1",
+        "prediction_role": "execution_ev_12h_labels",
+        "timing": {
+            "signal_to_decision_minutes": 60,
+            "horizon_minutes": 720,
+            "label_available_at": "decision + full replay horizon",
+        },
+        "exit_policy_contract": {"horizon_minutes": 720},
+        "store": {
+            "contract": "canonical_kraken_execution_1m_immutable_read_only_v1"
+        },
+        "historical_lineage": {
+            "oof_status": "not_oof",
+            "execution_parity_claim": False,
+            "promotion_eligible": False,
+            "economics": economics,
+        },
+    }
+    payload["prediction_role_manifest_sha256"] = materializer._manifest_hash(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
 def _materialize_args(input_path: Path, data_root: Path, target: Path, output: Path, **overrides: object) -> Namespace:
     values = vars(_mapping_args(input_path)).copy()
     values.update(
@@ -136,6 +165,8 @@ def test_materializes_complete_path_and_signed_manifest(tmp_path: Path) -> None:
     decoded = _decode_path(frame.loc[0, "execution_future_path"], EntryTimingTargetSpec(), row=0)
     assert len(decoded) == 720
     assert decoded["timestamp"].iloc[0] == decision
+    assert frame.loc[0, "decision_price"] == pytest.approx(100.0)
+    assert frame.loc[0, "atr_1h"] == pytest.approx(1.25)
     assert frame.loc[0, "fee"] == pytest.approx(0.001)
     assert frame.loc[0, "entry_spread"] == pytest.approx(4.0)
     assert frame.loc[0, "exit_spread"] == pytest.approx(6.0)
@@ -144,6 +175,34 @@ def test_materializes_complete_path_and_signed_manifest(tmp_path: Path) -> None:
     assert manifest["cost_accounting"] == "fee_once_entry_spread_once_exit_spread_once"
     assert manifest["source_artifact_sha256"] == materializer._sha256(output)
     assert manifest["prediction_role_manifest_sha256"] == materializer._manifest_hash(manifest)
+
+
+def test_derives_absolute_atr_from_decision_price_and_fraction(tmp_path: Path) -> None:
+    decision = pd.Timestamp("2026-01-01T01:00:00Z")
+    source = tmp_path / "source.parquet"
+    candidate = _candidate(decision).drop(columns="atr")
+    candidate["atr_fraction"] = 0.0125
+    candidate.to_parquet(source, index=False)
+    data_root = _write_store(tmp_path / "data", decision)
+    target = _target_manifest(tmp_path / "target.json")
+    output = tmp_path / "paths.parquet"
+
+    result = materializer.materialize(
+        _materialize_args(
+            source,
+            data_root,
+            target,
+            output,
+            atr_col=None,
+            atr_fraction_col="atr_fraction",
+        )
+    )
+    frame = pd.read_parquet(result["paths"])
+    manifest = json.loads(result["manifest"].read_text())
+
+    assert frame.loc[0, "decision_price"] == pytest.approx(100.0)
+    assert frame.loc[0, "atr_1h"] == pytest.approx(1.25)
+    assert manifest["atr"]["input_mode"] == "decision_price_times_atr_fraction"
 
 
 def test_gap_fails_by_default_and_reports_missing_window(tmp_path: Path) -> None:
@@ -191,4 +250,35 @@ def test_rejects_duplicate_identity_and_bad_target_signature(tmp_path: Path) -> 
     target = tmp_path / "bad-target.json"
     target.write_text(json.dumps({"schema": "execution_ev_12h_hourly_policy_labels_v2", "prediction_role": "execution_ev_12h_labels", "prediction_role_manifest_sha256": hashlib.sha256(b"wrong").hexdigest()}), encoding="utf-8")
     with pytest.raises(ValueError, match="signature does not verify"):
+        materializer._manifest_target(target)
+
+
+@pytest.mark.parametrize(
+    "economics",
+    [
+        "current_frozen_spread_counterfactual",
+        "inverse_quote_notional_current_spread_counterfactual",
+    ],
+)
+def test_accepts_signed_historical_deployed_policy_manifest(
+    tmp_path: Path,
+    economics: str,
+) -> None:
+    target = _deployed_target_manifest(
+        tmp_path / "deployed-target.json", economics=economics
+    )
+    digest, signed = materializer._manifest_target(target)
+    assert digest == materializer._sha256(target)
+    assert signed
+
+
+def test_rejects_deployed_policy_manifest_without_historical_lineage(
+    tmp_path: Path,
+) -> None:
+    target = _deployed_target_manifest(tmp_path / "deployed-target.json")
+    payload = json.loads(target.read_text())
+    payload["historical_lineage"] = None
+    payload["prediction_role_manifest_sha256"] = materializer._manifest_hash(payload)
+    target.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="allowed counterfactual lineage"):
         materializer._manifest_target(target)

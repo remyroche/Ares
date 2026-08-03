@@ -208,6 +208,74 @@ def _join(base: pd.DataFrame, addition: pd.DataFrame, *, source: str, columns: S
     )
 
 
+def _restrict_to_universe(
+    frame: pd.DataFrame, universe: pd.DataFrame, *, source: str
+) -> pd.DataFrame:
+    _assert_unique(frame, source=source)
+    _assert_unique(universe, source="declared OOF timing universe")
+    coverage = universe.loc[:, JOIN_KEYS].merge(
+        frame.loc[:, JOIN_KEYS],
+        on=list(JOIN_KEYS),
+        how="left",
+        indicator=True,
+        sort=False,
+    )
+    missing = int(coverage["_merge"].eq("left_only").sum())
+    if missing:
+        raise ValueError(
+            f"{source}: declared OOF timing universe has {missing} identities "
+            "missing from the source"
+        )
+    return universe.loc[:, JOIN_KEYS].merge(
+        frame,
+        on=list(JOIN_KEYS),
+        how="inner",
+        validate="one_to_one",
+        sort=False,
+    )
+
+
+def _catboost_probability_columns(frame: pd.DataFrame) -> list[str]:
+    columns = sorted(
+        (
+            column
+            for column in frame.columns
+            if column.startswith("catboost_p_")
+            and column.removeprefix("catboost_p_").isdigit()
+        ),
+        key=lambda column: int(column.removeprefix("catboost_p_")),
+    )
+    if len(columns) < 2 or columns != [
+        f"catboost_p_{index}" for index in range(len(columns))
+    ]:
+        raise ValueError(
+            "original execution-EV joined handoff: CatBoost probabilities "
+            "must be a contiguous catboost_p_0..N vector"
+        )
+    return columns
+
+
+def _find_class_order(payload: Any, size: int) -> list[str] | None:
+    if isinstance(payload, Mapping):
+        value = payload.get("class_order")
+        if (
+            isinstance(value, list)
+            and len(value) == size
+            and all(isinstance(item, str) and item for item in value)
+        ):
+            return list(value)
+        for child in payload.values():
+            found = _find_class_order(child, size)
+            if found is not None:
+                return found
+    elif isinstance(payload, list):
+        for child in payload:
+            found = _find_class_order(child, size)
+            if found is not None:
+                return found
+    return None
+
+
 def _validate_original_handoff(
     handoff: pd.DataFrame, provenance_path: Path
 ) -> dict[str, Any]:
@@ -219,6 +287,7 @@ def _validate_original_handoff(
         raise ValueError("joined handoff provenance: handoff contract is required")
     if contract.get("join_mode") != "exact_inner_one_to_one" or contract.get("join_keys") != list(JOIN_KEYS):
         raise ValueError("joined handoff provenance: requires exact_inner_one_to_one canonical candidate keys")
+    probability_columns = _catboost_probability_columns(handoff)
     required = [
         "__decision_ts__",
         "execution_label_end_utc",
@@ -226,7 +295,7 @@ def _validate_original_handoff(
         "catboost_entropy",
         "catboost_archetype",
         *_AUXILIARY_COLUMNS,
-        *[f"catboost_p_{index}" for index in range(len(PATH_SHAPE_TYPES))],
+        *probability_columns,
     ]
     _require_columns(
         handoff,
@@ -244,16 +313,22 @@ def _validate_original_handoff(
     _finite(handoff, ["existing_alpha_ev", "catboost_entropy", *_AUXILIARY_COLUMNS], source="original execution-EV joined handoff")
     _finite(
         handoff,
-        [f"catboost_p_{index}" for index in range(len(PATH_SHAPE_TYPES))],
+        probability_columns,
         source="original execution-EV joined handoff",
     )
-    probabilities = handoff.loc[:, [f"catboost_p_{index}" for index in range(len(PATH_SHAPE_TYPES))]].to_numpy(dtype=float)
+    probabilities = handoff.loc[:, probability_columns].to_numpy(dtype=float)
     if not np.allclose(probabilities.sum(axis=1), 1.0, atol=2e-5, rtol=2e-5):
         raise ValueError("original execution-EV joined handoff: CatBoost probability vector must sum to one")
     entropy = -np.sum(np.clip(probabilities, 1e-12, 1.0) * np.log(np.clip(probabilities, 1e-12, 1.0)), axis=1)
     if not np.allclose(handoff["catboost_entropy"].to_numpy(dtype=float), entropy, atol=2e-5, rtol=2e-5):
         raise ValueError("original execution-EV joined handoff: CatBoost entropy does not match probability vector")
-    expected_arch = np.asarray(PATH_SHAPE_TYPES, dtype=object)[np.argmax(probabilities, axis=1)]
+    class_order = _find_class_order(provenance, len(probability_columns))
+    if class_order is None:
+        raise ValueError(
+            "joined handoff provenance: exact CatBoost class_order matching "
+            "the probability vector is required"
+        )
+    expected_arch = np.asarray(class_order, dtype=object)[np.argmax(probabilities, axis=1)]
     if not np.array_equal(handoff["catboost_archetype"].astype(str).to_numpy(), expected_arch):
         raise ValueError("original execution-EV joined handoff: CatBoost archetype must equal probability argmax")
     base_archetypes = sorted(column for column in handoff if column.startswith("base_archetype_label__"))
@@ -307,8 +382,25 @@ def _validate_execution_ev_oof(frame: pd.DataFrame) -> None:
             raise ValueError(f"execution-EV OOF ledger: {column!r} requires row-level OOF provenance")
     cutoff = _utc(frame["execution_ev_oof_train_decision_cutoff_utc"], source="execution-EV OOF ledger", column="execution_ev_oof_train_decision_cutoff_utc")
     available = _utc(frame["execution_ev_oof_available_at"], source="execution-EV OOF ledger", column="execution_ev_oof_available_at")
-    if not (cutoff < frame["__ts__"]).all() or not (available <= frame["__ts__"]).all():
-        raise ValueError("execution-EV OOF ledger: row-level cutoff/availability violates UTC OOF causality")
+    decision_values = (
+        frame["execution_decision_utc"]
+        if "execution_decision_utc" in frame
+        else (
+            frame["__decision_ts__"]
+            if "__decision_ts__" in frame
+            else frame["__ts__"] + pd.Timedelta(hours=1)
+        )
+    )
+    decision = _utc(
+        decision_values,
+        source="execution-EV OOF ledger",
+        column="execution decision timestamp",
+    )
+    if not (cutoff < frame["__ts__"]).all() or not (available <= decision).all():
+        raise ValueError(
+            "execution-EV OOF ledger: row-level cutoff/availability violates "
+            "decision-time UTC OOF causality"
+        )
 
 
 def _validate_ev_map(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> None:
@@ -365,7 +457,14 @@ def _validate_timing_labels(
         raise ValueError("1m timing-label manifest: execution-EV target signed identity does not match")
     if manifest.get("cost_accounting") != "fee_once_entry_spread_once_exit_spread_once":
         raise ValueError("1m timing-label manifest: requires decomposed fee/spread contract with costs charged once")
-    required = ("execution_future_path", "atr_1h", "fee", "entry_spread", "exit_spread")
+    required = (
+        "execution_future_path",
+        "atr_1h",
+        "decision_price",
+        "fee",
+        "entry_spread",
+        "exit_spread",
+    )
     _require_columns(
         frame,
         required,
@@ -374,9 +473,20 @@ def _validate_timing_labels(
     )
     if frame["execution_future_path"].isna().any() or frame["execution_future_path"].astype("string").str.strip().eq("").any():
         raise ValueError("signed 1m timing labels: execution_future_path is required for every row")
-    _finite(frame, ("atr_1h", "fee", "entry_spread", "exit_spread"), source="signed 1m timing labels")
-    if (frame[["atr_1h", "fee", "entry_spread", "exit_spread"]] < 0.0).any().any():
-        raise ValueError("signed 1m timing labels: ATR, fee, and spreads must be non-negative")
+    _finite(
+        frame,
+        ("atr_1h", "decision_price", "fee", "entry_spread", "exit_spread"),
+        source="signed 1m timing labels",
+    )
+    if (
+        frame[["atr_1h", "decision_price"]] <= 0.0
+    ).any().any() or (
+        frame[["fee", "entry_spread", "exit_spread"]] < 0.0
+    ).any().any():
+        raise ValueError(
+            "signed 1m timing labels: ATR and decision price must be positive; "
+            "fee and spreads must be non-negative"
+        )
 
 
 def _feature(
@@ -414,10 +524,11 @@ def _provenance(
     sources: Mapping[str, Path],
     manifests: Mapping[str, Path],
     base_archetypes: Sequence[str],
+    probability_columns: Sequence[str],
+    include_execution_ev_map: bool = True,
 ) -> dict[str, Any]:
     features: dict[str, dict[str, Any]] = {
         "frozen_execution_ev": _feature("execution_ev_prediction", "execution-EV direct all-features OOF", "execution_ev_oof_available_at", "execution_ev_oof_fold", "execution_ev_oof_train_decision_cutoff_utc", cost_spread_aware=True),
-        "frozen_ev_map": _feature("execution_ev_mapping", "signed execution-EV OOF map", "execution_ev_map_available_at", "execution_ev_map_oof_fold", "execution_ev_map_train_decision_cutoff_utc"),
         "frozen_alpha": _feature("alpha_outputs", "original alpha OOF", "alpha_available_at", "alpha_oof_fold", "alpha_train_decision_cutoff"),
         "frozen_residual": _feature("residual_outputs", "execution-EV residual all-features OOF", "execution_ev_oof_available_at", "execution_ev_oof_fold", "execution_ev_oof_train_decision_cutoff_utc"),
         "frozen_aux_time": _feature("auxiliary_heads", "time-to-MFE auxiliary OOF", "time_to_mfe_available_at", "time_to_mfe_oof_fold", "time_to_mfe_train_decision_cutoff"),
@@ -429,7 +540,15 @@ def _provenance(
         "frozen_side_is_long": _feature("side_archetypes", "exact canonical side identity", "alpha_available_at", model_input=True, frozen_bundle_id="joined_handoff_base_archetype_contract"),
         "frozen_side_is_short": _feature("side_archetypes", "exact canonical side identity", "alpha_available_at", model_input=True, frozen_bundle_id="joined_handoff_base_archetype_contract"),
     }
-    for index in range(len(PATH_SHAPE_TYPES)):
+    if include_execution_ev_map:
+        features["frozen_ev_map"] = _feature(
+            "execution_ev_mapping",
+            "signed execution-EV OOF map",
+            "execution_ev_map_available_at",
+            "execution_ev_map_oof_fold",
+            "execution_ev_map_train_decision_cutoff_utc",
+        )
+    for index, _ in enumerate(probability_columns):
         features[f"frozen_p_{index}"] = _feature("catboost_probabilities", "CatBoost full-vector OOF probability", "catboost_available_at", "catboost_oof_fold", "catboost_train_decision_cutoff")
     for column in base_archetypes:
         # Retain the original, exact base-archetype columns for audit and
@@ -442,7 +561,7 @@ def _provenance(
         "source_artifacts": {name: {"path": str(path.resolve()), "sha256": _sha256(path)} for name, path in sources.items()},
         "source_manifests": {name: {"path": str(path.resolve()), "sha256": _sha256(path)} for name, path in manifests.items()},
         "features": features,
-        "timing_labels": {"path_column": "execution_future_path", "atr_column": "atr_1h", "fee_column": "fee", "entry_spread_bps_column": "entry_spread", "exit_spread_bps_column": "exit_spread", "cost_accounting": "fee_once_entry_spread_once_exit_spread_once"},
+        "timing_labels": {"path_column": "execution_future_path", "atr_column": "atr_1h", "decision_price_column": "decision_price", "fee_column": "fee", "entry_spread_bps_column": "entry_spread", "exit_spread_bps_column": "exit_spread", "cost_accounting": "fee_once_entry_spread_once_exit_spread_once"},
         "materializer": {"name": Path(__file__).name, "output_sha256": _sha256(output)},
     }
 
@@ -454,24 +573,90 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         raise ValueError("refusing to overwrite an existing timing handoff or provenance JSON")
 
     handoff = _canonical_frame(args.joined_handoff, source="original execution-EV joined handoff")
+    if "__decision_ts__" not in handoff and "execution_decision_utc" in handoff:
+        handoff["__decision_ts__"] = handoff["execution_decision_utc"]
     original_provenance = _validate_original_handoff(handoff, args.joined_handoff_provenance)
+    probability_columns = _catboost_probability_columns(handoff)
     oof = _canonical_frame(args.execution_ev_oof, source="execution-EV OOF ledger")
+    if (
+        "execution_ev_oof_available_at" not in oof
+        and "execution_ev_oof_validation_start_utc" in oof
+    ):
+        # Historical runner v1 ledgers recorded the exact fold validation
+        # start but not its synonymous prediction-availability field.  The
+        # fold model is frozen before validation begins, so this is a causal,
+        # auditable compatibility derivation rather than a timestamp guess.
+        oof["execution_ev_oof_available_at"] = oof[
+            "execution_ev_oof_validation_start_utc"
+        ]
+    required_oof_fields = [
+        "direct__all_features",
+        "residual__all_features",
+        "direct__all_features__is_oof",
+        "residual__all_features__is_oof",
+        "execution_ev_oof_fold",
+        "execution_ev_oof_train_decision_cutoff_utc",
+        "execution_ev_oof_available_at",
+    ]
+    _require_columns(
+        oof,
+        required_oof_fields,
+        source="execution-EV OOF ledger",
+    )
+    eligible_oof = (
+        oof["direct__all_features__is_oof"].fillna(False).astype(bool)
+        & oof["residual__all_features__is_oof"].fillna(False).astype(bool)
+        & pd.to_numeric(oof["direct__all_features"], errors="coerce").notna()
+        & pd.to_numeric(oof["residual__all_features"], errors="coerce").notna()
+        & oof["execution_ev_oof_fold"].notna()
+        & oof["execution_ev_oof_train_decision_cutoff_utc"].notna()
+        & oof["execution_ev_oof_available_at"].notna()
+    )
+    oof = oof.loc[eligible_oof].copy().reset_index(drop=True)
+    if oof.empty:
+        raise ValueError("execution-EV OOF ledger has no jointly eligible OOF rows")
+    # Entry timing may only train where the upstream execution-EV prediction
+    # itself is OOF. This is a declared provenance filter, not an accidental
+    # inner join; every downstream source must cover the resulting universe.
+    handoff = _restrict_to_universe(
+        handoff, oof, source="original execution-EV joined handoff"
+    )
     _validate_execution_ev_run(args.execution_ev_runner_manifest, handoff_path=args.joined_handoff, provenance_path=args.joined_handoff_provenance, oof_path=args.execution_ev_oof)
     _validate_execution_ev_oof(oof)
 
-    ev_map = _canonical_frame(args.execution_ev_map_oof, source="execution-EV map OOF artifact")
-    map_manifest = _load_signed_artifact_manifest(args.execution_ev_map_manifest, source="execution-EV map manifest", artifact=args.execution_ev_map_oof, prediction_role=EV_MAP_ROLE)
-    _validate_ev_map(ev_map, map_manifest)
+    if (args.execution_ev_map_oof is None) != (args.execution_ev_map_manifest is None):
+        raise ValueError(
+            "provide both execution-EV map OOF and manifest, or omit both"
+        )
+    ev_map = None
+    if args.execution_ev_map_oof is not None:
+        ev_map = _canonical_frame(
+            args.execution_ev_map_oof, source="execution-EV map OOF artifact"
+        )
+        map_manifest = _load_signed_artifact_manifest(
+            args.execution_ev_map_manifest,
+            source="execution-EV map manifest",
+            artifact=args.execution_ev_map_oof,
+            prediction_role=EV_MAP_ROLE,
+        )
+        _validate_ev_map(ev_map, map_manifest)
+        ev_map = _restrict_to_universe(
+            ev_map, handoff, source="execution-EV map OOF artifact"
+        )
 
     target_manifest = _load_target_manifest(args.execution_ev_target_manifest)
     timing = _canonical_frame(args.timing_labels, source="signed 1m timing labels")
     timing_manifest = _load_signed_artifact_manifest(args.timing_labels_manifest, source="1m timing-label manifest", artifact=args.timing_labels, prediction_role=TIMING_PATH_ROLE, schema=TIMING_PATH_SCHEMA)
     _validate_timing_labels(timing, timing_manifest, target_manifest, args.execution_ev_target_manifest)
+    timing = _restrict_to_universe(
+        timing, handoff, source="signed 1m timing labels"
+    )
 
     joined = handoff.copy()
     joined = _join(joined, oof, source="execution-EV OOF ledger", columns=["direct__all_features", "residual__all_features", "execution_ev_oof_fold", "execution_ev_oof_train_decision_cutoff_utc", "execution_ev_oof_available_at"])
-    joined = _join(joined, ev_map, source="execution-EV map OOF artifact", columns=["mapped_execution_ev", "execution_ev_map_oof_fold", "execution_ev_map_train_decision_cutoff_utc", "execution_ev_map_available_at"])
-    joined = _join(joined, timing, source="signed 1m timing labels", columns=["execution_future_path", "atr_1h", "fee", "entry_spread", "exit_spread"])
+    if ev_map is not None:
+        joined = _join(joined, ev_map, source="execution-EV map OOF artifact", columns=["mapped_execution_ev", "execution_ev_map_oof_fold", "execution_ev_map_train_decision_cutoff_utc", "execution_ev_map_available_at"])
+    joined = _join(joined, timing, source="signed 1m timing labels", columns=["execution_future_path", "atr_1h", "decision_price", "fee", "entry_spread", "exit_spread"])
 
     _require_columns(joined, ("__decision_ts__", "execution_label_end_utc"), source="original execution-EV joined handoff")
     decision = _utc(joined["__decision_ts__"], source="original execution-EV joined handoff", column="__decision_ts__")
@@ -484,23 +669,27 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         "__ts__": joined["__ts__"], "__symbol__": joined["__symbol__"], "side_name": joined["side_name"], "candidate_id": joined["candidate_id"],
         "__decision_ts__": decision, "execution_label_end_utc": label_end,
         "catboost_archetype": joined["catboost_archetype"].astype(str),
-        "frozen_execution_ev": joined["direct__all_features"], "frozen_ev_map": joined["mapped_execution_ev"],
+        "frozen_execution_ev": joined["direct__all_features"],
         "frozen_alpha": joined["existing_alpha_ev"], "frozen_residual": joined["residual__all_features"],
         "frozen_entropy": joined["catboost_entropy"],
         "frozen_side_is_long": joined["side_name"].eq("long").astype(np.float32),
         "frozen_side_is_short": joined["side_name"].eq("short").astype(np.float32),
         "execution_ev_oof_fold": joined["execution_ev_oof_fold"], "execution_ev_oof_train_decision_cutoff_utc": joined["execution_ev_oof_train_decision_cutoff_utc"], "execution_ev_oof_available_at": joined["execution_ev_oof_available_at"],
-        "execution_ev_map_oof_fold": joined["execution_ev_map_oof_fold"], "execution_ev_map_train_decision_cutoff_utc": joined["execution_ev_map_train_decision_cutoff_utc"], "execution_ev_map_available_at": joined["execution_ev_map_available_at"],
-        "execution_future_path": joined["execution_future_path"], "atr_1h": joined["atr_1h"], "fee": joined["fee"], "entry_spread": joined["entry_spread"], "exit_spread": joined["exit_spread"],
+        "execution_future_path": joined["execution_future_path"], "atr_1h": joined["atr_1h"], "decision_price": joined["decision_price"], "fee": joined["fee"], "entry_spread": joined["entry_spread"], "exit_spread": joined["exit_spread"],
     })
+    if ev_map is not None:
+        output_frame["frozen_ev_map"] = joined["mapped_execution_ev"]
+        output_frame["execution_ev_map_oof_fold"] = joined["execution_ev_map_oof_fold"]
+        output_frame["execution_ev_map_train_decision_cutoff_utc"] = joined["execution_ev_map_train_decision_cutoff_utc"]
+        output_frame["execution_ev_map_available_at"] = joined["execution_ev_map_available_at"]
     for source in _HANDOFF_OOF_SOURCES:
         for suffix in ("oof_fold", "train_decision_cutoff", "available_at"):
             column = f"{source}_{suffix}"
             output_frame[column] = joined[column]
     for raw, output_name in _AUXILIARY_COLUMNS.items():
         output_frame[output_name] = joined[raw]
-    for index in range(len(PATH_SHAPE_TYPES)):
-        output_frame[f"frozen_p_{index}"] = joined[f"catboost_p_{index}"]
+    for index, source_column in enumerate(probability_columns):
+        output_frame[f"frozen_p_{index}"] = joined[source_column]
     for column in base_archetypes:
         output_frame[column] = joined[column]
     _assert_unique(output_frame, source="final entry-timing handoff")
@@ -508,13 +697,34 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output_frame.to_parquet(output, index=False, compression="zstd")
+    source_paths = {
+        "joined_handoff": args.joined_handoff,
+        "execution_ev_oof": args.execution_ev_oof,
+        "timing_labels": args.timing_labels,
+    }
+    manifest_paths = {
+        "joined_handoff_provenance": args.joined_handoff_provenance,
+        "execution_ev_runner": args.execution_ev_runner_manifest,
+        "timing_labels": args.timing_labels_manifest,
+        "execution_ev_target": args.execution_ev_target_manifest,
+    }
+    if ev_map is not None:
+        source_paths["execution_ev_map_oof"] = args.execution_ev_map_oof
+        manifest_paths["execution_ev_map"] = args.execution_ev_map_manifest
     provenance = _provenance(
         output=output,
-        sources={"joined_handoff": args.joined_handoff, "execution_ev_oof": args.execution_ev_oof, "execution_ev_map_oof": args.execution_ev_map_oof, "timing_labels": args.timing_labels},
-        manifests={"joined_handoff_provenance": args.joined_handoff_provenance, "execution_ev_runner": args.execution_ev_runner_manifest, "execution_ev_map": args.execution_ev_map_manifest, "timing_labels": args.timing_labels_manifest, "execution_ev_target": args.execution_ev_target_manifest},
+        sources=source_paths,
+        manifests=manifest_paths,
         base_archetypes=base_archetypes,
+        probability_columns=probability_columns,
+        include_execution_ev_map=ev_map is not None,
     )
     provenance["handoff"]["row_count"] = int(len(output_frame))
+    provenance["handoff"]["eligibility"] = {
+        "contract": "jointly_finite_true_execution_ev_outer_oof",
+        "rows": int(len(output_frame)),
+        "path_coverage_within_eligible_universe": 1.0,
+    }
     provenance_path.write_text(json.dumps(_json_safe(provenance), indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"handoff": output, "provenance": provenance_path}
 
@@ -525,8 +735,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--joined-handoff-provenance", type=Path, required=True)
     parser.add_argument("--execution-ev-oof", type=Path, required=True)
     parser.add_argument("--execution-ev-runner-manifest", type=Path, required=True)
-    parser.add_argument("--execution-ev-map-oof", type=Path, required=True)
-    parser.add_argument("--execution-ev-map-manifest", type=Path, required=True)
+    parser.add_argument("--execution-ev-map-oof", type=Path, default=None)
+    parser.add_argument("--execution-ev-map-manifest", type=Path, default=None)
     parser.add_argument("--timing-labels", type=Path, required=True)
     parser.add_argument("--timing-labels-manifest", type=Path, required=True)
     parser.add_argument("--execution-ev-target-manifest", type=Path, required=True)

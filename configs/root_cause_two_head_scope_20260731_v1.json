@@ -1,0 +1,57 @@
+{
+  "schema": "root_cause_two_head_scope_v1",
+  "status": "FROZEN_DIAGNOSTIC_SCOPE",
+  "trainable_layers": [
+    {
+      "id": "base_directional_alpha",
+      "role": "learn the broad directional/opportunity target",
+      "metric_namespace": "base_directional__"
+    },
+    {
+      "id": "stopped_gradient_residual",
+      "role": "learn the remaining gross-economic error from strictly OOF base predictions",
+      "metric_namespace": "residual_economic__",
+      "requires_oof_base_prediction": true
+    }
+  ],
+  "disabled_layers": [
+    "catboost_path_archetype",
+    "path_auxiliary_heads",
+    "execution_ev_meta_head",
+    "entry_timing_meta_head",
+    "action_policy_head",
+    "sizing_head",
+    "portfolio_optimizer"
+  ],
+  "reporting_contract": {
+    "base_directional_metrics": [
+      "roc_auc",
+      "pr_auc",
+      "log_loss",
+      "brier",
+      "calibration_slope",
+      "calibration_intercept",
+      "spearman_ic",
+      "top_decile_directional_rate"
+    ],
+    "residual_economic_metrics": [
+      "mae_bps",
+      "huber_bps",
+      "rmse_bps",
+      "spearman_ic",
+      "signed_residual_mean_bps",
+      "signed_residual_autocorrelation",
+      "gross_top_1_bps",
+      "gross_top_5_bps",
+      "gross_top_10_bps",
+      "gross_top_20_bps",
+      "net_top_10_bps",
+      "worst_month_gross_bps",
+      "worst_side_gross_bps"
+    ],
+    "mixing_base_and_residual_metric_rows": false
+  },
+  "research_only": true,
+  "promotion_allowed": false,
+  "portfolio_changes_allowed": false
+}

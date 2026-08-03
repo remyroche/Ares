@@ -86,6 +86,58 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
+def _historical_source_lineage(
+    manifest_path: Path | None,
+    *,
+    candidates_path: Path,
+    context_path: Path,
+    path_targets_path: Path,
+    policy_path: Path,
+) -> dict[str, Any] | None:
+    """Verify and carry an optional research-only historical input contract."""
+
+    if manifest_path is None:
+        return None
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "historical_backcast_exact1m_label_inputs_v1":
+        raise ValueError("historical source-lineage manifest schema is invalid")
+    expected = {
+        "candidates": candidates_path,
+        "context": context_path,
+        "path_targets": path_targets_path,
+    }
+    for key, path in expected.items():
+        if (payload.get("outputs", {}).get(key, {}).get("sha256")) != _sha256(path):
+            raise ValueError(
+                f"historical source-lineage manifest does not bind {key}"
+            )
+    if (payload.get("policy_json", {}).get("sha256")) != _sha256(policy_path):
+        raise ValueError("historical source-lineage manifest does not bind policy")
+    if (
+        payload.get("oof_status") != "not_oof"
+        or bool(payload.get("execution_parity_claim"))
+        or bool(payload.get("promotion_eligible"))
+    ):
+        raise ValueError("historical source-lineage flags are unsafe")
+    return {
+        "manifest": {
+            "path": str(manifest_path.resolve()),
+            "sha256": _sha256(manifest_path),
+        },
+        "evidence_scope": payload.get("evidence_scope"),
+        "lineage": payload.get("lineage"),
+        "oof_status": "not_oof",
+        "execution_parity_claim": False,
+        "promotion_eligible": False,
+        "economics": payload.get("economics"),
+        "historical_l2_spread_available": bool(
+            payload.get("historical_l2_spread_available")
+        ),
+        "atr_contract": payload.get("atr_contract"),
+        "decision_to_path": payload.get("decision_to_path"),
+    }
+
+
 def _utc(series: pd.Series, *, column: str) -> pd.Series:
     result = pd.to_datetime(series, utc=True, errors="coerce")
     if result.isna().any():
@@ -99,6 +151,7 @@ def _load_candidates(
     path_targets_path: Path,
     *,
     decision_delay_minutes: int,
+    allow_subset: bool = False,
 ) -> pd.DataFrame:
     candidates = pd.read_parquet(candidates_path, columns=list(IDENTITY))
     context_schema = set(pq.read_schema(context_path).names)
@@ -142,7 +195,10 @@ def _load_candidates(
         "__barrier_pct__",
         "__path_auxiliary_atr_fraction__",
     )
-    if merged[list(required)].isna().any().any():
+    incomplete = merged[list(required)].isna().any(axis=1)
+    if incomplete.any() and allow_subset:
+        merged = merged.loc[~incomplete].copy()
+    elif incomplete.any():
         missing = {
             column: int(merged[column].isna().sum())
             for column in required
@@ -159,7 +215,7 @@ def _load_candidates(
     merged["__decision_ts__"] = merged["__ts__"] + pd.Timedelta(
         minutes=int(decision_delay_minutes)
     )
-    return merged
+    return merged.reset_index(drop=True)
 
 
 def _load_symbol_bars(
@@ -264,17 +320,46 @@ def _coverage_rows(
     return audit, payload
 
 
-def _policy_contract(policy_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _policy_contract(
+    policy_path: Path,
+    *,
+    horizon_minutes_override: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     contract = policy.get("exit_geometry_contract")
     strategies = policy.get("strategies")
     if not isinstance(contract, Mapping) or not isinstance(strategies, list):
         raise ValueError("policy JSON lacks exit_geometry_contract or strategies")
+    obsolete_minute_decay = sorted(
+        {
+            str(key)
+            for strategy in strategies
+            if isinstance(strategy, Mapping)
+            for key, value in strategy.items()
+            if "decay" in str(key).lower()
+            and "minute" in str(key).lower()
+            and value is not None
+        }
+    )
+    if obsolete_minute_decay:
+        raise ValueError(
+            "policy contains obsolete non-null minute-decay fields that are "
+            f"not converted to exact 1m bars: {obsolete_minute_decay}"
+        )
     if str(contract.get("replay_timeframe")) != "1m":
         raise ValueError("policy replay timeframe must be exact 1m")
-    horizon = int(contract.get("horizon_minutes", 0))
-    if horizon <= 0:
+    source_horizon = int(contract.get("horizon_minutes", 0))
+    if source_horizon <= 0:
         raise ValueError("policy horizon_minutes must be positive")
+    horizon = (
+        int(horizon_minutes_override)
+        if horizon_minutes_override is not None
+        else source_horizon
+    )
+    if horizon <= 0 or horizon > source_horizon:
+        raise ValueError(
+            "horizon override must be positive and cannot exceed the signed policy horizon"
+        )
     expected_pathway = str(contract.get("policy_pathway_id", ""))
     if not expected_pathway:
         raise ValueError("policy pathway ID is missing")
@@ -287,6 +372,13 @@ def _policy_contract(policy_path: Path) -> tuple[dict[str, Any], dict[str, Any]]
         "simulator": CANONICAL_SIMULATOR,
         "source_policy_sha256": _sha256(policy_path),
     }
+    if horizon != source_horizon:
+        exit_contract.update(
+            {
+                "source_policy_horizon_minutes": source_horizon,
+                "horizon_override": "timeout_only_ablation; exit geometry unchanged",
+            }
+        )
     return policy, exit_contract
 
 
@@ -458,12 +550,17 @@ def _simulate_batch(
 def stage(args: argparse.Namespace) -> dict[str, Path]:
     if args.output.exists() or args.manifest.exists() or args.coverage_csv.exists():
         raise ValueError("refusing to overwrite stage outputs")
-    policy, exit_contract = _policy_contract(args.policy_json)
+    policy, exit_contract = _policy_contract(
+        args.policy_json,
+        horizon_minutes_override=getattr(args, "horizon_minutes_override", None),
+    )
+    candidate_input_rows = int(pq.ParquetFile(args.candidates).metadata.num_rows)
     candidates = _load_candidates(
         args.candidates,
         args.context,
         args.path_targets,
         decision_delay_minutes=args.decision_delay_minutes,
+        allow_subset=bool(args.allow_subset),
     )
     candidates, geometry = _resolved_geometry(candidates, policy)
     audit, coverage = _coverage_rows(
@@ -493,6 +590,15 @@ def stage(args: argparse.Namespace) -> dict[str, Path]:
             "path_targets_sha256": _sha256(args.path_targets),
             "policy": str(args.policy_json),
             "policy_sha256": _sha256(args.policy_json),
+            "exact_join": {
+                "input_candidate_rows": candidate_input_rows,
+                "admitted_rows": int(len(candidates)),
+                "dropped_incomplete_context_or_path_rows": int(
+                    candidate_input_rows - len(candidates)
+                ),
+                "subset_allowed": bool(args.allow_subset),
+                "imputation": "none",
+            },
         },
         "store": str(canonical_kraken_execution_1m_root(args.data_root)),
         "exit_policy_contract": exit_contract,
@@ -525,13 +631,29 @@ def materialize(args: argparse.Namespace) -> dict[str, Path]:
             "deployed spread baseline is not loaded from --spread-baseline; "
             "set EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH before launch"
         )
-    policy, exit_contract = _policy_contract(args.policy_json)
+    policy, exit_contract = _policy_contract(
+        args.policy_json,
+        horizon_minutes_override=getattr(args, "horizon_minutes_override", None),
+    )
+    historical_lineage = _historical_source_lineage(
+        getattr(args, "source_lineage_manifest", None),
+        candidates_path=args.candidates,
+        context_path=args.context,
+        path_targets_path=args.path_targets,
+        policy_path=args.policy_json,
+    )
+    if historical_lineage is not None and int(exit_contract["horizon_minutes"]) != 720:
+        raise ValueError(
+            "historical exact-path lineage requires the signed 720-minute replay"
+        )
     horizon = int(exit_contract["horizon_minutes"])
+    candidate_input_rows = int(pq.ParquetFile(args.candidates).metadata.num_rows)
     candidates = _load_candidates(
         args.candidates,
         args.context,
         args.path_targets,
         decision_delay_minutes=args.decision_delay_minutes,
+        allow_subset=bool(args.allow_subset),
     )
     candidates, geometry = _resolved_geometry(candidates, policy)
     audit, coverage = _coverage_rows(
@@ -655,7 +777,17 @@ def materialize(args: argparse.Namespace) -> dict[str, Path]:
             "path_targets_sha256": _sha256(args.path_targets),
             "policy": str(args.policy_json),
             "policy_sha256": _sha256(args.policy_json),
+            "exact_join": {
+                "input_candidate_rows": candidate_input_rows,
+                "admitted_rows": int(len(candidates)),
+                "dropped_incomplete_context_or_path_rows": int(
+                    candidate_input_rows - len(candidates)
+                ),
+                "subset_allowed": bool(args.allow_subset),
+                "imputation": "none",
+            },
         },
+        "historical_lineage": historical_lineage,
         "exit_policy_contract": exit_contract,
         "targets": {
             "execution_net_ev_12h": {
@@ -712,8 +844,26 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context", type=Path, required=True)
     parser.add_argument("--path-targets", type=Path, required=True)
     parser.add_argument("--policy-json", type=Path, required=True)
+    parser.add_argument(
+        "--source-lineage-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Optional signed historical label-input manifest; when supplied, "
+            "its research-only lineage and exact input hashes are verified and "
+            "propagated to the policy-label output."
+        ),
+    )
     parser.add_argument("--data-root", type=Path, default=Path("data_perp"))
     parser.add_argument("--decision-delay-minutes", type=int, default=60)
+    parser.add_argument(
+        "--horizon-minutes-override",
+        type=int,
+        help=(
+            "Shorter timeout-only ablation horizon; the signed exit geometry "
+            "is unchanged and the override is recorded in the output contract."
+        ),
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -724,6 +874,14 @@ def _parser() -> argparse.ArgumentParser:
     stage_parser.add_argument("--output", type=Path, required=True)
     stage_parser.add_argument("--manifest", type=Path, required=True)
     stage_parser.add_argument("--coverage-csv", type=Path, required=True)
+    stage_parser.add_argument(
+        "--allow-subset",
+        action="store_true",
+        help=(
+            "permit an explicitly audited exact subset when context or path inputs "
+            "do not cover every candidate; attrition is recorded in the manifest"
+        ),
+    )
     materialize_parser = commands.add_parser("materialize")
     _common(materialize_parser)
     materialize_parser.add_argument("--output", type=Path, required=True)

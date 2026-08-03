@@ -1,0 +1,97 @@
+{
+  "schema": "prospective_opportunity_incident_gate_config_v1",
+  "status": "FAIL_CLOSED_NO_ROUTER_AUTHORIZED",
+  "gate": {
+    "minimum_independent_incidents": 60,
+    "target_independent_incidents": 100,
+    "require_packet_frozen": true,
+    "require_available_by_asof": true,
+    "require_adequate_reference_for_taxonomy": true,
+    "require_incumbent_portfolio_parity_for_promotion": true
+  },
+  "independence_contract": {
+    "incident_merge_gap_hours": 6,
+    "incident_active_window_hours": 12,
+    "recovery_or_censor_hours": 72,
+    "identity": "lineage + opportunity_incident_id",
+    "no_cross_lineage_pooling": true,
+    "no_retroactive_insert_after_lineage_watermark": true,
+    "no_frozen_packet_rewrite": true
+  },
+  "lineages": {
+    "historical_2025_raw_alpha": {
+      "contract_id": "historical_2025_raw_alpha_exact12h_global_top10_v1",
+      "evidence_class": "retrospective_separate_lineage",
+      "detector_support_eligible": false,
+      "portfolio_promotion_eligible": false
+    },
+    "current_2026_execution_ev": {
+      "contract_id": "current_2026_repaired_heads_recent_side_iso_global_top10_12h_research_v1",
+      "evidence_class": "strict_model_oos_research_book",
+      "detector_support_eligible": true,
+      "portfolio_promotion_eligible": false,
+      "disclosure": "snapshot global-top10 research book; no immutable decision ledger or incumbent portfolio-parity binding"
+    },
+    "historical_2025_common30_12h_cost100bps_direct_ev_oof": {
+      "contract_id": "historical_2025_common30_direct_ev_oof_cost100bps_v1",
+      "evidence_class": "retrospective_counterfactual_separate_lineage",
+      "detector_support_eligible": false,
+      "portfolio_promotion_eligible": false
+    },
+    "future_incumbent_execution_policy": {
+      "contract_id": null,
+      "evidence_class": "prospective_incumbent_portfolio",
+      "detector_support_eligible": true,
+      "portfolio_promotion_eligible": true,
+      "status": "UNBOUND_PENDING_IMMUTABLE_POLICY_AND_DECISION_LEDGER"
+    }
+  },
+  "current_role_contract": {
+    "retrospective_roles": [
+      "outer_oof"
+    ],
+    "forward_research_roles": [
+      "retired_resolved_forward_oos",
+      "strict_forward_oos",
+      "frozen_final_fit_forward_oos"
+    ],
+    "mixed_role_status": "INELIGIBLE"
+  },
+  "sources": {
+    "packet_snapshot_manifest": {
+      "path": "data_perp/artifacts/economic_opportunity_state_packets_20260729_v1/manifest.json",
+      "sha256": "d161284a32fd2c69e78cd57a44bb6371d26803079f1e4c6187a9d2198227484d"
+    },
+    "packet_snapshot_packets": {
+      "path": "data_perp/artifacts/economic_opportunity_state_packets_20260729_v1/strict_event_packets.parquet",
+      "sha256": "a187d82915f66a42f4dbd25854a6a30c77ff1519e9c4ecf9774e3f43a1d7b8e6"
+    },
+    "current_selected_candidates": {
+      "path": "data_perp/artifacts/current_lineage_exact_failure_labels_resolved_july19_20260729_v1/frozen_global_top10_mapped_candidates.parquet",
+      "sha256": "ee5c56243a7e1fae392ca723ceabe8ac6a96630ffcf109e202db0904975c09d4"
+    },
+    "common30_manifest": {
+      "path": "data_perp/artifacts/common30_opportunity_support_extension_20260729_v1/manifest.json",
+      "sha256": "a313f364e273d9270c9068a67d326c3ea1b2715ce420758249afe0358f51f4d8"
+    },
+    "common30_packets": {
+      "path": "data_perp/artifacts/common30_opportunity_support_extension_20260729_v1/strict_event_packets.parquet",
+      "sha256": "369c866bda200cfbc06e8238ef5c4018e1fd5980c6b2b13bb9dd5569cb0f1f57"
+    },
+    "portfolio_replay_manifest": {
+      "path": "data_perp/artifacts/execution_ev_context_clean_global_top10_portfolio_constraints_forward_july19_20260726_v2/manifest.json",
+      "sha256": "dd93412d65e7409dfc0454c45f5a5803c58de276024196400f7765d6e55c0e53"
+    },
+    "frozen_transition_registry": {
+      "path": "configs/frozen_transition_research_stack_20260729_v1.json",
+      "sha256": "9f71077da72c9a36dfd354519533961f20363eadc051b61c9de7985ae28256f8"
+    }
+  },
+  "forbidden_actions_below_gate": [
+    "train supervised opportunity-state router",
+    "promote failure classifier",
+    "apply opportunity-state admission veto",
+    "apply transition-based exposure control",
+    "pool historical, common30, current research, or incumbent-policy lineages"
+  ]
+}

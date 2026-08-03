@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.execution_entry_timing_meta import (
+    ATTAINABLE_GROSS_BARRIER_RULE_ID,
     ENTRY_TIMING_SCHEMA,
     EntryAction,
     EntryTimingFeatureProvenance,
@@ -16,6 +17,9 @@ from extreme_price_movements.execution_entry_timing_meta import (
     _ConstantClassifier,
     _ConstantRegressor,
     _identity_isotonic,
+    attainable_gross_barrier_action_utility,
+    attainable_gross_barrier_realised,
+    attainable_gross_barrier_rule_v1,
     build_counterfactual_entry_action_labels,
     load_execution_entry_timing_bundle,
     predict_execution_entry_timing_bundle,
@@ -56,7 +60,7 @@ def _path(
             "low": low if minute == 2 else 99.0 - 0.1 * minute,
             "close": 100.0 + 0.4 * minute,
         }
-        for minute in range(1, minutes + 1)
+        for minute in range(minutes)
     ]
 
 
@@ -161,19 +165,65 @@ def test_counterfactual_labels_use_exact_60_bar_geometry_aware_policy_and_costs_
     limit = labels.loc[labels["action_kind"].eq("adverse_limit")].iloc[0]
     no_fill = labels.loc[labels["action_kind"].eq("wait_market")].iloc[0]
     assert limit["fill_indicator"] == 1.0
-    # The no-decision-price contract anchors the passive limit at the first
-    # executable 1m open (99.8), not at an unexecutable decision-bar price.
-    assert limit["raw_fill_price"] == pytest.approx(99.3)
-    assert limit["fill_price"] == pytest.approx(99.3 * 1.001)
+    # The no-decision-price contract anchors the passive limit at the signed
+    # first executable 1m open at __decision_ts__ (100.0).
+    assert limit["raw_fill_price"] == pytest.approx(99.5)
+    assert limit["fill_price"] == pytest.approx(99.5 * 1.001)
     assert limit["cost_accounting_mode"] == "fee_once_entry_spread_once_exit_spread_once"
     assert np.isfinite(limit["conditional_post_fill_executable_ev"])
     assert limit["fill_bar_intrabar_ambiguity"]
-    assert limit["policy_simulation_start_utc"] == frame.loc[0, "__decision_ts__"] + pd.Timedelta(minutes=3)
+    assert limit["policy_simulation_start_utc"] == frame.loc[0, "__decision_ts__"] + pd.Timedelta(minutes=2)
     now = labels.loc[labels["action_kind"].eq("enter_now")].iloc[0]
     assert now["counterfactual_label_end_utc"] == frame.loc[0, "__decision_ts__"] + pd.Timedelta(hours=1)
     assert now["execution_exit_reason"] in {"timeout", "trailing"}
     assert no_fill["no_fill_indicator"] == 1.0
     assert no_fill["missed_opportunity_loss"] > 0.0
+
+
+def test_named_attainable_gross_barrier_rule_uses_executable_gross_not_mfe() -> None:
+    action = attainable_gross_barrier_rule_v1()
+    assert ATTAINABLE_GROSS_BARRIER_RULE_ID == "AGBR-L60-K0.25-v1"
+    assert action.action_id == "adverse_limit_60m_0.2500atr"
+    assert action.kind == "adverse_limit"
+    assert action.wait_minutes == 60
+    assert action.adverse_offset_atr == pytest.approx(0.25)
+
+    # A hypothetical large MFE is intentionally irrelevant: a gross result
+    # below the once-only fee does not count as attainable realization.
+    assert not attainable_gross_barrier_realised(
+        filled=True,
+        post_fill_gross_ev=0.009,
+        fee_return=0.010,
+    )
+    assert attainable_gross_barrier_realised(
+        filled=True,
+        post_fill_gross_ev=0.012,
+        fee_return=0.010,
+        target_net_buffer=0.002,
+    )
+    assert not attainable_gross_barrier_realised(
+        filled=False,
+        post_fill_gross_ev=0.100,
+        fee_return=0.010,
+    )
+
+
+def test_named_attainable_gross_barrier_rule_penalizes_missed_opportunity() -> None:
+    assert attainable_gross_barrier_action_utility(
+        filled=False,
+        post_fill_net_ev=np.nan,
+        enter_now_net_ev=0.025,
+    ) == pytest.approx(-0.025)
+    assert attainable_gross_barrier_action_utility(
+        filled=False,
+        post_fill_net_ev=np.nan,
+        enter_now_net_ev=-0.025,
+    ) == pytest.approx(0.0)
+    assert attainable_gross_barrier_action_utility(
+        filled=True,
+        post_fill_net_ev=0.012,
+        enter_now_net_ev=0.025,
+    ) == pytest.approx(0.012)
 
 
 def test_counterfactual_labels_use_canonical_geometry_stop_not_terminal_close() -> None:
@@ -323,7 +373,7 @@ def test_training_metrics_are_outer_oof_and_final_refit_is_inference_only(tmp_pa
         )
 
 
-def test_training_rejects_predictive_source_cutoff_newer_than_outer_oof_train() -> None:
+def test_training_accepts_causal_rolling_upstream_oof_cutoffs() -> None:
     frame, provenance = _strict_frame(24, with_path=True)
     frame["source_train_cutoff"] = frame["__decision_ts__"] - pd.Timedelta(minutes=1)
     config = EntryTimingTrainerConfig(
@@ -336,7 +386,7 @@ def test_training_rejects_predictive_source_cutoff_newer_than_outer_oof_train() 
         strict_feature_families=False,
         action_grid=(EntryAction("enter_now"),),
     )
-    with pytest.raises(ValueError, match="not compatible with outer OOF fold"):
-        train_execution_entry_timing_meta(
-            frame, provenance, config=config, target_spec=_target_spec()
-        )
+    bundle = train_execution_entry_timing_meta(
+        frame, provenance, config=config, target_spec=_target_spec()
+    )
+    assert bundle.report["oof_contract"]

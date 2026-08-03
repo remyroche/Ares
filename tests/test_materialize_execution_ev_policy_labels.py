@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -109,6 +110,78 @@ def test_geometry_uses_observable_local_key_then_parent_fallback() -> None:
     ]
     assert audit["side_archetype_rows"] == 1
     assert audit["side_parent_fallback_rows"] == 1
+
+
+def test_stage_parser_exposes_audited_subset_flag() -> None:
+    parsed = materializer._parser().parse_args(
+        [
+            "stage",
+            "--candidates",
+            "candidates.parquet",
+            "--context",
+            "context.parquet",
+            "--path-targets",
+            "targets.parquet",
+            "--policy-json",
+            "policy.json",
+            "--output",
+            "missing.parquet",
+            "--manifest",
+            "manifest.json",
+            "--coverage-csv",
+            "coverage.csv",
+            "--allow-subset",
+        ]
+    )
+    assert parsed.allow_subset is True
+
+
+def test_policy_rejects_unconverted_minute_decay_fields(tmp_path: Path) -> None:
+    policy = _policy()
+    policy["strategies"][0]["adverse_decay_minutes"] = 30
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+    with pytest.raises(ValueError, match="minute-decay"):
+        materializer._policy_contract(path)
+
+
+def test_historical_lineage_binds_all_replay_inputs(tmp_path: Path) -> None:
+    paths = {}
+    for name in ("candidates", "context", "path_targets"):
+        path = tmp_path / f"{name}.parquet"
+        pd.DataFrame({"value": [name]}).to_parquet(path, index=False)
+        paths[name] = path
+    policy = tmp_path / "policy.json"
+    policy.write_text("{}")
+    lineage = {
+        "schema": "historical_backcast_exact1m_label_inputs_v1",
+        "outputs": {
+            name: {"sha256": materializer._sha256(path)}
+            for name, path in paths.items()
+        },
+        "policy_json": {"sha256": materializer._sha256(policy)},
+        "evidence_scope": "frozen_backcast_diagnostic_not_oof",
+        "lineage": "historical_frozen_backcast_exact1m_research_only",
+        "oof_status": "not_oof",
+        "execution_parity_claim": False,
+        "promotion_eligible": False,
+        "economics": "current_frozen_spread_counterfactual",
+        "historical_l2_spread_available": False,
+        "atr_contract": "diagnostic",
+        "decision_to_path": "[signal+1h, signal+1h+12h)",
+    }
+    manifest = tmp_path / "lineage.json"
+    manifest.write_text(json.dumps(lineage))
+    resolved = materializer._historical_source_lineage(
+        manifest,
+        candidates_path=paths["candidates"],
+        context_path=paths["context"],
+        path_targets_path=paths["path_targets"],
+        policy_path=policy,
+    )
+    assert resolved is not None
+    assert resolved["oof_status"] == "not_oof"
+    assert resolved["execution_parity_claim"] is False
 
 
 def test_materialize_writes_signed_exact_policy_labels(

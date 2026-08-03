@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -37,6 +38,14 @@ from extreme_price_movements.data_store import (
 def _owned(symbol: str, partition_count: int, partition_id: int) -> bool:
     digest = hashlib.blake2b(symbol.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, "little") % partition_count == partition_id
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _merge_windows(
@@ -153,6 +162,11 @@ def main() -> int:
     parser.add_argument("--no-compact", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--manifest", required=True)
+    parser.add_argument(
+        "--stage-manifest",
+        default="",
+        help="Optional frozen request-stage manifest to hash-bind into the download audit.",
+    )
     args = parser.parse_args()
 
     partition_count = max(1, int(args.partition_count))
@@ -163,9 +177,29 @@ def main() -> int:
         raise ValueError("horizon-minutes must be positive")
 
     os.environ.setdefault("EPM_EXCHANGE", "krakenfutures")
-    candidates = pd.read_parquet(args.candidates, columns=["timestamp", "symbol"])
+    candidate_path = Path(args.candidates)
+    candidate_columns = ["timestamp", "symbol"]
+    parquet_columns = set(pq.read_schema(candidate_path).names)
+    if "product_id" in parquet_columns:
+        candidate_columns.append("product_id")
+    candidates = pd.read_parquet(candidate_path, columns=candidate_columns)
     candidates["timestamp"] = pd.to_datetime(candidates["timestamp"], utc=True, errors="coerce")
     candidates = candidates.dropna(subset=["timestamp", "symbol"])
+    product_ids: dict[str, str] = {}
+    if "product_id" in candidates.columns:
+        for symbol, group in candidates.groupby("symbol", sort=True):
+            values = sorted(
+                {
+                    str(value).strip()
+                    for value in group["product_id"].dropna()
+                    if str(value).strip()
+                }
+            )
+            if len(values) != 1:
+                raise ValueError(
+                    f"{symbol} must map to exactly one frozen product_id, got {values}"
+                )
+            product_ids[str(symbol)] = values[0]
     grouped = {
         str(symbol): _merge_windows(
             group["timestamp"], int(args.horizon_minutes), int(args.warmup_minutes)
@@ -187,6 +221,7 @@ def main() -> int:
         error = None
         fetched_rows = 0
         fetched_requests = 0
+        product_id = product_ids.get(symbol)
         try:
             existing = _load_existing(store, symbol, windows)
             before_covered, required, before_fraction = _coverage(windows, existing)
@@ -198,6 +233,7 @@ def main() -> int:
                 int(args.chunk_minutes),
             )
             if not args.verify_only:
+                pending_frames: list[pd.DataFrame] = []
                 for start, end in buckets:
                     fresh = _fetch_ohlcv_paged(
                         exchange,
@@ -206,6 +242,7 @@ def main() -> int:
                         int(end.value // 10**6),
                         timeframe="1m",
                         limit=2_000,
+                        params={"product_id": product_id} if product_id else None,
                     )
                     fetched_requests += 1
                     if fresh is not None and not fresh.empty:
@@ -216,13 +253,17 @@ def main() -> int:
                         # that were absent when this repair started.
                         fresh = fresh.loc[~fresh.index.isin(existing_minutes)]
                         if not fresh.empty:
-                            append_result = append_missing_kraken_execution_1m(
-                                args.data_root, symbol, fresh
-                            )
-                            fetched_rows += int(append_result["appended_rows"])
+                            pending_frames.append(fresh)
                             existing_minutes.update(_minute_index(fresh))
                     if float(args.sleep_seconds) > 0.0:
                         time.sleep(float(args.sleep_seconds))
+                if pending_frames:
+                    pending = pd.concat(pending_frames).sort_index()
+                    pending = pending.loc[~pending.index.duplicated(keep="last")]
+                    append_result = append_missing_kraken_execution_1m(
+                        args.data_root, symbol, pending
+                    )
+                    fetched_rows += int(append_result["appended_rows"])
             final = _load_existing(store, symbol, windows)
             covered, required, fraction = _coverage(windows, final)
             if covered < required:
@@ -235,6 +276,7 @@ def main() -> int:
             error = f"{type(exc).__name__}: {exc}"
         result = {
             "symbol": symbol,
+            "product_id": product_id,
             "windows": len(windows),
             "required_minutes": required,
             "covered_before": before_covered,
@@ -259,6 +301,15 @@ def main() -> int:
     manifest = {
         "generated_by": "download_policy_execution_1m",
         "candidate_path": str(args.candidates),
+        "candidate_sha256": _sha256(candidate_path),
+        "stage_manifest": (
+            {
+                "path": str(Path(args.stage_manifest).resolve()),
+                "sha256": _sha256(Path(args.stage_manifest)),
+            }
+            if args.stage_manifest
+            else None
+        ),
         "store_root": str(canonical_root),
         "timeframe": "1m",
         "horizon_minutes": int(args.horizon_minutes),
@@ -270,6 +321,11 @@ def main() -> int:
         "symbols": total,
         "verify_only": bool(args.verify_only),
         "storage_contract": "canonical_kraken_execution_1m_immutable_append_missing_v1",
+        "product_mapping_contract": (
+            "frozen_product_id_from_candidate_input"
+            if product_ids
+            else "legacy_current_catalog_or_pf_fallback_not_historical_lineage_safe"
+        ),
         "summary": {
             "required_minutes": int(sum(row["required_minutes"] for row in results)),
             "covered_minutes": int(sum(row["covered_after"] for row in results)),

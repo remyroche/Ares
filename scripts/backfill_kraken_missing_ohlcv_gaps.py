@@ -28,6 +28,27 @@ def _load_symbols(manifest_path: Path) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def _load_symbols_file(path: Path) -> list[str]:
+    """Load a deliberately narrow newline-delimited universe.
+
+    This permits an immutable research cohort to repair only its own proven
+    source gaps rather than implicitly scanning every symbol in an exchange
+    manifest.  Blank lines and comments are ignored; duplicates retain first
+    occurrence order.
+    """
+
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    values = [
+        line.split("#", 1)[0].strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    symbols = [value for value in values if value]
+    if not symbols:
+        raise ValueError("symbols file contains no symbols")
+    return list(dict.fromkeys(symbols))
+
+
 def _gap_ranges(
     index: pd.DatetimeIndex,
     *,
@@ -101,6 +122,11 @@ def _nonempty_ohlcv_rows(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="data_perp/exchanges/krakenfutures/manifests/kraken_dual_market_verified_universe_latest.json")
+    parser.add_argument(
+        "--symbols-file",
+        default="",
+        help="optional newline-delimited exact symbol universe; takes precedence over --manifest",
+    )
     parser.add_argument("--perp-root", default="data_perp/exchanges/krakenfutures")
     parser.add_argument("--end-ts", default="")
     parser.add_argument("--partition-count", type=int, default=1)
@@ -120,7 +146,11 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    symbols = _load_symbols(Path(args.manifest))
+    symbols = (
+        _load_symbols_file(Path(args.symbols_file))
+        if str(args.symbols_file).strip()
+        else _load_symbols(Path(args.manifest))
+    )
     partition_count = max(1, int(args.partition_count))
     partition_id = int(args.partition_id)
     if partition_id < 0 or partition_id >= partition_count:

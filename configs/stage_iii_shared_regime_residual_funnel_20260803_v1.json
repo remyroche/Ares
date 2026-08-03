@@ -1,0 +1,135 @@
+{
+  "schema": "stage_iii_shared_regime_residual_funnel_v1",
+  "status": "PREREGISTERED_NOT_RUN",
+  "architecture": {
+    "base": "R3 same-side strict-OOF multiclass opportunity probabilities",
+    "base_map": "prior-resolved side-shrunk causal expected-net bps",
+    "regime_prior": "prior-resolved soft-regime residual baseline with hierarchical shrinkage",
+    "expert": "one shared candidate-residual expert",
+    "calibration": "strongly-shrunk hierarchical affine common-bps correction",
+    "ranking": "pooled global after common-bps mapping",
+    "forbidden": [
+      "local_expert",
+      "per_regime_expert",
+      "hard_regime_router",
+      "per_side_top_k",
+      "per_timestamp_top_k",
+      "future_or_unresolved_label_use"
+    ]
+  },
+  "frozen_contract": {
+    "geometry": "TP6_SL4_H12",
+    "cost_bps": 100.0,
+    "cost_application_count": 1,
+    "signal_to_entry_hours": 1,
+    "entry_to_label_horizon_hours": 12,
+    "signal_to_label_availability_hours": 13,
+    "label_availability_rule": "label_available_ts < evaluation_or_fit_cutoff",
+    "global_top_fractions": [0.01, 0.05, 0.10, 0.20]
+  },
+  "rounds": [
+    {
+      "id": "A",
+      "name": "residual_centering",
+      "arms": [
+        "A0_current_residual",
+        "A1_side_centered",
+        "A2_side_broad_regime_centered",
+        "A3_soft_regime_centered"
+      ],
+      "reconstruction": "base_expected_net_bps + selected_regime_prior_bps + predicted_candidate_residual_bps"
+    },
+    {
+      "id": "B",
+      "name": "robust_training",
+      "requires_frozen_winner_from": "A",
+      "arms": [
+        "B0_pooled",
+        "B1_sqrt_environment_balance",
+        "B2_worst_era_selection",
+        "B3_balance_plus_worst_era_selection"
+      ],
+      "selection_score": "mean_topk_lift + 0.5*worst_era_topk_lift - 0.25*era_std"
+    },
+    {
+      "id": "C",
+      "name": "causal_regime_conditioning",
+      "requires_frozen_winner_from": "B",
+      "arms": [
+        "C0_invariant_core",
+        "C1_soft_regime_state",
+        "C2_restricted_base_x_regime",
+        "C3_prequential_regime_relative"
+      ],
+      "restricted_interactions": [
+        "p_clear_x_volatility_state",
+        "p_clear_x_breadth_state",
+        "base_expected_net_x_transition_risk",
+        "base_entropy_x_regime_entropy",
+        "cost_to_atr_x_volatility_state",
+        "market_confirmation_x_regime_state",
+        "residual_uncertainty_x_regime_entropy"
+      ]
+    },
+    {
+      "id": "D",
+      "name": "model_validity_context",
+      "requires_frozen_winner_from": "C",
+      "arms": [
+        "D0_no_ood",
+        "D1_relationship_break",
+        "D2_contribution_ood",
+        "D3_active_failure_probability",
+        "D4_compact_combination"
+      ],
+      "policy_role": "soft_context_only"
+    },
+    {
+      "id": "E",
+      "name": "hierarchical_common_bps_calibration",
+      "requires_frozen_winner_from": "D",
+      "arms": [
+        "E0_global_affine",
+        "E1_side_affine",
+        "E2_side_soft_regime_affine"
+      ]
+    },
+    {
+      "id": "F",
+      "name": "within_regime_pairwise_ranking",
+      "requires_finalists_from": "E",
+      "max_finalists": 2,
+      "arms": [
+        "F0_pointwise",
+        "F1_pointwise_plus_pairwise_50bps",
+        "F2_pointwise_plus_pairwise_100bps"
+      ]
+    }
+  ],
+  "feature_admission": {
+    "metric": "median_cross_era_mda_minus_0.5_mad",
+    "minimum_positive_cell_fraction": 0.70,
+    "phantom_gate": "q95",
+    "latest_block_minimum": 0.0,
+    "severe_unexplained_sign_reversal_allowed": false,
+    "production_classes": ["INVARIANT_CORE", "REGIME_CONDITIONAL"],
+    "diagnostic_only_classes": ["REGIME_LOCAL_DIAGNOSTIC", "UNSTABLE", "REDUNDANT"]
+  },
+  "promotion": {
+    "comparison": "paired lift over frozen causal base on identical held-out rows",
+    "minimum_positive_eras": "4_of_5_or_5_of_6",
+    "require_positive_paired_cross_era_lift": true,
+    "require_improved_worst_era": true,
+    "require_lower_era_dispersion": true,
+    "allow_new_catastrophic_era": false,
+    "allow_severe_side_failure": false,
+    "allow_latest_era_failure": false
+  },
+  "terminal_decisions": [
+    "SHARED_RESIDUAL_EXPERT_TRANSPORTS",
+    "SHARED_EXPERT_REQUIRES_REGIME_CONDITIONING",
+    "SHARED_EXPERT_REQUIRES_MODEL_VALIDITY_CONTEXT",
+    "SHARED_EXPERT_REMAINS_CROSS_ERA_UNSTABLE",
+    "REGIME_LOCAL_EXPERTS_NOT_JUSTIFIED"
+  ]
+}

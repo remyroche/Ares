@@ -1,0 +1,64 @@
+{
+  "schema": "stage_e_final_evidence_manifest_v1",
+  "date": "2026-07-31",
+  "status": "COMPLETE_STAGE_D_PASS_REVOKED",
+  "terminal_decision": "STAGE_D_PASS_REVOKED_TARGET_PROXY_OR_CAUSAL_DEFECT",
+  "frozen_scope": {
+    "canonical_model": "stage_d_compact_action_model_20260731_v9",
+    "reproducibility_companion": "stage_d_compact_action_model_20260731_v10",
+    "action_margin_bps": 0.0,
+    "entry_or_ranking_changed": false,
+    "sizing_or_portfolio_changed": false,
+    "stop_or_continuation_policy_changed": false
+  },
+  "stage_status": {
+    "E1": "FAIL_SELECTED_OUTCOME_DERIVED_COST_FIELD",
+    "E2_E3": "COMPLETE_COST_FAMILY_DOMINATES",
+    "E4": "COMPLETE_DIAGNOSTIC_ONLY",
+    "E5": "NOT_RUN_FROZEN_MODEL_ARTIFACT_UNAVAILABLE",
+    "E6": "COMPLETE_DIAGNOSTIC_ONLY_ABSOLUTE_NET_REMAINS_NEGATIVE"
+  },
+  "canonical_evidence_manifests_sha256": {
+    "data_perp/artifacts/stage_e_a0_causal_sufficiency_20260731_v3/run_manifest.json": "880a1a52bee9e5828723c4662d1a65e95eb216c5ea26668dd1e7826cc9fc9c25",
+    "data_perp/artifacts/stage_e_minimal_information_diagnostics_20260731_v1/run_manifest.json": "f556f974578cd4dbacce2f4bf5a40e90e8b526697163676acb2090d992406453",
+    "data_perp/artifacts/stage_e_execution_sensitivity_20260731_v4/run_manifest.json": "95610b11e3acfa9ac19b239c92e8e825863c60d96333d596c39db3d9ce5ea16a",
+    "data_perp/artifacts/stage_e_second_oos_readiness_20260731_v1/run_manifest.json": "9568488f86be4cd46fe15e1e0655cde68e2d2bd6174981c1652fbcde9c68b7cf",
+    "data_perp/artifacts/stage_e_full_candidate_overlay_20260731_v1/run_manifest.json": "2ad32f5211ff40f9e1db90d34d775ed787130a830c973d563669fc26cad49c6b"
+  },
+  "code_sha256": {
+    "scripts/audit_stage_e_a0_causal_sufficiency.py": "8d3d6e7e9895f85105aff642b560adebc3b781c6d910a74ec4878c8275b0d029",
+    "scripts/run_stage_e_minimal_information_diagnostics.py": "e65e72fde0d9a8bed6edc1eebf4af1f354331f11f525f3c3652f423efab8bcd5",
+    "scripts/run_stage_e_execution_sensitivity.py": "8e4c48b4397c4b21657820eb520192454507cb27a1a03e437e27d8a79aa91c98",
+    "scripts/audit_stage_e_second_oos_readiness.py": "d31f4e08180eabecf3a057287bf73324bb8adeceb9cdc45cf69c46eac84f8512",
+    "scripts/run_stage_e_full_candidate_overlay.py": "0ca8ab8d147d0f9649d83c9358d4b41c6458a290f9bbce3a7e4b501821c6d0a1",
+    "scripts/audit_stage_e_final_evidence.py": "d193ef1ca224b59760b5f5c87eab755bef997a6e6ea8eabeb420ac7f3786531c"
+  },
+  "final_outputs_sha256": {
+    "STAGE_E_FINAL_REPORT.md": "d42d9a70bc5d4f841ec39d69ddce2e682b0b8873e9001b8933f572f19b6c3960",
+    "correctness_test_report.json": "3618ff865188c5f7a2433e092f50e5e15e3f700e7709986d822151199ed07e8c",
+    "STAGE_E_INDEPENDENT_COMPLETION_AUDIT_20260731.md": "01ae1eaf2bf8893e0bd453a2444ac4126fe2cf4d5b6cb886cc883acf074afccb"
+  },
+  "gates": {
+    "causal_sufficiency": false,
+    "independent_reconstruction_all_selected_fields": false,
+    "second_sealed_oos": false,
+    "execution_sensitivity_mechanical_replay": true,
+    "full_candidate_overlay_increment_positive_nominal": true,
+    "full_candidate_overlay_absolute_net_positive": false,
+    "both_sides_absolute_net_positive": false,
+    "latest_period_absolute_net_positive": false,
+    "all_required_tests_pass": true
+  },
+  "reproducibility": {
+    "E1": "v3/v4 byte-identical",
+    "E2_E3": "v1/v2 byte-identical",
+    "E4": "v4/v5 byte-identical",
+    "E6": "v1/v2 byte-identical"
+  },
+  "limitations": [
+    "E1 fail-closed after a selected outcome-derived cost field was proven unavailable at decision time; prefix reconstruction was bounded to 1000 deterministic rows.",
+    "E5 could not run because the sealed Stage-D pack lacks a serialized model and the later context lacks most selected static features.",
+    "E4 and E6 are mechanically valid diagnostic replays of causally invalid frozen decisions and cannot support promotion.",
+    "Candidate-level evaluation only; no portfolio, sizing, exposure, concurrency, or deployment claim."
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "schema": "canonical_execution_reliability_workstream_v1",
+  "status": "FROZEN_RESEARCH_CONTRACT_NO_PROMOTION_NO_PORTFOLIO_REPLAY",
+  "input_artifact": "data_perp/artifacts/canonical_execution_reliability_input_20260730_v2",
+  "population": {
+    "rows": 110730,
+    "months": ["2025-03", "2025-04"],
+    "sides": ["long", "short"],
+    "identity": ["candidate_id", "side_name"],
+    "evaluation": "one pooled-global cross-side/cross-timestamp book after causal recent-EV mapping"
+  },
+  "architectures": [
+    "A0_v4_four_score_control",
+    "A1_detached_repaired_full_base_supports",
+    "A2_meaningful_mfe_then_net_capture",
+    "A3_clean_favorable_first_then_conditional_payoff",
+    "A4_three_way_favorable_adverse_conflict_timeout_then_conditional_payoff",
+    "A5_best_of_A1_to_A4_plus_five_bounded_base_score_by_12h_transition_interactions"
+  ],
+  "targets": [
+    "target_meaningful_mfe",
+    "target_clean_favorable_first",
+    "target_competing_class",
+    "target_economic_opportunity_hard",
+    "target_economic_opportunity_soft_25bps",
+    "target_net_positive",
+    "target_positive_net_magnitude",
+    "target_adverse_loss_magnitude",
+    "target_severe_loss_100bps",
+    "target_direct_net"
+  ],
+  "ic_ev_decoupling_required_diagnostics": {
+    "observation": {
+      "native_base_target_rank_ic_by_month": {
+        "2025-02": 0.155,
+        "2025-03": 0.162,
+        "2025-04": 0.226
+      },
+      "direct_execution_ev_global_top10_bps_by_month": {
+        "2025-02": -59.39,
+        "2025-03": -91.31,
+        "2025-04": -38.45
+      }
+    },
+    "required_identical_cohort_waterfall": [
+      "native_alpha_target_rank_ic",
+      "exact_12h_mfe_and_gross_rank_ic",
+      "deployed_exit_gross_rank_ic",
+      "explicit_row_cost",
+      "exact_12h_net_rank_ic",
+      "global_top_1_5_10_20_percent_net_bps"
+    ],
+    "required_tail_attribution": [
+      "tail_local_rank_ic_and_calibration",
+      "opportunity_precision_recall",
+      "conditional_positive_and_adverse_magnitude",
+      "full_stop_and_timeout_incidence",
+      "score_scale_and_cutoff_migration",
+      "fixed_numeric_band_response_drift",
+      "side_asset_regime_and_exit_mix_attribution"
+    ],
+    "required_counterfactuals": [
+      "fixed_candidate_cohort",
+      "fixed_quantile_book",
+      "frozen_source_month_numeric_cutoffs",
+      "zero_cost_and_fixed_cost_hurdles_without_reselection",
+      "matched_native_12h_versus_24h_target",
+      "raw_base_versus_residual_versus_direct_EV_versus_causally_mapped_EV"
+    ],
+    "closure_criteria": [
+      "quantitatively reconcile each month-to-month IC and EV delta on identical rows",
+      "show whether the divergence is target mismatch, tail failure, calibration, cost, exit capture, or conditional-response shift",
+      "do not treat higher aggregate IC as promotion evidence",
+      "a challenger must be positive overall and latest period, both-side viable, tie-safe, causally mapped, and better than frozen controls"
+    ]
+  },
+  "model_contract": {
+    "side_local_training": true,
+    "feature_selection_and_hpo": "inside training folds only",
+    "mapping": "score-specific daily 21-day pooled causal map with prior-resolved labels only",
+    "action_layer_exclusions": [
+      "time_to_mfe",
+      "mae_path_timing",
+      "target_price",
+      "wait_or_reprice_action"
+    ],
+    "forbidden_default_inputs": [
+      "realized_labels",
+      "mapped_coordinates",
+      "DAE_or_GMM_outputs",
+      "full_horizon_gross_to_mfe_ratio_diagnostic_only"
+    ]
+  }
+}

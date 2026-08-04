@@ -9,6 +9,7 @@ from extreme_price_movements.stage_iv_broad_to_tail import (
     StageIVPlan,
     canonical_lambdarank_params,
     pooled_global_stage_iv_metrics,
+    prequential_score_to_bps_map,
     prequential_tail_handoff,
     run_stage_iv_broad_to_tail_ablation,
 )
@@ -79,6 +80,10 @@ def _plan(
         n_validation_folds=3,
         broad_output_route=route,
         burn_in_months=0,
+        # The toy ledger has only a few dozen tail-scored rows.  Production
+        # retains the stricter 100-row causal value-map floor.
+        value_map_min_history_rows=8,
+        value_map_bins=4,
     )
 
 
@@ -119,7 +124,10 @@ def test_stage_iv_strict_chain_has_independent_burnins_and_same_side_direct_hand
     meta_columns = {columns for layer, columns, _ in records if layer == "meta"}
     assert tail_columns == {("tail_signal", "__stage_iv_broad_same_side_oof_score")}
     assert meta_columns == {
-        ("meta_context", "__stage_iv_tail_same_side_oof_score", "__stage_iv_broad_same_side_oof_score")
+        (
+            "meta_context", "__stage_iv_tail_same_side_oof_score",
+            "__stage_iv_tail_same_side_expected_bps", "__stage_iv_broad_same_side_oof_score",
+        )
     }
     provenance = result.side_results["long"].fold_provenance
     assert {"broad", "tail", "meta"}.issubset(set(provenance.layer))
@@ -142,6 +150,31 @@ def test_broad_output_routes_are_explicit(route, tail_has_broad, meta_has_broad)
     assert ("__stage_iv_broad_same_side_oof_score" in tail_columns) is tail_has_broad
     assert ("__stage_iv_broad_same_side_oof_score" in meta_columns) is meta_has_broad
     assert "__stage_iv_tail_same_side_oof_score" in meta_columns
+    assert "__stage_iv_tail_same_side_expected_bps" in meta_columns
+
+
+def test_score_to_bps_map_is_predecessor_only_and_never_uses_same_timestamp_labels() -> None:
+    decision = pd.to_datetime([
+        "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z",
+        "2024-01-01T01:00:00Z", "2024-01-01T01:00:00Z",
+        "2024-01-01T02:00:00Z", "2024-01-01T02:00:00Z",
+    ])
+    score = np.array([0.0, 1.0, 0.2, 0.8, 0.1, 0.9], dtype=np.float32)
+    net = np.array([-100.0, 200.0, -50.0, 100.0, -30.0, 80.0], dtype=np.float32)
+    mapped = prequential_score_to_bps_map(
+        score, net, decision, decision + pd.Timedelta(minutes=30),
+        min_history_rows=2, bins=2,
+    )
+    # The first cross-section lacks prior labels.  The second sees exactly the
+    # two resolved rows from t=00, not its own realised outcomes.
+    assert np.isnan(mapped[:2]).all()
+    np.testing.assert_allclose(mapped[2:4], [-100.0, 200.0])
+    changed = net.copy(); changed[3] = 50_000.0
+    right = prequential_score_to_bps_map(
+        score, changed, decision, decision + pd.Timedelta(minutes=30),
+        min_history_rows=2, bins=2,
+    )
+    np.testing.assert_allclose(mapped[:4], right[:4], equal_nan=True)
 
 
 def test_later_label_cannot_change_earlier_stage_iv_strict_oof_scores() -> None:
@@ -229,6 +262,29 @@ def test_tail_uses_its_explicit_label_and_ranker_context_is_timestamp_side() -> 
     )
     assert result.predictions.tail_target_source.eq("explicit_tail_target").all()
     assert CANONICAL_LAMBDARANK_PARAMS["eval_at"] == [1, 3, 5]
+
+
+def test_default_economic_residual_is_a_ranker_grade_and_gets_timestamp_side_groups() -> None:
+    observed: list[tuple[str, np.ndarray, dict[str, object]]] = []
+
+    def fit(X, y, weight, layer, params):
+        observed.append((layer, np.asarray(y).copy(), dict(params)))
+        return _fitter_records([])(X, y, weight, layer, params)
+
+    ranker = canonical_lambdarank_params({"n_estimators": 7})
+    plan = StageIVPlan(**{
+        **_plan("short").__dict__, "tail_target": np.full(320, 5.0, dtype=np.float32),
+        "tail_params": ranker, "meta_params": ranker,
+    })
+    run_stage_iv_broad_to_tail_ablation([plan], fitter=fit)
+    meta = [(label, params) for layer, label, params in observed if layer == "meta"]
+    assert meta
+    for label, params in meta:
+        assert np.isfinite(label).all()
+        assert np.all(np.equal(label, np.rint(label)))
+        assert int(label.min()) >= 0 and int(label.max()) <= 5
+        assert "__stage_iv_ranker_groups" in params
+        assert all(str(group).startswith("meta|short|") for group in params["__stage_iv_ranker_groups"])
 
 
 def test_default_calendar_burn_in_is_two_months_and_is_layer_independent() -> None:

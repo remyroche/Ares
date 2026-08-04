@@ -72,6 +72,10 @@ def _plan(side: str, *, fraction: float, broad_burn: int = 24, tail_burn: int = 
         n_validation_folds=3,
         broad_output_route=route,
         burn_in_months=0,
+        # Compact fixture only: production retains a 100-row prior-resolved
+        # value-map floor.
+        value_map_min_history_rows=8,
+        value_map_bins=4,
     )
 
 

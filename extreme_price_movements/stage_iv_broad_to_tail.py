@@ -31,6 +31,7 @@ TAIL_FRACTIONS = frozenset({0.20, 0.30, 0.40, 0.50})
 _ROUTES = frozenset({"neither", "tail", "meta", "both"})
 _TOP_FRACTIONS = (0.01, 0.05, 0.10, 0.20)
 _RANKER_GROUPS_PARAM = "__stage_iv_ranker_groups"
+_DEFAULT_VALUE_MAP_HISTORY_ROWS = 100
 
 # This is deliberately a public, immutable-by-convention contract rather than
 # a hidden set of defaults in a materialisation script.  Stage IV callers may
@@ -95,6 +96,12 @@ class StageIVPlan:
     # not an approximate 60-day interval: 2024-01-01 -> 2024-03-01 is two
     # months even in a leap year.  Zero remains useful for unit tests.
     burn_in_months: int = 2
+    # Ranker scores are side-local arbitrary units.  Before a downstream
+    # residual can be defined in economic units, they are mapped to bps using
+    # only labels resolved before the scored timestamp.  Keeping this explicit
+    # prevents the old, invalid ``net_bps - raw_ranker_score`` subtraction.
+    value_map_min_history_rows: int = _DEFAULT_VALUE_MAP_HISTORY_ROWS
+    value_map_bins: int = 10
 
 
 @dataclass(frozen=True)
@@ -187,6 +194,10 @@ def _validate_plan(plan: StageIVPlan) -> tuple[pd.DataFrame, dict[str, Any]]:
         raise ValueError("cost_bps must be finite")
     if int(plan.burn_in_months) != plan.burn_in_months or int(plan.burn_in_months) < 0:
         raise ValueError("burn_in_months must be a non-negative integer")
+    if int(plan.value_map_min_history_rows) < 1:
+        raise ValueError("value_map_min_history_rows must be positive")
+    if int(plan.value_map_bins) < 2:
+        raise ValueError("value_map_bins must be at least two")
     frame = plan.frame.copy()
     frame.columns = [str(column) for column in frame.columns]
     n = len(frame)
@@ -388,6 +399,78 @@ def prequential_tail_handoff(
     return threshold, selected
 
 
+def prequential_score_to_bps_map(
+    score: Sequence[float],
+    realised_bps: Sequence[float],
+    decision_timestamps: Sequence[Any],
+    label_available_timestamps: Sequence[Any],
+    *,
+    min_history_rows: int,
+    bins: int = 10,
+) -> np.ndarray:
+    """Map an arbitrary same-side OOF ranker score to expected bps causally.
+
+    A ranker output is not an economic value.  For every whole timestamp this
+    function fits an equal-frequency score-bin map only from earlier scored
+    rows whose labels had already resolved.  It is intentionally independent
+    of the tail admission: the map can use all prior *scored* rows, but never
+    the current timestamp, a future label, or a raw realised outcome feature.
+
+    The mapping is deliberately small and robust.  A sparse score history
+    returns ``NaN`` rather than a pooled/future fallback, so the following
+    residual layer receives only genuinely causal expected-value inputs.
+    """
+    value = np.asarray(score, dtype=np.float64).reshape(-1)
+    realised = np.asarray(realised_bps, dtype=np.float64).reshape(-1)
+    decision = _utc(decision_timestamps, name="decision_timestamps")
+    available = _utc(label_available_timestamps, name="label_available_timestamps")
+    n = len(value)
+    if len(realised) != n or len(decision) != n or len(available) != n:
+        raise ValueError("score/value/timestamp inputs must be row-aligned")
+    if int(min_history_rows) < 1 or int(bins) < 2:
+        raise ValueError("score-to-bps map requires positive history and at least two bins")
+    if np.any(np.isfinite(value) & ~np.isfinite(realised)):
+        raise ValueError("finite scores require finite realised_bps")
+    output = np.full(n, np.nan, dtype=np.float32)
+    prior_scores: list[float] = []
+    prior_values: list[float] = []
+    available_order = np.argsort(available.to_numpy(dtype="datetime64[ns]"), kind="stable")
+    available_cursor = 0
+    # Labels are only admitted after each whole decision timestamp has been
+    # scored.  This makes the same-time cross-section exactly contemporaneous.
+    for group in _groups_at_timestamps(np.arange(n, dtype=np.int32), decision):
+        start = decision.iloc[group].min()
+        # Bring every earlier *resolved* score into the mapping history before
+        # the current whole timestamp is mapped.  Labels resolve after their
+        # decision by contract, so this cannot admit same-time outcomes.
+        while (
+            available_cursor < n
+            and available.iloc[available_order[available_cursor]] < start
+        ):
+            previous = int(available_order[available_cursor])
+            if np.isfinite(value[previous]) and np.isfinite(realised[previous]):
+                prior_scores.append(float(value[previous]))
+                prior_values.append(float(realised[previous]))
+            available_cursor += 1
+        if len(prior_scores) >= int(min_history_rows):
+            history_score = np.asarray(prior_scores, dtype=np.float64)
+            history_value = np.asarray(prior_values, dtype=np.float64)
+            edges = np.unique(np.quantile(history_score, np.linspace(0.0, 1.0, int(bins) + 1)))
+            if len(edges) >= 3:
+                train_bin = np.clip(np.digitize(history_score, edges[1:-1], right=True), 0, len(edges) - 2)
+                means = np.array([
+                    float(history_value[train_bin == index].mean())
+                    if np.any(train_bin == index) else float(history_value.mean())
+                    for index in range(len(edges) - 1)
+                ], dtype=np.float32)
+                valid = np.isfinite(value[group])
+                scored_bin = np.clip(np.digitize(value[group][valid], edges[1:-1], right=True), 0, len(means) - 1)
+                output[group[valid]] = means[scored_bin]
+            else:
+                output[group[np.isfinite(value[group])]] = np.float32(np.mean(history_value))
+    return output
+
+
 def _design(frame: pd.DataFrame, features: Sequence[str], extra: Mapping[str, np.ndarray]) -> pd.DataFrame:
     overlap = sorted(set(features) & set(extra))
     if overlap:
@@ -508,27 +591,56 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
         burn_in_months=int(plan.burn_in_months), output=tail, fold_output=tail_fold, provenance=provenance,
     )
     tail_scored = np.isfinite(tail)
+    # Translate the arbitrary tail-ranker coordinate into a *causal* bps
+    # expectation before defining the residual.  Subtracting a ranker score
+    # directly from net bps is dimensionally invalid and made the previous
+    # generic residual path unsuitable for the requested architecture.
+    tail_expected_bps = prequential_score_to_bps_map(
+        tail, net, decision, available,
+        min_history_rows=int(plan.value_map_min_history_rows),
+        bins=int(plan.value_map_bins),
+    )
+    tail_value_available = tail_scored & np.isfinite(tail_expected_bps)
     # The residual target is deliberately per-row and same-side.  It is never
-    # constructed from period aggregates or converted predecessor scores.
+    # constructed from period aggregates.  The default is the existing
+    # economic ordinal residual (<=-150, -150..-50, -50..50, 50..150, >150),
+    # now measured around the prior-resolved tail expected-value map.
     supplied_meta_target = values["meta_target"]
     if supplied_meta_target is None:
-        meta_target = net - tail
+        from .support_aware_residual_ablation import bps_residual_grade
+        meta_residual_bps = net - tail_expected_bps
+        meta_target = np.full(n, np.nan, dtype=np.float32)
+        meta_target[tail_value_available] = bps_residual_grade(
+            meta_residual_bps[tail_value_available], moderate_bps=50.0, severe_bps=150.0,
+        ).astype(np.float32)
     else:
         assert isinstance(supplied_meta_target, np.ndarray)
         meta_target = supplied_meta_target
-    meta_extra: dict[str, np.ndarray] = {"__stage_iv_tail_same_side_oof_score": tail}
+        meta_residual_bps = net - tail_expected_bps
+    meta_extra: dict[str, np.ndarray] = {
+        "__stage_iv_tail_same_side_oof_score": tail,
+        "__stage_iv_tail_same_side_expected_bps": tail_expected_bps,
+    }
     if route in {"meta", "both"}:
         meta_extra["__stage_iv_broad_same_side_oof_score"] = broad
     meta_design = _design(frame, values["meta_features"], meta_extra)
     _fit_stage(
         layer="meta", side=side, design=meta_design, target=np.asarray(meta_target, dtype=np.float32), weight=weight,
-        candidate_mask=tail_scored, trainable_mask=tail_scored,
+        candidate_mask=tail_value_available, trainable_mask=tail_value_available,
         decision=decision, available=available, min_train_rows=int(plan.meta_min_train_rows),
         n_folds=int(plan.n_validation_folds), params=plan.meta_params, fitter=fit,
         burn_in_months=int(plan.burn_in_months), output=meta, fold_output=meta_fold, provenance=provenance,
     )
     meta_scored = np.isfinite(meta)
-    final_score = tail + meta
+    # Map the residual-ranker coordinate to expected residual bps with the
+    # same predecessor-only rule.  The final score is common-bps and can
+    # therefore be pooled globally only *after* side-local mappings.
+    meta_expected_residual_bps = prequential_score_to_bps_map(
+        meta, meta_residual_bps, decision, available,
+        min_history_rows=int(plan.value_map_min_history_rows),
+        bins=int(plan.value_map_bins),
+    )
+    final_score = tail_expected_bps + meta_expected_residual_bps
     ids = values["ids"]
     assert isinstance(ids, np.ndarray)
     output = pd.DataFrame({
@@ -543,7 +655,10 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
         "broad_handoff_threshold": threshold,
         "tail_prequentially_eligible": tail_eligible,
         "tail_same_side_oof_score": tail,
+        "tail_same_side_expected_net_bps": tail_expected_bps,
+        "tail_value_map_available": tail_value_available,
         "meta_same_side_residual_oof_score": meta,
+        "meta_same_side_expected_residual_bps": meta_expected_residual_bps,
         "meta_reconstructed_expected_net_bps": final_score,
         "broad_strict_oof_available": broad_scored,
         "tail_strict_oof_available": tail_scored,
@@ -576,6 +691,16 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
                 "broad": "explicit_base_target",
                 "tail": str(values["tail_target_source"]),
                 "meta": str(values["meta_target_source"]),
+            },
+            "causal_value_maps": {
+                "tail_score_to_exact_net_bps": {
+                    "minimum_prior_resolved_rows": int(plan.value_map_min_history_rows),
+                    "equal_frequency_bins": int(plan.value_map_bins),
+                },
+                "residual_score_to_bps": {
+                    "minimum_prior_resolved_rows": int(plan.value_map_min_history_rows),
+                    "equal_frequency_bins": int(plan.value_map_bins),
+                },
             },
             "feature_counts": {
                 "broad": len(values["broad_features"]), "tail": len(values["tail_features"]),
@@ -702,6 +827,6 @@ def run_stage_iv_broad_to_tail_ablation(
 __all__ = [
     "SCHEMA", "TAIL_FRACTIONS", "CANONICAL_LAMBDARANK_PARAMS", "canonical_lambdarank_params",
     "StageIVPlan", "StageIVSideResult", "StageIVResult",
-    "ModelFitter", "prequential_tail_handoff", "generate_stage_iv_side_oof",
+    "ModelFitter", "prequential_tail_handoff", "prequential_score_to_bps_map", "generate_stage_iv_side_oof",
     "pooled_global_stage_iv_metrics", "run_stage_iv_broad_to_tail_ablation",
 ]

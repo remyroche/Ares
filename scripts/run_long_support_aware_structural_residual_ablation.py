@@ -49,6 +49,7 @@ from scripts.run_long_structural_residual_ablation import (
 SCHEMA = "long_support_aware_structural_residual_ablation_v1"
 SUPPORT_COLUMN = "support_h12_training_only"
 SUPPORT_PROBABILITY = "prequential_support_h12_probability"
+PAIRWISE_CONTROL_COLUMN = "pairwise_control_constant_false"
 
 
 def _fit_weighted_ranker(
@@ -79,7 +80,8 @@ def _fit_weighted_ranker(
 
 
 def _fit_custom_pairwise(
-    frame: pd.DataFrame, fields: list[str], *, supported_weight: float, seed: int,
+    frame: pd.DataFrame, fields: list[str], *, support_column: str,
+    supported_multiplier: float, seed: int,
 ):
     """Fit the bounded custom logistic residual-pair objective on all rows."""
 
@@ -94,16 +96,15 @@ def _fit_custom_pairwise(
     objective = build_support_aware_pairwise_objective(
         ordered,
         columns=SupportAwarePairwiseColumns(
-            support=SUPPORT_COLUMN, incumbent_base_score="base_expected_bps",
+            support=support_column, incumbent_base_score="base_expected_bps",
         ),
         config=SupportAwarePairwiseConfig(
             max_pairs_per_query=256, random_state=seed,
-            # Pairwise losses do not accept row weights.  This is the closest
-            # bounded analogue of selected S4: a supported endpoint receives
-            # the declared multiplier, while neither-supported pairs stay at
-            # the universal control weight.
-            both_supported_multiplier=float(supported_weight),
-            winner_supported_multiplier=float(supported_weight),
+            # Pairwise losses do not accept row weights.  The S4 branch is
+            # the closest bounded analogue.  The control branch uses a
+            # constant-false non-feature and all multipliers equal to one.
+            both_supported_multiplier=float(supported_multiplier),
+            winner_supported_multiplier=float(supported_multiplier),
             loser_supported_multiplier=1.0, neither_supported_multiplier=1.0,
         ),
     )
@@ -180,6 +181,13 @@ def _native_specs(*, include_s4: bool, s4_weight: float, include_r1: bool) -> li
     return specs
 
 
+def _custom_control_specs(*, include_r1: bool) -> list[tuple[str, str, float | None, bool]]:
+    """Minimal no-support native control(s) for the custom pairwise check."""
+
+    arms = ["R3_portability_health"] + (["R1_reasoning_memberships"] if include_r1 else [])
+    return [(arm, "S1_uniform", None, False) for arm in arms]
+
+
 def _prepare_support_label(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     # This is exactly the frozen H12 3-ATR *and* 1.5%-move condition under the
@@ -197,9 +205,14 @@ def run(args: argparse.Namespace) -> Path:
     # Freeze the inference feature contract *before* adding the outcome-derived
     # support training label.  `feature_arms` intentionally rejects that
     # column, so this ordering is an executable leakage guard.
+    if args.custom_control_only and args.include_s4:
+        raise ValueError("custom control forbids S4 after the independent S2/S3 failure")
     base_frame = _load(Path(args.sidecar))
     feature_sets = feature_arms(base_frame)
-    frame = _prepare_support_label(base_frame)
+    # The custom control does not even materialise an outcome-derived support
+    # label.  Its pair objective receives a constant-false bookkeeping column
+    # with all multipliers fixed at one.
+    frame = base_frame if args.custom_control_only else _prepare_support_label(base_frame)
     support_model_fields = feature_sets["R3_portability_health"]
     if SUPPORT_COLUMN in support_model_fields or SUPPORT_PROBABILITY in support_model_fields:
         raise AssertionError("outcome-derived support label entered an inference feature contract")
@@ -208,9 +221,12 @@ def run(args: argparse.Namespace) -> Path:
     support_prediction_parts: list[pd.DataFrame] = []
     support_audits: list[pd.DataFrame] = []
     fit_audits: list[dict] = []
-    native_specs = _native_specs(
-        include_s4=bool(args.include_s4), s4_weight=float(args.s4_supported_weight),
-        include_r1=bool(args.include_r1_comparison),
+    native_specs = (
+        _custom_control_specs(include_r1=bool(args.include_r1_comparison))
+        if args.custom_control_only else _native_specs(
+            include_s4=bool(args.include_s4), s4_weight=float(args.s4_supported_weight),
+            include_r1=bool(args.include_r1_comparison),
+        )
     )
     for fold_number, (fold, block) in enumerate(frame.groupby("fold", sort=True, observed=True), start=1):
         _validate_fold_partitions(block, str(fold))
@@ -218,21 +234,22 @@ def run(args: argparse.Namespace) -> Path:
         calibration = block.loc[block["meta_partition"].eq("meta_calibration")].copy()
         test = block.loc[block["meta_partition"].eq("test")].copy()
         train = _purged_meta_train(unpurged_train, calibration, str(fold))
-        support_predictions, support_audit = _support_probability_by_partition(
-            block, block, support_model_fields, seed=20260860 + fold_number,
-        )
-        support_predictions["fold"] = str(fold)
-        support_audit["fold"] = str(fold)
-        support_audits.append(support_audit)
-        support_prediction_parts.append(support_predictions)
-        block = block.merge(
-            support_predictions.loc[:, ["candidate_id", SUPPORT_PROBABILITY, "support_model_fit_cutoff_ts"]],
-            on="candidate_id", how="left", validate="one_to_one",
-        )
+        if not args.custom_control_only:
+            support_predictions, support_audit = _support_probability_by_partition(
+                block, block, support_model_fields, seed=20260860 + fold_number,
+            )
+            support_predictions["fold"] = str(fold)
+            support_audit["fold"] = str(fold)
+            support_audits.append(support_audit)
+            support_prediction_parts.append(support_predictions)
+            block = block.merge(
+                support_predictions.loc[:, ["candidate_id", SUPPORT_PROBABILITY, "support_model_fit_cutoff_ts"]],
+                on="candidate_id", how="left", validate="one_to_one",
+            )
         train = block.loc[block["candidate_id"].isin(train["candidate_id"])].copy()
         calibration = block.loc[block["meta_partition"].eq("meta_calibration")].copy()
         test = block.loc[block["meta_partition"].eq("test")].copy()
-        if not np.isfinite(block[SUPPORT_PROBABILITY]).all():
+        if not args.custom_control_only and not np.isfinite(block[SUPPORT_PROBABILITY]).all():
             raise ValueError(f"{fold}: strict support probabilities are incomplete")
 
         residual_train, _ = _finite_target(train)
@@ -271,13 +288,40 @@ def run(args: argparse.Namespace) -> Path:
                 "universal_residual_training": True, **audit,
             })
 
-        if args.include_s4:
+        if args.custom_control_only:
+            # The only custom-pairwise control: same R3 features and direct
+            # residual mapping as native S1, but no support label/probability.
+            fields = list(feature_sets["R3_portability_health"])
+            pair_train = train.copy()
+            pair_train[PAIRWISE_CONTROL_COLUMN] = False
+            model, pair_audit = _fit_custom_pairwise(
+                pair_train, fields, support_column=PAIRWISE_CONTROL_COLUMN,
+                supported_multiplier=1.0, seed=20260900 + fold_number,
+            )
+            calibration_raw = _predict_ranker(model, calibration, fields)
+            calibration_residual, _ = _finite_target(calibration)
+            mapper = _fit_bps_map(calibration_raw, calibration_residual)
+            score = "R3_portability_health__S1_uniform__custom_pairwise_control_256"
+            result[score] = (
+                test["base_expected_bps"].to_numpy(float) + mapper.predict(_predict_ranker(model, test, fields))
+            ).astype(np.float32)
+            fit_audits.append({
+                "fold": str(fold), "score": score, "implementation": "custom_pairwise_logistic_control",
+                "feature_arm": "R3_portability_health", "support_arm": "none_constant_false_control",
+                "feature_count": len(fields), "supported_weight": None,
+                "uses_causal_support_probability": False, "uses_support_outcome_label": False,
+                "meta_train_rows_before_horizon_purge": len(unpurged_train), "meta_train_rows": len(train),
+                "meta_calibration_rows": len(calibration), "test_rows": len(test),
+                "universal_residual_training": True, "max_pairs_per_query": 256, **pair_audit,
+            })
+        elif args.include_s4:
             # This is deliberately one predeclared custom comparison: R3,
             # the selected S4 support-probability feature, and bounded 256
             # deterministic pairs per timestamp-side group.
             fields = [*feature_sets["R3_portability_health"], SUPPORT_PROBABILITY]
             model, pair_audit = _fit_custom_pairwise(
-                train, fields, supported_weight=float(args.s4_supported_weight), seed=20260900 + fold_number,
+                train, fields, support_column=SUPPORT_COLUMN,
+                supported_multiplier=float(args.s4_supported_weight), seed=20260900 + fold_number,
             )
             calibration_raw = _predict_ranker(model, calibration, fields)
             calibration_residual, _ = _finite_target(calibration)
@@ -300,12 +344,13 @@ def run(args: argparse.Namespace) -> Path:
     predictions = pd.concat(prediction_parts, ignore_index=True)
     scores = [column for column in predictions if column.startswith("R") and "__" in column]
     predictions.to_parquet(output / "raw_oof_oos_predictions.parquet", index=False, compression="zstd")
-    pd.concat(support_audits, ignore_index=True).to_parquet(
-        output / "support_probability_audit.parquet", index=False, compression="zstd"
-    )
-    pd.concat(support_prediction_parts, ignore_index=True).to_parquet(
-        output / "strict_prequential_support_predictions.parquet", index=False, compression="zstd"
-    )
+    if support_audits:
+        pd.concat(support_audits, ignore_index=True).to_parquet(
+            output / "support_probability_audit.parquet", index=False, compression="zstd"
+        )
+        pd.concat(support_prediction_parts, ignore_index=True).to_parquet(
+            output / "strict_prequential_support_predictions.parquet", index=False, compression="zstd"
+        )
     pd.DataFrame(fit_audits).to_parquet(output / "arm_fold_audit.parquet", index=False, compression="zstd")
     pd.DataFrame([
         metric for score in scores for metric in _tail_metrics_with_fold_rows(predictions, score)
@@ -315,12 +360,12 @@ def run(args: argparse.Namespace) -> Path:
         "sidecar": str(args.sidecar),
         "feature_arms": sorted({spec[0] for spec in native_specs}),
         "residual_target": "direct net_bps - base_expected_bps; bps grade +/-50, +/-150",
-        "support_label": "frozen H12 MFE/MAE support: >3 ATR and >=1.5% favourable move",
-        "support_label_usage": "training weights/custom pair weighting only; never an inference feature, filter, or admission rule",
-        "support_probability": "strict 14-day prequential models with label_available_ts < score_block_start_ts",
+        "support_label": None if args.custom_control_only else "frozen H12 MFE/MAE support: >3 ATR and >=1.5% favourable move",
+        "support_label_usage": "not materialised: custom control uses constant false pair bookkeeping" if args.custom_control_only else "training weights/custom pair weighting only; never an inference feature, filter, or admission rule",
+        "support_probability": None if args.custom_control_only else "strict 14-day prequential models with label_available_ts < score_block_start_ts",
         "s4_included_after_independent_stage": bool(args.include_s4),
         "s4_supported_weight": float(args.s4_supported_weight) if args.include_s4 else None,
-        "custom_pairwise": "R3 + S4 only; deterministic max 256 pairs per timestamp-side group" if args.include_s4 else "not run until S4",
+        "custom_pairwise": "R3 custom control: no support label/probability; all support multipliers=1; deterministic max 256 pairs/query" if args.custom_control_only else ("R3 + S4 only; deterministic max 256 pairs per timestamp-side group" if args.include_s4 else "not run until S4"),
         "evaluation": "all candidates retained; pooled global top 1/3/5/10 plus monthly/fold diagnostics",
     })
     return output
@@ -335,6 +380,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--include-r1-comparison", action="store_true")
     parser.add_argument("--include-s4", action="store_true")
+    parser.add_argument("--custom-control-only", action="store_true")
     parser.add_argument("--s4-supported-weight", type=float, choices=(1.5, 2.0, 3.0), default=2.0)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()

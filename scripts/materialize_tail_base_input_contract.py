@@ -23,13 +23,14 @@ if str(ROOT) not in sys.path:
 from extreme_price_movements.stage_i_production_data_adapter import MonthlyReferencePartition
 from extreme_price_movements.tail_base_input_contract import (
     PooledP90SpreadMap,
+    build_aegmm_projection_source_contract,
     load_frozen_feature_contract,
     materialize_tail_base_input_contract,
 )
 
 
 def _default_partitions() -> list[MonthlyReferencePartition]:
-    """The requested historical + Pack-B R3 label sources, no hidden surface."""
+    """The complete multi-era R3 source used by the production input contract."""
     artifacts = ROOT / "data_perp/artifacts"
     values: list[MonthlyReferencePartition] = []
     for root, population in (
@@ -38,9 +39,12 @@ def _default_partitions() -> list[MonthlyReferencePartition]:
     ):
         for path in sorted(root.glob("month=*/side=*.parquet")):
             values.append(MonthlyReferencePartition(path, path.parent.name.removeprefix("month="), population))
+    surface = artifacts / "stage_i_surface_2024_2026_20260803_v1/source=full_universe_2024"
+    for path in sorted(surface.glob("month=*/identity_labels")):
+        values.append(MonthlyReferencePartition(path, path.parent.name.removeprefix("month="), "surface_2024"))
     if not values:
-        raise FileNotFoundError("no historical/Pack-B R3 label partitions found")
-    return values
+        raise FileNotFoundError("no historical/surface/Pack-B R3 label partitions found")
+    return sorted(values, key=lambda item: (item.source_month, str(item.path)))
 
 
 def _partitions_from_parquet(path: Path) -> list[MonthlyReferencePartition]:
@@ -84,7 +88,7 @@ def main() -> int:
     parser.add_argument("--aegmm-state", type=Path,
                         default=ROOT / "data_perp/artifacts/s59_s52_july_oosbase_fullmeta_v9tail95_mlp_hierev_20260716_v2/ae_gmm_state/ae_gmm_state.pkl")
     parser.add_argument("--reference-partitions", type=Path,
-                        help="optional parquet path/source_month/population table; default is historical + Pack-B R3")
+                        help="optional parquet path/source_month/population table; default is historical + 2024 surface + Pack-B R3")
     parser.add_argument("--long-r3-manifest", type=Path,
                         default=ROOT / "data_perp/artifacts/stage_i_base_selection_R3_tp6sl4_coverage90_20260804_v1/long/manifest.json")
     parser.add_argument("--short-r3-manifest", type=Path,
@@ -96,39 +100,44 @@ def main() -> int:
     parser.add_argument("--min-aegmm-source-overlap", type=float, default=0.50)
     args = parser.parse_args()
     partitions = _partitions_from_parquet(args.reference_partitions) if args.reference_partitions else _default_partitions()
-    raw_contract = load_frozen_feature_contract(args.feature_contract)
+    model_contract = load_frozen_feature_contract(args.feature_contract)
     state = pd.read_pickle(args.aegmm_state)
     # The output only loads the actual side-local R3 selections plus frozen
     # AE/GMM source fields that the *same* causal store contract admits.  It
     # never quietly widens to all 489 production fields.
     state_inputs = set(map(str, state.get("feature_columns", ()))) - {"side"}
-    available_state_inputs = state_inputs.intersection(raw_contract.feature_columns)
     if args.raw_feature_list_json:
         requested = _raw_feature_list(args.raw_feature_list_json)
-        side_features = {"long": requested, "short": requested}
+        model_side_features = {"long": requested, "short": requested}
     else:
-        side_features = {
+        model_side_features = {
             "long": _selected_features(args.long_r3_manifest),
             "short": _selected_features(args.short_r3_manifest),
         }
-    # The AE/GMM state does not use outcomes, but its source fields must be
-    # explicitly loaded alongside the side's selected model fields.  Only
-    # state fields admitted by the supplied causal store contract can be read.
-    side_features = {
-        side: sorted(set(fields).union(available_state_inputs))
-        for side, fields in side_features.items()
-    }
+    spread_map = PooledP90SpreadMap.from_path(args.p90_spread_map, threshold_bps=args.p90_threshold_bps)
+    # Build a distinct causal source contract for the selected R3 model inputs
+    # plus all frozen-state inputs that are schema-available.  This prevents
+    # the 489-field generic production screen from needlessly truncating the
+    # frozen latent projection, while leaving model features side-local.
+    raw_contract, source_side_features, projection_audit = build_aegmm_projection_source_contract(
+        partitions=partitions, p90_spread_map=spread_map, feature_store_dir=args.feature_store,
+        side_model_features=model_side_features, aegmm_state=state,
+    )
     manifest = materialize_tail_base_input_contract(
         partitions=partitions,
         raw_feature_contract=raw_contract,
-        p90_spread_map=PooledP90SpreadMap.from_path(args.p90_spread_map, threshold_bps=args.p90_threshold_bps),
+        p90_spread_map=spread_map,
         aegmm_state=state,
         output_dir=args.output_dir,
         feature_store_dir=args.feature_store,
         batch_rows=args.batch_rows,
-        side_raw_features=side_features,
+        side_raw_features=model_side_features,
+        source_raw_features=sorted(set().union(*map(set, source_side_features.values()))),
         min_aegmm_source_overlap=args.min_aegmm_source_overlap,
     )
+    manifest["model_feature_contract_sha256"] = model_contract.feature_contract_sha256
+    manifest["aegmm_projection_source_discovery"] = projection_audit
+    (args.output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2))
     return 0
 

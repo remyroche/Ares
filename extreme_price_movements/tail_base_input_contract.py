@@ -13,7 +13,7 @@ experiment manifest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 import os
@@ -25,7 +25,12 @@ import numpy as np
 import pandas as pd
 
 from .features_gmm_ae import transform_ae_gmm_features
-from .packb_static_point_feature_loader import FrozenFeatureContract
+from .packb_static_point_feature_loader import (
+    FrozenFeatureContract,
+    _feature_contract_digest,
+    discover_causal_feature_universe,
+    freeze_feature_contract,
+)
 from .stage_i_production_data_adapter import (
     MonthlyReferencePartition,
     _canonical_symbol,
@@ -118,6 +123,80 @@ def load_frozen_feature_contract(path: str | Path) -> FrozenFeatureContract:
     if not source.is_file():
         raise FileNotFoundError(source)
     return FrozenFeatureContract.from_mapping(json.loads(source.read_text(encoding="utf-8")))
+
+
+def build_aegmm_projection_source_contract(
+    *,
+    partitions: Sequence[MonthlyReferencePartition],
+    p90_spread_map: PooledP90SpreadMap,
+    feature_store_dir: str | Path,
+    side_model_features: Mapping[str, Sequence[str]],
+    aegmm_state: Mapping[str, Any],
+) -> tuple[FrozenFeatureContract, dict[str, list[str]], dict[str, Any]]:
+    """Freeze an outcome-free source contract for selected fields + AE inputs.
+
+    This is deliberately distinct from side MDA selection: it merely proves
+    which registered causal store columns can supply an already-frozen latent
+    transform.  A bounded first-valid-row-per-symbol identity sample makes the
+    schema check inexpensive and avoids reading the wide store values here.
+    """
+
+    if set(map(str, side_model_features)) != {"long", "short"}:
+        raise TailBaseInputContractError("side_model_features must include long and short")
+    identities: list[pd.DataFrame] = []
+    for partition in partitions:
+        ledger, _audit = _read_materialisable_partition(partition)
+        eligible = p90_spread_map.eligible(ledger)
+        eligible = eligible.loc[eligible["p90_spread_eligible"], ["candidate_id", "__ts__", "__symbol__"]]
+        if not eligible.empty:
+            identities.append(eligible.drop_duplicates("__symbol__", keep="first"))
+    if not identities:
+        raise TailBaseInputContractError("no p90-eligible label-valid identities for AE/GMM source discovery")
+    identity = pd.concat(identities, ignore_index=True).drop_duplicates("__symbol__", keep="first")
+    universe = discover_causal_feature_universe(
+        identity, feature_store_dir=feature_store_dir, coverage_discovery=False,
+    )
+    available = set(universe.feature_columns)
+    state_inputs = set(map(str, aegmm_state.get("feature_columns", ()))) - {"side"}
+    state_available = state_inputs.intersection(available)
+    normalized = {side: sorted(set(map(str, fields))) for side, fields in side_model_features.items()}
+    requested = set().union(*map(set, normalized.values()), state_available)
+    missing_model = sorted(set().union(*map(set, normalized.values())).difference(available))
+    if missing_model:
+        raise TailBaseInputContractError(
+            "selected R3 model fields are absent from fresh causal source universe: " + ", ".join(missing_model[:12])
+        )
+    base = freeze_feature_contract(
+        universe, min_exact_key_coverage=0.0, min_non_null_feature_coverage=0.0, max_feature_columns=None,
+    )
+    ordered = tuple(sorted(requested))
+    projection_contract = replace(
+        base, feature_columns=ordered,
+        feature_contract_sha256=_feature_contract_digest(
+            feature_columns=ordered, candidate_universe_sha256=base.candidate_universe_sha256,
+            source_schema_sha256=base.source_schema_sha256, raw_allowlist_sha256=base.raw_allowlist_sha256,
+            generator_registry_sha256=base.generator_registry_sha256,
+            store_scan_manifest_sha256=base.store_scan_manifest_sha256,
+            coverage_profile_sha256=base.coverage_profile_sha256,
+            min_exact_key_coverage=base.min_exact_key_coverage,
+            min_non_null_feature_coverage=base.min_non_null_feature_coverage,
+            max_feature_columns=base.max_feature_columns,
+            coverage_admission_rejections=base.coverage_admission_rejections,
+        ),
+    )
+    per_side = {side: sorted(set(fields).union(state_available)) for side, fields in normalized.items()}
+    audit = {
+        "schema_discovery_rows": int(len(identity)), "schema_discovery_symbols": int(identity["__symbol__"].nunique()),
+        "frozen_aegmm_state_inputs": int(len(state_inputs) + ("side" in aegmm_state.get("feature_columns", ()))),
+        "aegmm_source_inputs_available": int(len(state_available) + ("side" in aegmm_state.get("feature_columns", ()))),
+        "aegmm_source_overlap": float(
+            (len(state_available) + ("side" in aegmm_state.get("feature_columns", ())))
+            / max(1, len(state_inputs) + ("side" in aegmm_state.get("feature_columns", ())))
+        ),
+        "projection_source_fields": int(len(ordered)),
+        "projection_source_contract_sha256": projection_contract.feature_contract_sha256,
+    }
+    return projection_contract, per_side, audit
 
 
 def _partition_files(partition: MonthlyReferencePartition) -> list[Path]:
@@ -275,6 +354,7 @@ def materialize_tail_base_input_contract(
     batch_rows: int = 8_000,
     raw_features: Sequence[str] | None = None,
     side_raw_features: Mapping[str, Sequence[str]] | None = None,
+    source_raw_features: Sequence[str] | None = None,
     aegmm_prefix: str = "aegmm_",
     min_aegmm_source_overlap: float = 0.50,
     pit_feature_loader: PointFeatureLoader | None = None,
@@ -310,11 +390,16 @@ def materialize_tail_base_input_contract(
         if not normalized["long"] or not normalized["short"]:
             raise TailBaseInputContractError("each side-specific raw feature list must be non-empty")
         side_feature_audit = {side: list(values) for side, values in normalized.items()}
-        declared = tuple(sorted(set(normalized["long"]).union(normalized["short"])))
+        model_declared = tuple(sorted(set(normalized["long"]).union(normalized["short"])))
     else:
-        declared = tuple(map(str, raw_features or raw_feature_contract.feature_columns))
+        model_declared = tuple(map(str, raw_features or raw_feature_contract.feature_columns))
+    declared = tuple(sorted(set(map(str, source_raw_features or model_declared))))
+    if not model_declared or len(set(model_declared)) != len(model_declared):
+        raise TailBaseInputContractError("model raw feature fields must be non-empty and unique")
     if not declared or len(set(declared)) != len(declared):
         raise TailBaseInputContractError("raw feature fields must be non-empty and unique")
+    if not set(model_declared).issubset(declared):
+        raise TailBaseInputContractError("source raw feature fields must include all model raw fields")
     unavailable = sorted(set(declared).difference(raw_feature_contract.feature_columns))
     if unavailable:
         raise TailBaseInputContractError(f"raw feature fields are outside frozen feature contract: {unavailable}")
@@ -350,6 +435,7 @@ def materialize_tail_base_input_contract(
         )
     destination.mkdir(parents=True, exist_ok=False)
     coverage: dict[str, int] = {}
+    source_coverage: dict[str, int] = {}
     written_rows = 0
     output_parts: list[str] = []
     audits: list[dict[str, Any]] = []
@@ -392,11 +478,12 @@ def materialize_tail_base_input_contract(
                 result["tail_target_t2_valid"] = batch["label_valid"].astype(bool).to_numpy()
                 result["tail_target_atr_grade_0_5"] = atr_grade
                 result["tail_target_atr_z"] = atr_z
-                result = pd.concat([result.reset_index(drop=True), raw.loc[:, list(declared)].reset_index(drop=True), ae], axis=1)
+                result = pd.concat([result.reset_index(drop=True), raw.loc[:, list(model_declared)].reset_index(drop=True), ae], axis=1)
                 if result.columns.duplicated().any():
                     duplicate = result.columns[result.columns.duplicated()].tolist()
                     raise TailBaseInputContractError(f"materialised input has duplicate columns: {duplicate}")
-                _update_coverage(coverage, result, [*declared, *ae.columns])
+                _update_coverage(source_coverage, raw, declared)
+                _update_coverage(coverage, result, [*model_declared, *ae.columns])
                 relative = Path("parts") / f"month={partition.source_month}" / f"part-{partition_index:04d}-{batch_index:05d}.parquet"
                 _atomic_parquet(result, destination / relative)
                 output_parts.append(str(relative))
@@ -412,6 +499,14 @@ def materialize_tail_base_input_contract(
         coverage_frame["coverage"] = coverage_frame["non_null_rows"] / float(written_rows)
         coverage_frame["coverage_ge_90pct"] = coverage_frame["coverage"] >= 0.90
         coverage_frame.to_parquet(destination / "feature_coverage_audit.parquet", index=False)
+        source_coverage_frame = pd.DataFrame({
+            "source_feature": list(declared),
+            "non_null_rows": [source_coverage.get(name, 0) for name in declared],
+            "rows": int(written_rows),
+        })
+        source_coverage_frame["coverage"] = source_coverage_frame["non_null_rows"] / float(written_rows)
+        source_coverage_frame["used_as_model_input"] = source_coverage_frame["source_feature"].isin(model_declared)
+        source_coverage_frame.to_parquet(destination / "aegmm_source_coverage_audit.parquet", index=False)
         pd.DataFrame(audits).to_parquet(destination / "label_spread_audit.parquet", index=False)
         t3_ready = bool(all(bool(row["tbm_input_columns_available"]) for row in audits))
         manifest: dict[str, Any] = {
@@ -421,8 +516,10 @@ def materialize_tail_base_input_contract(
             "parts": output_parts,
             "identity_contract": list(IDENTITY),
             "raw_feature_contract_sha256": raw_feature_contract.feature_contract_sha256,
-            "raw_feature_columns": list(declared),
-            "raw_feature_count": len(declared),
+            "raw_feature_columns": list(model_declared),
+            "raw_feature_count": len(model_declared),
+            "aegmm_source_raw_feature_columns": list(declared),
+            "aegmm_source_raw_feature_count": len(declared),
             "side_raw_feature_contracts": side_feature_audit,
             "frozen_aegmm_output_columns": list(ae_columns),
             "frozen_aegmm_output_count": len(ae_columns),
@@ -445,6 +542,7 @@ def materialize_tail_base_input_contract(
                 "t3_never_approximated_from_tp6_sl4_labels": True,
             },
             "coverage_audit": "feature_coverage_audit.parquet",
+            "aegmm_source_coverage_audit": "aegmm_source_coverage_audit.parquet",
             "label_spread_audit": "label_spread_audit.parquet",
         }
         (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -457,5 +555,5 @@ def materialize_tail_base_input_contract(
 
 __all__ = [
     "IDENTITY", "PooledP90SpreadMap", "SCHEMA", "TailBaseInputContractError",
-    "load_frozen_feature_contract", "materialize_tail_base_input_contract",
+    "build_aegmm_projection_source_contract", "load_frozen_feature_contract", "materialize_tail_base_input_contract",
 ]

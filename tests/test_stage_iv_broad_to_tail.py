@@ -5,7 +5,9 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.stage_iv_broad_to_tail import (
+    CANONICAL_LAMBDARANK_PARAMS,
     StageIVPlan,
+    canonical_lambdarank_params,
     pooled_global_stage_iv_metrics,
     prequential_tail_handoff,
     run_stage_iv_broad_to_tail_ablation,
@@ -76,6 +78,7 @@ def _plan(
         min_handoff_history_rows=8,
         n_validation_folds=3,
         broad_output_route=route,
+        burn_in_months=0,
     )
 
 
@@ -197,3 +200,49 @@ def test_metrics_rank_one_pooled_book_then_attribute_month_and_side() -> None:
 def test_invalid_x_is_rejected() -> None:
     with pytest.raises(ValueError, match="20%, 30%, 40%, or 50%"):
         run_stage_iv_broad_to_tail_ablation([_plan("long", tail_fraction=0.10)], fitter=_fitter_records([]))
+
+
+def test_tail_uses_its_explicit_label_and_ranker_context_is_timestamp_side() -> None:
+    records: list[tuple[str, tuple[str, ...], int]] = []
+    observed: list[tuple[str, np.ndarray, dict[str, object]]] = []
+
+    def fit(X, y, weight, layer, params):
+        observed.append((layer, np.asarray(y).copy(), dict(params)))
+        return _fitter_records(records)(X, y, weight, layer, params)
+
+    plan = _plan("long")
+    # The broad label is deliberately unlike this tail label.  A tail fit must
+    # receive the latter, while preserving the standard strict handoff.
+    tail_target = np.full(len(plan.frame), 5.0, dtype=np.float32)
+    ranker = canonical_lambdarank_params({"n_estimators": 7})
+    plan = StageIVPlan(
+        **{**plan.__dict__, "tail_target": tail_target, "tail_params": ranker}
+    )
+    result = run_stage_iv_broad_to_tail_ablation([plan], fitter=fit)
+    tail_labels = [y for layer, y, _ in observed if layer == "tail"]
+    assert tail_labels and all(np.all(y == 5.0) for y in tail_labels)
+    tail_params = [params for layer, _y, params in observed if layer == "tail"]
+    assert tail_params and all("__stage_iv_ranker_groups" in params for params in tail_params)
+    assert all(
+        all(str(group).startswith("tail|") for group in params["__stage_iv_ranker_groups"])
+        for params in tail_params
+    )
+    assert result.predictions.tail_target_source.eq("explicit_tail_target").all()
+    assert CANONICAL_LAMBDARANK_PARAMS["eval_at"] == [1, 3, 5]
+
+
+def test_default_calendar_burn_in_is_two_months_and_is_layer_independent() -> None:
+    plan = _plan("long")
+    # Keep the small row requirement, but restore the production two-calendar-
+    # month burn-in.  These 160 hourly timestamps cannot produce any broad
+    # OOF score, proving the default is not silently a row-only burn-in.
+    plan = StageIVPlan(**{**plan.__dict__, "burn_in_months": 2})
+    result = run_stage_iv_broad_to_tail_ablation([plan], fitter=_fitter_records([]))
+    assert not result.predictions.broad_strict_oof_available.any()
+    assert not result.predictions.tail_strict_oof_available.any()
+    assert not result.predictions.meta_strict_oof_available.any()
+
+
+def test_canonical_lambdarank_contract_rejects_semantic_drift() -> None:
+    with pytest.raises(ValueError, match="eval_at"):
+        canonical_lambdarank_params({"eval_at": [10]})

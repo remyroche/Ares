@@ -108,6 +108,7 @@ def _plan_snapshot(plan: StageIVPlan) -> dict[str, Any]:
         "decision_timestamps": [str(value) for value in plan.decision_timestamps],
         "label_available_timestamps": [str(value) for value in plan.label_available_timestamps],
         "base_target": [float(value) for value in plan.base_target],
+        "tail_target": None if plan.tail_target is None else [float(value) for value in plan.tail_target],
         "exact_net_bps": [float(value) for value in plan.exact_net_bps],
         "meta_target": None if plan.meta_target is None else [float(value) for value in plan.meta_target],
         "sample_weight": None if plan.sample_weight is None else [float(value) for value in plan.sample_weight],
@@ -122,6 +123,7 @@ def _plan_snapshot(plan: StageIVPlan) -> dict[str, Any]:
         },
         "cost_bps": float(plan.cost_bps),
         "n_validation_folds": int(plan.n_validation_folds),
+        "burn_in_months": int(plan.burn_in_months),
     }
 
 

@@ -71,6 +71,7 @@ def _plan(side: str, *, fraction: float, broad_burn: int = 24, tail_burn: int = 
         min_handoff_history_rows=12,
         n_validation_folds=3,
         broad_output_route=route,
+        burn_in_months=0,
     )
 
 

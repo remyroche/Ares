@@ -26,10 +26,24 @@ from .stage_i_causal_admission import (
 )
 
 
-SCHEMA = "stage_iv_broad_to_tail_strict_oof_v1"
+SCHEMA = "stage_iv_broad_to_tail_strict_oof_v2"
 TAIL_FRACTIONS = frozenset({0.20, 0.30, 0.40, 0.50})
 _ROUTES = frozenset({"neither", "tail", "meta", "both"})
 _TOP_FRACTIONS = (0.01, 0.05, 0.10, 0.20)
+_RANKER_GROUPS_PARAM = "__stage_iv_ranker_groups"
+
+# This is deliberately a public, immutable-by-convention contract rather than
+# a hidden set of defaults in a materialisation script.  Stage IV callers may
+# add ordinary LightGBM tree parameters, but may not silently change the
+# ranking semantics across the broad, tail, and residual layers.
+CANONICAL_LAMBDARANK_PARAMS: Mapping[str, Any] = {
+    "objective": "lambdarank",
+    "metric": "ndcg",
+    "eval_at": [1, 3, 5],
+    "lambdarank_norm": True,
+    "lambdarank_truncation_level": 8,
+    "label_gain": [0.0, 0.25, 1.0, 3.0, 7.0, 12.0],
+}
 
 
 class _Predictor(Protocol):
@@ -62,6 +76,10 @@ class StageIVPlan:
     broad_params: Mapping[str, Any] = field(default_factory=dict)
     tail_params: Mapping[str, Any] = field(default_factory=dict)
     meta_params: Mapping[str, Any] = field(default_factory=dict)
+    # ``None`` retains the legacy broad-label control only.  New Stage-IV
+    # experiments must supply this independently: the tail model is intended
+    # to learn an exceptional-outcome target, not to refit the broad R3 label.
+    tail_target: Sequence[float] | None = None
     tail_fraction: float = 0.30
     broad_min_train_rows: int = 500
     tail_min_train_rows: int = 500
@@ -72,6 +90,11 @@ class StageIVPlan:
     sample_weight: Sequence[float] | None = None
     meta_target: Sequence[float] | None = None
     cost_bps: float = 100.0
+    # Every layer has an independent calendar burn-in on the candidate stream
+    # that it can actually train on.  This is deliberately calendar-month,
+    # not an approximate 60-day interval: 2024-01-01 -> 2024-03-01 is two
+    # months even in a leap year.  Zero remains useful for unit tests.
+    burn_in_months: int = 2
 
 
 @dataclass(frozen=True)
@@ -118,6 +141,29 @@ def _features(values: Sequence[str], frame: pd.DataFrame, *, name: str) -> list[
     return names
 
 
+def canonical_lambdarank_params(
+    overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the fixed Stage-IV LambdaRank contract plus tree overrides.
+
+    ``label_gain`` deliberately describes the six declared grade levels.  A
+    caller that needs a different target must transform it before it enters
+    this orchestration layer, rather than weakening ranking semantics for one
+    arm of the comparison.
+    """
+    params = dict(CANONICAL_LAMBDARANK_PARAMS)
+    requested = dict(overrides or {})
+    for name, expected in CANONICAL_LAMBDARANK_PARAMS.items():
+        if name in requested and requested[name] != expected:
+            raise ValueError(f"Stage IV LambdaRank requires {name}={expected!r}")
+    params.update(requested)
+    return params
+
+
+def _uses_lambdarank(params: Mapping[str, Any]) -> bool:
+    return str(params.get("objective", "")).strip().lower() == "lambdarank"
+
+
 def _validate_plan(plan: StageIVPlan) -> tuple[pd.DataFrame, dict[str, Any]]:
     side = str(plan.side).lower()
     if side not in {"long", "short"}:
@@ -139,6 +185,8 @@ def _validate_plan(plan: StageIVPlan) -> tuple[pd.DataFrame, dict[str, Any]]:
             raise ValueError(f"{name} must be positive")
     if not np.isfinite(float(plan.cost_bps)):
         raise ValueError("cost_bps must be finite")
+    if int(plan.burn_in_months) != plan.burn_in_months or int(plan.burn_in_months) < 0:
+        raise ValueError("burn_in_months must be a non-negative integer")
     frame = plan.frame.copy()
     frame.columns = [str(column) for column in frame.columns]
     n = len(frame)
@@ -148,9 +196,15 @@ def _validate_plan(plan: StageIVPlan) -> tuple[pd.DataFrame, dict[str, Any]]:
     if pd.isna(ids).any() or len(pd.unique(ids)) != n:
         raise ValueError("candidate_ids must be non-null and unique within a side")
     target = _vector(plan.base_target, n, name="base_target", dtype=np.float32)
+    if plan.tail_target is None:
+        tail_target = target.copy()
+        tail_target_source = "legacy_base_target_control"
+    else:
+        tail_target = _vector(plan.tail_target, n, name="tail_target", dtype=np.float32)
+        tail_target_source = "explicit_tail_target"
     net = _vector(plan.exact_net_bps, n, name="exact_net_bps", dtype=np.float32)
-    if not np.isfinite(target).all() or not np.isfinite(net).all():
-        raise ValueError("base_target and exact_net_bps must be finite")
+    if not np.isfinite(target).all() or not np.isfinite(tail_target).all() or not np.isfinite(net).all():
+        raise ValueError("base_target, tail_target and exact_net_bps must be finite")
     decision = _utc(plan.decision_timestamps, name="decision_timestamps")
     available = _utc(plan.label_available_timestamps, name="label_available_timestamps")
     if len(decision) != n or len(available) != n or (available <= decision).any():
@@ -163,20 +217,39 @@ def _validate_plan(plan: StageIVPlan) -> tuple[pd.DataFrame, dict[str, Any]]:
             raise ValueError("sample_weight must be finite, non-negative and non-empty")
     if plan.meta_target is None:
         meta_target = None
+        meta_target_source = "legacy_exact_net_minus_strict_oof_tail_score"
     else:
         meta_target = _vector(plan.meta_target, n, name="meta_target", dtype=np.float32)
         if not np.isfinite(meta_target).all():
             raise ValueError("meta_target must be finite")
+        meta_target_source = "explicit_meta_target"
+    for layer, params, layer_target in (
+        ("broad", plan.broad_params, target),
+        ("tail", plan.tail_params, tail_target),
+        ("meta", plan.meta_params, meta_target),
+    ):
+        if _uses_lambdarank(params):
+            canonical_lambdarank_params(params)
+            if layer_target is not None:
+                rounded = np.rint(layer_target)
+                if (rounded != layer_target).any() or (rounded < 0).any() or (rounded > 5).any():
+                    raise ValueError(
+                        f"{layer} LambdaRank target must be an integer grade in [0, 5] "
+                        "for the declared label_gain"
+                    )
     return frame, {
         "side": side,
         "route": route,
         "ids": ids,
         "target": target,
+        "tail_target": tail_target,
+        "tail_target_source": tail_target_source,
         "net": net,
         "decision": decision,
         "available": available,
         "weight": weight,
         "meta_target": meta_target,
+        "meta_target_source": meta_target_source,
         "broad_features": _features(plan.broad_feature_names, frame, name="broad_feature_names"),
         "tail_features": _features(plan.tail_feature_names, frame, name="tail_feature_names"),
         "meta_features": _features(plan.meta_feature_names, frame, name="meta_feature_names"),
@@ -201,13 +274,20 @@ def _strict_blocks(
     available: pd.Series,
     min_train_rows: int,
     n_folds: int,
+    burn_in_months: int,
 ) -> list[np.ndarray]:
-    """Whole-timestamp blocks, after an independent prior-resolved burn-in."""
+    """Whole-timestamp blocks after independent calendar and row burn-ins."""
     candidates = np.flatnonzero(candidate_mask)
     groups = _groups_at_timestamps(candidates, decision)
+    if not groups:
+        return []
+    candidate_start = decision.iloc[np.concatenate(groups)].min()
+    burn_in_end = candidate_start + pd.DateOffset(months=int(burn_in_months))
     eligible_from = len(groups)
     for group_index, group in enumerate(groups):
         start = decision.iloc[group].min()
+        if start < burn_in_end:
+            continue
         train = trainable_mask & decision.lt(start).to_numpy() & available.lt(start).to_numpy()
         if int(train.sum()) >= int(min_train_rows):
             eligible_from = group_index
@@ -247,6 +327,26 @@ def _default_lgbm_fitter(
     from .lgbm_pipeline import _fit_lgbm_model
 
     frozen = dict(params)
+    ranker_groups = frozen.pop(_RANKER_GROUPS_PARAM, None)
+    if _uses_lambdarank(frozen):
+        if ranker_groups is None:
+            raise ValueError("Stage IV LambdaRank fitting requires timestamp × side groups")
+        frozen = canonical_lambdarank_params(frozen)
+        # Do not defer to the repository-wide ranker environment switch here:
+        # a requested Stage-IV LambdaRank arm must not silently become a
+        # pointwise regressor just because production ranking is disabled.
+        import lightgbm as lgb
+        from .lgbm_pipeline import _lgbm_ranker_group_order
+
+        order, group = _lgbm_ranker_group_order(np.asarray(ranker_groups, dtype=object))
+        model = lgb.LGBMRanker(**frozen)
+        model.fit(
+            X.iloc[order].reset_index(drop=True),
+            np.asarray(y, dtype=np.int32)[order],
+            group=group,
+            sample_weight=np.asarray(weight, dtype=np.float32)[order],
+        )
+        return model
     frozen.setdefault("objective", "huber" if layer == "meta" else "regression")
     return _fit_lgbm_model(
         X, y, weight, classifier=False, params=frozen,
@@ -301,6 +401,7 @@ def _design(frame: pd.DataFrame, features: Sequence[str], extra: Mapping[str, np
 def _fit_stage(
     *,
     layer: str,
+    side: str,
     design: pd.DataFrame,
     target: np.ndarray,
     weight: np.ndarray,
@@ -310,6 +411,7 @@ def _fit_stage(
     available: pd.Series,
     min_train_rows: int,
     n_folds: int,
+    burn_in_months: int,
     params: Mapping[str, Any],
     fitter: ModelFitter,
     output: np.ndarray,
@@ -319,7 +421,7 @@ def _fit_stage(
     blocks = _strict_blocks(
         candidate_mask=candidate_mask, trainable_mask=trainable_mask,
         decision=decision, available=available, min_train_rows=min_train_rows,
-        n_folds=n_folds,
+        n_folds=n_folds, burn_in_months=burn_in_months,
     )
     for fold_id, validation_idx in enumerate(blocks):
         start = decision.iloc[validation_idx].min()
@@ -331,11 +433,21 @@ def _fit_stage(
             raise AssertionError(f"{layer} fold bypassed its independent burn-in")
         if not available.iloc[train_idx].lt(start).all() or not decision.iloc[train_idx].lt(start).all():
             raise AssertionError(f"{layer} fold contains non-prior training information")
-        model = fitter(design.iloc[train_idx], target[train_idx], weight[train_idx], layer, params)
+        fit_params = dict(params)
+        if _uses_lambdarank(fit_params):
+            # The explicit side qualification keeps the group identity correct
+            # even if a caller records fit provenance across side-local plans.
+            # It is passed outside ``X`` and therefore can never become a
+            # learned row feature.
+            timestamp = decision.iloc[train_idx].astype("int64").astype(str).to_numpy(dtype=object)
+            fit_params[_RANKER_GROUPS_PARAM] = np.asarray(
+                [f"{layer}|{side}|{value}" for value in timestamp], dtype=object
+            )
+        model = fitter(design.iloc[train_idx], target[train_idx], weight[train_idx], layer, fit_params)
         output[validation_idx] = _predict(model, design.iloc[validation_idx], layer=layer)
         fold_output[validation_idx] = int(fold_id)
         provenance.append({
-            "side": None, "layer": layer, "fold_id": int(fold_id),
+            "side": side, "layer": layer, "fold_id": int(fold_id),
             "train_rows": int(len(train_idx)), "validation_rows": int(len(validation_idx)),
             "validation_start_ts": start,
             "validation_end_ts": decision.iloc[validation_idx].max(),
@@ -369,11 +481,11 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
 
     broad_design = _design(frame, values["broad_features"], {})
     _fit_stage(
-        layer="broad", design=broad_design, target=target, weight=weight,
+        layer="broad", side=side, design=broad_design, target=target, weight=weight,
         candidate_mask=np.ones(n, dtype=bool), trainable_mask=np.ones(n, dtype=bool),
         decision=decision, available=available, min_train_rows=int(plan.broad_min_train_rows),
         n_folds=int(plan.n_validation_folds), params=plan.broad_params, fitter=fit,
-        output=broad, fold_output=broad_fold, provenance=provenance,
+        burn_in_months=int(plan.burn_in_months), output=broad, fold_output=broad_fold, provenance=provenance,
     )
     broad_scored = np.isfinite(broad)
     threshold, tail_eligible = prequential_tail_handoff(
@@ -386,12 +498,14 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
     if route in {"tail", "both"}:
         tail_extra["__stage_iv_broad_same_side_oof_score"] = broad
     tail_design = _design(frame, values["tail_features"], tail_extra)
+    tail_target = values["tail_target"]
+    assert isinstance(tail_target, np.ndarray)
     _fit_stage(
-        layer="tail", design=tail_design, target=target, weight=weight,
+        layer="tail", side=side, design=tail_design, target=tail_target, weight=weight,
         candidate_mask=tail_eligible, trainable_mask=tail_eligible,
         decision=decision, available=available, min_train_rows=int(plan.tail_min_train_rows),
         n_folds=int(plan.n_validation_folds), params=plan.tail_params, fitter=fit,
-        output=tail, fold_output=tail_fold, provenance=provenance,
+        burn_in_months=int(plan.burn_in_months), output=tail, fold_output=tail_fold, provenance=provenance,
     )
     tail_scored = np.isfinite(tail)
     # The residual target is deliberately per-row and same-side.  It is never
@@ -407,11 +521,11 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
         meta_extra["__stage_iv_broad_same_side_oof_score"] = broad
     meta_design = _design(frame, values["meta_features"], meta_extra)
     _fit_stage(
-        layer="meta", design=meta_design, target=np.asarray(meta_target, dtype=np.float32), weight=weight,
+        layer="meta", side=side, design=meta_design, target=np.asarray(meta_target, dtype=np.float32), weight=weight,
         candidate_mask=tail_scored, trainable_mask=tail_scored,
         decision=decision, available=available, min_train_rows=int(plan.meta_min_train_rows),
         n_folds=int(plan.n_validation_folds), params=plan.meta_params, fitter=fit,
-        output=meta, fold_output=meta_fold, provenance=provenance,
+        burn_in_months=int(plan.burn_in_months), output=meta, fold_output=meta_fold, provenance=provenance,
     )
     meta_scored = np.isfinite(meta)
     final_score = tail + meta
@@ -437,9 +551,9 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
         "broad_fold_id": broad_fold,
         "tail_fold_id": tail_fold,
         "meta_fold_id": meta_fold,
+        "tail_target_source": values["tail_target_source"],
+        "meta_target_source": values["meta_target_source"],
     })
-    for row in provenance:
-        row["side"] = side
     provenance_frame = pd.DataFrame(provenance)
     if not provenance_frame.empty:
         starts = pd.to_datetime(provenance_frame.validation_start_ts, utc=True)
@@ -455,8 +569,14 @@ def generate_stage_iv_side_oof(plan: StageIVPlan, *, fitter: ModelFitter | None 
                 "broad": int(plan.broad_min_train_rows), "tail": int(plan.tail_min_train_rows),
                 "meta": int(plan.meta_min_train_rows), "handoff_score_history": int(plan.min_handoff_history_rows),
             },
+            "burn_in_calendar_months_per_layer": int(plan.burn_in_months),
             "handoff": "prior-score-only global-in-time top-x; never per timestamp",
             "same_side_direct_handoffs": True,
+            "target_lineage": {
+                "broad": "explicit_base_target",
+                "tail": str(values["tail_target_source"]),
+                "meta": str(values["meta_target_source"]),
+            },
             "feature_counts": {
                 "broad": len(values["broad_features"]), "tail": len(values["tail_features"]),
                 "meta": len(values["meta_features"]),
@@ -540,11 +660,11 @@ def run_stage_iv_broad_to_tail_ablation(
         "base_tail": "tail_same_side_oof_score",
         "meta_residual_reconstructed": "meta_reconstructed_expected_net_bps",
     }
-    raw_metrics = pd.concat(
-        [pooled_global_stage_iv_metrics(predictions, score_column=column, layer=layer)
-         for layer, column in metric_specs.items() if predictions[column].notna().any()],
-        ignore_index=True,
-    )
+    metric_frames = [
+        pooled_global_stage_iv_metrics(predictions, score_column=column, layer=layer)
+        for layer, column in metric_specs.items() if predictions[column].notna().any()
+    ]
+    raw_metrics = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
     admitted: pd.DataFrame | None = None
     admitted_metrics = pd.DataFrame()
     if admission_spec is not None:
@@ -580,7 +700,8 @@ def run_stage_iv_broad_to_tail_ablation(
 
 
 __all__ = [
-    "SCHEMA", "TAIL_FRACTIONS", "StageIVPlan", "StageIVSideResult", "StageIVResult",
+    "SCHEMA", "TAIL_FRACTIONS", "CANONICAL_LAMBDARANK_PARAMS", "canonical_lambdarank_params",
+    "StageIVPlan", "StageIVSideResult", "StageIVResult",
     "ModelFitter", "prequential_tail_handoff", "generate_stage_iv_side_oof",
     "pooled_global_stage_iv_metrics", "run_stage_iv_broad_to_tail_ablation",
 ]

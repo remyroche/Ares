@@ -13,6 +13,7 @@ until their individual evidence exists.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -197,6 +198,18 @@ def _prepare_support_label(frame: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _serialise_audit_for_parquet(rows: list[dict]) -> pd.DataFrame:
+    """Make bounded pair ledgers Arrow-safe without losing audit detail."""
+
+    result = pd.DataFrame(rows)
+    if "selected_pairs_by_query" in result:
+        result["selected_pairs_by_query"] = result["selected_pairs_by_query"].map(
+            lambda value: json.dumps(value, separators=(",", ":"), default=str)
+            if isinstance(value, (list, tuple)) else value,
+        )
+    return result
+
+
 def run(args: argparse.Namespace) -> Path:
     output = Path(args.output_dir)
     if output.exists() and any(output.iterdir()) and not args.resume:
@@ -351,7 +364,9 @@ def run(args: argparse.Namespace) -> Path:
         pd.concat(support_prediction_parts, ignore_index=True).to_parquet(
             output / "strict_prequential_support_predictions.parquet", index=False, compression="zstd"
         )
-    pd.DataFrame(fit_audits).to_parquet(output / "arm_fold_audit.parquet", index=False, compression="zstd")
+    _serialise_audit_for_parquet(fit_audits).to_parquet(
+        output / "arm_fold_audit.parquet", index=False, compression="zstd"
+    )
     pd.DataFrame([
         metric for score in scores for metric in _tail_metrics_with_fold_rows(predictions, score)
     ]).to_parquet(output / "ablation_metrics.parquet", index=False, compression="zstd")

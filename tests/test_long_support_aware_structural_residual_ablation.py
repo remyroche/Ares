@@ -9,6 +9,7 @@ from scripts.run_long_support_aware_structural_residual_ablation import (
     _native_specs,
     _custom_control_specs,
     _prepare_support_label,
+    _serialise_audit_for_parquet,
 )
 
 
@@ -32,3 +33,10 @@ def test_custom_pairwise_control_has_no_support_arm_or_probability():
     assert specs == [("R3_portability_health", "S1_uniform", None, False)]
     assert SUPPORT_COLUMN != PAIRWISE_CONTROL_COLUMN
     assert SUPPORT_PROBABILITY not in {field for spec in specs for field in spec if isinstance(field, str)}
+
+
+def test_pair_audit_nested_query_rows_are_serialised_for_parquet():
+    audit = _serialise_audit_for_parquet([
+        {"score": "control", "selected_pairs_by_query": (("q1", 4), ("q2", 2))},
+    ])
+    assert audit.loc[0, "selected_pairs_by_query"] == '[["q1",4],["q2",2]]'

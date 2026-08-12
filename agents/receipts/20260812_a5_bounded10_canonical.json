@@ -1,0 +1,31 @@
+{
+  "schema": "ares_agent_receipt_v1",
+  "date": "2026-08-12",
+  "objective": "Promote A5 bounded 10% over the A0 top-15 domain as the canonical final trust layer.",
+  "status": "complete_shadow_only",
+  "implementation": [
+    "extreme_price_movements/strict_r3_a5_trust.py",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py",
+    "extreme_price_movements/strict_r3_inference_bundle.py",
+    "scripts/fit_strict_r3_a5_bounded_trust.py",
+    "scripts/run_strict_r3_shadow_cycle.py",
+    "scripts/run_strict_r3_hourly_shadow.py"
+  ],
+  "contracts": [
+    "config/strict_r3_a5_bounded_10pct_canonical_v1.json",
+    "config/strict_r3_cell_day_trim15_portfolio_28d_a5_b10_v1.json",
+    "config/strict_r3_inference_bundle_long_20260801_v5_a5_b10.json"
+  ],
+  "tests": {
+    "focused": "18 passed",
+    "sealed_bundle_hashes": 23,
+    "end_to_end_shadow": "passed"
+  },
+  "important_semantics": {
+    "R5_role": "A0 causal anchor retained internally",
+    "A5_formula": "A0 + 0.10 * (calibrated A4 - A0)",
+    "domain": "single timestamp-local top-15 gate by pre-trust final_score",
+    "admission": "fixed A0 >= 50 and domain; A5 reranks only",
+    "production_authorized": false
+  }
+}

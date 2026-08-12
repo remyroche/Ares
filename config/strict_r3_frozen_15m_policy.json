@@ -1,0 +1,13 @@
+{
+  "schema": "strict_r3_frozen_15m_policy_v1",
+  "selection": "predeclared control; not selected on 2025-2026 evaluation outcomes",
+  "engine": "extreme_price_movements.simple_policy_optimiser.simulate_and_score",
+  "winner": {
+    "sl_mult": 3.0,
+    "trailing_activation_mult": 0.5,
+    "fixed_trailing_gap_mult": 0.25
+  },
+  "entry": "first 15-minute open at signal close + 1 hour",
+  "timeout_hours": 12,
+  "cost_bps_once": 100.0
+}

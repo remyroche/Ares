@@ -1,0 +1,39 @@
+{
+  "task": "ten-head-conditional-usefulness-residual-funnel",
+  "scope": "Add a chronological long-only ten-head LambdaRank residual funnel that selects target/query contracts, feature subsets, and per-head HPO configurations only by their conditional impact on the fixed other-nine-head base-plus-consensus stack. It uses prequential base anchors, mature policy labels, global Top-1/2/5 net EV and worst-month stability, then confirms the frozen contract once on later untouched months.",
+  "changed_paths": [
+    "extreme_price_movements/residual_lambdarank_hpo.py",
+    "scripts/run_ten_head_conditional_usefulness_funnel.py",
+    "scripts/render_ten_head_conditional_usefulness_report.py",
+    "tests/test_residual_lambdarank_hpo.py",
+    "tests/test_ten_head_conditional_usefulness_funnel.py",
+    "agents/receipts/20260810_ten_head_conditional_usefulness_funnel.json"
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "PYTHONPYCACHEPREFIX=/private/tmp/pycache_ten_head_conditional python3 -m py_compile extreme_price_movements/residual_lambdarank_hpo.py scripts/run_ten_head_conditional_usefulness_funnel.py tests/test_residual_lambdarank_hpo.py tests/test_ten_head_conditional_usefulness_funnel.py",
+      "one-month actual-source smoke: strict prequential base join, policy-label maturity gate, ten canonical heads, globally ranked fixed-policy output, and deterministic cached-incumbent target/query comparison (0.000 bps incumbent change)",
+      "Full sequential funnel: PYTHONPYCACHEPREFIX=/private/tmp/pycache_ten_head PYTHONPATH=. python3 scripts/run_ten_head_conditional_usefulness_funnel.py --out data_perp/artifacts/ten_head_conditional_usefulness_20260810_v1 --development-months 2025-05 2025-06 2025-07 --final-months 2025-08 2025-09 2025-10 --train-start 2025-02-01 --max-train-rows 60000 --mda-max-eval-rows 90000 --target-query-candidates 6 --query-shortlist-limit 3 --hpo-trials 6 --stages baseline target_query mda hpo final --report docs/TEN_HEAD_CONDITIONAL_USEFULNESS_FUNNEL_20260810.md: completed; final frozen winner improves matched control by +15.15/+9.55/+4.66 bps at global Top-1/2/5 and +16.39 bps at worst-month Top-5",
+      "PYTHONPYCACHEPREFIX=/private/tmp/pycache_ten_head PYTHONPATH=. python3 scripts/render_ten_head_conditional_usefulness_report.py --artifact data_perp/artifacts/ten_head_conditional_usefulness_20260810_v1 --report docs/TEN_HEAD_CONDITIONAL_USEFULNESS_FUNNEL_20260810.md: passed",
+      "PYTHONPYCACHEPREFIX=/private/tmp/pycache_ten_head PYTHONPATH=. python3 -m pytest -q tests/test_residual_lambdarank_hpo.py tests/test_ten_head_conditional_usefulness_funnel.py: 16 passed",
+      "PYTHONPYCACHEPREFIX=/private/tmp/pycache_ten_head PYTHONPATH=. python3 scripts/validate_agent_receipt.py extreme_price_movements/residual_lambdarank_hpo.py scripts/run_ten_head_conditional_usefulness_funnel.py scripts/render_ten_head_conditional_usefulness_report.py: passed"
+    ],
+    "not_run_reason": ""
+  },
+  "artifacts": [
+    "data_perp/artifacts/ten_head_conditional_usefulness_20260810_v1",
+    "data_perp/artifacts/ten_head_conditional_usefulness_20260810_v1/development_frozen_winner_head_necessity.parquet",
+    "data_perp/artifacts/ten_head_conditional_usefulness_20260810_v1/final_frozen_winner_head_necessity.parquet",
+    "docs/TEN_HEAD_CONDITIONAL_USEFULNESS_FUNNEL_20260810.md"
+  ],
+  "agent_plan": {"subagents": []}
+}

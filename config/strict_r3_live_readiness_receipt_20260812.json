@@ -1,0 +1,111 @@
+{
+  "schema": "strict_r3_live_readiness_receipt_v1",
+  "scope": "long_only_shadow",
+  "as_of_ts": "2026-08-12T09:00:00+00:00",
+  "canonical_admission": "strict_oof_exact_producer_cell_day_trim15_42d_v1",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260716_v2.json",
+    "sha256": "0c69110318a2a703d10c7430669719c65093ffb77478dd4ecb00956ed02a294f",
+    "activation_ts": "2026-07-16T00:00:00+00:00",
+    "end_exclusive_ts": "2026-08-13T00:00:00+00:00",
+    "sealed_inputs_verified": 15,
+    "geometry_refit_cadence": "never"
+  },
+  "five_hour_shadow_evidence": {
+    "path": "data_perp/artifacts/strict_r3_multi_hour_shadow_20260812T0500_1000Z_v2",
+    "run_manifest_sha256": "674298b095727f3364ee097e97db49c3d3510e15abd946e427d6bf8f1e22d8cb",
+    "hourly_summary_sha256": "823cacf56ede78f3e8eff6e5243c50c0fa61542297cacedd5a9a53cf95690c4f",
+    "shadow_decisions_sha256": "6a2d0282000d963618abce8ab8e48e8d60caa883b925f20f271fdf39e6de74ad",
+    "hours": 5,
+    "population_rows": 850,
+    "actionable_rows": 816,
+    "mapped_rows": 816,
+    "admitted_rows": 19,
+    "portfolio_accepted_rows": 7,
+    "hours_without_admission": 1,
+    "future_paths_consumed": [],
+    "current_outcomes_consumed": [],
+    "exchange_calls": 0,
+    "orders_submitted": 0
+  },
+  "final_code_one_hour_evidence": {
+    "path": "data_perp/artifacts/strict_r3_hourly_shadow_20260812T090000Z_v2",
+    "run_manifest_sha256": "5f912c0f8968efef90fdfb547c7edb8f544318b8a4f5b4c5c96bb41aeffcf0f7",
+    "shadow_decisions_sha256": "7f60b0cc3f2e6f6283e260b25c2adf37fdf2ef1a4e7f6ddec5fb38b4b86f5b77",
+    "population_rows": 170,
+    "actionable_rows": 163,
+    "mapped_rows": 163,
+    "admitted_rows": 8,
+    "portfolio_accepted_rows": 2,
+    "feature_gate_executed_before_scoring": true,
+    "identical_to_prior_one_hour_snapshot": true,
+    "maximum_numeric_delta": 0.0
+  },
+  "determinism": {
+    "reference": "data_perp/artifacts/strict_r3_multi_hour_shadow_20260812T0500_1000Z_v1",
+    "repeat": "data_perp/artifacts/strict_r3_multi_hour_shadow_20260812T0500_1000Z_v2",
+    "candidate_values_identical": true,
+    "feature_values_identical": true,
+    "score_values_identical": true,
+    "admission_values_identical": true,
+    "portfolio_values_identical": true,
+    "maximum_numeric_delta": 0.0
+  },
+  "feature_parity": {
+    "frozen_fields": 120,
+    "actionable_rows": 816,
+    "rows_meeting_90pct_field_gate": 0.9938725490196079,
+    "all_fields_complete_fraction": 0.9938725490196079,
+    "minimum_per_field_finite_fraction": 0.9938725490196079,
+    "passed": true
+  },
+  "readiness_gates": {
+    "target_free_candidate_identity": true,
+    "complete_universe_features_before_actionability_filter": true,
+    "contemporaneous_spread_gate": true,
+    "training_and_inference_feature_contract_match": true,
+    "same_model_prior42_reference": true,
+    "exact_producer_cell_day_admission": true,
+    "frozen_geometry_k9_semantics": true,
+    "shadow_portfolio_state_continuity": true,
+    "order_capable_runtime_absent": true,
+    "fresh_post_expiry_bundle": false,
+    "later_untouched_promotion_period": false
+  },
+  "successor_bundle_preflight": {
+    "path": "data_perp/artifacts/strict_r3_successor_bundle_readiness_20260813_v2.json",
+    "sha256": "fd29c9d35d62ee2878bbffab5a8f926eae5a5c811d8427ec0311648573693374",
+    "cutoff": "2026-08-13T00:00:00+00:00",
+    "required_last_source_decision": "2026-08-12T23:00:00+00:00",
+    "required_last_resolved_decision": "2026-08-12T11:00:00+00:00",
+    "required_last_label_available_ts": "2026-08-12T23:00:00+00:00",
+    "current_source_end": "2026-07-31T23:00:00+00:00",
+    "current_prequential_end": "2026-07-31T23:00:00+00:00",
+    "current_policy_decision_end": "2026-07-31T23:00:00+00:00",
+    "current_policy_label_available_end": "2026-08-01T11:00:00+00:00",
+    "ready": false
+  },
+  "canonical_calibrator_causality_audit": {
+    "path": "data_perp/artifacts/strict_r3_cell_day_trim15_canonical_map_causality_audit_20260812_v1.json",
+    "sha256": "53077008e050fd6b2e4591927dc4ec34e2b97372cec0cd1d1504e9754300dca5",
+    "producer_groups": 8,
+    "all_labels_strictly_before_activation": true,
+    "minimum_label_activation_gap_hours": 1.0,
+    "geometry_identity_constant": true,
+    "score_family_identity_constant": true
+  },
+  "production_ready": false,
+  "execution_enabled": false,
+  "blocking_reasons": [
+    "The sealed producer expires at 2026-08-13T00:00:00Z.",
+    "The August source and resolved-policy stores required for the successor's causal 42-day reserve have not yet been materialised.",
+    "August 2026 influenced development and is shadow reconciliation evidence, not a later untouched promotion period."
+  ],
+  "source_hashes": {
+    "hourly_orchestrator": "b5f9520211fa8788f2bc4b6b39494b6712201ffa91c9dd71355320b4d4e4f591",
+    "multi_hour_auditor": "f3b887a90306884b79a69937fd8637e9db68dce7095ac082a768a431260b71ea",
+    "successor_readiness_auditor": "d869876c2bab040fa522cd355af8e2e196aeac79065cf3ef7bb19594b2b2b40c",
+    "candidate_materializer": "7a6be111195bcd5d3ff9dd80135f10f944633b70617647a0137a02d5a7b0e0dc",
+    "inference_bundle_validator": "a4667c4a7376859e70d68156c3f0a05c0601edcedc8c97d474460a8f07b067ce"
+  }
+}

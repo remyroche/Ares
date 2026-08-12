@@ -1,0 +1,8 @@
+{
+  "upgrade_portability": "base_health__h1__p_clear__positive__posterior_lower_95",
+  "downgrade_portability": "base_health__h1__p_adverse__positive__posterior_lower_95",
+  "unstable_upgrade_share": "base_health__h2__p_clear__positive__sign_reversal_rate",
+  "covariance_break_share": "base_health__h4__p_clear__positive__24h__weighted_covariance_distance",
+  "support_score": "base_health__h1__p_clear__positive__support_score",
+  "reasoning_entropy": "base_reasoning__family_contribution_entropy"
+}

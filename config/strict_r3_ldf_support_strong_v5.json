@@ -1,0 +1,28 @@
+{
+  "schema": "strict_r3_ldf_support_sizing_v5_strong_mda_candidate",
+  "model_display_name": "Local Distribution Forest Proxy (LDF) strong causal candidate pool",
+  "model_family": "local_distribution_forest_proxy",
+  "status": "research_candidate_not_canonical",
+  "purpose": "Run the full causal MDA funnel on the stronger Geometry/K9, path-health, and ten-head reliability feature surface while retaining the strict-R3 primary score lineage.",
+  "side": "long",
+  "features": [
+    "base_score", "base_rank", "base_anchor_bps", "consensus_rank", "final_score", "correctness_raw", "correctness_rank",
+    "k9_entropy", "k9_top2_margin", "k9_ood_distance", "k9_path_support_effective_28d", "k9_path_ood_marginal", "k9_model_ood_marginal", "k9_model_drift_psi",
+    "leaf_support_effective", "leaf_support_p05", "leaf_support_p50", "leaf_support_p95", "leaf_support_contribution_weighted", "leaf_support_contribution_weighted_log", "leaf_support_high_contribution_min", "leaf_contributor_effective_n", "leaf_ood_marginal", "leaf_ood_joint", "leaf_ood_joint_rms",
+    "geometry_cov_break_train", "geometry_corr_break_train", "geometry_mahalanobis_train", "geometry_cluster_cov_break_train", "geometry_cluster_corr_break_train", "geometry_cluster_mahalanobis_train",
+    "reliability_base_consensus_gap", "reliability_base_consensus_abs_gap", "reliability_base_consensus_mean", "reliability_upstream_rank",
+    "reliability_recent_3d_support", "reliability_recent_3d_mean_residual_bps", "reliability_recent_3d_positive_rate", "reliability_recent_3d_approx_rate", "reliability_recent_3d_adverse100_rate", "reliability_recent_3d_adverse200_rate",
+    "reliability_recent_7d_support", "reliability_recent_7d_mean_residual_bps", "reliability_recent_7d_positive_rate", "reliability_recent_7d_approx_rate", "reliability_recent_7d_adverse100_rate", "reliability_recent_7d_adverse200_rate",
+    "reliability_recent_14d_support", "reliability_recent_14d_mean_residual_bps", "reliability_recent_14d_positive_rate", "reliability_recent_14d_approx_rate", "reliability_recent_14d_adverse100_rate", "reliability_recent_14d_adverse200_rate",
+    "cluster_recent_3d_support", "cluster_recent_3d_mean_residual_bps", "cluster_recent_3d_directional_rate", "cluster_recent_3d_positive_rate", "cluster_recent_3d_positive100_rate", "cluster_recent_3d_approx_rate", "cluster_recent_3d_adverse100_rate", "cluster_recent_3d_adverse200_rate",
+    "cluster_recent_7d_support", "cluster_recent_7d_mean_residual_bps", "cluster_recent_7d_directional_rate", "cluster_recent_7d_positive_rate", "cluster_recent_7d_positive100_rate", "cluster_recent_7d_approx_rate", "cluster_recent_7d_adverse100_rate", "cluster_recent_7d_adverse200_rate",
+    "cluster_recent_14d_support", "cluster_recent_14d_mean_residual_bps", "cluster_recent_14d_directional_rate", "cluster_recent_14d_positive_rate", "cluster_recent_14d_positive100_rate", "cluster_recent_14d_approx_rate", "cluster_recent_14d_adverse100_rate", "cluster_recent_14d_adverse200_rate",
+    "residual_heads_frac_rank_ge_p99", "residual_heads_frac_rank_ge_p95", "residual_heads_frac_rank_ge_p90", "residual_heads_weighted_mean_conviction", "residual_heads_median_conviction", "residual_heads_prediction_dispersion", "residual_heads_prediction_std", "residual_heads_prediction_iqr", "residual_heads_prediction_mad", "residual_heads_agreement_entropy",
+    "residual_heads_mean_rank_minus_hit_surprise_3d", "residual_heads_frac_adjusted_ge_p99_3d", "residual_heads_frac_adjusted_ge_p95_3d", "residual_heads_frac_adjusted_ge_p90_3d", "residual_heads_hit_surprise_support_3d",
+    "residual_heads_mean_rank_minus_hit_surprise_7d", "residual_heads_frac_adjusted_ge_p99_7d", "residual_heads_frac_adjusted_ge_p95_7d", "residual_heads_frac_adjusted_ge_p90_7d", "residual_heads_hit_surprise_support_7d",
+    "reliability_cov_break_upstream_7v28", "reliability_corr_break_upstream_7v28", "reliability_cov_break_disagreement_7v28", "reliability_corr_break_disagreement_7v28"
+  ],
+  "geometry_rule": "Raw K9 membership slots never enter the model across changing geometry bundle identities. Cluster-derived fields must be membership-weighted within the current immutable bundle and then collapsed to stable roles.",
+  "score_lineage_rule": "The strict-R3 primary ledger remains authoritative for base, consensus, and final score fields. Supplemental ledgers may provide only fields absent from that primary ledger after exact K9 invariant checks.",
+  "selection_rule": "2025 chronological OOF MDA/HPO only; 2026 confirmation remains untouched until the selected contract is frozen."
+}

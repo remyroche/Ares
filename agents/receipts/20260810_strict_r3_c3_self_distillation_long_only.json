@@ -1,0 +1,86 @@
+{
+  "task": "strict-r3-c3-self-distillation-long-only",
+  "scope": "Long-only causal research funnel: select a rolling C3 downstream window, refit cadence, and geometry burn-in; repair exact-policy replay precedence; ablate strict-prequential teacher-rank sample weighting for base and residual layers; refit residual heads sequentially on OOF distilled-base predictions; validate matched 2025 development and 2026 confirmation through causal 21-day expected-net admission and portfolio constraints; publish bootstrap, calibration, regime, drift, and canonical handover evidence.",
+  "changed_paths": [
+    "docs/STRICT_R3_C3_SELF_DISTILLATION_LONG_ONLY_HANDOVER_20260810.md",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md",
+    "extreme_price_movements/strict_r3_self_distillation.py",
+        "scripts/replay_strict_r3_forward_simple_policy_15m.py",
+        "scripts/replay_strict_r3_simple_policy_15m.py",
+        "scripts/recompute_strict_r3_c3_causal_tail_metrics.py",
+        "scripts/report_strict_r3_self_distillation_funnel.py",
+    "scripts/run_causal_geometry_k9_c3_ablation.py",
+    "scripts/run_strict_r3_c3_window_cadence_ablation.py",
+    "scripts/run_strict_r3_self_distillation.py",
+    "tests/test_replay_strict_r3_simple_policy_15m.py",
+    "tests/test_report_strict_r3_self_distillation_funnel.py",
+    "tests/test_run_causal_geometry_k9_c3_ablation.py",
+    "tests/test_run_strict_r3_self_distillation.py",
+    "tests/test_strict_r3_c3_window_cadence_ablation.py",
+    "tests/test_strict_r3_self_distillation.py",
+    "agents/receipts/20260810_strict_r3_c3_self_distillation_long_only.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+            "python3 -m pytest -q -p no:cacheprovider tests/test_report_strict_r3_self_distillation_funnel.py tests/test_strict_r3_c3_window_cadence_ablation.py tests/test_run_strict_r3_self_distillation.py tests/test_strict_r3_self_distillation.py tests/test_run_causal_geometry_k9_c3_ablation.py tests/test_replay_strict_r3_simple_policy_15m.py: 29 passed",
+            "2025 C3 window screen: 1/2/3/4/5/6 months; full-cap 6-month confirmation; 2/4/8-week cadence; full-cap 2/3-month burn-in comparison; score tails selected before future-outcome coverage",
+            "2026 C3 confirmation with exact-minute-authoritative optimized-policy outcomes; 2-week development winner rejected after a -157.20 bps worst month and -137.61 portability; 4-week cadence retained",
+      "Base D0-D4 screen, D2 threshold and boost funnel, 2026 base confirmation",
+      "Residual D0-D4 screen and corrected full-C3 D0/D3 comparison",
+      "Sequential matched D0 and D2 base plus ordinary residual refits at 240k cap for 2025 and 2026",
+            "python3 scripts/recompute_strict_r3_c3_causal_tail_metrics.py on all C3 window/cadence/burn-in sources",
+            "python3 scripts/report_strict_r3_self_distillation_funnel.py --out-dir data_perp/artifacts/strict_r3_c3_self_distillation_long_only_report_20260810_v3",
+      "python3 scripts/validate_agent_receipt.py on all governed changed paths",
+      "git diff --check on the scoped implementation, tests, receipt, and handovers"
+    ],
+    "not_run_reason": ""
+  },
+  "artifacts": [
+    "data_perp/artifacts/strict_r3_c3_window_screen_long_2025_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_c3_cadence_screen_long_2025_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_c3_final_confirm_long_2025_janjul_20260810_v1",
+        "data_perp/artifacts/strict_r3_c3_final_confirm_long_2026_janjul_exact_policy_20260810_v1",
+        "data_perp/artifacts/strict_r3_c3_causal_tail_recompute_funnel_long_2025_janjul_20260810_v3",
+        "data_perp/artifacts/strict_r3_c3_cadence_fullcap_causalden_long_2025_janjul_20260810_v2",
+        "data_perp/artifacts/strict_r3_c3_burnin2w_fullcap_causalden_long_2025_janjul_20260810_v1",
+        "data_perp/artifacts/strict_r3_self_distillation_matched_d0_fullstack_2w_causalden_long_2026_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_base_d2_top20_boost15_long_2024_jul2026_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_residual_d0_d4_screen_long_2025_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_matched_d0_fullstack_long_2025_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_combined_base_d2_residual_d0_fullstack_long_2025_janjul_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_matched_d0_fullstack_long_2026_janjul_exact_policy_20260810_v1",
+    "data_perp/artifacts/strict_r3_self_distillation_combined_base_d2_residual_d0_fullstack_long_2026_janjul_exact_policy_20260810_v1",
+        "data_perp/artifacts/strict_r3_c3_self_distillation_long_only_report_20260810_v3",
+    "docs/STRICT_R3_C3_SELF_DISTILLATION_LONG_ONLY_HANDOVER_20260810.md"
+  ],
+  "agent_plan": {
+    "subagents": []
+  }
+}

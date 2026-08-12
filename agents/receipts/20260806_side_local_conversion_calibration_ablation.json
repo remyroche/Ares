@@ -1,0 +1,22 @@
+{
+  "task": "side-local-conversion-calibration-ablation",
+  "scope": "Replay the side-local conversion/residual stack with explicit cross-query/global score calibration, while keeping specialist and meta targets aligned on the same ordinalized H12 net residual and retaining side-local base and residual EV maps.",
+  "changed_paths": ["scripts/run_side_local_conversion_calibration_ablation.py"],
+  "contracts": [
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_side_local_conversion_calibration_ablation.py",
+      "replay completed with unique candidate rows, strict label boundary, cost-once, target-alignment, and side-local-map assertions",
+      "artifact: data_perp/artifacts/side_local_conversion_calibration_ablation_20260806_v1"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {"subagents": []}
+}

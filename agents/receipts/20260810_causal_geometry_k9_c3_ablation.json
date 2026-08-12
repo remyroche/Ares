@@ -1,0 +1,53 @@
+{
+  "task": "causal-geometry-k9-c3-cadence-ablation",
+  "scope": "Implement and replay a matched long-only geometry/K9 study: C3 base-independent raw-market K9 with a hard post-burn-in boundary, plus a deliberately riskier same-base rolling leaf-path K9 challenger whose recent K9-fit rows remain in downstream meta training. Compare in-sample, frozen, quarterly, rolling, and 3/6/9-month same-base arms against the fixed strict-R3 Base+Consensus handoff.",
+  "changed_paths": [
+    "scripts/run_causal_geometry_k9_c3_ablation.py",
+    "tests/test_run_causal_geometry_k9_c3_ablation.py",
+    "docs/CAUSAL_GEOMETRY_K9_C3_ABLATION_REPORT_20260810.md",
+    "docs/BASECOUPLED_IN_SAMPLE_GEOMETRY_K9_ABLATION_20260810.md",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md",
+    "agents/receipts/20260810_causal_geometry_k9_c3_ablation.json"
+  ],
+  "source_hashes": [
+    {"path": "scripts/run_causal_geometry_k9_c3_ablation.py", "sha256": "3f581979e71c1c6e74b08b1b2d4a9c758b9698b25c75b497407db23c0c8b793b"},
+    {"path": "tests/test_run_causal_geometry_k9_c3_ablation.py", "sha256": "5827daf602d1366e7eb2513f8993bb7e27a7b513af1afe916430467012679da8"}
+  ],
+  "contracts": [
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "passed_with_research_only_promotion_hold",
+    "commands": [
+      "python3 -m py_compile scripts/run_causal_geometry_k9_c3_ablation.py",
+      "python3 -m pytest -q tests/test_run_causal_geometry_k9_c3_ablation.py",
+      "Single-fold strict C3 smoke: 17,356 April 2026 rows; outcome-free 100,000-row Jan--Mar 2025 bundle; zero pre-bundle downstream rows.",
+      "Full matched April--July 2026 replay: 235,567 identical long candidates per arm; 16 completed folds; fixed policy replay SL3 / activation 0.5 ATR / giveback 0.25 ATR / H12 / 100-bps-once.",
+      "Full matched April--July 2026 same-base in-sample replay: 235,567 identical long candidates per arm; C3 rolling plus 3/6/9-month leaf-path K9; fixed policy replay SL3 / activation 0.5 ATR / giveback 0.25 ATR / H12 / 100-bps-once.",
+      "Artifact: data_perp/artifacts/causal_geometry_k9_c3_ablation_20260810_v1",
+      "Artifact: data_perp/artifacts/basecoupled_geometry_k9_matched_20260810_v1"
+    ],
+    "not_run_reason": "The result is intentionally not promoted as a bit-for-bit historical canonical replacement: the historical full structural bundle was not persisted and the raw 2024 contract interval is unavailable.",
+    "result": {
+      "upstream_top5_policy_net_bps": 3.190981,
+      "c3_frozen_top5_policy_net_bps": 41.403972,
+      "c3_quarterly_top5_policy_net_bps": 42.589164,
+      "c3_rolling_top5_policy_net_bps": 48.884787,
+      "c3_rolling_top5_positive_months": "4/4",
+      "basecoupled_3m_top5_policy_net_bps": 53.736137,
+      "basecoupled_6m_top5_policy_net_bps": 52.412318,
+      "basecoupled_9m_top5_policy_net_bps": 53.548951,
+      "basecoupled_9m_policy_rank_ic": 0.167522,
+      "decision": "C3_ROLLING_RESEARCH_CANONICAL; BASECOUPLED_3M_ECONOMIC_CHALLENGER_ONLY; DO_NOT_PROMOTE_IN_SAMPLE_LEAF_K9_WITHOUT_SUPPORT_CONTROL"
+    }
+  },
+  "artifacts": [
+    "data_perp/artifacts/causal_geometry_k9_c3_ablation_20260810_v1",
+    "data_perp/artifacts/basecoupled_geometry_k9_matched_20260810_v1",
+    "docs/CAUSAL_GEOMETRY_K9_C3_ABLATION_REPORT_20260810.md",
+    "docs/BASECOUPLED_IN_SAMPLE_GEOMETRY_K9_ABLATION_20260810.md"
+  ],
+  "agent_plan": {"subagents": []}
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "strict_r3_cell_day_trim15_admission_v1",
+  "side": "long",
+  "producer_scope": "exact_upstream_x_conversion",
+  "score_column": "final_score",
+  "score_cells": 20,
+  "reference_window_days": 42,
+  "period_unit": "UTC_day",
+  "period_weighting": "one_mean_policy_net_observation_per_day_x_score_cell",
+  "symmetric_trim_fraction": 0.15,
+  "monotone_projection": true,
+  "admission_floor_net_bps": 50.0,
+  "label_cutoff": "policy_label_available_ts < held_day_00_00_utc",
+  "cross_producer_score_pooling": false,
+  "rollback": "exact_producer_reserve_map_plus_causal_residual_v1"
+}

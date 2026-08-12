@@ -1,0 +1,73 @@
+{
+  "task": "Implement and validate the long-only Strict-R3 schema-v2 canonical forward pipeline, exact outcome diagnostics, causal admission, and portfolio replay.",
+  "scope": "Long side only. Target-free point-in-time candidates; strict prequential base/map/residual ledger; one frozen October-December 2024 geometry/K9 definition; monthly same-model reference scoring; Severe-200; exact TP6/SL4 and frozen trailing evaluation; pre-2025 SimplePolicyOptimiser selection; causal 21-day EV admission and constrained portfolio replay through 2026-08-07.",
+  "changed_paths": [
+    "config/strict_r3_canonical_v2_feature_contract.json",
+    "config/strict_r3_frozen_15m_policy.json",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md",
+    "extreme_price_movements/strict_r3_canonical_v2.py",
+    "extreme_price_movements/strict_r3_frozen_policy_labels.py",
+    "scripts/assemble_strict_r3_canonical_source_panel_v2.py",
+    "scripts/audit_strict_r3_schema_v2_long_wiring.py",
+    "scripts/download_policy_execution_1m.py",
+    "scripts/evaluate_strict_r3_walkforward_long_v2.py",
+    "scripts/fit_strict_r3_geometry_k9_v2.py",
+    "scripts/materialize_packb_tp6_sl4_h12_labels.py",
+    "scripts/materialize_strict_r3_forward_features.py",
+    "scripts/materialize_strict_r3_frozen_policy_labels_v2.py",
+    "scripts/materialize_strict_r3_long_tail_backfill_candidates.py",
+    "scripts/materialize_strict_r3_prequential_ledger_v2.py",
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py",
+    "scripts/optimise_strict_r3_schema_v2_policy_pre2025.py",
+    "scripts/replay_strict_r3_forward_portfolio.py",
+    "scripts/replay_strict_r3_forward_simple_policy_15m.py",
+    "scripts/replay_strict_r3_policy_portfolio_2025_2026.py",
+    "scripts/replay_strict_r3_simple_policy_15m.py",
+    "scripts/run_strict_r3_canonical_walkforward_v2.py",
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py",
+    "scripts/score_strict_r3_forward.py",
+    "scripts/train_strict_r3_canonical_v2.py",
+    "tests/test_materialize_packb_tp6_sl4_h12_labels.py",
+    "tests/test_stage_i_causal_admission.py",
+    "tests/test_strict_r3_canonical_v2.py",
+    "tests/test_strict_r3_frozen_policy_labels.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q tests/test_strict_r3_canonical_v2.py tests/test_strict_r3_frozen_policy_labels.py tests/test_materialize_packb_tp6_sl4_h12_labels.py tests/test_stage_i_causal_admission.py",
+      "python3 -m py_compile scripts/replay_strict_r3_forward_portfolio.py scripts/evaluate_strict_r3_walkforward_long_v2.py scripts/materialize_packb_tp6_sl4_h12_labels.py",
+      "git diff --check on the scoped schema-v2 implementation and handover paths",
+      "python3 scripts/audit_strict_r3_schema_v2_long_wiring.py through the final portfolio replay; all checks passed"
+    ]
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

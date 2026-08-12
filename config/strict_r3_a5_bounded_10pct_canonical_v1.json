@@ -1,0 +1,51 @@
+{
+  "schema": "strict_r3_a5_bounded_10pct_canonical_v1",
+  "status": "canonical_executable_research_pending_untouched_forward_validation",
+  "side": "long",
+  "anchor": {
+    "name": "A0",
+    "model_contract": "strict_r3_cell_day_residual_trust_model_r5_9m_v1",
+    "expected_net_field": "trust_posterior_expected_bps",
+    "minimum_expected_net_bps": 50.0,
+    "missing_value": "fail_closed"
+  },
+  "independent_component": {
+    "name": "A4_independent_local",
+    "spec": "R5_cell_day_residual_clip500_neutralmean_independent",
+    "target": "clip(policy_net_bps - cell_day_trim15_28d_expected_net_bps, -500, 500)",
+    "training_window_months": 9,
+    "training_selection": "75pct_timestamp_top30_plus_25pct_lower_reference",
+    "sampling": "equal_month",
+    "row_cap": 60000,
+    "mean_weighting": "uniform",
+    "support": "independent_experience",
+    "uncertainty": "local_leaf",
+    "labels": "policy_label_available_ts < cutoff"
+  },
+  "calibration": {
+    "method": "HuberRegressor_epsilon1.35_alpha1",
+    "inputs": "earlier_OOS_A4_predictions_only",
+    "labels": "policy_label_available_ts < cutoff",
+    "cap": 120000,
+    "minimum_rows": 2000,
+    "predictive_sd_scale": "q80_absolute_normalized_residual",
+    "nonnegative_slope_required": true
+  },
+  "integration": {
+    "domain": "timestamp_local_top15_by_pretrust_final_score",
+    "formula": "A0 + 0.10 * (causally_calibrated_A4 - A0)",
+    "alpha": 0.10,
+    "admission": "A0_expected_net_bps >= 50 AND timestamp_local_top15",
+    "a5_can_add_or_remove_relative_to_A0_top15": false,
+    "ranking": "a5_bounded10_expected_bps_desc_then_final_score_desc",
+    "missing_component": "fail_closed"
+  },
+  "ev_map": {
+    "window_calendar_days": 28,
+    "score_cells": 20,
+    "day_weighting": "equal",
+    "symmetric_day_trim_fraction": 0.15
+  },
+  "raw_k9_memberships_used": false,
+  "selection_note": "Promoted by explicit user decision on 2026-08-12; reference report originally retained A0 and A5-20 as challenger."
+}

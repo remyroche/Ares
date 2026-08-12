@@ -1,0 +1,42 @@
+{
+  "schema": "strict_r3_cell_day_residual_trust_posterior_28d_challenger_v1",
+  "status": "canonical_executable_research_pending_untouched_forward_validation",
+  "side": "long",
+  "arm": "R5_cell_day_residual_clip500_window9m_posterior_admission",
+  "target": "clip(policy_net_bps - cell_day_trim15_28d_expected_net_bps, -500, 500)",
+  "ev_map": {
+    "window_calendar_days": 28,
+    "score_cells": 20,
+    "day_weighting": "equal",
+    "symmetric_day_trim_fraction": 0.15,
+    "minimum_expected_net_bps": 50.0,
+    "labels": "policy_label_available_ts < held_day_utc_start"
+  },
+  "training": {
+    "window_months": 9,
+    "selection": "top_30pct_within_decision_timestamp_by_final_score",
+    "sampling": "equal_month",
+    "row_cap": 60000,
+    "labels": "policy_label_available_ts < cutoff",
+    "map_fields_are_model_inputs": false
+  },
+  "model_contract": "strict_r3_cell_day_residual_trust_model_r5_9m_v1",
+  "integration": {
+    "expected_net_field": "posterior_expected_bps",
+    "admission": "posterior_expected_bps >= 50",
+    "missing_posterior": "fail_closed",
+    "ranking": "posterior_expected_bps_desc_then_same_producer_final_score_desc",
+    "changes_canonical_admission": true
+  },
+  "portfolio_contract": "strict_r3_cell_day_trim15_portfolio_28d_r5_9m_posterior_v1",
+  "selection_period": [
+    "2026-05-01T00:00:00Z",
+    "2026-08-01T00:00:00Z"
+  ],
+  "backward_confirmation_period": [
+    "2025-10-01T00:00:00Z",
+    "2026-05-01T00:00:00Z"
+  ],
+  "promotion_requirement": "later_untouched_forward_period",
+  "raw_k9_memberships_used": false
+}

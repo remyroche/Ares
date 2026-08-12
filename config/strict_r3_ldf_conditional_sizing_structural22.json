@@ -1,0 +1,28 @@
+{
+  "schema": "strict_r3_ldf_conditional_sizing_structural22_research_v1",
+  "purpose": "Matched research contract for testing whether train-bin-conditioned LDF sizing restores authority to candidate-specific frozen-K9 reliability inputs. This is not a selected or canonical contract.",
+  "compact_fields": [
+    "base_score",
+    "base_rank42",
+    "base_anchor_bps",
+    "consensus_rank",
+    "residual_rank",
+    "upstream",
+    "final_score",
+    "leaf_support_effective",
+    "leaf_support_contribution_weighted",
+    "leaf_ood_joint",
+    "k9_cluster_weighted_fit_support",
+    "k9_cluster_weighted_ood",
+    "k9_cluster_weighted_mahalanobis_train",
+    "k9_cluster_timestamp_cov_break_train",
+    "k9_cluster_timestamp_corr_break_train",
+    "cluster_recent_3d_support",
+    "cluster_recent_3d_mean_residual_bps",
+    "cluster_recent_7d_support",
+    "cluster_recent_7d_mean_residual_bps",
+    "cluster_recent_7d_adverse200_rate",
+    "residual_heads_median_conviction",
+    "residual_heads_agreement_entropy"
+  ]
+}

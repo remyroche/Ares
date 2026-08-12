@@ -1,0 +1,33 @@
+{
+  "task": "support-ood-correctness-combination-factorial",
+  "scope": "Run the complete fixed-parameter, fixed-alpha 2^3 interaction ablation for global, prototype-path, and exact recurrent leaf recent-correctness blocks on top of Support+OOD.",
+  "changed_paths": [
+    "scripts/run_tp6_sl4_support_ood_correctness_combinations_2025.py",
+    "agents/receipts/20260809_support_ood_correctness_combinations.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_tp6_sl4_support_ood_correctness_combinations_2025.py",
+      "Full fixed-alpha chronological 2^3 factorial replay across 12 growing 2025 folds; the frozen Support+OOD alpha=1.0 arm reproduced exactly with Top-5 parity of 0.0 bps."
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

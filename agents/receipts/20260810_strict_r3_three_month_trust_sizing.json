@@ -1,0 +1,46 @@
+{
+  "task": "strict-r3-three-month-trust-sizing",
+  "scope": "Implement and run long-only three-month-block Bayesian shrinkage, GAM/Bayesian GAM/distributional GAM, NGBoost, distributional-forest, and bounded Student-t MLP trust-sizing ablations on the frozen strict-R3 stack. Preserve pooled-global candidate ranking and causal EV admission, constrain trust models to relative size, exclude raw Geometry/K9 memberships across changing bundle identities, freeze each pipeline's top three on 2025 development OOF before opening 2026, replay matched causal admission and portfolio constraints, and publish complete monthly, weekly, tail, stability, fold, CMI, and portfolio artifacts.",
+  "changed_paths": [
+    "extreme_price_movements/portfolio_policy_replay.py",
+    "extreme_price_movements/trust_sizing_ablation.py",
+    "scripts/run_strict_r3_trust_sizing_ablation.py",
+    "scripts/render_strict_r3_trust_sizing_ablation_report.py",
+    "tests/test_portfolio_policy_replay_sizing.py",
+    "tests/test_trust_sizing_ablation.py",
+    "docs/STRICT_R3_THREE_MONTH_TRUST_SIZING_ABLATION_20260810.md",
+    "agents/receipts/20260810_strict_r3_three_month_trust_sizing.json"
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/trust_sizing_ablation.py scripts/run_strict_r3_trust_sizing_ablation.py scripts/render_strict_r3_trust_sizing_ablation_report.py extreme_price_movements/portfolio_policy_replay.py",
+      "python3 -m pytest -q tests/test_trust_sizing_ablation.py tests/test_portfolio_policy_replay_sizing.py tests/test_replay_strict_r3_forward_portfolio.py: 10 passed",
+      "2025 development selection used only strict three-month OOF blocks; 2026 finalists were loaded from frozen 2025 selected_top3.json files and evaluated with matched equal-size controls.",
+      "Geometry semantics audit: zero raw K9 memberships used; 45 bundle-invariant causal trust fields passed coverage/variance gates; held and train folds may contain multiple bundles only through invariant aggregate summaries.",
+      "Causal portfolio replay: unchanged hierarchical 21/42/84-day side-local EV mapping with +50 bps admission, eight concurrent positions, two new entries per bar, one per asset, 80% margin, 7x leverage, and 100 bps cost exactly once."
+    ],
+    "not_run_reason": ""
+  },
+  "artifacts": [
+    "data_perp/artifacts/strict_r3_trust_sizing_bayesian_2025_3m_20260810_v1",
+    "data_perp/artifacts/strict_r3_trust_sizing_bayesian_2026_3m_20260810_v2",
+    "data_perp/artifacts/strict_r3_trust_sizing_gam_2025_3m_20260810_v1",
+    "data_perp/artifacts/strict_r3_trust_sizing_gam_2026_3m_20260810_v2",
+    "data_perp/artifacts/strict_r3_trust_sizing_nonlinear_ngboost_2025_3m_20260810_v2",
+    "data_perp/artifacts/strict_r3_trust_sizing_nonlinear_drf_2025_3m_20260810_v2",
+    "data_perp/artifacts/strict_r3_trust_sizing_nonlinear_mlp_2025_3m_20260810_v3",
+    "data_perp/artifacts/strict_r3_trust_sizing_nonlinear_2026_3m_20260810_v3",
+    "data_perp/artifacts/strict_r3_trust_sizing_three_pipeline_report_20260810_v4",
+    "docs/STRICT_R3_THREE_MONTH_TRUST_SIZING_ABLATION_20260810.md"
+  ],
+  "agent_plan": {"subagents": []}
+}

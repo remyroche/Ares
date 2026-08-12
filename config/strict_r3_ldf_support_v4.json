@@ -1,0 +1,65 @@
+{
+  "schema": "strict_r3_ldf_support_sizing_v4",
+  "model_display_name": "Local Distribution Forest Proxy (LDF)",
+  "model_family": "local_distribution_forest_proxy",
+  "canonical_arm": "compact12_two_forest_meanrisk",
+  "status": "canonical_long_only_research_sizing",
+  "supersedes": "config/strict_r3_ldf_support_v3.json",
+  "selection_artifacts": {
+    "mda_and_compact_hpo": "data_perp/artifacts/strict_r3_ldf_mda_legacy_score_compact12_hpo_20260811_v1",
+    "full_control_hpo": "data_perp/artifacts/strict_r3_ldf_mda_legacy_score_full45_hpo_20260811_v1",
+    "blend_decision": "data_perp/artifacts/strict_r3_ldf_contract_blend_20260811_v1",
+    "selection_era": "2025 chronological OOF only",
+    "confirmation_era": "2026 frozen once; not used for selection"
+  },
+  "integration": "strict-R3 final score -> causal 21/42/84-day EV admission >= 50 bps -> LDF relative size -> portfolio auction",
+  "ranking_changes": false,
+  "admission_changes": false,
+  "side": "long",
+  "training": {
+    "window_months": 3,
+    "row_cap": 40000,
+    "equal_month_sampling": true,
+    "top_fraction_by_frozen_final_score": 0.30,
+    "requires_mapped_ev_available": true,
+    "label": "selected SimplePolicyOptimiser policy_net_bps",
+    "label_availability_rule": "policy_label_available_ts < fit cutoff",
+    "cost_bps": 100.0
+  },
+  "model": {
+    "implementation": "two RandomForestRegressors: OOB mean forest plus independent OOB-squared error forest, with leaf-support shrinkage",
+    "params": {
+      "n_estimators": 96,
+      "max_depth": 9,
+      "min_samples_leaf": 100,
+      "max_features": 0.75,
+      "max_samples": 0.70,
+      "support_prior": 300.0,
+      "lambda_max": 1.10,
+      "risk_aversion": 1.0,
+      "mean_target": "policy_net",
+      "risk_target": "oob_squared",
+      "target_clip_bps": 800.0,
+      "cmi_weighting": "rank_loss",
+      "size_floor": 0.25,
+      "size_cap": 1.75,
+      "seed": 20260810
+    }
+  },
+  "features": [
+    "base_rank",
+    "base_anchor_bps",
+    "consensus_rank",
+    "correctness_raw",
+    "correctness_rank",
+    "reliability_base_consensus_abs_gap",
+    "reliability_base_consensus_mean",
+    "reliability_upstream_rank",
+    "reliability_cov_break_upstream_7v28",
+    "reliability_corr_break_upstream_7v28",
+    "reliability_cov_break_disagreement_7v28",
+    "reliability_corr_break_disagreement_7v28"
+  ],
+  "geometry_rule": "raw K9 memberships prohibited across changing bundle identities; invariant geometry/K9 summaries only. The selected compact v4 contract contains no raw K9 memberships.",
+  "selection_rule": "2025-only portability objective; selection score, then mean portability, worst month, and top-1 net. 2026 is confirmation only. No compact/full multiplier blend advanced."
+}

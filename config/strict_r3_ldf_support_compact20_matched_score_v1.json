@@ -1,0 +1,66 @@
+{
+  "schema": "strict_r3_ldf_support_sizing_compact20_matched_score_v1",
+  "model_display_name": "Local Distribution Forest Proxy (LDF)",
+  "model_family": "local_distribution_forest_proxy",
+  "status": "matched-score evaluation only; not canonical",
+  "purpose": "Evaluate the regenerated causal compact20 MDA contract against the legacy strict-R3 source without replacing its upstream score lineage.",
+  "integration": "frozen strict-R3 final score -> causal 21/42/84-day EV admission >= 50 bps -> LDF relative size -> portfolio auction",
+  "ranking_changes": false,
+  "admission_changes": false,
+  "side": "long",
+  "training": {
+    "window_months": 3,
+    "row_cap": 40000,
+    "equal_month_sampling": true,
+    "top_fraction_by_frozen_final_score": 0.30,
+    "label": "selected SimplePolicyOptimiser policy_net_bps",
+    "label_availability_rule": "policy_label_available_ts < fit cutoff",
+    "cost_bps": 100.0
+  },
+  "model": {
+    "implementation": "single RandomForestRegressor with local leaf-support shrinkage and cross-tree-plus-residual predictive risk",
+    "params": {
+      "n_estimators": 64,
+      "max_depth": 8,
+      "min_samples_leaf": 120,
+      "max_features": 0.70,
+      "max_samples": 0.75,
+      "support_prior": 300.0,
+      "lambda_max": 1.10,
+      "cmi_weighting": "rank_loss",
+      "sizing_mode": "mean_risk",
+      "size_floor": 0.25,
+      "size_cap": 1.75,
+      "seed": 20260810
+    }
+  },
+  "features": [
+    "consensus_rank",
+    "final_score",
+    "reliability_recent_3d_support",
+    "reliability_recent_3d_mean_residual_bps",
+    "reliability_recent_3d_positive_rate",
+    "reliability_recent_3d_approx_rate",
+    "reliability_recent_3d_adverse100_rate",
+    "reliability_recent_3d_adverse200_rate",
+    "reliability_recent_7d_support",
+    "reliability_recent_7d_mean_residual_bps",
+    "reliability_recent_7d_positive_rate",
+    "reliability_recent_7d_approx_rate",
+    "reliability_recent_7d_adverse100_rate",
+    "reliability_recent_7d_adverse200_rate",
+    "reliability_recent_14d_support",
+    "reliability_recent_14d_mean_residual_bps",
+    "reliability_recent_14d_positive_rate",
+    "reliability_recent_14d_approx_rate",
+    "reliability_recent_14d_adverse100_rate",
+    "reliability_recent_14d_adverse200_rate"
+  ],
+  "feature_selection": {
+    "source": "strict_r3_n5_grouped_mda_expanded_20260811_v1",
+    "method": "five-repeat semantic-group MDA, conditional within month x score-decile permutation, then retrained backward elimination",
+    "selection_era": "2025 development only",
+    "raw_k9_memberships_used": false
+  },
+  "causality": "Every outcome-derived field is a strictly prior-resolved aggregate keyed by policy_label_available_ts. No held-window score percentiles or raw K9 memberships are permitted."
+}

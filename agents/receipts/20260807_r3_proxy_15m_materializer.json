@@ -1,0 +1,63 @@
+{
+  "task": "declared-15m-r3-proxy-label-materializer",
+  "scope": "Add a resumable, symbol-wise/vectorized materializer for the approved 15-minute TP6/SL4/H12 R3 proxy contract. It uses the decision-time causal ATR, keeps invalid/incomplete paths out of supervised targets, applies the 100-bps cost once, and records proxy resolution and label maturity in the manifest.",
+  "changed_paths": [
+    "scripts/materialize_15m_r3_proxy_labels.py",
+    "scripts/refresh_r3_proxy_training_surface.py",
+    "scripts/audit_current_15m_r3_target_substrate.py",
+    "scripts/audit_current_r3_proxy_oof_mapping.py",
+    "tests/test_materialize_15m_r3_proxy_labels.py",
+    "tests/test_audit_current_r3_proxy_oof_mapping.py",
+    "scripts/audit_current_r3_21d_admission.py",
+    "data_perp/artifacts/current_r3_21d_admission_20260807_v5/",
+    "scripts/run_base_r3_recall_ablation.py",
+    "data_perp/artifacts/current_r3_long_target_b75_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_b100_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_b125_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_b150_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_max150_or_1atr_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_bps150_plus_half_atr_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_b75_admission_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_max150_or_1atr_admission_20260807_v1/",
+    "data_perp/artifacts/current_r3_long_target_bps150_plus_half_atr_admission_20260807_v1/",
+    "docs/pipeline_roadmap/20260724/r3/long_only_target_repair_hurdle_ablation_20260807.md",
+    "docs/pipeline_roadmap/20260724/r3/current_15m_proxy_target_repair_report_20260807.md",
+    "FULL_PIPELINE_HANDOVER_20260724.md",
+    "agents/receipts/20260807_r3_proxy_15m_materializer.json"
+  ],
+  "source_hashes": [
+    {"path": "scripts/materialize_15m_r3_proxy_labels.py", "sha256": "2fdfd04b32a7175ed49fc8d88f195c046221dbdddf37c14e8899b4f6e5ad73b1"},
+    {"path": "scripts/refresh_r3_proxy_training_surface.py", "sha256": "2886aca73e1167b2e41de7597aaf89ed829f19911e2fe9c93e0f3ed9425e79e6"},
+    {"path": "scripts/audit_current_15m_r3_target_substrate.py", "sha256": "265f3a699f2837b81e99e7bb0110fa8f1b327c2a54b849c74fcc5964a891fcbb"},
+    {"path": "scripts/audit_current_r3_proxy_oof_mapping.py", "sha256": "1aca4f7772104d00260a8b408197977d9c4e0aa1c7b0c8f54d80150f25d95e9c"},
+    {"path": "tests/test_materialize_15m_r3_proxy_labels.py", "sha256": "a8f19ef24f2823e04c294c697e6fc6988ccc0fbbe83a2863c52e02587bcae5df"}
+    ,{"path": "tests/test_audit_current_r3_proxy_oof_mapping.py", "sha256": "016c6e9f447f09939be8315ac427f105df87b9c8f7bd857df725e4c41c400e47"}
+    ,{"path": "scripts/audit_current_r3_21d_admission.py", "sha256": "eef14670d8276ac09662590d913693f516b14135765bcfb2a372025e8eea5e47"}
+    ,{"path": "scripts/run_base_r3_recall_ablation.py", "sha256": "898d3e1a5a850a500525079ff7283f27a21dab4b1289e1f6aaa670152b5c6ac2"}
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45e9ce663dcc8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "PYTHONPYCACHEPREFIX=/private/tmp/pycache_r3proxy python -m py_compile scripts/materialize_15m_r3_proxy_labels.py",
+      "single-part smoke materialization: 8,000 rows, 100% complete paths, 117 symbols",
+      "full current-2025 materialization: 1,090,558 rows, 1,090,244 valid, 120 symbols",
+      "combined exact-history + proxy training surface: 2,698,542 rows, unique candidate IDs",
+      "strict 12-fold corrected proxy control: pooled top-5 net uplift -7.93 bps; long +10.49, short -26.34; 31/31 monthly IC positive",
+      "15m-vs-exact 2025 overlap: 1,090,244 valid rows; first-touch agreement 99.989% after event-code normalization; robust-clear agreement 96.676%; exact/proxy gross means +3.75/-30.32 bps",
+      "pytest -q tests/test_materialize_15m_r3_proxy_labels.py: 3 passed",
+      "15m substrate audit: current_r3_target_substrate_proxy_15m_20260807_v1, eight descriptive parquet outputs and manifest"
+      ,"strict causal mapping audit: current_r3_proxy_mapping_audit_20260807_v2, 2,627,666 rows with prior support; no global/future fallback",
+      "long-only 21-day admission audit: current_r3_21d_admission_20260807_v5, 1,338,630 rows, 11,125 admitted (0.831%), admitted mean +21.09 net bps; no short rows; quota-preserving tails split gate from post-gate raw-score ranking"
+      ,"long-only strict-OOF target ladder: B75/B100/B125/B150 plus two ATR-aware definitions, 31 monthly folds; B25 retained as canonical, max(150 bps, 1 ATR) retained as stability challenger"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {"subagents": []}
+}

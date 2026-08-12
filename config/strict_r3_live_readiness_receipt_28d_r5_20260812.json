@@ -1,0 +1,122 @@
+{
+  "schema": "strict_r3_live_readiness_receipt_v3_28d_r5_9m_posterior",
+  "scope": "long_only_shadow",
+  "as_of_ts": "2026-08-12T09:00:00+00:00",
+  "canonical_admission": "strict_r3_cell_day_residual_trust_posterior_28d_challenger_v1",
+  "canonical_trust_overlay": "strict_r3_cell_day_residual_trust_model_r5_9m_v1",
+  "reference_window_days": 28,
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v4_r5_9m_posterior.json",
+    "sha256": "ff353327b8752a826f4a28a10558ccfb02f47ce0ce0fb713aec378d08edc0174",
+    "activation_ts": "2026-08-01T00:00:00+00:00",
+    "end_exclusive_ts": "2026-08-29T00:00:00+00:00",
+    "sealed_inputs_verified": 19,
+    "geometry_refit_cadence": "never"
+  },
+  "persisted_bundle_parity": {
+    "path": "data_perp/artifacts/strict_r3_lockstep_successor28_parity_long_aug1_7_20260812_v1",
+    "run_manifest_sha256": "b3766ad9d1806cc85f584bbd8515a3ead5fbd741848579f22f469c6557b8943b",
+    "rows": 120252,
+    "score_components": 9,
+    "maximum_absolute_delta": 0.0,
+    "passed": true
+  },
+  "feature_parity": {
+    "held_rows": 8542,
+    "frozen_fields": 120,
+    "all_fields_complete_fraction": 0.9963708733317724,
+    "rows_meeting_90pct_field_gate": 1.0,
+    "minimum_per_field_finite_fraction": 0.996839147740576,
+    "constant_deployed_fields": 0,
+    "passed": true
+  },
+  "trust_overlay": {
+    "bundle": "data_perp/artifacts/strict_r3_cell_day_residual_trust_bundle_long_20260801_28d_r5_9m_posterior_v2",
+    "bundle_sha256": "71288cf688289211730678c52d37bc4253ef4d4d8005534fb7f1c8bcc0af1555",
+    "training_rows": 60000,
+    "training_start": "2025-11-01T00:00:00+00:00",
+    "training_window_months": 9,
+    "cutoff": "2026-08-01T00:00:00+00:00",
+    "features": 66,
+    "stable_cmi_interactions": 4,
+    "target": "clip(policy_net_bps - 28d_cell_day_expected_net_bps, -500, 500)",
+    "posterior_expected_net_field": "trust_posterior_expected_bps",
+    "posterior_admission_threshold_bps": 50.0,
+    "missing_posterior": "fail_closed",
+    "admission_changes": true
+  },
+  "end_to_end_shadow": {
+    "path": "data_perp/artifacts/strict_r3_hourly_shadow_r5_9m_posterior_20260812T090000Z_v3_featurefixed",
+    "run_manifest_sha256": "c6b5c3214e8c41ad8a36e0c906875994f05450dbbe8e760094a6b2250ef583a0",
+    "shadow_decisions_sha256": "d74afbf60568a06a777b35a7431782e04cb7c84d3362b5e812e887b650662b8f",
+    "rows": 170,
+    "mapped_rows": 163,
+    "admitted_rows": 0,
+    "portfolio_accepted_rows": 0,
+    "exchange_calls": 0,
+    "orders_submitted": 0,
+    "all_contract_checks_passed": true,
+    "sealed_inputs_verified": 19,
+    "feature_contract_rows": 163,
+    "all_120_fields_complete_rows": 162
+  },
+  "matched_2026_may_july": {
+    "control_portfolio": "data_perp/artifacts/strict_r3_cellday28_portfolio_control_long_2026_mayjul_20260812_v1",
+    "r5_portfolio": "posterior-admission matched replay documented in CELL_DAY_RESIDUAL_TRUST_OVERLAY_20260812.md",
+    "trades": 784,
+    "trades_per_day": 8.521739130434783,
+    "net_bps_per_trade": 114.36,
+    "sortino": 0.347,
+    "max_drawdown_fraction": -0.4079,
+    "note": "R5 posterior admission and ordering materially improve the matched three-month control; this period participated in selection."
+  },
+  "backward_confirmation_2025_oct_to_2026_jul": {
+    "trades": 3972,
+    "trades_per_day": 13.07,
+    "net_bps_per_trade": 161.22,
+    "positive_trade_fraction": 0.6219,
+    "sortino": 0.49,
+    "max_drawdown_fraction": -0.4381,
+    "worst_week_fraction": -0.3151,
+    "positive_active_weeks": 41,
+    "active_weeks": 42,
+    "positive_months": 10,
+    "months": 10,
+    "note": "Backward confirmation plus selection evidence; it is not later untouched forward evidence."
+  },
+  "readiness_gates": {
+    "target_free_candidate_identity": true,
+    "exact_prior_28_day_reserve": true,
+    "reserve_excluded_from_supervised_fits": true,
+    "prequential_teacher_reference_homogeneous_28d": true,
+    "same_model_reference_and_held": true,
+    "held_window_percentiles_absent": true,
+    "frozen_geometry_k9_semantics": true,
+    "trust_posterior_owns_admission_and_auction_value": true,
+    "training_replay_inference_score_parity": true,
+    "exchange_io_absent": true,
+    "later_untouched_promotion_period": false
+  },
+  "matched_walkforward_regeneration": {
+    "status": "running",
+    "output": "data_perp/artifacts/strict_r3_lockstep_long_2025_jul2026_strictfull_prior28_optimizedpolicy_severefix_manifest_20260812_v3",
+    "evaluation_start": "2025-01-01T00:00:00+00:00",
+    "evaluation_end_exclusive": "2026-08-01T00:00:00+00:00",
+    "reference_window_days": 28,
+    "policy_outcome": "frozen SimplePolicyOptimiser winner; next-bar open, H12, 100 bps once",
+    "r5_walkforward_producer": "scripts/run_strict_r3_cell_day_residual_trust_walkforward.py",
+    "r5_warmup": "fail closed until same frozen-geometry, prior-resolved Cell-day history supplies at least 2,000 rows",
+    "metrics_promoted": false,
+    "completed_blocks": 14,
+    "scheduled_blocks": 21,
+    "latest_started_cutoff": "2026-01-28T00:00:00+00:00"
+  },
+  "production_ready": false,
+  "execution_enabled": false,
+  "blocking_reasons": [
+    "The homogeneous physical-28-day base ledger is complete; the matched same-model upstream/conversion, Cell-day, per-refit R5 and portfolio waterfall is still running and has not yet produced promotable metrics.",
+    "August 2026 influenced development and remains reconciliation/shadow evidence.",
+    "The canonical R5 posterior admitted no candidates in the sealed August 12 hour; this is fail-closed parity evidence, not economic validation.",
+    "No exchange or order-capable runtime is authorized by this receipt."
+  ]
+}

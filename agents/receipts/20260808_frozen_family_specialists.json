@@ -1,0 +1,39 @@
+{
+  "task": "frozen-cross-fold-family-specialist-residual-ablation",
+  "scope": "Materialize the fixed 64-superfamily cross-fold family contract, train binary exact-H12-net-greater-than-50-bps specialists on a fixed 40-field causal context pool plus frozen family fields, and evaluate a matched 4-hour-by-side native LambdaRank residual learner on outer test partitions.",
+  "changed_paths": [
+    "scripts/materialize_frozen_family_inputs.py",
+    "scripts/run_frozen_family_specialist_residual.py",
+    "agents/receipts/20260808_frozen_family_specialists.json"
+  ],
+  "source_hashes": [
+    {"path": "scripts/materialize_frozen_family_inputs.py", "sha256": "e3bd4303c4edc581b509ac6d51438091d4227fe676dc413a8563a0ab360487d8"},
+    {"path": "scripts/run_frozen_family_specialist_residual.py", "sha256": "eb4beca6b4fd00d4696bc2686d1ba82365ed192c9df533e28a555bce15a7bd1b"}
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/materialize_frozen_family_inputs.py scripts/run_frozen_family_specialist_residual.py",
+      "materialize_frozen_family_inputs.py --threshold 0.60 --top-n 64",
+      "run_frozen_family_specialist_residual.py --top-n 64",
+      "data_perp/artifacts/frozen_family_inputs_20260808_v1/correctness_test_report.json status=passed",
+      "data_perp/artifacts/frozen_family_specialist_residual_20260808_v1/correctness_test_report.json status=passed",
+      "outer OOS rows=275540; specialist_count=64; every specialist has 40-80 fields; residual query grouping=4h x side"
+    ],
+    "not_run_reason": ""
+  },
+  "artifacts": [
+    "data_perp/artifacts/frozen_family_inputs_20260808_v1",
+    "data_perp/artifacts/frozen_family_specialist_residual_20260808_v1"
+  ],
+  "agent_plan": {
+    "subagents": []
+  }
+}

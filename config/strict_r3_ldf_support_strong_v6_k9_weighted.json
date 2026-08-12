@@ -1,0 +1,27 @@
+{
+  "schema": "strict_r3_ldf_support_sizing_v6_k9_weighted_mda_candidate",
+  "model_display_name": "Local Distribution Forest Proxy (LDF) K9-weighted causal candidate pool",
+  "model_family": "local_distribution_forest_proxy",
+  "status": "research_candidate_not_canonical",
+  "purpose": "Reassess the strong causal pool with frozen soft-K9-cluster-weighted support/OOD/Mahalanobis/covariance/correlation state at every decision timestamp. No new recent-correctness features are introduced.",
+  "side": "long",
+  "features": [
+    "base_score", "base_rank", "base_anchor_bps", "consensus_rank", "final_score", "correctness_raw", "correctness_rank",
+    "k9_entropy", "k9_top2_margin", "k9_ood_distance", "k9_path_support_effective_28d", "k9_path_ood_marginal", "k9_model_ood_marginal", "k9_model_drift_psi",
+    "k9_cluster_weighted_fit_support", "k9_cluster_weighted_fit_support_log", "k9_cluster_support_adequate_fraction", "k9_cluster_weighted_distance", "k9_cluster_weighted_ood", "k9_cluster_weighted_mahalanobis_train", "k9_cluster_timestamp_cov_break_train", "k9_cluster_timestamp_corr_break_train", "k9_cluster_timestamp_mahalanobis_train", "k9_cluster_timestamp_support_weighted", "k9_cluster_timestamp_support_p05", "k9_cluster_timestamp_ood_weighted",
+    "reliability_base_consensus_gap", "reliability_base_consensus_abs_gap", "reliability_base_consensus_mean", "reliability_upstream_rank",
+    "reliability_recent_3d_support", "reliability_recent_3d_mean_residual_bps", "reliability_recent_3d_positive_rate", "reliability_recent_3d_approx_rate", "reliability_recent_3d_adverse100_rate", "reliability_recent_3d_adverse200_rate",
+    "reliability_recent_7d_support", "reliability_recent_7d_mean_residual_bps", "reliability_recent_7d_positive_rate", "reliability_recent_7d_approx_rate", "reliability_recent_7d_adverse100_rate", "reliability_recent_7d_adverse200_rate",
+    "reliability_recent_14d_support", "reliability_recent_14d_mean_residual_bps", "reliability_recent_14d_positive_rate", "reliability_recent_14d_approx_rate", "reliability_recent_14d_adverse100_rate", "reliability_recent_14d_adverse200_rate",
+    "cluster_recent_3d_support", "cluster_recent_3d_mean_residual_bps", "cluster_recent_3d_directional_rate", "cluster_recent_3d_positive_rate", "cluster_recent_3d_positive100_rate", "cluster_recent_3d_approx_rate", "cluster_recent_3d_adverse100_rate", "cluster_recent_3d_adverse200_rate",
+    "cluster_recent_7d_support", "cluster_recent_7d_mean_residual_bps", "cluster_recent_7d_directional_rate", "cluster_recent_7d_positive_rate", "cluster_recent_7d_positive100_rate", "cluster_recent_7d_approx_rate", "cluster_recent_7d_adverse100_rate", "cluster_recent_7d_adverse200_rate",
+    "cluster_recent_14d_support", "cluster_recent_14d_mean_residual_bps", "cluster_recent_14d_directional_rate", "cluster_recent_14d_positive_rate", "cluster_recent_14d_positive100_rate", "cluster_recent_14d_approx_rate", "cluster_recent_14d_adverse100_rate", "cluster_recent_14d_adverse200_rate",
+    "residual_heads_frac_rank_ge_p99", "residual_heads_frac_rank_ge_p95", "residual_heads_frac_rank_ge_p90", "residual_heads_weighted_mean_conviction", "residual_heads_median_conviction", "residual_heads_prediction_dispersion", "residual_heads_prediction_std", "residual_heads_prediction_iqr", "residual_heads_prediction_mad", "residual_heads_agreement_entropy",
+    "residual_heads_mean_rank_minus_hit_surprise_3d", "residual_heads_frac_adjusted_ge_p99_3d", "residual_heads_frac_adjusted_ge_p95_3d", "residual_heads_frac_adjusted_ge_p90_3d", "residual_heads_hit_surprise_support_3d",
+    "residual_heads_mean_rank_minus_hit_surprise_7d", "residual_heads_frac_adjusted_ge_p99_7d", "residual_heads_frac_adjusted_ge_p95_7d", "residual_heads_frac_adjusted_ge_p90_7d", "residual_heads_hit_surprise_support_7d",
+    "reliability_cov_break_upstream_7v28", "reliability_corr_break_upstream_7v28", "reliability_cov_break_disagreement_7v28", "reliability_corr_break_disagreement_7v28"
+  ],
+  "geometry_rule": "Raw K9 membership slots and all leaf-level support/OOD fields never enter the model. Every structural field is a soft-membership-weighted aggregate across the same immutable frozen K9 bundle; timestamp aggregates use only the contemporaneously available candidate cross-section.",
+  "score_lineage_rule": "The strict-R3 primary ledger remains authoritative for base, consensus, and final score fields. Supplemental ledgers may provide only fields absent from that primary ledger after exact K9 invariant checks.",
+  "selection_rule": "2025 chronological OOF MDA/HPO only; 2026 confirmation remains untouched until the selected contract is frozen."
+}

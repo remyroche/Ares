@@ -1,0 +1,8 @@
+{
+  "schema": "strict_r3_cell_day_residual_trust_model_r5_9m_v1",
+  "base_model_contract": "strict_r3_cell_day_residual_trust_overlay_v1",
+  "feature_order": "validated_fold_order_active_rule_before_k9_summary_v1",
+  "training_window_months": 9,
+  "raw_k9_memberships_used": false,
+  "model_parameters_inherited": true
+}

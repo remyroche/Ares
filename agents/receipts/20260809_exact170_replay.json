@@ -1,0 +1,24 @@
+{
+  "receipt_type": "exact_170_tp6_sl4_matched_replay",
+  "created_at": "2026-08-09",
+  "status": "COMPLETE",
+  "scope": {
+    "universe_count": 170,
+    "months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "unique_rows": 941156,
+    "complete_label_rows": 533418,
+    "arms": ["base", "canonical_residual_control", "support_ood", "uncertainty", "support_ood+uncertainty"]
+  },
+  "contracts": {
+    "label": "exact next-minute-open entry, causal Wilder ATR14, TP6/SL4, H12, 100 bps once, R3 robust-clear B25/T50",
+    "residual": "prior-OOF per-row net residual, train-only isotonic base-score map, ordinal grades [-150,-50,50,150], native LambdaRank, q4h_side, 75/25 blend",
+    "features": "configured MODEL_DIRECT_BASE_FEATURE_KEYS and MODEL_REGIME_CONTEXT_META_FEATURE_KEYS intersected with raw hourly store; no future fill",
+    "invalid_rows": "excluded from supervised fitting and tails; retained in coverage audit"
+  },
+  "hashes": {
+    "scripts/run_tp6_sl4_exact170_matched_replay.py": "610b1c771e53837a286ace5100f52dcfaac2da14834607026de7116736aaefed",
+    "scripts/materialize_packb_tp6_sl4_h12_labels.py": "1494adfd00bb13efc3216a8a8478a3a1c8d532df86a7ddfffa68ef38ccb97058",
+    "data_perp/artifacts/tp6_sl4_exact170_matched_replay_20260808_v1/run_manifest.json": "16a0289a7c8f548536c9112305d4cb5e704cbeae92737ae2d30bc66fa88ec821",
+    "data_perp/artifacts/tp6_sl4_exact170_labels_20260808_v1/run_manifest.json": "35e71db9a33869b33847fd27f98dda6e1565db34d1d67f660b4a6014454cc740"
+  }
+}

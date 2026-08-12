@@ -1,0 +1,36 @@
+{
+  "task": "compact-path-health-joint-reliability-hpo",
+  "scope": "Add a sequential, causal ablation runner for compact individual recurrent-path health selection, joint support/OOD/covariance/model-state/recent-correctness/context blocks, 2024-only subsampled Optuna HPO, within-block gain trimming, and bounded shrink/multiplier scoring against the exact canonical TP6/SL4 Base+Consensus control.",
+  "changed_paths": [
+    "scripts/run_tp6_sl4_compact_path_joint_hpo_2025.py",
+    "agents/receipts/20260809_compact_path_joint_hpo.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_tp6_sl4_compact_path_joint_hpo_2025.py",
+      "Direct CMI/parameter smoke: CMI selected the informative synthetic recurrent-path field and bounded depth/leaf materialization passed.",
+      "Actual-panel state smoke: BUILD_SMOKE_OK on 17,040 rows, with 384 active individual path-health candidates, all requested blocks present, and all 2025 canonical candidate IDs aligned.",
+      "Actual-panel 2024-only HPO smoke: subsampled Optuna model, early stopping, and feature gain audit completed.",
+      "Full chronological 2025 matched replay: eight feature contracts x 12 HPO trials, then 12 growing monthly folds; 10,224 long candidates and 73 scored arms written to data_perp/artifacts/tp6_sl4_compact_path_joint_hpo_20260809_v1."
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

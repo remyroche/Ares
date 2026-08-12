@@ -1,0 +1,22 @@
+{
+  "schema": "strict_r3_cell_day_trim15_portfolio_28d_a5_b10_v1",
+  "scope": "long_only",
+  "auction_order": "a5_bounded10_expected_bps_desc_then_same_producer_final_score_desc",
+  "max_concurrent_positions": 8,
+  "max_concurrent_per_symbol": 1,
+  "max_new_entries_per_bar": 2,
+  "max_total_margin_fraction": 0.8,
+  "margin_slot_fraction": 0.1,
+  "leverage": 7.0,
+  "minimum_gross_notional": 1.0,
+  "admission_contract": "strict_r3_a5_bounded_10pct_canonical_v1",
+  "trust_overlay_contract": "A5_bounded10_over_A0_top15",
+  "admission_expected_net_field": "a5_bounded10_expected_bps",
+  "admission_boolean_field": "a5_bounded10_admitted",
+  "anchor_expected_net_field": "trust_posterior_expected_bps",
+  "anchor_threshold_bps": 50.0,
+  "domain": "timestamp_local_top15_by_pretrust_final_score",
+  "missing_component": "fail_closed",
+  "outcome_inputs": [],
+  "exchange_io": false
+}

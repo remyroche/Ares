@@ -1,0 +1,40 @@
+{
+  "schema": "strict_r3_live_readiness_receipt_v4_a5_bounded10",
+  "status": "canonical_executable_research_shadow_only_pending_untouched_forward_validation",
+  "side": "long",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v5_a5_b10.json",
+    "sha256": "e4a3334c2c12111c0a4864900099364d99f3837877dcabc89483bef759fc0eeb",
+    "hashes_verified": 23
+  },
+  "trust_contract": {
+    "path": "config/strict_r3_a5_bounded_10pct_canonical_v1.json",
+    "formula": "A0 + 0.10 * (causally_calibrated_A4 - A0)",
+    "admission": "A0 >= 50 bps AND timestamp-local top15 by pre-trust final_score",
+    "a5_changes_fixed_admission": false,
+    "missing_component": "fail_closed"
+  },
+  "a5_bundle": {
+    "path": "data_perp/artifacts/strict_r3_a5_bounded10_trust_bundle_long_20260801_28d_9m_v1",
+    "cutoff": "2026-08-01T00:00:00Z",
+    "a4_training_window_months": 9,
+    "a4_training_rows": 60000,
+    "a5_prior_oos_calibration_rows": 120000,
+    "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638"
+  },
+  "shadow_verification": {
+    "path": "data_perp/artifacts/strict_r3_shadow_cycle_28d_a5_b10_20260812T090000Z_v1",
+    "decision_ts": "2026-08-12T09:00:00Z",
+    "rows": 163,
+    "feature_complete_rows": 162,
+    "mapped_rows": 163,
+    "admitted_rows": 0,
+    "portfolio_accepted_rows": 0,
+    "order_submission_enabled": false,
+    "exchange_calls": 0,
+    "all_contract_checks_passed": true
+  },
+  "validation_reference": "docs/A5_BOUNDED_LONGER_VALIDATION_20260812.md",
+  "canonical_handover": "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md",
+  "production_authorized": false
+}

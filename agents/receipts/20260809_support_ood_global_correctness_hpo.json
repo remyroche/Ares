@@ -1,0 +1,42 @@
+{
+  "task": "support-ood-global-correctness-frozen-hpo-modulation-validation",
+  "scope": "Freeze the Support+OOD plus globally pooled recent-correctness feature contract; tune its reliability model on 2024 only; select a predeclared bounded multiplier/shrink transform on January--September 2025; then report October--December once against frozen Support+OOD alpha=1.0 on identical long-only canonical TP6/SL4/H12 candidates.",
+  "changed_paths": [
+    "scripts/run_tp6_sl4_support_ood_global_correctness_hpo_2025.py",
+    "agents/receipts/20260809_support_ood_global_correctness_hpo.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed_with_hold_decision",
+    "commands": [
+      "python3 -m py_compile scripts/run_tp6_sl4_support_ood_global_correctness_hpo_2025.py",
+      "Full chronological replay with 48-trial 2024-only HPO, January--September modulation selection, and October--December confirmation reuse",
+      "Exact frozen Support+OOD alpha=1.0 reference recomputed on identical candidate IDs; all scores finite"
+    ],
+    "not_run_reason": "",
+    "result": {
+      "selected_modulation": "multiply__global_recent__a125",
+      "selected_global_top5_net_bps": 36.4624,
+      "frozen_support_ood_global_top5_net_bps": 40.5122,
+      "selected_confirmation_oct_dec_top5_mean_bps": 44.9839,
+      "frozen_support_ood_confirmation_oct_dec_top5_mean_bps": 92.8004,
+      "decision": "FAIL_HOLD_GLOBAL_CORRECTNESS"
+    }
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

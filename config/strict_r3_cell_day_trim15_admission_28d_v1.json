@@ -1,0 +1,20 @@
+{
+  "schema": "strict_r3_cell_day_trim15_admission_28d_v1",
+  "side": "long",
+  "producer_scope": "exact_upstream_x_conversion",
+  "score_column": "final_score",
+  "score_cells": 20,
+  "reference_window_days": 28,
+  "period_unit": "UTC_day",
+  "period_weighting": "one_mean_policy_net_observation_per_day_x_score_cell",
+  "symmetric_trim_fraction": 0.15,
+  "monotone_projection": true,
+  "admission_floor_net_bps": 50.0,
+  "label_cutoff": "policy_label_available_ts < held_day_00_00_utc",
+  "cross_producer_score_pooling": false,
+  "legacy_wire_aliases": {
+    "base_rank42": "prior_28_day_base_rank",
+    "causal_21d_side_expected_net_bps": "exact_producer_28_day_cell_day_expected_net_bps"
+  },
+  "rollback": "strict_oof_exact_producer_cell_day_trim15_42d_v1"
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "strict_r3_shadow_portfolio_snapshot_v1",
+  "as_of_ts": "2026-08-01T00:00:00+00:00",
+  "wallet": 1000.0,
+  "open_positions": []
+}

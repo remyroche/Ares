@@ -1,0 +1,23 @@
+{
+  "schema": "strict_r3_n5_semantic_feature_groups_v3_k9_weighted",
+  "contract": "config/strict_r3_ldf_support_strong_v6_k9_weighted.json",
+  "groups": [
+    {"id": "A_core_score_model_state", "exact": ["base_score", "base_rank", "base_anchor_bps", "consensus_rank", "final_score", "correctness_raw", "correctness_rank"], "prefixes": ["reliability_base_consensus_", "reliability_upstream_"]},
+    {"id": "B_activated_support", "exact": ["k9_path_support_effective_28d", "k9_cluster_weighted_fit_support", "k9_cluster_weighted_fit_support_log", "k9_cluster_support_adequate_fraction", "k9_cluster_timestamp_support_weighted", "k9_cluster_timestamp_support_p05"]},
+    {"id": "C_structural_ood", "exact": ["k9_ood_distance", "k9_path_ood_marginal", "k9_model_ood_marginal", "k9_model_drift_psi", "k9_cluster_weighted_distance", "k9_cluster_weighted_ood", "k9_cluster_weighted_mahalanobis_train", "k9_cluster_timestamp_mahalanobis_train", "k9_cluster_timestamp_ood_weighted"]},
+    {"id": "D_recent_global_correctness", "prefixes": ["reliability_recent_"]},
+    {"id": "E_cluster_path_correctness", "prefixes": ["cluster_recent_"]},
+    {"id": "F_structural_covariance_breaks", "exact": ["k9_cluster_timestamp_cov_break_train", "k9_cluster_timestamp_corr_break_train"]},
+    {"id": "G_ten_head_committee_state", "prefixes": ["residual_heads_"]},
+    {"id": "H_geometry_k9_ambiguity_state", "exact": ["k9_entropy", "k9_top2_margin"]},
+    {"id": "I_legacy_score_outcome_covariance", "exact": ["reliability_cov_break_upstream_7v28", "reliability_corr_break_upstream_7v28", "reliability_cov_break_disagreement_7v28", "reliability_corr_break_disagreement_7v28"]}
+  ],
+  "conditional_permutation": {
+    "always": ["month", "consensus_decile"],
+    "bundle_groups": ["B_activated_support", "C_structural_ood", "E_cluster_path_correctness", "F_structural_covariance_breaks", "H_geometry_k9_ambiguity_state"],
+    "support_groups": ["B_activated_support", "C_structural_ood", "F_structural_covariance_breaks"],
+    "market_state_groups": ["C_structural_ood", "E_cluster_path_correctness", "F_structural_covariance_breaks", "G_ten_head_committee_state", "H_geometry_k9_ambiguity_state"]
+  },
+  "portability": {"lambda_mad": 0.5, "gamma_negative_worst": 0.25, "minimum_positive_environment_fraction": 0.5},
+  "backward_elimination": {"selection_score_tolerance": 3.0, "top1_tolerance_bps": 5.0, "top2_tolerance_bps": 5.0, "top5_tolerance_bps": 3.0, "worst_month_tolerance_bps": 10.0, "maximum_feature_trials": 24}
+}

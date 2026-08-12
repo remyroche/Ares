@@ -1,0 +1,15 @@
+{
+  "schema": "strict_r3_cell_day_trim15_portfolio_v1",
+  "scope": "long_only",
+  "auction_order": "mapped_expected_net_bps_desc_then_same_producer_final_score_desc",
+  "max_concurrent_positions": 8,
+  "max_concurrent_per_symbol": 1,
+  "max_new_entries_per_bar": 2,
+  "max_total_margin_fraction": 0.8,
+  "margin_slot_fraction": 0.1,
+  "leverage": 7.0,
+  "minimum_gross_notional": 1.0,
+  "admission_contract": "strict_oof_exact_producer_cell_day_trim15_42d_v1_expected_net_ge_50bps",
+  "outcome_inputs": [],
+  "exchange_io": false
+}

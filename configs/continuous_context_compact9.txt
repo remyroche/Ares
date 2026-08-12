@@ -1,0 +1,12 @@
+# One relative context coordinate per observable market mechanism.  This is
+# the fixed low-capacity P2/P3/P4 control; broader continuous fields must first
+# pass the chronological transport-selection audit individually.
+continuous_regime__trend_quality__z_90d
+continuous_regime__volatility__z_90d
+continuous_regime__breadth__z_90d
+continuous_regime__dependence__z_90d
+continuous_regime__leverage__z_90d
+continuous_regime__funding__z_90d
+continuous_regime__spread__z_90d
+continuous_regime__turnover__z_90d
+continuous_regime__dispersion__z_90d

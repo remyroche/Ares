@@ -1,11 +1,17 @@
-
 from typing import Any
 import pandas as pd
 from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.comprehensive_function_logger import (
+    log_step_functions,
+    log_important_calls,
+    log_all_calls,
+    log_internal_call,
+    log_step_progress,
+    log_data_operation,
+)
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-'Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n'
+"Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n"
 import asyncio
 import io
 import ssl
@@ -21,13 +27,14 @@ import time
 
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-logger = system_logger.getChild('GapFillerPipeline')
+logger = system_logger.getChild("GapFillerPipeline")
+
 
 class GapFillerPipeline:
     """Pipeline for detecting and filling gaps in aggtrades data."""
-    @log_important_calls
 
-    def __init__(self, data_cache_path: str='data_cache') -> None:
+    @log_important_calls
+    def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.session = None
         self.max_api_calls_per_gap = 50
@@ -50,81 +57,119 @@ class GapFillerPipeline:
         if self.session:
             await self.session.close()
 
-    def detect_gaps_in_file(self, file_path: Path, min_gap_seconds: int = 5) -> list[dict]:
+    def detect_gaps_in_file(
+        self, file_path: Path, min_gap_seconds: int = 5
+    ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
-            if file_path.suffix.lower() == '.parquet':
+            if file_path.suffix.lower() == ".parquet":
                 df = standardized_parquet_handler.read_parquet_standardized(file_path)
-            elif file_path.suffix.lower() == '.csv':
+            elif file_path.suffix.lower() == ".csv":
                 df = pd.read_csv(file_path)
             else:
                 return []
             if df.empty:
                 return []
-            if 'timestamp' not in df.columns:
+            if "timestamp" not in df.columns:
                 return []
-            df = df.sort_values('timestamp').reset_index(drop = True)
-            df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            df["time_diff"] = df["timestamp"].diff().dt.total_seconds()
             gaps = []
-            gap_rows = df[df['time_diff'] > min_gap_seconds]
-            for idx, row in gap_rows.iterrows():
+            gap_rows = df[df["time_diff"] > min_gap_seconds]
+
+            gap_indices = gap_rows.index.values
+            timestamps = gap_rows["timestamp"].values
+
+            for idx, ts in zip(gap_indices, timestamps):
                 if idx > 0:
-                    gap_start = df.loc[idx - 1, 'timestamp']
-                    gap_end = row['timestamp']
+                    gap_start = df.loc[idx - 1, "timestamp"]
+                    gap_end = pd.Timestamp(ts)
                     gap_duration = (gap_end - gap_start).total_seconds()
-                    gaps.append({'file': file_path.name, 'gap_start': gap_start, 'gap_end': gap_end, 'gap_duration_seconds': gap_duration})
+                    gaps.append(
+                        {
+                            "file": file_path.name,
+                            "gap_start": gap_start,
+                            "gap_end": gap_end,
+                            "gap_duration_seconds": gap_duration,
+                        }
+                    )
             return gaps
         except Exception:
             return []
 
-    async def _fetch_aggtrades_from_binance_vision(self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str='um') -> list[dict]:
+    async def _fetch_aggtrades_from_binance_vision(
+        self,
+        symbol: str,
+        gap_start: datetime,
+        gap_end: datetime,
+        start_time_ms: int,
+        end_time_ms: int,
+        market_segment: str = "um",
+    ) -> list[dict]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
-        base_url = 'https://data.binance.vision'
-        date_str = gap_start.strftime('%Y-%m-%d')
-        path = f'data/futures/{market_segment}/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip'
-        url = f'{base_url}/{path}'
+        base_url = "https://data.binance.vision"
+        date_str = gap_start.strftime("%Y-%m-%d")
+        path = f"data/futures/{market_segment}/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
+        url = f"{base_url}/{path}"
         try:
-            ssl_context = ssl.create_default_context(cafile = certifi.where())
-            async with self.session.get(url, ssl = ssl_context) as resp:
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            async with self.session.get(url, ssl=ssl_context) as resp:
                 if resp.status != 200:
                     return []
                 content = await resp.read()
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                csv_names = [n for n in zf.namelist() if n.endswith('.csv')]
+                csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
                     return []
                 with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(f, header = None, names=['a', 'p', 'q', 'f', 'l', 'T', 'm', 'M'], low_memory = False)
+                    df = pd.read_csv(
+                        f,
+                        header=None,
+                        names=["a", "p", "q", "f", "l", "T", "m", "M"],
+                        low_memory=False,
+                    )
             if df.empty:
                 return []
-            for col in ['a', 'f', 'l', 'T']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            for col in ['p', 'q']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            df['m'] = df['m'].map({'true': True, 'false': False, True: True, False: False}).astype('boolean')
-            df = df.dropna(subset=['T'])
-            df = df[(df['T'] >= start_time_ms) & (df['T'] < end_time_ms)]
+            for col in ["a", "f", "l", "T"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            for col in ["p", "q"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["m"] = (
+                df["m"]
+                .map({"true": True, "false": False, True: True, False: False})
+                .astype("boolean")
+            )
+            df = df.dropna(subset=["T"])
+            df = df[(df["T"] >= start_time_ms) & (df["T"] < end_time_ms)]
             if df.empty:
                 return []
-            return df[['a', 'p', 'q', 'f', 'l', 'T', 'm']].to_dict(orient='records')
+            return df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(orient="records")
         except Exception:
             return []
-    @log_all_calls
 
+    @log_all_calls
     def _standardize_aggtrades_format(self, df: pd.DataFrame) -> pd.DataFrame:
         """Standardize aggtrades data format."""
-        column_mapping = {'a': 'agg_trade_id', 'p': 'price', 'q': 'quantity', 'f': 'first_trade_id', 'l': 'last_trade_id', 'T': 'timestamp', 'm': 'is_buyer_maker'}
-        df = df.rename(columns = column_mapping)
-        if 'timestamp' in df.columns and df['timestamp'].dtype in ['int64', 'float64']:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        column_mapping = {
+            "a": "agg_trade_id",
+            "p": "price",
+            "q": "quantity",
+            "f": "first_trade_id",
+            "l": "last_trade_id",
+            "T": "timestamp",
+            "m": "is_buyer_maker",
+        }
+        df = df.rename(columns=column_mapping)
+        if "timestamp" in df.columns and df["timestamp"].dtype in ["int64", "float64"]:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         return df
 
     async def fill_gap_until_complete(self, gap_info: dict, symbol: str) -> dict:
         """Fill a gap with multiple API calls until complete."""
-        gap_start = gap_info['gap_start']
-        gap_end = gap_info['gap_end']
-        file_name = gap_info['file']
+        gap_start = gap_info["gap_start"]
+        gap_end = gap_info["gap_end"]
+        file_name = gap_info["file"]
         all_missing_data = []
         successful_calls = 0
         consecutive_empty_calls = 0
@@ -134,12 +179,18 @@ class GapFillerPipeline:
             missing_data = []
             start_time_ms = int(gap_start.timestamp() * 1000)
             end_time_ms = int(gap_end.timestamp() * 1000)
-            missing_data = await self._fetch_aggtrades_from_binance_vision(symbol = symbol, gap_start = gap_start, gap_end = gap_end, start_time_ms = start_time_ms, end_time_ms = end_time_ms)
+            missing_data = await self._fetch_aggtrades_from_binance_vision(
+                symbol=symbol,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
             if missing_data and len(missing_data) > 0:
                 all_missing_data.extend(missing_data)
                 successful_calls += 1
                 consecutive_empty_calls = 0
-                expected_min_trades = max(1, int(gap_info['gap_duration_seconds'] / 2))
+                expected_min_trades = max(1, int(gap_info["gap_duration_seconds"] / 2))
                 if len(all_missing_data) >= expected_min_trades:
                     break
             else:
@@ -151,7 +202,7 @@ class GapFillerPipeline:
             unique_data = []
             seen_timestamps = set()
             for record in all_missing_data:
-                timestamp = record.get('T', 0)
+                timestamp = record.get("T", 0)
                 if timestamp not in seen_timestamps:
                     seen_timestamps.add(timestamp)
                     unique_data.append(record)
@@ -159,70 +210,118 @@ class GapFillerPipeline:
             df_missing = self._standardize_aggtrades_format(df_missing)
             file_path = self.data_cache_path / file_name
             if file_path.exists():
-                if file_path.suffix.lower() == '.parquet':
-                    df_existing = standardized_parquet_handler.read_parquet_standardized(file_path)
-                elif file_path.suffix.lower() == '.csv':
+                if file_path.suffix.lower() == ".parquet":
+                    df_existing = (
+                        standardized_parquet_handler.read_parquet_standardized(
+                            file_path
+                        )
+                    )
+                elif file_path.suffix.lower() == ".csv":
                     df_existing = pd.read_csv(file_path)
                 else:
-                    return {'success': False, 'error': f'Unsupported file format: {file_path.suffix}', 'rows_added': 0, 'api_calls_made': call_num, 'successful_calls': successful_calls}
-                df_combined = pd.concat([df_existing, df_missing], ignore_index = True)
-                df_combined = df_combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
-                if file_path.suffix.lower() == '.parquet':
-                    standardized_parquet_handler.write_parquet_standardized(df_combined, file_path, compression='zstd', index = False)
-                elif file_path.suffix.lower() == '.csv':
-                    df_combined.to_csv(file_path, index = False)
-                return {'success': True, 'rows_added': len(df_missing), 'api_calls_made': call_num, 'successful_calls': successful_calls}
-        return {'success': False, 'error': f'No data available after {call_num} API calls', 'rows_added': 0, 'api_calls_made': call_num, 'successful_calls': successful_calls}
+                    return {
+                        "success": False,
+                        "error": f"Unsupported file format: {file_path.suffix}",
+                        "rows_added": 0,
+                        "api_calls_made": call_num,
+                        "successful_calls": successful_calls,
+                    }
+                df_combined = pd.concat([df_existing, df_missing], ignore_index=True)
+                df_combined = df_combined.sort_values("timestamp").drop_duplicates(
+                    subset=["timestamp"]
+                )
+                if file_path.suffix.lower() == ".parquet":
+                    standardized_parquet_handler.write_parquet_standardized(
+                        df_combined, file_path, compression="zstd", index=False
+                    )
+                elif file_path.suffix.lower() == ".csv":
+                    df_combined.to_csv(file_path, index=False)
+                return {
+                    "success": True,
+                    "rows_added": len(df_missing),
+                    "api_calls_made": call_num,
+                    "successful_calls": successful_calls,
+                }
+        return {
+            "success": False,
+            "error": f"No data available after {call_num} API calls",
+            "rows_added": 0,
+            "api_calls_made": call_num,
+            "successful_calls": successful_calls,
+        }
 
     async def process_all_files(self, symbol: str, exchange: str) -> dict:
         """Process all aggtrades files for gap detection and filling."""
-        logger.info(f'🔍 Processing all aggtrades files for {exchange}_{symbol}')
-        pattern = f'aggtrades_{exchange}_{symbol}_*.csv'
+        logger.info(f"🔍 Processing all aggtrades files for {exchange}_{symbol}")
+        pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
         csv_files = list(self.data_cache_path.glob(pattern))
-        pattern_parquet = f'aggtrades_{exchange}_{symbol}_*.parquet'
+        pattern_parquet = f"aggtrades_{exchange}_{symbol}_*.parquet"
         parquet_files = list(self.data_cache_path.glob(pattern_parquet))
         all_files = sorted(csv_files + parquet_files)
-        logger.info(f'📁 Found {len(all_files)} aggtrades files')
-        results = {'files_processed': 0, 'files_with_gaps': 0, 'total_gaps_found': 0, 'total_gaps_filled': 0, 'total_gaps_failed': 0, 'total_api_calls': 0, 'total_successful_calls': 0}
+        logger.info(f"📁 Found {len(all_files)} aggtrades files")
+        results = {
+            "files_processed": 0,
+            "files_with_gaps": 0,
+            "total_gaps_found": 0,
+            "total_gaps_filled": 0,
+            "total_gaps_failed": 0,
+            "total_api_calls": 0,
+            "total_successful_calls": 0,
+        }
         for file_path in all_files:
             try:
                 gaps = self.detect_gaps_in_file(file_path)
-                results['files_processed'] += 1
+                results["files_processed"] += 1
                 if gaps:
-                    results['files_with_gaps'] += 1
-                    results['total_gaps_found'] += len(gaps)
+                    results["files_with_gaps"] += 1
+                    results["total_gaps_found"] += len(gaps)
                     for gap in gaps:
                         result = await self.fill_gap_until_complete(gap, symbol)
-                        results['total_api_calls'] += result.get('api_calls_made', 0)
-                        results['total_successful_calls'] += result.get('successful_calls', 0)
-                        if result['success']:
-                            results['total_gaps_filled'] += 1
+                        results["total_api_calls"] += result.get("api_calls_made", 0)
+                        results["total_successful_calls"] += result.get(
+                            "successful_calls", 0
+                        )
+                        if result["success"]:
+                            results["total_gaps_filled"] += 1
                         else:
-                            results['total_gaps_failed'] += 1
+                            results["total_gaps_failed"] += 1
                     await asyncio.sleep(0.5)
             except Exception as e:
-                logger.exception(f'❌ Error processing {file_path.name}: {e}')
-        if results['total_gaps_found'] > 0:
-            success_rate = results['total_gaps_filled'] / results['total_gaps_found'] * 100
-            logger.info(f'📊 Gap filling success rate: {success_rate:.1f}%')
-        if results['total_api_calls'] > 0:
-            api_success_rate = results['total_successful_calls'] / results['total_api_calls'] * 100
-            logger.info(f'📊 API call success rate: {api_success_rate:.1f}%')
+                logger.exception(f"❌ Error processing {file_path.name}: {e}")
+        if results["total_gaps_found"] > 0:
+            success_rate = (
+                results["total_gaps_filled"] / results["total_gaps_found"] * 100
+            )
+            logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
+        if results["total_api_calls"] > 0:
+            api_success_rate = (
+                results["total_successful_calls"] / results["total_api_calls"] * 100
+            )
+            logger.info(f"📊 API call success rate: {api_success_rate:.1f}%")
         return results
 
-    async def run_pipeline(self, symbol: str='ETHUSDT', exchange: str='BINANCE') -> dict:
+    async def run_pipeline(
+        self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
+    ) -> dict:
         """Run the complete gap filling pipeline."""
-        logger.info(f'🚀 Starting gap filling pipeline for {exchange}_{symbol}')
+        logger.info(f"🚀 Starting gap filling pipeline for {exchange}_{symbol}")
         try:
             results = await self.process_all_files(symbol, exchange)
-            logger.info(f'🎉 Gap filling pipeline completed for {exchange}_{symbol}')
+            logger.info(f"🎉 Gap filling pipeline completed for {exchange}_{symbol}")
             return results
         finally:
             await self.close_session()
 
-async def run_gap_filling_pipeline(symbol: str='ETHUSDT', exchange: str='BINANCE', data_cache_path: str='data_cache') -> Any:
+
+async def run_gap_filling_pipeline(
+    symbol: str = "ETHUSDT",
+    exchange: str = "BINANCE",
+    data_cache_path: str = "data_cache",
+) -> Any:
     """Run gap filling as part of the training pipeline."""
     gap_filler = GapFillerPipeline(data_cache_path)
     return await gap_filler.run_pipeline(symbol, exchange)
-if __name__ == '__main__':
-    asyncio.run( run_gap_filling_pipeline())
+
+
+if __name__ == "__main__":
+    asyncio.run(run_gap_filling_pipeline())

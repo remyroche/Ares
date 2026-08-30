@@ -27,45 +27,63 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
-from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+from src.utils.common_utilities import (
+    validate_dataframe_columns,
+    safe_dataframe_operation,
+)
+
 # from src.utils.validation import validate_data_quality  # Replaced with comprehensive quality tools
 
 # Import comprehensive data quality tools
 try:
     from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
     from src.utils.data.quality.data_quality import DataQualityFramework
+
     QUALITY_TOOLS_AVAILABLE = True
 except ImportError:
     QUALITY_TOOLS_AVAILABLE = False
 
+
 def validate_data_quality(df, **kwargs):
     """Comprehensive data quality validation using proper tools."""
     if not QUALITY_TOOLS_AVAILABLE:
-        return {'valid': True, 'quality_score': 50.0, 'issues': [], 'warnings': []}
+        return {"valid": True, "quality_score": 50.0, "issues": [], "warnings": []}
 
     try:
         quality_scorer = get_quality_scorer()
         quality_assessment = quality_scorer.assess_data_quality(
-            df,
-            context="data_collection",
-            step_name="gap_filling",
-            data_type="klines"
+            df, context="data_collection", step_name="gap_filling", data_type="klines"
         )
 
         return {
-            'valid': quality_assessment.level.value not in ['critical'],
-            'quality_score': quality_assessment.overall_score,
-            'issues': quality_assessment.issues,
-            'warnings': quality_assessment.warnings
+            "valid": quality_assessment.level.value not in ["critical"],
+            "quality_score": quality_assessment.overall_score,
+            "issues": quality_assessment.issues,
+            "warnings": quality_assessment.warnings,
         }
     except Exception as e:
-        return {'valid': True, 'quality_score': 50.0, 'issues': [str(e)], 'warnings': []}
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+        return {
+            "valid": True,
+            "quality_score": 50.0,
+            "issues": [str(e)],
+            "warnings": [],
+        }
+
+
+from src.utils.comprehensive_function_logger import (
+    log_step_functions,
+    log_important_calls,
+    log_all_calls,
+    log_internal_call,
+    log_step_progress,
+    log_data_operation,
+)
 
 # Import the unified downloader and gap collection hook
 from .unified_data_downloader import UnifiedDataDownloader
 
 logger = system_logger.getChild("UnifiedGapFiller")
+
 
 class UnifiedGapFiller:
     """Unified gap filler that integrates with the unified downloader and maintains compatibility with existing file paths."""
@@ -74,14 +92,17 @@ class UnifiedGapFiller:
     def __init__(self, data_cache_path: str = "data_cache"):
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
-        self.logger = logger.getChild('UnifiedGapFiller')
+        self.logger = logger.getChild("UnifiedGapFiller")
 
         # Initialize unified downloader for gap filling
         self.downloader = UnifiedDataDownloader(data_cache_path)
 
         # Initialize gap collection hook for automatic data re-collection
         try:
-            from src.utils.data.quality.gap_collection_hook import get_gap_collection_hook
+            from src.utils.data.quality.gap_collection_hook import (
+                get_gap_collection_hook,
+            )
+
             self.gap_collection_hook = get_gap_collection_hook()
             self.logger.info("✅ Gap collection hook initialized")
         except ImportError as e:
@@ -90,18 +111,18 @@ class UnifiedGapFiller:
 
         # Gap detection thresholds (in seconds) - updated to match new requirements
         self.gap_thresholds = {
-            'aggtrades': 0.5,   # 0.5 seconds for aggtrades - triggers re-download
-            'klines': 66,       # 1.1 minutes for 1m klines - triggers re-download (avoid unnecessary downloads for 1m data)
-            'futures': 32400    # 9 hours for futures - triggers re-download
+            "aggtrades": 0.5,  # 0.5 seconds for aggtrades - triggers re-download
+            "klines": 66,  # 1.1 minutes for 1m klines - triggers re-download (avoid unnecessary downloads for 1m data)
+            "futures": 32400,  # 9 hours for futures - triggers re-download
         }
 
         # Gap filling statistics
         self.gap_stats = {
-            'total_gaps_detected': 0,
-            'total_gaps_filled': 0,
-            'total_gaps_failed': 0,
-            'total_rows_downloaded': 0,
-            'start_time': None
+            "total_gaps_detected": 0,
+            "total_gaps_filled": 0,
+            "total_gaps_failed": 0,
+            "total_rows_downloaded": 0,
+            "start_time": None,
         }
 
     @handles_errors(context="detect_gaps")
@@ -112,7 +133,7 @@ class UnifiedGapFiller:
         exchange: str,
         data_type: str,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """
         Detect gaps in data files for a specific symbol, exchange, and data type.
@@ -141,10 +162,14 @@ class UnifiedGapFiller:
                 end_date = datetime.now()
 
             # Get file paths based on data type
-            file_paths = self._get_data_file_paths(symbol, exchange, data_type, start_date, end_date)
+            file_paths = self._get_data_file_paths(
+                symbol, exchange, data_type, start_date, end_date
+            )
 
             if not file_paths:
-                self.logger.warning(f"⚠️ No data files found for {exchange}_{symbol}_{data_type}")
+                self.logger.warning(
+                    f"⚠️ No data files found for {exchange}_{symbol}_{data_type}"
+                )
                 return []
 
             all_gaps = []
@@ -156,9 +181,11 @@ class UnifiedGapFiller:
                 all_gaps.extend(gaps)
 
             # Update statistics
-            self.gap_stats['total_gaps_detected'] += len(all_gaps)
+            self.gap_stats["total_gaps_detected"] += len(all_gaps)
 
-            self.logger.info(f"✅ Detected {len(all_gaps)} gaps in {exchange}_{symbol}_{data_type}")
+            self.logger.info(
+                f"✅ Detected {len(all_gaps)} gaps in {exchange}_{symbol}_{data_type}"
+            )
             return all_gaps
 
         except Exception as e:
@@ -173,7 +200,7 @@ class UnifiedGapFiller:
         exchange: str,
         data_type: str,
         gaps: List[Dict[str, Any]],
-        max_concurrent_downloads: int = 3
+        max_concurrent_downloads: int = 3,
     ) -> Dict[str, Any]:
         """
         Fill detected gaps by re-downloading missing data.
@@ -188,32 +215,38 @@ class UnifiedGapFiller:
         Returns:
             Dictionary with gap filling results
         """
-        self.logger.info(f"🔧 Filling {len(gaps)} gaps for {exchange}_{symbol}_{data_type}")
+        self.logger.info(
+            f"🔧 Filling {len(gaps)} gaps for {exchange}_{symbol}_{data_type}"
+        )
 
         if not gaps:
             return {
-                'success': True,
-                'gaps_filled': 0,
-                'gaps_failed': 0,
-                'rows_downloaded': 0,
-                'errors': []
+                "success": True,
+                "gaps_filled": 0,
+                "gaps_failed": 0,
+                "rows_downloaded": 0,
+                "errors": [],
             }
 
         results = {
-            'success': True,
-            'gaps_filled': 0,
-            'gaps_failed': 0,
-            'rows_downloaded': 0,
-            'errors': []
+            "success": True,
+            "gaps_filled": 0,
+            "gaps_failed": 0,
+            "rows_downloaded": 0,
+            "errors": [],
         }
 
         try:
             # Process gaps in batches to avoid overwhelming the API
             semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
-            async def fill_single_gap(gap_info: Dict[str, Any]) -> Tuple[bool, int, Optional[str]]:
+            async def fill_single_gap(
+                gap_info: Dict[str, Any]
+            ) -> Tuple[bool, int, Optional[str]]:
                 async with semaphore:
-                    return await self._fill_single_gap(symbol, exchange, data_type, gap_info)
+                    return await self._fill_single_gap(
+                        symbol, exchange, data_type, gap_info
+                    )
 
             # Process all gaps concurrently
             tasks = [fill_single_gap(gap) for gap in gaps]
@@ -222,35 +255,37 @@ class UnifiedGapFiller:
             # Process results
             for i, result in enumerate(gap_results):
                 if isinstance(result, Exception):
-                    results['gaps_failed'] += 1
-                    results['errors'].append(f"Gap {i}: {str(result)}")
+                    results["gaps_failed"] += 1
+                    results["errors"].append(f"Gap {i}: {str(result)}")
                     self.logger.error(f"❌ Error filling gap {i}: {result}")
                 else:
                     success, rows_downloaded, error = result
                     if success:
-                        results['gaps_filled'] += 1
-                        results['rows_downloaded'] += rows_downloaded
+                        results["gaps_filled"] += 1
+                        results["rows_downloaded"] += rows_downloaded
                     else:
-                        results['gaps_failed'] += 1
+                        results["gaps_failed"] += 1
                         if error:
-                            results['errors'].append(f"Gap {i}: {error}")
+                            results["errors"].append(f"Gap {i}: {error}")
 
             # Update statistics
-            self.gap_stats['total_gaps_filled'] += results['gaps_filled']
-            self.gap_stats['total_gaps_failed'] += results['gaps_failed']
-            self.gap_stats['total_rows_downloaded'] += results['rows_downloaded']
+            self.gap_stats["total_gaps_filled"] += results["gaps_filled"]
+            self.gap_stats["total_gaps_failed"] += results["gaps_failed"]
+            self.gap_stats["total_rows_downloaded"] += results["rows_downloaded"]
 
-            self.logger.info(f"✅ Gap filling completed: {results['gaps_filled']} filled, {results['gaps_failed']} failed")
+            self.logger.info(
+                f"✅ Gap filling completed: {results['gaps_filled']} filled, {results['gaps_failed']} failed"
+            )
             return results
 
         except Exception as e:
             self.logger.exception(f"❌ Error filling gaps: {e}")
             return {
-                'success': False,
-                'gaps_filled': 0,
-                'gaps_failed': len(gaps),
-                'rows_downloaded': 0,
-                'errors': [str(e)]
+                "success": False,
+                "gaps_filled": 0,
+                "gaps_failed": len(gaps),
+                "rows_downloaded": 0,
+                "errors": [str(e)],
             }
 
     @handles_errors(context="detect_and_fill_gaps")
@@ -262,7 +297,7 @@ class UnifiedGapFiller:
         data_type: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        auto_fill: bool = True
+        auto_fill: bool = True,
     ) -> Dict[str, Any]:
         """
         Detect and optionally fill gaps in data.
@@ -278,7 +313,9 @@ class UnifiedGapFiller:
         Returns:
             Dictionary with detection and filling results
         """
-        self.logger.info(f"🔍 Detecting and filling gaps for {exchange}_{symbol}_{data_type}")
+        self.logger.info(
+            f"🔍 Detecting and filling gaps for {exchange}_{symbol}_{data_type}"
+        )
 
         try:
             # Detect gaps
@@ -286,61 +323,75 @@ class UnifiedGapFiller:
 
             if not gaps:
                 return {
-                    'success': True,
-                    'gaps_detected': 0,
-                    'gaps_filled': 0,
-                    'gaps_failed': 0,
-                    'rows_downloaded': 0,
-                    'message': 'No gaps detected'
+                    "success": True,
+                    "gaps_detected": 0,
+                    "gaps_filled": 0,
+                    "gaps_failed": 0,
+                    "rows_downloaded": 0,
+                    "message": "No gaps detected",
                 }
 
             # Fill gaps if requested
             fill_results = {}
             if auto_fill:
                 # Check if gaps exceed thresholds and trigger collection hook
-                large_gaps = [gap for gap in gaps if gap.get('gap_size', 0) >= self.gap_thresholds.get(data_type, 300)]
+                large_gaps = [
+                    gap
+                    for gap in gaps
+                    if gap.get("gap_size", 0) >= self.gap_thresholds.get(data_type, 300)
+                ]
 
                 if large_gaps and self.gap_collection_hook:
-                    self.logger.info(f"🔄 Large gaps detected ({len(large_gaps)}), triggering collection hook...")
+                    self.logger.info(
+                        f"🔄 Large gaps detected ({len(large_gaps)}), triggering collection hook..."
+                    )
                     for gap in large_gaps:
                         try:
-                            collection_result = self.gap_collection_hook.trigger_data_collection(
-                                gap, data_type, symbol, exchange
+                            collection_result = (
+                                self.gap_collection_hook.trigger_data_collection(
+                                    gap, data_type, symbol, exchange
+                                )
                             )
-                            if collection_result.get('triggered', False):
-                                self.logger.info(f"✅ Collection hook triggered for gap: {gap}")
+                            if collection_result.get("triggered", False):
+                                self.logger.info(
+                                    f"✅ Collection hook triggered for gap: {gap}"
+                                )
                             else:
-                                self.logger.warning(f"⚠️ Collection hook not triggered: {collection_result.get('reason', 'Unknown')}")
+                                self.logger.warning(
+                                    f"⚠️ Collection hook not triggered: {collection_result.get('reason', 'Unknown')}"
+                                )
                         except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to trigger collection hook: {e}")
+                            self.logger.warning(
+                                f"⚠️ Failed to trigger collection hook: {e}"
+                            )
 
                 fill_results = await self.fill_gaps(symbol, exchange, data_type, gaps)
             else:
                 fill_results = {
-                    'gaps_filled': 0,
-                    'gaps_failed': 0,
-                    'rows_downloaded': 0,
-                    'errors': []
+                    "gaps_filled": 0,
+                    "gaps_failed": 0,
+                    "rows_downloaded": 0,
+                    "errors": [],
                 }
 
             return {
-                'success': True,
-                'gaps_detected': len(gaps),
-                'gaps_filled': fill_results['gaps_filled'],
-                'gaps_failed': fill_results['gaps_failed'],
-                'rows_downloaded': fill_results['rows_downloaded'],
-                'errors': fill_results.get('errors', [])
+                "success": True,
+                "gaps_detected": len(gaps),
+                "gaps_filled": fill_results["gaps_filled"],
+                "gaps_failed": fill_results["gaps_failed"],
+                "rows_downloaded": fill_results["rows_downloaded"],
+                "errors": fill_results.get("errors", []),
             }
 
         except Exception as e:
             self.logger.exception(f"❌ Error in detect_and_fill_gaps: {e}")
             return {
-                'success': False,
-                'gaps_detected': 0,
-                'gaps_filled': 0,
-                'gaps_failed': 0,
-                'rows_downloaded': 0,
-                'errors': [str(e)]
+                "success": False,
+                "gaps_detected": 0,
+                "gaps_filled": 0,
+                "gaps_failed": 0,
+                "rows_downloaded": 0,
+                "errors": [str(e)],
             }
 
     def _get_data_file_paths(
@@ -349,23 +400,23 @@ class UnifiedGapFiller:
         exchange: str,
         data_type: str,
         start_date: datetime,
-        end_date: datetime
+        end_date: datetime,
     ) -> List[Path]:
         """Get file paths for data files based on data type and date range."""
         file_paths = []
 
         try:
-            if data_type == 'aggtrades':
+            if data_type == "aggtrades":
                 # Aggtrades files: aggtrades_BINANCE_ETHUSDT_20250101.parquet
                 pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
                 file_paths = list(self.data_cache_path.glob(pattern))
 
-            elif data_type == 'klines':
+            elif data_type == "klines":
                 # Klines files: klines_BINANCE_ETHUSDT_1m_202501.parquet
                 pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
                 file_paths = list(self.data_cache_path.glob(pattern))
 
-            elif data_type == 'futures':
+            elif data_type == "futures":
                 # Futures files: futures_BINANCE_ETHUSDT_202501.parquet
                 pattern = f"futures_{exchange}_{symbol}_*.parquet"
                 file_paths = list(self.data_cache_path.glob(pattern))
@@ -382,26 +433,28 @@ class UnifiedGapFiller:
             self.logger.exception(f"❌ Error getting file paths: {e}")
             return []
 
-    def _file_in_date_range(self, file_path: Path, start_date: datetime, end_date: datetime) -> bool:
+    def _file_in_date_range(
+        self, file_path: Path, start_date: datetime, end_date: datetime
+    ) -> bool:
         """Check if file is within the specified date range."""
         try:
             # Extract date from filename
             filename = file_path.stem
 
-            if 'aggtrades' in filename:
+            if "aggtrades" in filename:
                 # aggtrades_BINANCE_ETHUSDT_20250101
-                date_str = filename.split('_')[-1]
-                file_date = datetime.strptime(date_str, '%Y%m%d')
+                date_str = filename.split("_")[-1]
+                file_date = datetime.strptime(date_str, "%Y%m%d")
 
-            elif 'klines' in filename:
+            elif "klines" in filename:
                 # klines_BINANCE_ETHUSDT_1m_202501
-                date_str = filename.split('_')[-1]
-                file_date = datetime.strptime(date_str, '%Y%m')
+                date_str = filename.split("_")[-1]
+                file_date = datetime.strptime(date_str, "%Y%m")
 
-            elif 'futures' in filename:
+            elif "futures" in filename:
                 # futures_BINANCE_ETHUSDT_202501
-                date_str = filename.split('_')[-1]
-                file_date = datetime.strptime(date_str, '%Y%m')
+                date_str = filename.split("_")[-1]
+                file_date = datetime.strptime(date_str, "%Y%m")
 
             else:
                 return True  # Include unknown formats
@@ -412,10 +465,7 @@ class UnifiedGapFiller:
             return True  # Include files with unparseable dates
 
     def _detect_gaps_in_file(
-        self,
-        file_path: Path,
-        data_type: str,
-        threshold: float
+        self, file_path: Path, data_type: str, threshold: float
     ) -> List[Dict[str, Any]]:
         """Detect gaps in a single data file."""
         try:
@@ -425,47 +475,54 @@ class UnifiedGapFiller:
                 return []
 
             # Ensure timestamp column exists
-            if 'timestamp' not in df.columns:
+            if "timestamp" not in df.columns:
                 return []
 
             # Sort by timestamp
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Convert timestamp to datetime if needed
-            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
 
             # Calculate time differences
-            df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
+            df["time_diff"] = df["timestamp"].diff().dt.total_seconds()
 
             # Find gaps based on data type
-            if data_type == 'aggtrades':
-                gap_rows = df[df['time_diff'] > threshold]
-            elif data_type == 'klines':
-                df['time_diff'] = df['time_diff'] / 60  # Convert to minutes
-                gap_rows = df[df['time_diff'] > threshold]
-            elif data_type == 'futures':
-                df['time_diff'] = df['time_diff'] / 3600  # Convert to hours
-                gap_rows = df[df['time_diff'] > threshold]
+            if data_type == "aggtrades":
+                gap_rows = df[df["time_diff"] > threshold]
+            elif data_type == "klines":
+                df["time_diff"] = df["time_diff"] / 60  # Convert to minutes
+                gap_rows = df[df["time_diff"] > threshold]
+            elif data_type == "futures":
+                df["time_diff"] = df["time_diff"] / 3600  # Convert to hours
+                gap_rows = df[df["time_diff"] > threshold]
             else:
-                gap_rows = df[df['time_diff'] > threshold]
+                gap_rows = df[df["time_diff"] > threshold]
 
             # Extract gap information
             gaps = []
-            for idx, row in gap_rows.iterrows():
+
+            # Fast numpy-based iteration instead of iterrows
+            gap_indices = gap_rows.index.values
+            timestamps = gap_rows["timestamp"].values
+
+            for idx, ts in zip(gap_indices, timestamps):
                 if idx > 0:
-                    gap_start = df.loc[idx - 1, 'timestamp']
-                    gap_end = row['timestamp']
+                    gap_start = df.loc[idx - 1, "timestamp"]
+                    gap_end = pd.Timestamp(ts)
                     gap_duration = (gap_end - gap_start).total_seconds()
 
-                    gaps.append({
-                        'file': file_path.name,
-                        'gap_start': gap_start,
-                        'gap_end': gap_end,
-                        'gap_duration_seconds': gap_duration,
-                        'data_type': data_type,
-                        'threshold': threshold
-                    })
+                    gaps.append(
+                        {
+                            "file": file_path.name,
+                            "gap_start": gap_start,
+                            "gap_end": gap_end,
+                            "gap_duration_seconds": gap_duration,
+                            "data_type": data_type,
+                            "threshold": threshold,
+                        }
+                    )
 
             return gaps
 
@@ -474,28 +531,30 @@ class UnifiedGapFiller:
             return []
 
     async def _fill_single_gap(
-        self,
-        symbol: str,
-        exchange: str,
-        data_type: str,
-        gap_info: Dict[str, Any]
+        self, symbol: str, exchange: str, data_type: str, gap_info: Dict[str, Any]
     ) -> Tuple[bool, int, Optional[str]]:
         """Fill a single gap by downloading missing data."""
         try:
-            gap_start = gap_info['gap_start']
-            gap_end = gap_info['gap_end']
+            gap_start = gap_info["gap_start"]
+            gap_end = gap_info["gap_end"]
 
             self.logger.info(f"🔧 Filling gap: {gap_start} to {gap_end}")
 
             # Download missing data using unified downloader
-            if data_type == 'klines':
+            if data_type == "klines":
                 success, data, error = await self.downloader.download_klines(
                     symbol, exchange, "1m", gap_start, gap_end
                 )
-            elif data_type == 'aggtrades':
+            elif data_type == "aggtrades":
                 # Skip aggtrades downloads as per new setup - only klines are needed
-                self.logger.info(f"⚠️ Skipping aggtrades download for {symbol} - aggtrades downloads disabled")
-                return False, 0, "Aggtrades downloads disabled - only klines are processed"
+                self.logger.info(
+                    f"⚠️ Skipping aggtrades download for {symbol} - aggtrades downloads disabled"
+                )
+                return (
+                    False,
+                    0,
+                    "Aggtrades downloads disabled - only klines are processed",
+                )
             else:
                 return False, 0, f"Unsupported data type: {data_type}"
 
@@ -504,7 +563,9 @@ class UnifiedGapFiller:
 
             # Save downloaded data
             if data:
-                save_success = await self._save_gap_data(data, symbol, exchange, data_type, gap_start)
+                save_success = await self._save_gap_data(
+                    data, symbol, exchange, data_type, gap_start
+                )
                 if save_success:
                     return True, len(data), None
                 else:
@@ -522,7 +583,7 @@ class UnifiedGapFiller:
         symbol: str,
         exchange: str,
         data_type: str,
-        gap_start: datetime
+        gap_start: datetime,
     ) -> bool:
         """Save downloaded gap data to appropriate file."""
         try:
@@ -530,14 +591,14 @@ class UnifiedGapFiller:
             df = pd.DataFrame(data)
 
             # Generate filename based on data type and date
-            if data_type == 'aggtrades':
-                date_str = gap_start.strftime('%Y%m%d')
+            if data_type == "aggtrades":
+                date_str = gap_start.strftime("%Y%m%d")
                 filename = f"aggtrades_{exchange}_{symbol}_{date_str}.parquet"
-            elif data_type == 'klines':
-                date_str = gap_start.strftime('%Y%m')
+            elif data_type == "klines":
+                date_str = gap_start.strftime("%Y%m")
                 filename = f"klines_{exchange}_{symbol}_1m_{date_str}.parquet"
-            elif data_type == 'futures':
-                date_str = gap_start.strftime('%Y%m')
+            elif data_type == "futures":
+                date_str = gap_start.strftime("%Y%m")
                 filename = f"futures_{exchange}_{symbol}_{date_str}.parquet"
             else:
                 return False
@@ -560,37 +621,47 @@ class UnifiedGapFiller:
         """Get gap filling statistics."""
         return {
             **self.gap_stats,
-            'success_rate': (
-                self.gap_stats['total_gaps_filled'] /
-                max(self.gap_stats['total_gaps_detected'], 1) * 100
-            )
+            "success_rate": (
+                self.gap_stats["total_gaps_filled"]
+                / max(self.gap_stats["total_gaps_detected"], 1)
+                * 100
+            ),
         }
 
     def reset_stats(self):
         """Reset gap filling statistics."""
         self.gap_stats = {
-            'total_gaps_detected': 0,
-            'total_gaps_filled': 0,
-            'total_gaps_failed': 0,
-            'total_rows_downloaded': 0,
-            'start_time': None
+            "total_gaps_detected": 0,
+            "total_gaps_filled": 0,
+            "total_gaps_failed": 0,
+            "total_rows_downloaded": 0,
+            "start_time": None,
         }
+
 
 # Convenience functions for backward compatibility
 @handles_errors()
-def detect_gaps(symbol: str, exchange: str, data_type: str, **kwargs) -> List[Dict[str, Any]]:
+def detect_gaps(
+    symbol: str, exchange: str, data_type: str, **kwargs
+) -> List[Dict[str, Any]]:
     """Convenience function for detecting gaps."""
     gap_filler = UnifiedGapFiller()
     return gap_filler.detect_gaps(symbol, exchange, data_type, **kwargs)
 
+
 @handles_errors()
-async def fill_gaps(symbol: str, exchange: str, data_type: str, gaps: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
+async def fill_gaps(
+    symbol: str, exchange: str, data_type: str, gaps: List[Dict[str, Any]], **kwargs
+) -> Dict[str, Any]:
     """Convenience function for filling gaps."""
     gap_filler = UnifiedGapFiller()
     return await gap_filler.fill_gaps(symbol, exchange, data_type, gaps, **kwargs)
 
+
 @handles_errors()
-async def detect_and_fill_gaps(symbol: str, exchange: str, data_type: str, **kwargs) -> Dict[str, Any]:
+async def detect_and_fill_gaps(
+    symbol: str, exchange: str, data_type: str, **kwargs
+) -> Dict[str, Any]:
     """Convenience function for detecting and filling gaps."""
     gap_filler = UnifiedGapFiller()
     return await gap_filler.detect_and_fill_gaps(symbol, exchange, data_type, **kwargs)

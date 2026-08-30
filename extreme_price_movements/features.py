@@ -11627,6 +11627,156 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         pass
     # Note: o, h, l, c, v are deleted later after all features that use them are computed
 
+
+    # =====================================================================
+    # PORTABILITY TRANSFORMS (Vectorized)
+    # =====================================================================
+    tprint("Applying portability transforms...")
+
+    # Pre-cache commonly used denominators to avoid repeated lookups
+    safe_rv_24h = feats.get("rv_24h", pd.DataFrame(1e-12, index=c_log.index, columns=c_log.columns)).clip(lower=1e-12)
+    safe_rv_48h = feats.get("rv_48h", pd.DataFrame(1e-12, index=c_log.index, columns=c_log.columns)).clip(lower=1e-12)
+    safe_rv_120h = feats.get("rv_120h", pd.DataFrame(1e-12, index=c_log.index, columns=c_log.columns)).clip(lower=1e-12)
+    safe_atr = feats.get("atr_pct_base", pd.DataFrame(1e-12, index=c_log.index, columns=c_log.columns)).clip(lower=1e-12)
+
+    # 1. Returns
+    for h_ in [1, 2, 4, 6, 8]:
+        ret_k = f"ret{h_}h"
+        if ret_k in feats:
+            feats[f"{ret_k}_norm_rv24"] = (feats[ret_k] / safe_rv_24h).astype(np.float32)
+
+    for h_, rv_k in [(48, safe_rv_120h), (72, safe_rv_120h)]:
+        ret_k = f"ret{h_}h"
+        if ret_k in feats:
+            feats[f"{ret_k}_norm_rv120"] = (feats[ret_k] / rv_k).astype(np.float32)
+            feats[ret_k] = feats[f"{ret_k}_norm_rv120"]
+
+    if "ret120h" in feats:
+        feats["ret120h"] = robust_zscore_rolling(feats["ret120h"], 30*24)
+
+    # 2. Realized Vol and ATR
+    for h_ in [2, 4, 6, 8]:
+        rv_k = f"rv_{h_}h"
+        if rv_k in feats:
+            feats[rv_k] = np.log((feats[rv_k] / safe_rv_24h).clip(lower=1e-12)).astype(np.float32)
+
+    if "rv_12h" in feats:
+        feats["rv_12h"] = np.log((feats["rv_12h"] / safe_rv_48h).clip(lower=1e-12)).astype(np.float32)
+
+    for rv_k in ["rv_24h", "rv_48h", "rv_120h"]:
+        if rv_k in feats:
+            feats[rv_k] = robust_zscore_rolling(np.log(feats[rv_k].clip(lower=1e-12)), 30*24)
+
+    if "atr_pct_change" in feats:
+        feats["atr_pct_change"] = robust_zscore_rolling(feats["atr_pct_change"], 30*24)
+
+    if "atr_expansion" in feats:
+        feats["atr_expansion"] = robust_zscore_rolling(feats["atr_expansion"], 30*24)
+
+    if "asset_atr_level" in feats:
+         feats["asset_atr_level"] = ff.numba_rolling_rank_pct(feats["asset_atr_level"], 60*24)
+
+    if "asset_vol_level" in feats:
+         feats["asset_vol_level"] = ff.numba_rolling_rank_pct(feats["asset_vol_level"], 60*24)
+
+    # 3. Price Distance Features
+    for k in ["dist_from_high_48h", "dist_from_low_48h", "dist_from_high_120h", "dist_from_low_120h"]:
+        if k in feats:
+            # Revert assumption from original generation; normalize by ATR instead of passing raw logic
+            # These are mostly built in the trend feature loop.
+            pass # Provided as ATR-normalized originally when built.
+
+    # 4. Volume Features
+    for k in ["up_vol", "dn_vol", "up_vol_6", "dn_vol_6"]:
+        if k in feats:
+            feats[k] = np.log( (feats[k] / (ff.apply_to_frame(feats[k], ff._numba_rolling_median, 30*24) + 1e-12)).clip(lower=1e-12) ).astype(np.float32)
+
+    if "volu_z" in feats:
+         feats["volu_z"] = robust_zscore_rolling(np.log(v.clip(lower=1e-12)), 30*24)
+
+    for k in ["signed_vol", "volume_trend_48", "flow_persistence", "cumulative_delta_stall", "delta_stall_6"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    if "churn" in feats:
+        feats["churn"] = robust_zscore_rolling(feats["churn"], 30*24)
+
+    if "v_power" in feats:
+        feats["v_power"] = robust_zscore_rolling(np.log1p(feats["v_power"]), 30*24)
+
+    # 5. Liquidity Impact
+    if "amihud_illiq" in feats:
+        feats["amihud_illiq"] = robust_zscore_rolling(np.log1p(feats["amihud_illiq"]), 30*24)
+
+    for k in ["impact_12", "impact_24", "impact_12_perp", "impact_24_perp", "vol_price_div", "vol_price_diverge", "return_per_volume"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    if "vol_price_spread" in feats:
+        feats["vol_price_spread"] = robust_zscore_rolling(np.log1p(feats["vol_price_spread"].abs()) * np.sign(feats["vol_price_spread"]), 30*24)
+
+    # 6. Trend Features
+    for k in ["trend_pct", "trend_pct_base", "ema50_slope", "ema20_slope_5h", "trend_acceleration"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    if "trend_age_hours" in feats:
+        feats["trend_age_hours"] = ff.numba_rolling_rank_pct(np.log1p(feats["trend_age_hours"]), 30*24)
+
+    # 7. Momentum Acceleration
+    for k in ["momentum_accel", "accel", "accel_5h"]:
+        if k in feats:
+            feats[k] = (feats[k] / safe_rv_24h).astype(np.float32)
+
+    for k in ["decel_4", "decel_8", "pb_accel", "ft_drop", "ft_drop_8"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    # 8. Path Risk and Excursion (Ensuring ATR norm)
+    # The MFE/MAE feats are already / atr when built: feats["mfe_4h"] = (mfe / atr).shift(1)
+    for k in ["dir_path_risk_long_2h", "dir_path_risk_short_2h", "dip_velocity"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    if "dir_path_edge_2h" in feats:
+        # Note: we need to handle dividing by dir_path_short_2h when we might have modified it to be a robust_zscore.
+        pass
+
+    if "giveback" in feats:
+        feats["giveback"] = (feats["giveback"] / safe_atr).clip(-10, 10).astype(np.float32)
+
+    # 9. Vol of Vol / Regime / Entropy
+    for k in ["vov_iqr_20", "vov_mad_20", "vov_mad_60"]:
+        if k in feats:
+            feats[k] = robust_zscore_rolling(np.log(feats[k].clip(lower=1e-12)), 30*24)
+
+    if "entropy_jump_24h" in feats:
+        feats["entropy_jump_24h"] = robust_zscore_rolling(feats["entropy_jump_24h"], 30*24)
+
+    # 10. Semivariance and Tail Asym
+    for k in ["downside_semivariance_24", "upside_semivariance_8", "upside_semivariance_24"]:
+        if k in feats:
+            feats[k] = (feats[k] / (safe_rv_24h**2)).astype(np.float32)
+
+    for k in ["cvar_5pct", "ffd_cvar_5pct_06", "ret_pct5_24h", "ret_pct95_24h"]:
+        if k in feats:
+            feats[k] = (feats[k] / safe_rv_24h).astype(np.float32)
+
+    if "tail_risk_score" in feats:
+        feats["tail_risk_score"] = robust_zscore_rolling(feats["tail_risk_score"], 30*24)
+
+    # 11. ADX / Vortex / FFD cleanup
+    for k in ["adx_7_slope", "adx_10_slope", "adx_14_slope", "ffd_amihud_04", "ffd_amihud_06"]:
+        if k in feats:
+            if "amihud" in k:
+                feats[k] = robust_zscore_rolling(np.log1p(feats[k]), 30*24)
+            else:
+                feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
+    for k in ["ffd_vol_range_shock_04", "ffd_vol_range_shock_06"]:
+         if k in feats:
+              feats[k] = robust_zscore_rolling(feats[k], 30*24)
+
     # --- explicit peer-context and ts-percentile features ---
     if not requested_feature_set or any(
         str(k).startswith("cs_rank_") or str(k).startswith("cs_rz_")

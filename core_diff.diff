@@ -1,0 +1,3261 @@
+diff --git a/extreme_price_movements/config.py b/extreme_price_movements/config.py
+index 834bb7262..dd85a9141 100644
+--- a/extreme_price_movements/config.py
++++ b/extreme_price_movements/config.py
+@@ -8,7 +8,9 @@ neutral_feature_keys = [
+
+ MODEL_FEATURES = [
+     # Momentum / structure extensions
+-    "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
++    "thrust_decay_4", "decel_4", "ft_drop",
++    "thrust_decay_8", "decel_8", "ft_drop_8",
++    "ext_excess", "ext_atrExp",
+     "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
+     "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
+     "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft",
+@@ -17,16 +19,41 @@ MODEL_FEATURES = [
+     "vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
+     "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
+     "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "draw_extreme_10h",
++    "shannon_entropy_ret_8", "shannon_entropy_ret_16",
++    "perm_entropy_ret_12", "perm_entropy_ret_24",
++    "spectral_entropy_ret_24", "spectral_entropy_ret_48",
++    "volume_entropy_12", "volume_entropy_24",
++    "downside_semivariance_8", "downside_semivariance_24",
++    "upside_semivariance_8", "upside_semivariance_24",
++    "down_up_vol_ratio_8", "down_up_vol_ratio_24",
++    "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
+     "breakout_24h",
+     "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+     "meta_alignment", "meta_signal_x_accel",
+     # Price Action
+     "gap_pct", "range_pct", "roc_div", "ret1h_z", "body_pct", "wick_body_ratio",
+     "vol_price_spread", "wick_ratio", "body_ratio",
++    # New Risk/Exhaustion (Report 2026-02-10)
++    "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
++    "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
++    # Alpha Features (Report 2026-02-10)
++    "breakout_min", "impulse_reversal", "impulse_reversal_short",
++    "breakout_confirmed", "breakout_t", "pct_breakout_t",
++    # 2h directional path-risk
++    "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
++    "dir_path_edge_2h", "dir_path_risk_skew_2h",
++    # Gate interactions (2h focus)
++    "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
++    "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
++    "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
++    "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
++    "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
+     # Volume/Flow
+     "v_power", "flow_persistence", "flow_ratio", "churn",
+     "vol_range_shock", "climax_decay", "cumulative_delta_stall",
+     "vol_expansion_ratio", "vol_compression", "rvol_z",
++    "G_VOL_LIQ_GT1", "G_VOL_LIQ_GT2", "G_VOL_LIQ_GT3",
++    "amihud_z", "G_LIQ_GOOD", "G_LIQ_GREAT", "G_LIQ_EXCEL",
+     # Advanced
+     "fvg", "slope", "atr_slope", "dist_vwap_norm", "rsi_slope",
+     "funding_proxy", "dist_ema_fast",
+@@ -34,13 +61,26 @@ MODEL_FEATURES = [
+     "spike_score", "grind_score", "chop_score",
+     # Time
+     "sin_hod", "cos_hod", "sin_dow", "cos_dow",
++    # New regime-transition and entropy features for improved PR-AUC and robustness
++    "regime_transition_entropy_12h", "regime_transition_entropy_48h",
++    "trend_regime_switch_12h", "vol_regime_switch_12h",
++    "entropy_jump_24h", "complexity_regime_24h",
++    "rsi_z_x_regime_vol", "vol_z_x_regime_trend",
++    "mtf_divergence_x_regime_vol_12h", "hurst_proxy_x_regime_trend_48h",
++    # Regime features for fold robustness (Report 2026-02-11)
++    "vol_regime_z", "is_high_vol_regime", "is_low_vol_regime",
++    "trend_regime", "is_trending", "is_ranging",
++    "liq_regime", "regime_stability_24h",
++    "rsi_x_high_vol", "trend_x_trending", "vol_z_x_low_vol",
+ ]
+
+ # Helper/base features produced in features.py that should remain selectable by model heads.
+ # This increases candidate breadth before MDI pruning.
+ HELPER_BASE_FEATURES = [
+-    "ret1h", "ret6h", "atr_pct_base", "rsi_base", "rsi_slope_base",
+-    "rv_6h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
++    "ret1h", "ret2h", "ret4h", "ret6h", "ret8h", "ret48h", "ret72h", "ret120h",
++    "atr_pct_base", "rsi_base", "rsi_slope_base",
++    "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_12h", "rv_24h", "rv_48h", "rv_120h",
++    "qv", "vol_z24_base", "vol_z_base",
+     "dist_ema_fast_base", "dist_ema_slow_base", "trend_pct_base",
+     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
+     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
+@@ -54,18 +94,18 @@ CFG = {
+     # persistence / fetch
+     "data_root": "data",
+     "timeframe": "1h",
+-    "fetch_years": 3,
+-    "fetch_symbols_M": 500,
++    "fetch_years": 4,
++    "fetch_symbols_M": 600,
+
+     # market basket
+     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
+
+     # training horizons to compare (1)
+     "label_horizons_hours": [2, 4, 8],
+-    "label_tp_values_pct": [5.0, 3.5, 2.0],
++    "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
+     "label_sl_values_pct": [0.5, 1.0, 2.0],
+     "label_round_trip_fee_pct": 0.5,
+-    "label_min_net_rr": 1.5,
++    "label_min_net_rr": 0.9,
+     "label_min_tp_hit_rate": 0.02,
+     "label_max_timeout_rate": 0.90,
+
+@@ -85,22 +125,37 @@ CFG = {
+     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
+     "min_train_samples": 200,
+
++    # MFE/MAE-based sample weighting (Report 2026-02-12)
++    # Weight samples by how "decisive" the price movement was relative to barriers
++    # w = w_min + (1-w_min) * clip(max(MFE/TP, MAE/SL) / tau, 0, 1)
++    # Timeout samples are capped at 0.7
++    "mfe_mae_w_min": 0.5,      # Minimum weight floor
++    "mfe_mae_tau": 1.0,        # Scaling factor (d/tau)
++    "mfe_mae_cost_floor": 0.001,  # Cost floor for touch margin penalty
++
+     # per-hour cross-sectional training selection
+     "variance_filter_pct": 1.0, # User requested to keep all non-constant features
+-    "train_extreme_pct_hourly": 0.05,
++    "train_extreme_pct_hourly": 0.07,
+     "train_extreme_min": 10,
+     "train_extreme_max": 80,
++    "train_min_range_pct": 0.07,
++    "train_min_vol_zscore": 1.6,
+
+     # hourly trading selection (top/bot deviations)
+-    "trade_extreme_pct": 0.06,
++    "trade_extreme_pct": 0.07,
+     "trade_extreme_min": 10,
+     "trade_extreme_max": 80,
+     "trade_deviation_metric": "dist_ema_fast",
+
++    # Quantile label handling: keep union of samples, emphasize tails via weights
++    "label_quantile_mode": "weighted_union",
++    "label_quantile_weight_floor": 0.35,
++    "label_quantile_weight_gamma": 1.5,
++
+     # gates
+     "gate_vol_lookback_hours": 24 * 14,
+     "gate_trend_thr": 0.02,
+-    "accept_gate_window": 64,
++    "accept_gate_window": 24,
+     "accept_gate_percentile_mode": "approx",
+
+     # base feature windows (used for base/fast/slow variants)
+@@ -136,7 +191,7 @@ CFG = {
+     # Added new features for TF/MR/Meta
+     "drop_raw_causal": True,
+     "causal_cols": [
+-        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_24h",
++        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
+         "p_exh_lag1",
+         "a_funding_proxy",
+         "flow_ratio", "churn", "slope", "trend_snr",
+@@ -144,6 +199,9 @@ CFG = {
+         "rvol_z", "vol_range_shock", "climax_decay",
+         "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
+         "atr_slope", "dist_vwap_norm", "momentum_accel",
++        # New Exhaustion/Risk features (Report 2026-02-10)
++        "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
++        "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
+         # New Feature Candidates
+         "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
+         "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
+@@ -161,12 +219,31 @@ CFG = {
+         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
+         "tf_tape", "mr_tape", "accept", "accept_bin3", "accept_gt66", "accept_gt85", "retest_accept", "tf_qual", "mr_qual",
+         "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
++        ,"mfe_2h", "mae_2h", "dir_path_long_2h", "dir_path_short_2h",
++        "dir_path_risk_long_2h", "dir_path_risk_short_2h", "dir_path_edge_2h", "dir_path_risk_skew_2h",
++        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
++        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
++        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
++        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
++        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag"
++        # OHLCV-based trend quality features (Report 2026-02-12)
++        ,"trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
++        "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
++        "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
++        "dip_volume_profile", "reversion_target_distance"
+         ,"vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
+         "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
+         "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "breakout_24h",
+         "vol_z_30_calm",
+         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+         "meta_alignment", "meta_signal_x_accel",
++        "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
++        "dir_path_edge_2h", "dir_path_risk_skew_2h",
++        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
++        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
++        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
++        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
++        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
+         # Orthogonal features (structurally independent dimensions)
+         "mtf_divergence", "mtf_div_mag",
+         "autocorr_6h", "autocorr_24h",
+@@ -174,6 +251,14 @@ CFG = {
+         "hurst_proxy_24",
+         "vol_concentration_12",
+         "vol_price_diverge",
++        "shannon_entropy_ret_8", "shannon_entropy_ret_16",
++        "perm_entropy_ret_12", "perm_entropy_ret_24",
++        "spectral_entropy_ret_24", "spectral_entropy_ret_48",
++        "volume_entropy_12", "volume_entropy_24",
++        "downside_semivariance_8", "downside_semivariance_24",
++        "upside_semivariance_8", "upside_semivariance_24",
++        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
++        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
+         # Residualised features — relative surprise, not absolute magnitude
+         "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
+         "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
+@@ -181,20 +266,35 @@ CFG = {
+         "blowoff_risk_surprise", "exh_qual_surprise",
+         "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
+         "mkt_rv_pct", "abs_mkt_ret24h_z", "trend_bin3",
+-        "s_z_64", "s_pct_64", "s_bin3_64", "s_gt66_64", "s_gt85_64",
+-        "s_z_8", "s_pct_8", "s_bin3_8", "s_gt66_8", "s_gt85_8",
++        "s_z_64", "s_pct_64", "s_bin3_64",
++        "s_gt25_64", "s_gt50_64", "s_gt66_64", "s_gt75_64", "s_gt85_64", "s_gt90_64",
++        "s_z_8", "s_pct_8", "s_bin3_8",
++        "s_gt25_8", "s_gt50_8", "s_gt66_8", "s_gt75_8", "s_gt85_8", "s_gt90_8",
+         "reject_z_64", "reject_pct_64", "reject_bin3_64",
++        "reject_gt25_64", "reject_gt50_64", "reject_gt66_64", "reject_gt75_64", "reject_gt85_64", "reject_gt90_64",
+         "reject_z_8", "reject_pct_8", "reject_bin3_8",
++        "reject_gt25_8", "reject_gt50_8", "reject_gt66_8", "reject_gt75_8", "reject_gt85_8", "reject_gt90_8",
+         "retest_accept_z_64", "retest_accept_pct_64", "retest_accept_bin3_64",
++        "retest_accept_gt25_64", "retest_accept_gt50_64", "retest_accept_gt66_64", "retest_accept_gt75_64", "retest_accept_gt85_64", "retest_accept_gt90_64",
+         "retest_accept_z_8", "retest_accept_pct_8", "retest_accept_bin3_8",
++        "retest_accept_gt25_8", "retest_accept_gt50_8", "retest_accept_gt66_8", "retest_accept_gt75_8", "retest_accept_gt85_8", "retest_accept_gt90_8",
+         "tf_qual_z_64", "tf_qual_pct_64", "tf_qual_bin3_64",
++        "tf_qual_gt25_64", "tf_qual_gt50_64", "tf_qual_gt66_64", "tf_qual_gt75_64", "tf_qual_gt85_64", "tf_qual_gt90_64",
+         "tf_qual_z_8", "tf_qual_pct_8", "tf_qual_bin3_8",
++        "tf_qual_gt25_8", "tf_qual_gt50_8", "tf_qual_gt66_8", "tf_qual_gt75_8", "tf_qual_gt85_8", "tf_qual_gt90_8",
+         "mr_qual_z_64", "mr_qual_pct_64", "mr_qual_bin3_64",
++        "mr_qual_gt25_64", "mr_qual_gt50_64", "mr_qual_gt66_64", "mr_qual_gt75_64", "mr_qual_gt85_64", "mr_qual_gt90_64",
+         "mr_qual_z_8", "mr_qual_pct_8", "mr_qual_bin3_8",
+-        "accept_score_cs_trimmed_mean", "accept_score_cs_median", "accept_score_cs_p75", "accept_score_cs_p90", "accept_score_cs_iqr", "accept_score_cs_std",
+-        "reject_score_cs_trimmed_mean", "reject_score_cs_median", "reject_score_cs_p75", "reject_score_cs_p90", "reject_score_cs_iqr", "reject_score_cs_std",
+-        "tf_qual_score_cs_trimmed_mean", "tf_qual_score_cs_median", "tf_qual_score_cs_p75", "tf_qual_score_cs_p90", "tf_qual_score_cs_iqr", "tf_qual_score_cs_std",
+-        "mr_qual_score_cs_trimmed_mean", "mr_qual_score_cs_median", "mr_qual_score_cs_p75", "mr_qual_score_cs_p90", "mr_qual_score_cs_iqr", "mr_qual_score_cs_std"
++        "mr_qual_gt25_8", "mr_qual_gt50_8", "mr_qual_gt66_8", "mr_qual_gt75_8", "mr_qual_gt85_8", "mr_qual_gt90_8",
++
++        # New Multi-Horizon Aggregated Features
++        "ret_mean", "ret_max", "ret_min",
++        "rv_mean", "rv_max", "rv_min",
++
++        # New Tail-Risk Features
++        "ret_pct5_24h", "ret_pct95_24h", "gap_zscore", "vol_shock_z",
++        "range_zscore", "tail_risk_score",
++
+     ],
+
+     # thresholds / picks
+@@ -223,7 +323,7 @@ CFG = {
+     "sl_mult": 0.18,            # Stop-loss = sl_mult * barrier_pct (~0.7%)
+     "trail_mult": 0.25,         # Trailing deviation = trail_mult * barrier_pct
+     # Hard constraints enforced in optimizer and defaults
+-    "min_tp_sl_ratio": 1.5,     # TP:SL ratio must be >= 1.5
++    "min_tp_sl_ratio": 1.2,     # TP:SL ratio must be >= 1.2
+     "min_tp_abs_pct": 0.02,     # TP must be >= 2% absolute
+
+     # Regime throttle: reduce sizing during drawdowns
+@@ -261,6 +361,10 @@ CFG = {
+     "exh_near_thr": 0.015,       # Fallback % proximity
+     "exh_rev_thr_pct": 0.03,     # Fallback % reversal (3%)
+
++    # Soft Labels (Target Smoothing)
++    "label_use_soft": True,
++    "label_soft_alpha_max": 0.15, # Reverted to 0.15
++
+     "exh_train_lookback_hours": 24 * 14,
+     "min_exh_samples": 6000,
+     "exh_C": 1.0,
+@@ -288,39 +392,90 @@ CFG = {
+     # TF Head (Specifics + Global) — includes trend maturity features
+     "tf_feature_keys": [
+         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
+-        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
++        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
+         "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
+         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
+-        "progress", "evr_6", "delta_stall_6"
++        "progress", "evr_6", "delta_stall_6", "rv_2h", "rv_4h",
++        "dir_path_long_2h", "dir_path_short_2h", "dir_path_edge_2h",
++        # Multi-day regime context (distinguish real trends from bear rallies)
++        "donch_dist_48", "donch_dist_72", "donch_dist_120",
++        "pullback_48", "pullback_72", "pullback_120",
++        "dist_from_high_48h", "dist_from_high_120h",
++        "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
++        "rv_ratio_24_120", "ret48h", "ret120h",
++        "accept_x_dir_edge_2h", "tfq_x_dir_edge_2h", "accept_dir2h_prod", "tfq_dir2h_prod",
++        "downside_semivariance_8", "downside_semivariance_24",
++        "upside_semivariance_8", "upside_semivariance_24",
++        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
++        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
++        # OHLCV-based trend quality features (Report 2026-02-12)
++        "trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
++        "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
+     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
+
+     # MR Head (Specifics + Global) — includes exhaustion features
+     "mr_feature_keys": [
+         "accept", "accept_bin3", "overext", "overext_weak", "mr_qual", "retrace_12",
+         "impulse_ratio_24", "coherence_24", "mr_tape",
+-        "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
++        "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
+         "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
+-        "donch_dist_12", "excess_6h", "tail_fail", "tail_against",
+-        "mfe_4h", "mae_4h"
++        "donch_dist_12", "donch_dist_8", "excess_6h", "tail_fail", "tail_against",
++        "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h",
++        "rv_2h", "rv_4h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
++        "reject_x_dir_edge_2h", "mrq_x_dir_edge_2h", "reject_dir2h_prod", "mrq_dir2h_prod",
++        # Multi-day regime context (distinguish real dips from trend continuation)
++        "donch_dist_48", "donch_dist_72", "donch_dist_120",
++        "pullback_48", "pullback_72", "pullback_120",
++        "dist_from_low_48h", "dist_from_low_120h",
++        "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
++        "rv_ratio_24_120", "ret48h", "ret120h",
++        "downside_semivariance_8", "downside_semivariance_24",
++        "upside_semivariance_8", "upside_semivariance_24",
++        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
++        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
++        # OHLCV-based mean-reversion quality features (Report 2026-02-12)
++        "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
++        "dip_volume_profile", "reversion_target_distance",
+     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
+
+     # Meta Learner
+     "meta_feature_keys": [
+         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
+         "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
+-        "excess_6h", "donch_dist_12", "clv_mean_4", "evr_6", "delta_stall_6",
+-        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback",
+-        "ret1h", "ret6h", "rv_6h", "rv_24h", "mkt_rv_ratio",
++        "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
++        "ft_2", "asym_ratio", "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
++        "ret1h", "ret2h", "ret4h", "ret6h", "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
+         "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
+         "spike_score", "grind_score", "chop_score",
+         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+         "vol_z_30_calm", "breakout_24h", "draw_extreme_10h",
+         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+         "meta_alignment", "meta_signal_x_accel",
++        "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
++        "dir_path_edge_2h", "dir_path_risk_skew_2h",
++        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
++        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
++        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
++        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
++        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
+         # Specialist features
+         "trap_quality", "predicted_vol_6h",
+         # Gated entry features
+         "bounce_signal", "trap_strength", "volume_capitulation", "entry_quality_composite",
++        # TF Meta Features (Report 2026-02-10)
++        "trend_t", "trend_z_t", "convexity_t", "convexity_bis_t",
++        "vw_breakout", "breakout_soft", "tail_score",
++        # MR Meta Features (Report 2026-02-10)
++        "mr_soft", "mr_potential", "mr_potential_exhaust",
++        "climax", "vol_exhaust", "mr_climax", "shock_decay",
++        "pct_extreme", "mr_pct", "stall", "mr_failure",
++        # Multi-day regime context (meta learns regime-conditional weighting)
++        "dist_from_high_48h", "dist_from_high_120h",
++        "dist_from_low_48h", "dist_from_low_120h",
++        "trend_slope_48h", "trend_slope_120h",
++        "rv_ratio_24_120", "rv_48h", "rv_120h",
++        "ret48h", "ret120h",
++        "donch_dist_48", "donch_dist_120",
+     ],
+
+     # Inference dynamic-basket controls
+diff --git a/extreme_price_movements/model_race.py b/extreme_price_movements/model_race.py
+index adbf4c436..a5d2bdad4 100644
+--- a/extreme_price_movements/model_race.py
++++ b/extreme_price_movements/model_race.py
+@@ -1,3 +1,5 @@
++import os
++import pickle
+ import numpy as np
+ import pandas as pd
+ from sklearn.base import BaseEstimator, ClassifierMixin, clone
+@@ -7,11 +9,31 @@ from sklearn.preprocessing import StandardScaler
+ from sklearn.pipeline import Pipeline
+ from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
+ from scipy.stats import rankdata, spearmanr
+-from catboost import CatBoostClassifier
+-from xgboost import XGBClassifier
+-from lightgbm import LGBMClassifier
++from scipy.special import logit, expit
++try:
++    from catboost import CatBoostClassifier
++except Exception:
++    CatBoostClassifier = None
++try:
++    from xgboost import XGBClassifier
++except Exception:
++    XGBClassifier = None
++try:
++    from lightgbm import LGBMClassifier
++except Exception:
++    LGBMClassifier = None
+ import joblib
+ from extreme_price_movements.utils import tprint
++
++
++def _is_xgb(est):
++    return type(est).__module__.startswith("xgboost")
++
++def _is_lgb(est):
++    return type(est).__module__.startswith("lightgbm")
++
++def _is_cb(est):
++    return type(est).__module__.startswith("catboost")
+ from extreme_price_movements.purged_cv import PurgedKFold
+ from extreme_price_movements.metrics import calculate_selection_score
+ from extreme_price_movements.model_scoring import (
+@@ -27,6 +49,35 @@ from sklearn.calibration import CalibratedClassifierCV
+ from sklearn.isotonic import IsotonicRegression
+ from sklearn.model_selection import TimeSeriesSplit
+ from scipy.optimize import brentq
++from extreme_price_movements.calibration import (
++    safe_clip_proba,
++    compute_prevalences,
++    compute_logit_shift,
++    apply_logit_shift,
++)
++
++
++def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, **kwargs):
++    """Backward-compatible wrapper exposing legacy AUC/BSS/IC keys for tests/logs."""
++    from extreme_price_movements.metrics import calculate_selection_score as _calc
++    out = _calc(y_true, y_prob, y_ret, sample_weight=sample_weight, **kwargs)
++    y_true = np.asarray(y_true)
++    y_prob = np.asarray(y_prob)
++    y_ret = np.asarray(y_ret)
++    try:
++        out["AUC"] = float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.5
++    except Exception:
++        out["AUC"] = 0.5
++    brier = float(np.mean((y_prob - y_true) ** 2))
++    base = float(np.mean(y_true))
++    brier_ref = float(np.mean((base - y_true) ** 2))
++    out["BSS"] = 1.0 - (brier / max(1e-9, brier_ref))
++    try:
++        out["IC"] = float(np.corrcoef(rankdata(y_prob), rankdata(y_ret))[0, 1])
++    except Exception:
++        out["IC"] = 0.0
++    return out
++
+
+ class Float64Wrapper(BaseEstimator, ClassifierMixin):
+     """Wraps a classifier so predict_proba / decision_function always return float64.
+@@ -86,16 +137,20 @@ class ScaledLogisticRegression(LogisticRegression):
+
+
+ class ModelRace(BaseEstimator, ClassifierMixin):
+-    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50):
++    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
+         self.kind = kind
+         self.n_splits = n_splits
+         self.race_sample_frac = race_sample_frac
+         self.race_early_stopping_rounds = race_early_stopping_rounds
++        self.max_label_horizon_hours = max_label_horizon_hours
+         self.best_model = None
+         self.best_model_name = None
+         self.metrics = {}
+         self.detailed_metrics = {}
+         self.oof_probs = None
++        self.final_bias_factor_ = 1.0
++        self.calibration_state_ = None
++        self._used_sample_weight_ = False
+
+     def _compute_pos_weight(self, y):
+         # Inverse class frequency
+@@ -108,34 +163,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+         n_samples = int(len(indices) * frac)
+         return np.random.choice(indices, n_samples, replace=False)
+
+-    def _find_bias_correction_factor(self, probs, target_mean):
+-        # Find k such that mean(sigmoid(logit(p) + log(k))) == target_mean
+-        # This aligns the average prediction with the target prevalence.
+-
+-        eps = 1e-9
+-        probs = np.clip(probs, eps, 1.0 - eps)
+-        odds = probs / (1.0 - probs)
+-
+-        def objective(k):
+-            # p_new = k*odds / (1 + k*odds)
+-            new_odds = k * odds
+-            p_new = new_odds / (1.0 + new_odds)
+-            return np.mean(p_new) - target_mean
++    def _build_bias_state(self, y_unweighted, y_weighted, eps=1e-6):
++        delta_logit = compute_logit_shift(y_unweighted, y_weighted, eps=eps)
++        return {
++            "schema_version": 1,
++            "method": "logit_shift",
++            "target_unweighted_prevalence": float(y_unweighted),
++            "weighted_prevalence": float(y_weighted),
++            "delta_logit": float(delta_logit),
++            "eps": float(eps),
++            "calibration_input": "bias_corrected",
++        }
+
+-        try:
+-            # Check bounds first
+-            if objective(1e-3) > 0: return 1e-3
+-            if objective(1e3) < 0: return 1e3
+-            return brentq(objective, 1e-3, 1e3)
+-        except Exception:
+-            return 1.0
+-
+-    def _apply_correction(self, probs, factor):
+-        eps = 1e-9
+-        probs = np.clip(probs, eps, 1.0 - eps)
+-        odds = probs / (1.0 - probs)
+-        new_odds = factor * odds
+-        return new_odds / (1.0 + new_odds)
++    def _apply_bias_state(self, p_raw, state):
++        return apply_logit_shift(p_raw, state["delta_logit"], eps=state.get("eps", 1e-6))
+
+     def _get_candidates(self, race_mode=True):
+         # Configure models
+@@ -156,55 +197,64 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+
+         # 2. XGBoost
+         xgb_params = {
+-            "n_estimators": 3 if race_mode else 5,
++            "n_estimators": 5 if race_mode else 10,  # Increase from 3/5
+             "num_parallel_tree": 150 if race_mode else 400,
+-            "max_depth": 4,
++            "max_depth": 5,
+             "learning_rate": 0.05,
+-            "reg_lambda": 5.0,              # L2 (default=1 is often too weak)
+-            "reg_alpha": 0.0,               # keep 0 initially
+-            "min_child_weight": 20,
++            "reg_lambda": 15.0,
++            "reg_alpha": 0.0,
++            "min_child_weight": 40,
+             "tree_method": "hist",
+             "gamma": 1.0,
+             "subsample": 0.8,
+             "colsample_bytree": 0.8,
+             "n_jobs": -1,
+             "random_state": 42,
+-            "enable_categorical": False
++            "enable_categorical": False,
++            "eval_metric": ["auc", "aucpr"],  # Track PR-AUC for ranking quality
+         }
+-        candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
++        if XGBClassifier is not None:
++            candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
+
+         # 3. LightGBM
+         lgb_params = {
+-            "n_estimators": 200 if race_mode else 800,
+-            "max_depth": 4,
++            "n_estimators": 300 if race_mode else 1000,  # Increase from 200/800
++            "max_depth": 6,
+             "learning_rate": 0.05,
+             "subsample": 0.8,
+             "feature_fraction": 0.8,
+             "bagging_fraction": 0.8,
+             "bagging_freq": 1,
+-            "lambda_l2": 5.0,
++            "lambda_l2": 15.0,
+             "lambda_l1": 0.0,
+             "colsample_bytree": 0.8,
+             "n_jobs": -1,
+             "random_state": 42,
+-            "verbose": -1
++            "verbose": -1,
++            "is_unbalance": True,  # Handle class imbalance for better PR-AUC
++            "objective": "xentropy",
++            "metric": ["auc", "average_precision"],
+         }
+-        candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
++        if LGBMClassifier is not None:
++            candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
+
+         # 4. CatBoost
+         cb_params = {
+             "iterations": 200 if race_mode else 800,
+-            "l2_leaf_reg": 10.0,
+-            "random_strength": 1.0,
+-            "bagging_temperature": 1.0,
+-            "depth": 4,
++            "l2_leaf_reg": 20.0,
++            "random_strength": 1.0,
++            "bagging_temperature": 1.0,
++            "depth": 5,
+             "learning_rate": 0.05,
+             "verbose": 0,
+             "thread_count": -1,
+             "random_seed": 42,
+-            "allow_writing_files": False
++            "allow_writing_files": False,
++            "eval_metric": "PRAUC",  # Direct PR-AUC optimization
++            "auto_class_weights": "Balanced",  # Handle class imbalance
+         }
+-        candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
++        if CatBoostClassifier is not None:
++            candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
+
+         return candidates
+
+@@ -221,7 +271,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+         elif isinstance(model, ExtraTreesClassifier):
+             model.set_params(class_weight={0: 1.0, 1: pos_weight})
+
+-        if isinstance(model, CatBoostClassifier):
++        if CatBoostClassifier is not None and isinstance(model, CatBoostClassifier):
+             model.set_params(scale_pos_weight=pos_weight)
+             if X_val is not None and y_val is not None:
+                 fit_kwargs.update({
+@@ -229,7 +279,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                     "early_stopping_rounds": self.race_early_stopping_rounds,
+                     "use_best_model": True,
+                 })
+-        elif isinstance(model, XGBClassifier):
++        elif XGBClassifier is not None and isinstance(model, XGBClassifier):
+             model.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
+             if X_val is not None and y_val is not None:
+                 fit_kwargs.update({
+@@ -238,7 +288,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                     # early_stopping_rounds deprecated in fit, use constructor or callbacks if needed
+                     # For simple race, we can omit it or relying on constructor
+                 })
+-        elif isinstance(model, LGBMClassifier):
++        elif LGBMClassifier is not None and isinstance(model, LGBMClassifier):
+             model.set_params(scale_pos_weight=pos_weight)
+             if X_val is not None and y_val is not None:
+                 fit_kwargs.update({
+@@ -297,13 +347,25 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+             X_np = X
+
+         # Cache CV splits
+-        tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
++        # Purge is set to max_label_horizon + buffer to prevent label leakage.
++        # With label horizons up to max_label_horizon_hours, labels at time t can overlap
++        # with labels at t+max_label_horizon_hours, causing regime sensitivity.
++        # Buffer of 2 provides additional safety margin.
++        purge_samples = self.max_label_horizon_hours + 2
++        embargo_samples = max(2, self.max_label_horizon_hours // 2)
++        tscv = PurgedKFold(n_splits=self.n_splits, purge=purge_samples, embargo=embargo_samples)
+         cached_splits = list(tscv.split(X))
+
+         # 1. The Race
+         candidates = self._get_candidates(race_mode=True)
+         results = {}
+
++        # --- Dynamic Regularization (User Requested) ---
++        n_samples = len(y)
++        min_leaf_dyn = max(75, int(n_samples * 0.01))
++        min_cw_dyn = max(75, int(n_samples * 0.01 * 0.25))  # XGB hessian ~ 0.25 * count
++        tprint(f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_child_weight={min_cw_dyn} (n={n_samples}, 1.0%)")
++
+         def safe_slice(arr, idx):
+             if hasattr(arr, "iloc"): return arr.iloc[idx]
+             return arr[idx]
+@@ -313,6 +375,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+         rank_cfg = AlphaRankConfig(k_frac=0.10, cal_metric="brier")
+
+         for name, model in candidates.items():
++            # Apply dynamic regularization to inner estimator
++            if hasattr(model, "estimator"): inner = model.estimator
++            else: inner = model
++
++            # ExtraTrees
++            if "min_samples_leaf" in inner.get_params():
++                inner.set_params(min_samples_leaf=min_leaf_dyn)
++            # LightGBM / CatBoost
++            if "min_data_in_leaf" in inner.get_params():
++                inner.set_params(min_data_in_leaf=min_leaf_dyn)
++            # LightGBM alias
++            if "min_child_samples" in inner.get_params():
++                inner.set_params(min_child_samples=min_leaf_dyn)
++            # XGBoost (hessian-based: use dedicated min_cw_dyn)
++            if "min_child_weight" in inner.get_params():
++                 inner.set_params(min_child_weight=min_cw_dyn)
++
+             tprint(f"Race: Training {name}...")
+             fold_scores = []
+             fold_aucs = []
+@@ -322,10 +401,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+             fold_ref = [] # Brier Ref
+             fold_brier = [] # Basic (unweighted) Brier
+             fold_p10 = [] # Prec Top 10%
++            fold_p20 = [] # Prec Top 20%
+             fold_p25 = [] # Prec Top 25%
+             fold_p40 = [] # Prec Top 40%
+             fold_logloss = []
+             fold_accuracy = []
++            fold_base_logloss = []
++            fold_logloss_imp = []
+             oof_model = np.full(len(y), np.nan, dtype=np.float64)
+
+             try:
+@@ -358,14 +440,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                     # Predict raw (biased) probabilities on validation
+                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
+
+-                    # Correction: Match mean(probs_val) to UNWEIGHTED mean(y_tr)
+-                    # IMPORTANT: Use unweighted prevalence. Sample weights upweight
+-                    # minority class for training loss, making weighted_prev ≈ 0.5.
+-                    # But calibrated probabilities must reflect actual prevalence.
+-                    target_mean = float(np.mean(y_tr_fit))
+-
+-                    factor = self._find_bias_correction_factor(probs_raw, target_mean)
+-                    probs = self._apply_correction(probs_raw, factor)
++                    # --- Prior Correction (replaces in-fold Platt scaling) ---
++                    # Tree models with scale_pos_weight / class_weight shift raw
++                    # probabilities away from the true prevalence.  We correct by
++                    # mapping the model's mean prediction back to the training
++                    # prevalence using a logit-space shift (equivalent to adjusting
++                    # the intercept of a Platt scaler without fitting on val data).
++                    p_train = float(np.mean(y_tr_fit))
++                    p_model = float(np.clip(np.mean(probs_raw), 1e-7, 1 - 1e-7))
++                    if abs(p_model - p_train) > 0.01:
++                        # Shift in logit space: logit(p_corrected) = logit(p_raw) + delta
++                        delta = logit(np.clip(p_train, 1e-7, 1 - 1e-7)) - logit(p_model)
++                        probs = expit(logit(np.clip(probs_raw, 1e-7, 1 - 1e-7)) + delta)
++                    else:
++                        probs = probs_raw
++
+                     oof_model[val_idx] = probs
+
+                     # w_bss=0.20: Enabled BSS in selection score
+@@ -380,14 +469,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                     fold_ref.append(metrics.get("Brier_Ref", np.nan))
+                     fold_brier.append(metrics.get("Brier", np.nan))
+                     fold_p10.append(metrics.get("Prec_Top10", np.nan))
++                    fold_p20.append(metrics.get("Prec_Top20", np.nan))
+                     fold_p25.append(metrics.get("Prec_Top25", np.nan))
+                     fold_p40.append(metrics.get("Prec_Top40", np.nan))
+                     # fold_p40 handled below if needed, but metrics returns it
+
+                     try:
+-                        fold_logloss.append(log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7)))
++                        ll_fold = log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7))
++                        fold_logloss.append(ll_fold)
++                        p_fold = float(np.mean(y_val_fit))
++                        p_fold = float(np.clip(p_fold, 1e-7, 1 - 1e-7))
++                        ll_base_fold = log_loss(y_val_fit, np.full_like(y_val_fit, p_fold, dtype=np.float64))
++                        fold_base_logloss.append(ll_base_fold)
++                        fold_logloss_imp.append((ll_base_fold - ll_fold) / max(ll_base_fold, 1e-9))
+                     except:
+                         fold_logloss.append(np.nan)
++                        fold_base_logloss.append(np.nan)
++                        fold_logloss_imp.append(np.nan)
+                     fold_accuracy.append(accuracy_score(y_val_fit, probs > 0.5))
+
+                 avg_score = np.nanmean(fold_scores)
+@@ -398,6 +496,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                 avg_ref = np.nanmean(fold_ref)
+                 avg_brier = np.nanmean(fold_brier)
+                 avg_p10 = np.nanmean(fold_p10)
++                std_p10 = np.nanstd(fold_p10)
++                cv_p10 = std_p10 / avg_p10 if avg_p10 > 1e-9 else 1.0
++
++                avg_p20 = np.nanmean(fold_p20)
++                std_p20 = np.nanstd(fold_p20)
++                cv_p20 = std_p20 / avg_p20 if avg_p20 > 1e-9 else 1.0
++
+                 avg_p25 = np.nanmean(fold_p25)
+                 avg_p40 = np.nanmean(fold_p40)
+                 std_score = np.nanstd(fold_scores)
+@@ -427,11 +532,22 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+                     "BS_Ref": avg_ref,
+                     "Brier": avg_brier,
+                     "Prec10": avg_p10,
++                    "CV_Prec10": cv_p10,
++                    "Prec20": avg_p20,
++                    "CV_Prec20": cv_p20,
+                     "Prec25": avg_p25,
+                     "Prec40": avg_p40,
+                     "std_score": std_score,
+                     "LogLoss": avg_logloss,
+-                    "Accuracy": avg_accuracy
++                    "Accuracy": avg_accuracy,
++                    "fold_logloss": [float(x) for x in fold_logloss],
++                    "fold_precision20": [float(x) for x in fold_p20],
++                    "fold_precision10": [float(x) for x in fold_p10],
++                    "fold_brier": [float(x) for x in fold_brier],
++                    "fold_base_logloss": [float(x) for x in fold_base_logloss],
++                    "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
++                    # Store per-model OOF predictions for gate checks
++                    "oof_probs": np.nan_to_num(oof_model.copy(), nan=0.5).astype(np.float32),
+                 }
+                 tprint(f"  {name}: LegacyScore={avg_score:.4f} AUC={avg_auc:.4f} IC={avg_ic:.4f} BSS={avg_bss_val:.4f} Brier={avg_brier:.4f} Prec10={avg_p10:.4f} Prec40={avg_p40:.4f} LogLoss={avg_logloss:.4f} TrainLoss={train_loss:.4f}")
+
+@@ -465,7 +581,112 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+             detailed_metrics[n]["rank_score"] = float(rank_score)
+             results[n] = float(rank_score)
+
+-        best_name = max(results, key=results.get)
++        # Compute quality gate checks for each model (same as _base_model_report_entry in training.py)
++        def _compute_gate_checks(dm, y_hard, oof_probs, prev):
++            """Compute quality gate checks for a model. Returns (n_passed, checks_dict)."""
++            from sklearn.metrics import average_precision_score, brier_score_loss, log_loss as _log_loss
++
++            # Brier and logloss improvement
++            p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
++            base_brier = prev * (1.0 - prev)
++            base_ll = -(prev * np.log(prev + 1e-12) + (1 - prev) * np.log(1 - prev + 1e-12))
++            try:
++                brier = float(brier_score_loss(y_hard, p_clip))
++                ll = float(_log_loss(y_hard, p_clip))
++                brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
++                ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
++            except Exception:
++                brier_imp, ll_imp = 0.0, 0.0
++
++            # PR-AUC
++            try:
++                pr_auc = float(average_precision_score(y_hard, oof_probs)) if len(np.unique(y_hard)) > 1 else 0.0
++            except Exception:
++                pr_auc = 0.0
++
++            # Lift@20%
++            k_frac = 0.20
++            k_n = max(1, int(len(y_hard) * k_frac))
++            idx = np.argsort(oof_probs)[-k_n:]
++            prec_k = float(np.mean(y_hard[idx]))
++            lift_k = prec_k / max(prev, 1e-9)
++            prec_lift_abs = prec_k - prev
++
++            # Fold stability
++            fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
++            pos_fold_ratio = float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
++            worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
++
++            # Bootstrap CV for precision@20%
++            n_boot = 50
++            rng_boot = np.random.RandomState(42)
++            prec_samples = []
++            n_total = len(y_hard)
++            for _ in range(n_boot):
++                idx_b = rng_boot.choice(n_total, size=n_total, replace=True)
++                _n_k = max(1, int(n_total * k_frac))
++                top_idx = np.argsort(oof_probs[idx_b])[-_n_k:]
++                p_k_b = float(np.mean(y_hard[idx_b][top_idx]))
++                prec_samples.append(p_k_b)
++            prec_arr = np.array(prec_samples)
++            bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
++
++            # Prevalence-aware PR-AUC threshold
++            pr_auc_threshold = max(1.25 * prev, prev + 0.05)
++
++            # Gate checks (same as training.py)
++            checks = {
++                "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
++                "pr_auc_ge_random": pr_auc >= prev,
++                "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
++                "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
++                "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,
++                "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
++                "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
++                "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= -0.005,
++            }
++            n_passed = sum(checks.values())
++            return n_passed, checks
++
++        # Compute gate checks for all models
++        prev = float(np.mean(y_hard))
++        gate_results = {}
++        for n in detailed_metrics:
++            dm = detailed_metrics[n]
++            # Get OOF predictions for this model (stored during race)
++            oof_model = np.full(len(y), np.nan, dtype=np.float64)
++            # We need to reconstruct OOF from the race - use stored fold predictions
++            # The OOF was computed during the race loop above
++            # For now, use the model's stored OOF if available, otherwise compute
++            if "oof_probs" in dm:
++                oof_model = dm["oof_probs"]
++            else:
++                # Fallback: use the overall OOF (same for all models in current implementation)
++                oof_model = np.nan_to_num(oof_model, nan=0.5)
++            n_passed, checks = _compute_gate_checks(dm, y_hard, oof_model, prev)
++            gate_results[n] = {"n_passed": n_passed, "checks": checks}
++            detailed_metrics[n]["gate_checks"] = checks
++            detailed_metrics[n]["gate_n_passed"] = n_passed
++
++        # Winner selection: prioritize models passing most gates, use rank_score as tie-breaker
++        # Sort by (n_passed, rank_score) descending
++        sorted_candidates = sorted(
++            results.items(),
++            key=lambda x: (gate_results[x[0]]["n_passed"], x[1]),
++            reverse=True
++        )
++        best_name = sorted_candidates[0][0]
++        best_n_passed = gate_results[best_name]["n_passed"]
++        best_score = results[best_name]
++
++        tprint(f"Gate-aware winner selection:")
++        for name, score in sorted_candidates[:4]:
++            tprint(f"  {name}: gates_passed={gate_results[name]['n_passed']}/7, rank_score={score:.4f}")
++
++        # Log if we're selecting a model with fewer gates passed due to tie-breaker
++        if best_n_passed < 7:
++            tprint(f"WARNING: Best model '{best_name}' passes only {best_n_passed}/7 gates")
++
+         self.best_model_name = best_name
+         self.metrics = results
+         dm = detailed_metrics.get(best_name, {})
+@@ -493,19 +714,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+
+             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
+
+-            # Recalibrate OOF probabilities
+-            # Same logic: match OOF mean to UNWEIGHTED y_tr mean
+-            target_mean = float(np.mean(y_tr_fit))
+-
+-            # Predict raw (biased)
++            # Predict raw then apply fold bias correction contract.
+             probs_raw = estimator.predict_proba(X_val)[:, 1]
+-
+-            # Find and apply correction
+-            factor = self._find_bias_correction_factor(probs_raw, target_mean)
+-            oof_probs[val_idx] = self._apply_correction(probs_raw, factor)
++            if sample_weight is not None:
++                w_tr_fold = sample_weight[train_idx]
++                den = float(np.sum(w_tr_fold))
++                p_weighted_fold = float(np.sum(w_tr_fold * y_tr_fit) / max(den, 1e-12))
++            else:
++                p_weighted_fold = float(np.mean(y_tr_fit))
++            p_unweighted_fold = float(np.mean(y_val_fit))
++            delta_logit_fold = compute_logit_shift(p_unweighted_fold, p_weighted_fold, eps=1e-6)
++            oof_probs[val_idx] = apply_logit_shift(probs_raw, delta_logit_fold, eps=1e-6)
+         # Fill any remaining NaN with 0.5 (neutral)
+         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
+         self.oof_probs = oof_probs
++        self._used_sample_weight_ = sample_weight is not None
++        p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight)
++        self.calibration_state_ = self._build_bias_state(p_unweighted_all, p_weighted_all, eps=1e-6)
+         tprint(f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}")
+
+         # Effective sample size diagnostic
+@@ -529,20 +754,36 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+
+             # --- Post-hoc Isotonic Calibration ---
+             # Fit calibrator on OOF predictions
+-            # This ensures that predict_proba returns calibrated probabilities
+             tprint("Fitting IsotonicRegression on OOF predictions (unweighted)...")
+             self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
+             # IMPORTANT: Fit calibrator WITHOUT sample weights.
+             # Weights upweight minority class, making calibrator target weighted
+             # prevalence (~0.5) instead of actual prevalence (~0.31).
+             self.calibrator_.fit(oof_probs, y_hard)
++            if isinstance(self.calibration_state_, dict):
++                self.calibration_state_["calibration_input"] = "bias_corrected"
+
+             # Re-calibrate the stored OOF probs
+             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
+
++            from sklearn.metrics import brier_score_loss
++            from sklearn.linear_model import LogisticRegression
+             raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
+             cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
+             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
++
++            # Optional Platt scaling: only apply if it improves Brier score
++            platt_calibrator = LogisticRegression(random_state=42, max_iter=1000)
++            platt_calibrator.fit(calibrated_oof.reshape(-1, 1), y_hard)
++            platt_calibrated = platt_calibrator.predict_proba(calibrated_oof.reshape(-1, 1))[:, 1]
++            platt_brier = brier_score_loss(y_hard, np.clip(platt_calibrated, 1e-7, 1-1e-7))
++
++            if platt_brier < cal_brier - 1e-4:  # Only keep Platt if it materially improves Brier
++                self.platt_calibrator_ = platt_calibrator
++                tprint(f"Platt scaling enabled: Brier improved {cal_brier:.4f} -> {platt_brier:.4f}")
++            else:
++                self.platt_calibrator_ = None
++                tprint(f"Platt scaling skipped: no improvement (isotonic={cal_brier:.4f}, platt={platt_brier:.4f})")
+             win_dm = self.detailed_metrics.get(self.best_model_name, {})
+             tprint(f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}")
+
+@@ -565,10 +806,18 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+         # 3. Final Retraining (raw model, no calibration wrapper)
+         # Calibration is harmful with small n and uncalibrated objectives.
+         # Output is treated as rank score by downstream (engine, backtest).
+-        if detailed_metrics:
+-             best_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
+-             self.best_model_name = best_name
+-             self.best_model = candidates[best_name]
++        # NOTE: Winner already selected above (lines 670-692) using gate-aware logic:
++        #       - Primary: most gates passed
++        #       - Tie-breaker: rank_score
++        # Do NOT re-select here - use existing self.best_model_name
++        if self.best_model_name and self.best_model_name in candidates:
++             self.best_model = candidates[self.best_model_name]
++        else:
++             # Fallback should never happen, but log if it does
++             tprint(f"WARNING: best_model_name '{self.best_model_name}' not in candidates, falling back to rank_score selection")
++             if detailed_metrics:
++                  self.best_model_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
++                  self.best_model = candidates[self.best_model_name]
+
+         tprint(f"Retraining {self.best_model_name} on full data (full config)...")
+         final_candidates = self._get_candidates(race_mode=False)
+@@ -598,26 +847,128 @@ class ModelRace(BaseEstimator, ClassifierMixin):
+              self.best_model.fit(X, y_hard, sample_weight=sample_weight)
+         else:
+              self.best_model.fit(X, y_hard)
+-
+-        # No more manual bias correction factor needed (Isotonic handles it)
++
++# No more manual bias correction factor needed (Isotonic handles it)
+         return self
+
++    def predict_proba_raw(self, X):
++        if self.best_model is None:
++            raise ValueError("ModelRace not fitted")
++        probs = np.asarray(self.best_model.predict_proba(X), dtype=np.float64)
++        return safe_clip_proba(probs[:, 1], eps=1e-6)
++
+     def predict_proba(self, X):
+         if self.best_model is None:
+             raise ValueError("ModelRace not fitted")
+-        probs = self.best_model.predict_proba(X)
+-
+-        # 1. Apply Post-hoc Isotonic Calibration (Local Calibration)
++        if self.calibration_state_ is None or "delta_logit" not in self.calibration_state_:
++            raise RuntimeError("Missing calibration_state_. Refit ModelRace with calibration enabled before inference.")
++
++        if self._used_sample_weight_ and self.calibration_state_ is None:
++            raise RuntimeError("Sample-weighted training requires persisted calibration_state_.")
++
++        p_raw = self.predict_proba_raw(X)
++        p_corr = self._apply_bias_state(p_raw, self.calibration_state_)
++
+         if hasattr(self, 'calibrator_'):
+-            # Calibrate class 1
+-            # Note: IsotonicRegression.predict expects 1D array
+-            p1 = self.calibrator_.predict(probs[:, 1])
+-            probs[:, 1] = p1
+-            probs[:, 0] = 1.0 - p1
+-
+-        # Ensure float64 returns
++            if self.calibration_state_.get("calibration_input") != "bias_corrected":
++                raise RuntimeError("Calibrator expects bias-corrected inputs but calibration_state_ is inconsistent.")
++            p_cal = self.calibrator_.predict(p_corr)
++        else:
++            p_cal = p_corr
++
++        # Apply Platt scaling if available
++        if hasattr(self, 'platt_calibrator_') and self.platt_calibrator_ is not None:
++            p_cal = self.platt_calibrator_.predict_proba(p_cal.reshape(-1, 1))[:, 1]
++
++        p_cal = safe_clip_proba(p_cal, eps=1e-6)
++        probs = np.column_stack([1.0 - p_cal, p_cal])
+         return np.asarray(probs, dtype=np.float64)
+
+     def predict(self, X):
+         # Return probability class 1 (rank score, not calibrated probability)
+         return self.predict_proba(X)[:, 1]
++
++    def strip_for_serialization(self):
++        """Drop heavy internals not needed for inference or meta training."""
++        for attr in ["race_sample_frac", "race_early_stopping_rounds",
++                      "n_splits"]:
++            if hasattr(self, attr):
++                try:
++                    delattr(self, attr)
++                except AttributeError:
++                    pass
++        return self
++
++    def save_native(self, directory):
++        """Save using native model formats (10-100x faster than pickle)."""
++        os.makedirs(directory, exist_ok=True)
++        inner = self.best_model
++        if isinstance(inner, Float64Wrapper):
++            inner = inner.estimator
++        if _is_xgb(inner):
++            inner.save_model(os.path.join(directory, "model.ubj"))
++            fmt = "model.ubj"
++        elif _is_lgb(inner):
++            inner.booster_.save_model(os.path.join(directory, "model.lgb"))
++            fmt = "model.lgb"
++        elif _is_cb(inner):
++            inner.save_model(os.path.join(directory, "model.cbm"))
++            fmt = "model.cbm"
++        else:
++            joblib.dump(inner, os.path.join(directory, "model.joblib"), compress=3)
++            fmt = "model.joblib"
++        sidecar = {
++            "best_model_name": self.best_model_name,
++            "kind": self.kind,
++            "metrics": self.metrics,
++            "detailed_metrics": self.detailed_metrics,
++            "oof_probs": self.oof_probs,
++            "calibration_state_": self.calibration_state_,
++            "final_bias_factor_": self.final_bias_factor_,
++            "_used_sample_weight_": self._used_sample_weight_,
++            "calibrator_": getattr(self, "calibrator_", None),
++            "platt_calibrator_": getattr(self, "platt_calibrator_", None),
++            "classes_": getattr(self.best_model, "classes_", np.array([0, 1])),
++            "model_file": fmt,
++        }
++        with open(os.path.join(directory, "sidecar.pkl"), "wb") as f:
++            pickle.dump(sidecar, f)
++
++    @classmethod
++    def load_native(cls, directory):
++        """Load from native-format files."""
++        with open(os.path.join(directory, "sidecar.pkl"), "rb") as f:
++            sc = pickle.load(f)
++        mf = sc["model_file"]
++        mp = os.path.join(directory, mf)
++        if mf.endswith(".ubj"):
++            from xgboost import XGBClassifier as _XGB
++            inner = _XGB()
++            inner.load_model(mp)
++        elif mf.endswith(".lgb"):
++            from lightgbm import LGBMClassifier as _LGB
++            inner = _LGB()
++            inner._Booster = __import__("lightgbm").Booster(model_file=mp)
++            inner._fitted = True
++            inner._n_classes = 2
++        elif mf.endswith(".cbm"):
++            from catboost import CatBoostClassifier as _CB
++            inner = _CB()
++            inner.load_model(mp)
++        else:
++            inner = joblib.load(mp)
++        wrapper = Float64Wrapper(estimator=inner)
++        wrapper.classes_ = sc.get("classes_", np.array([0, 1]))
++        obj = cls.__new__(cls)
++        obj.best_model = wrapper
++        obj.best_model_name = sc["best_model_name"]
++        obj.kind = sc["kind"]
++        obj.metrics = sc["metrics"]
++        obj.detailed_metrics = sc["detailed_metrics"]
++        obj.oof_probs = sc["oof_probs"]
++        obj.calibration_state_ = sc["calibration_state_"]
++        obj.final_bias_factor_ = sc["final_bias_factor_"]
++        obj._used_sample_weight_ = sc["_used_sample_weight_"]
++        obj.calibrator_ = sc.get("calibrator_")
++        obj.platt_calibrator_ = sc.get("platt_calibrator_")
++        return obj
+diff --git a/extreme_price_movements/pipeline_steps.py b/extreme_price_movements/pipeline_steps.py
+index 75e51f961..8b061c292 100644
+--- a/extreme_price_movements/pipeline_steps.py
++++ b/extreme_price_movements/pipeline_steps.py
+@@ -5,7 +5,7 @@ import numpy as np
+
+ from extreme_price_movements.utils import tprint, Timer
+ from extreme_price_movements.data_store import load_features, save_features, save_artifact_df, load_artifact_df, to_panel
+-from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
++from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts, train_meta_models_from_artifacts
+ from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
+ from extreme_price_movements.universe import get_training_universe, refresh_margin_universe_daily
+ from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals, _build_side_score_df
+@@ -53,8 +53,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
+
+     feats = load_features(ts_sig, cfg["data_root"])
+     if feats is None:
+-        tprint("ERROR: Features not found. Run feature_generation first.")
+-        return
++        tprint("Features not found on disk. Computing inline...")
++        feats = compute_features_hourly(panel, mkt_gates, cfg)
++        tprint(f"Inline feature computation done: {len(feats)} features")
+
+     # Restrict to symbols present in both panel and features
+     sample_feat = next(iter(feats.values()))
+@@ -85,11 +86,13 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
+
+     tprint("STEP: LABEL GENERATION COMPLETE")
+
+-def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
++def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all"):
++    """stage in {all, base, meta}."""
+     """Train all models from label artifacts. Saves trained state to disk."""
+     tprint("STEP: MODEL TRAINING START")
+
+     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
++    cfg["run_id"] = run_id
+     datasets = {}
+
+     # Ensure we always have a margin universe for downstream specialist training
+@@ -193,8 +196,119 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+
+     # 2. Train models
+     with Timer("Model Training"):
+-        trained_bundle = train_models_from_artifacts(datasets, cfg)
+-        alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
++        if stage == "meta":
++            # Meta-only mode: requires base state with trained alpha models.
++            state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
++            base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
++            if not os.path.exists(base_state_path):
++                # Fallback: search previous artifact directories for base state
++                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
++                prev_dirs = sorted(
++                    [d for d in os.listdir(artifacts_root)
++                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
++                    reverse=True
++                )
++                found = False
++                for prev_id in prev_dirs:
++                    candidate = os.path.join(artifacts_root, prev_id, "models", "trained_state_base.pkl")
++                    if os.path.exists(candidate):
++                        tprint(f"Base state not in {run_id}, falling back to {prev_id}")
++                        base_state_path = candidate
++                        state_dir = os.path.join(artifacts_root, prev_id, "models")
++                        found = True
++                        break
++                if not found:
++                    tprint(f"ERROR: Base state not found at {base_state_path} or any previous run. Run train_base first.")
++                    return None
++
++            # Fast path: try loading OOF from parquet files first
++            oof_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "oof")
++            _oof_parquets_found = os.path.isdir(oof_dir) and len([f for f in os.listdir(oof_dir) if f.endswith(".parquet")]) > 0
++
++            if not _oof_parquets_found:
++                # Fallback: search previous artifact directories for OOF parquets
++                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
++                for prev_id in sorted(
++                    [d for d in os.listdir(artifacts_root)
++                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
++                    reverse=True
++                ):
++                    candidate_oof = os.path.join(artifacts_root, prev_id, "oof")
++                    if os.path.isdir(candidate_oof) and any(f.endswith(".parquet") for f in os.listdir(candidate_oof)):
++                        tprint(f"OOF parquets not in {run_id}, falling back to {prev_id}")
++                        oof_dir = candidate_oof
++                        _oof_parquets_found = True
++                        break
++
++            if _oof_parquets_found:
++                tprint(f"Loading OOF predictions from parquet (fast path): {oof_dir}")
++                # Build lightweight alpha_models dict with OOF from parquet
++                import glob
++                _oof_files = glob.glob(os.path.join(oof_dir, "oof_*.parquet"))
++                _oof_data = {}  # (side, kind, H) -> oof_probs
++                for _fp in _oof_files:
++                    _fn = os.path.basename(_fp).replace("oof_", "").replace(".parquet", "")
++                    # Parse: "long_mr_H2" -> side=long, kind=mr, H=2
++                    _parts = _fn.rsplit("_H", 1)
++                    if len(_parts) == 2:
++                        _sk = _parts[0]  # "long_mr"
++                        _h = int(_parts[1])
++                        _side_kind = _sk.split("_", 1)
++                        if len(_side_kind) == 2:
++                            _oof_df = pd.read_parquet(_fp)
++                            _oof_data[(_side_kind[0], _side_kind[1], _h)] = _oof_df["oof_prob"].values
++                tprint(f"  Loaded {len(_oof_data)} OOF vectors from parquet")
++
++                # Build a lightweight alpha_models structure for train_meta
++                # (only needs models_by_h with model.oof_probs for each horizon)
++                class _OofStub:
++                    """Lightweight stub replacing ModelRace for meta training (OOF only)."""
++                    def __init__(self, oof):
++                        self.oof_probs = oof
++                alpha_models = {}
++                for (_side, _kind, _h), _oof in _oof_data.items():
++                    if _side not in alpha_models:
++                        alpha_models[_side] = {}
++                    if _kind not in alpha_models[_side]:
++                        alpha_models[_side][_kind] = {"H": _h, "feat_cols": [], "models_by_h": {}}
++                    alpha_models[_side][_kind]["models_by_h"][_h] = {
++                        "model": _OofStub(_oof), "feat_cols": [], "H": _h
++                    }
++                    # Set primary H to the one with most samples
++                    if len(_oof) > len(alpha_models[_side][_kind].get("_best_oof", [])):
++                        alpha_models[_side][_kind]["H"] = _h
++                        alpha_models[_side][_kind]["_best_oof"] = _oof
++                # Clean up temp keys
++                for _s in alpha_models.values():
++                    for _k_v in _s.values():
++                        _k_v.pop("_best_oof", None)
++            else:
++                tprint("No OOF parquet files found; loading full pickle (slow path)...")
++                tprint(f"  Loading base state from {base_state_path} ({os.path.getsize(base_state_path) / 1e6:.1f} MB)...")
++                with open(base_state_path, "rb") as f:
++                    base_state = pickle.load(f)
++                tprint("  Base state loaded.")
++                base_bundle = base_state.get("bundle", {})
++                alpha_models = base_bundle.get("alpha_models", {})
++                del base_state  # free memory
++
++            tprint(f"Starting meta model training ({len(datasets)} datasets, {sum(len(v.get('models_by_h', {})) for s in alpha_models.values() for v in s.values())} alpha horizons)...")
++            meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
++            tprint(f"Meta model training complete: {len(meta_models)} meta models fitted.")
++
++            # Save meta models as standalone lightweight pickle (no base pickle load needed)
++            meta_only_path = os.path.join(state_dir, "trained_state_meta_only.pkl")
++            with open(meta_only_path, "wb") as f:
++                pickle.dump({"meta_models": meta_models}, f)
++            tprint(f"Saved meta-only state to {meta_only_path}")
++
++            # Build a minimal trained_bundle for the rest of this function
++            # (alpha_models stub is enough for logging; full merge happens at optimise/backtest)
++            trained_bundle = {"alpha_models": alpha_models, "meta_models": meta_models}
++            alpha_metrics = {}
++        else:
++            trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=(stage != "base"))
++            alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
+
+     # Specialist Models are now trained inside train_models_from_artifacts
+     # using artifacts loaded above.
+@@ -235,18 +349,94 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+         "granular_risk": _granular,
+     }
+
+-    state = {
+-        "ts_trained": ts_sig,
+-        "bundle": trained_bundle,
+-        "risk_params": default_risk
+-    }
+-
+     state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
+     os.makedirs(state_dir, exist_ok=True)
+-    state_path = os.path.join(state_dir, "trained_state.pkl")
+-    with open(state_path, "wb") as f:
+-        pickle.dump(state, f)
+-    tprint(f"Saved trained state to {state_path}")
++
++    if stage == "meta":
++        # Assemble canonical state: load base models (native or pickle) + merge meta
++        from extreme_price_movements.model_race import ModelRace
++        native_dir = os.path.join(state_dir, "native")
++        base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
++
++        # Fallback: if neither native dir nor base pkl exist in current run_id, search previous
++        if not os.path.isdir(native_dir) and not os.path.exists(base_state_path):
++            artifacts_root = os.path.join(cfg["data_root"], "artifacts")
++            for prev_id in sorted(
++                [d for d in os.listdir(artifacts_root)
++                 if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
++                reverse=True
++            ):
++                prev_state_dir = os.path.join(artifacts_root, prev_id, "models")
++                prev_native = os.path.join(prev_state_dir, "native")
++                prev_pkl = os.path.join(prev_state_dir, "trained_state_base.pkl")
++                if os.path.isdir(prev_native) or os.path.exists(prev_pkl):
++                    tprint(f"State assembly: models not in {run_id}, falling back to {prev_id}")
++                    native_dir = prev_native
++                    base_state_path = prev_pkl
++                    break
++
++        if os.path.isdir(native_dir):
++            # Fast path: load models from native format
++            tprint(f"Loading base models from native format: {native_dir}")
++            import glob as _glob
++            _native_dirs = [d for d in _glob.glob(os.path.join(native_dir, "*")) if os.path.isdir(d)]
++            _native_alpha = {}
++            for _nd in _native_dirs:
++                _name = os.path.basename(_nd)  # e.g. "long_mr_H2"
++                _parts = _name.rsplit("_H", 1)
++                if len(_parts) != 2:
++                    continue
++                _sk = _parts[0]
++                _h = int(_parts[1])
++                _side_kind = _sk.split("_", 1)
++                if len(_side_kind) != 2:
++                    continue
++                _side, _kind = _side_kind
++                race = ModelRace.load_native(_nd)
++                # Load feature columns
++                _cols_path = os.path.join(_nd, "columns.json")
++                _fcols, _sfeat = [], []
++                if os.path.exists(_cols_path):
++                    import json as _json
++                    with open(_cols_path) as _cf:
++                        _cdata = _json.load(_cf)
++                    _fcols = _cdata.get("feat_cols", [])
++                    _sfeat = _cdata.get("selected_features", _fcols)
++                if _side not in _native_alpha:
++                    _native_alpha[_side] = {}
++                if _kind not in _native_alpha[_side]:
++                    _native_alpha[_side][_kind] = {"H": _h, "feat_cols": _fcols, "models_by_h": {}}
++                _native_alpha[_side][_kind]["models_by_h"][_h] = {
++                    "model": race, "feat_cols": _fcols, "H": _h, "selected_features": _sfeat
++                }
++            tprint(f"  Loaded {len(_native_dirs)} models from native format")
++            # Build state from native models
++            base_bundle = {"alpha_models": _native_alpha}
++        else:
++            tprint("No native models found; loading base pickle (slow path)...")
++            with open(base_state_path, "rb") as f:
++                base_state = pickle.load(f)
++            base_bundle = base_state.get("bundle", {})
++
++        base_bundle["meta_models"] = meta_models
++        state = {"ts_trained": ts_sig, "bundle": base_bundle, "risk_params": default_risk}
++        for _name in ["trained_state_meta.pkl", "trained_state.pkl"]:
++            _path = os.path.join(state_dir, _name)
++            with open(_path, "wb") as f:
++                pickle.dump(state, f)
++        tprint(f"Saved canonical trained state to {state_dir}/trained_state.pkl")
++        trained_bundle = base_bundle
++    else:
++        state = {
++            "ts_trained": ts_sig,
++            "bundle": trained_bundle,
++            "risk_params": default_risk
++        }
++        state_name = "trained_state_base.pkl" if stage == "base" else "trained_state.pkl"
++        state_path = os.path.join(state_dir, state_name)
++        with open(state_path, "wb") as f:
++            pickle.dump(state, f)
++        tprint(f"Saved trained state to {state_path}")
+
+     # Log summary
+     bundle = trained_bundle
+@@ -256,7 +446,12 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+             for k in kinds:
+                 m = alpha.get(side, {}).get(k)
+                 if m:
+-                    tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
++                    mbh = m.get("models_by_h", {})
++                    if mbh:
++                        h_list = sorted(mbh.keys())
++                        tprint(f"  {side} {k}: {len(h_list)} horizons {h_list} (primary H={m['H']}, features={len(m['feat_cols'])})")
++                    else:
++                        tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
+                 else:
+                     tprint(f"  {side} {k}: NO MODEL")
+
+@@ -292,12 +487,33 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+             extra_info=alpha_metrics,
+         )
+         tprint(f"Training report saved to {report_path}")
++
++        # Save and print extended quality gate metrics JSON (base/meta, race + winners first)
++        try:
++            from extreme_price_movements.training import save_training_gate_report
++            gate_report = bundle.get("quality_gate_report") if isinstance(bundle, dict) else None
++            if gate_report:
++                gate_path = save_training_gate_report(gate_report, cfg, run_id=run_id)
++                tprint(f"Quality gate report saved to {gate_path}")
++                winners = gate_report.get("winners", {})
++                tprint(f"Model race winners (base): {winners.get('base', [])}")
++                tprint(f"Model race winners (meta): {winners.get('meta', [])}")
++        except Exception as e:
++            tprint(f"WARNING: Failed to save quality gate report: {e}")
+     except Exception as e:
+         tprint(f"WARNING: Failed to generate training report: {e}")
+
+-    tprint("STEP: MODEL TRAINING COMPLETE")
++    tprint(f"STEP: MODEL TRAINING COMPLETE ({stage})")
+     return state
+
++def run_training_base_step(ts_sig, cfg, store=None, margin_symbols=None):
++    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="base")
++
++
++def run_training_meta_step(ts_sig, cfg, store=None, margin_symbols=None):
++    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="meta")
++
++
+ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
+     tprint("STEP: RISK OPTIMIZATION START")
+     if not os.path.exists(state_file):
+@@ -1219,6 +1435,9 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
+     # 3. Compute Features (Panel)
+     tprint("Constructing Panel...")
+     panel = to_panel(dfs)
++    del dfs
++    tprint("Panel constructed. Cleared raw dfs from memory.")
++    import gc; gc.collect()
+
+     tprint("Computing Market Features...")
+     mkt_df = compute_market_features(panel, cfg["market_basket"])
+diff --git a/extreme_price_movements/post_race_hpo.py b/extreme_price_movements/post_race_hpo.py
+index 8b916c90a..3a2bd6f04 100644
+--- a/extreme_price_movements/post_race_hpo.py
++++ b/extreme_price_movements/post_race_hpo.py
+@@ -210,15 +210,15 @@ def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict
+     """XGBoost — conservative for noisy labels: high min_child_weight, gamma, reg_lambda."""
+     n_estimators = trial.suggest_int("n_estimators", 600, 6000, step=200)
+     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
+-    max_depth = trial.suggest_int("max_depth", 2, 6)
+-    min_child_weight = trial.suggest_float("min_child_weight", 10.0, 300.0, log=True)
++    max_depth = trial.suggest_int("max_depth", 2, 5)
++    min_child_weight = trial.suggest_float("min_child_weight", 75.0, 500.0, log=True)
+     gamma = trial.suggest_float("gamma", 0.5, 20.0, log=True)
+
+     subsample = trial.suggest_float("subsample", 0.6, 0.9)
+     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
+     colsample_bynode = trial.suggest_float("colsample_bynode", 0.5, 0.9)
+
+-    reg_lambda = trial.suggest_float("reg_lambda", 5.0, 200.0, log=True)
++    reg_lambda = trial.suggest_float("reg_lambda", 15.0, 500.0, log=True)
+     reg_alpha = trial.suggest_float("reg_alpha", 0.0, 10.0)
+
+     max_delta_step = trial.suggest_float("max_delta_step", 0.0, 5.0)
+@@ -262,7 +262,7 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
+     """LightGBM — cap leaves aggressively, raise min_child_samples, strong L1/L2."""
+     n_estimators = trial.suggest_int("n_estimators", 800, 8000, step=200)
+     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
+-    max_depth = trial.suggest_int("max_depth", 2, 8)
++    max_depth = trial.suggest_int("max_depth", 2, 6)
+
+     num_leaves = trial.suggest_int("num_leaves", 8, 96, log=True)
+     if max_depth > 0:
+@@ -271,10 +271,10 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
+     subsample = trial.suggest_float("subsample", 0.6, 0.9)
+     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
+
+-    min_child_samples = trial.suggest_int("min_child_samples", 30, 400, log=True)
++    min_child_samples = trial.suggest_int("min_child_samples", 75, 600, log=True)
+     min_child_weight = trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True)
+
+-    lambda_l2 = trial.suggest_float("lambda_l2", 5.0, 200.0, log=True)
++    lambda_l2 = trial.suggest_float("lambda_l2", 15.0, 500.0, log=True)
+     lambda_l1 = trial.suggest_float("lambda_l1", 0.0, 50.0)
+
+     min_split_gain = trial.suggest_float("min_split_gain", 0.0, 5.0)
+@@ -316,9 +316,9 @@ def suggest_catboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
+     """CatBoost — keep depth small, strong regularisation."""
+     iterations = trial.suggest_int("iterations", 800, 8000, step=200)
+     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
+-    depth = trial.suggest_int("depth", 2, 7)
++    depth = trial.suggest_int("depth", 2, 5)
+
+-    l2_leaf_reg = trial.suggest_float("l2_leaf_reg", 5.0, 200.0, log=True)
++    l2_leaf_reg = trial.suggest_float("l2_leaf_reg", 15.0, 500.0, log=True)
+     random_strength = trial.suggest_float("random_strength", 0.0, 3.0)
+     bagging_temperature = trial.suggest_float("bagging_temperature", 0.0, 1.5)
+
+@@ -363,7 +363,7 @@ class HPOConfig:
+     model_name: str  # extratrees | xgboost | lightgbm | catboost
+     n_trials: int = 150
+     timeout_sec: Optional[int] = None
+-    n_splits: int = 4
++    n_splits: int = 3
+     purge: int = 12
+     embargo: int = 2
+     random_state: int = 42
+@@ -421,7 +421,7 @@ def _fit_predict_fold(
+     if model_name == "extratrees":
+         clf = build_extratrees(params)
+         clf.fit(X_tr, y_tr, sample_weight=sample_weight_tr)
+-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
++        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
+
+     if model_name == "xgboost":
+         if XGBClassifier is None:
+@@ -441,7 +441,7 @@ def _fit_predict_fold(
+             verbose=False,
+             early_stopping_rounds=config.early_stopping_rounds,
+         )
+-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
++        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
+
+     if model_name == "lightgbm":
+         if LGBMClassifier is None:
+@@ -455,7 +455,7 @@ def _fit_predict_fold(
+             eval_metric="auc",
+             callbacks=_lgbm_callbacks(config.early_stopping_rounds),
+         )
+-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
++        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
+
+     if model_name == "catboost":
+         if CatBoostClassifier is None:
+@@ -475,7 +475,7 @@ def _fit_predict_fold(
+             early_stopping_rounds=config.early_stopping_rounds,
+             verbose=False,
+         )
+-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
++        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
+
+     raise ValueError(f"Unknown model_name={model_name}")
+
+@@ -493,7 +493,7 @@ def make_objective(
+     """
+     X = _as_2d(X)
+     y = _as_1d(y).astype(np.int32)
+-    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float64)
++    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
+
+     cv = PurgedKFold(n_splits=config.n_splits, purge=config.purge, embargo=config.embargo)
+     splits = cv.split(X)
+@@ -732,7 +732,7 @@ def run_hpo(
+     # --- Reconstruct best params for model construction ---
+     X = _as_2d(X)
+     y = _as_1d(y).astype(np.int32)
+-    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float64)
++    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
+
+     # For the suggest functions, we need to re-call them with the best trial to get
+     # the full params dict (including private keys like _use_scale_pos_weight).
+diff --git a/extreme_price_movements/training.py b/extreme_price_movements/training.py
+index 53af17be3..bdd875ab9 100644
+--- a/extreme_price_movements/training.py
++++ b/extreme_price_movements/training.py
+@@ -8,7 +8,7 @@ from .feature_selection_extreme_events import mdi_feature_selection_v3
+ from .candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
+ import extreme_price_movements.fast_funcs as ff
+ from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
+-from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
++from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness, compute_mfe_mae_weights
+ from sklearn.mixture import GaussianMixture
+ from sklearn.metrics import roc_auc_score
+ from scipy.stats import spearmanr
+@@ -23,7 +23,457 @@ from .trap_specialist import build_trap_dataset, train_trap_from_dataset, comput
+ from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
+ from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
+ from .metrics import calculate_selection_score
++from .gate_metrics import compute_stage_gate_metrics
+
++import os
++import json
++from datetime import datetime, timezone
++
++
++def _emoji(pass_flag):
++    return "✅" if bool(pass_flag) else "⚠️"
++
++
++TOPK_GATE_FRAC = 0.20
++TOPK_INFO_FRACS = (0.10, 0.30)
++
++
++def _get_training_candidate_config(cfg):
++    return (
++        cfg.get("train_extreme_pct_hourly", cfg.get("trade_extreme_pct", 0.05)),
++        cfg.get("train_min_range_pct", 0.07),
++        cfg.get("train_min_vol_zscore", 1.6),
++    )
++
++
++def _mad(x):
++    x = np.asarray(x, dtype=float)
++    x = x[np.isfinite(x)]
++    if x.size == 0:
++        return 0.0
++    med = np.median(x)
++    return float(np.median(np.abs(x - med)) + 1e-12)
++
++
++def _safe_spearman(x, y):
++    try:
++        v = spearmanr(x, y).correlation
++        return float(v) if np.isfinite(v) else 0.0
++    except Exception:
++        return 0.0
++
++
++def _build_bin_mono_metrics(y_true, score, n_bins=10):
++    y_true = np.asarray(y_true, dtype=float)
++    score = np.asarray(score, dtype=float)
++    mask = np.isfinite(y_true) & np.isfinite(score)
++    y_true, score = y_true[mask], score[mask]
++    if y_true.size < 20:
++        return {"rho_bin_med": 0.0, "top_gt_mid_gt_bot": False, "top20_bot50_spread": 0.0}
++    q = np.nanquantile(score, np.linspace(0, 1, n_bins + 1))
++    q[0] -= 1e-12
++    q[-1] += 1e-12
++    bins = np.clip(np.digitize(score, q[1:-1]), 0, n_bins - 1)
++    medians = []
++    idxs = []
++    for b in range(n_bins):
++        m = bins == b
++        if m.any():
++            idxs.append(b)
++            medians.append(float(np.median(y_true[m])))
++    rho = _safe_spearman(idxs, medians) if len(medians) >= 3 else 0.0
++    top = float(np.median(y_true[score >= np.nanquantile(score, 0.90)]))
++    mid = float(np.median(y_true[(score >= np.nanquantile(score, 0.45)) & (score <= np.nanquantile(score, 0.55))]))
++    bot = float(np.median(y_true[score <= np.nanquantile(score, 0.10)]))
++    spread = float(np.median(y_true[score >= np.nanquantile(score, 0.80)]) - np.median(y_true[score <= np.nanquantile(score, 0.50)]))
++    return {
++        "rho_bin_med": rho,
++        "top_gt_mid_gt_bot": bool((top > mid) and (mid > bot)),
++        "top20_bot50_spread": spread,
++    }
++
++
++def _fold_stats_from_groups(y, pred, groups, fn):
++    if groups is None:
++        return []
++    g = np.asarray(groups)
++    out = []
++    for gg in np.unique(g):
++        m = g == gg
++        if np.sum(m) < 10:
++            continue
++        out.append(fn(y[m], pred[m]))
++    return out
++
++
++def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret, groups, y_lbl=None):
++    prev = float(np.mean(y_bin))
++    prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
++    base_brier = prev * (1.0 - prev)
++    base_ll = -(prev*np.log(prev) + (1-prev)*np.log(1-prev))
++    # Recompute Brier/LL from OOF predictions (consistent with y_bin)
++    from sklearn.metrics import brier_score_loss, log_loss as _log_loss
++    p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
++    brier = float(brier_score_loss(y_bin, p_clip))
++    ll = float(_log_loss(y_bin, p_clip))
++    brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
++    ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
++
++    k_frac = TOPK_GATE_FRAC
++    k_n = max(1, int(len(y_bin) * k_frac))
++    idx = np.argsort(oof_probs)[-k_n:]
++    prec_k = float(np.mean(y_bin[idx]))
++    lift_k = prec_k / max(prev, 1e-9)
++    prec_lift_abs = prec_k - prev
++
++    # Timeout Rate Analysis (if raw labels available)
++    timeout_metrics = {}
++    if y_lbl is not None:
++        # 0 = timeout, 1 = profit, -1 = stop loss
++        # Check timeout rate in top 20%
++        to_k = float(np.mean(y_lbl[idx] == 0))
++        timeout_metrics["timeout_rate_at_20pct"] = to_k
++        # Check timeout rate in bottom 50%
++        n_bot = max(1, int(len(y_bin) * 0.50))
++        idx_bot = np.argsort(oof_probs)[:n_bot]
++        to_bot = float(np.mean(y_lbl[idx_bot] == 0))
++        timeout_metrics["timeout_rate_at_bot50pct"] = to_bot
++
++    # Informational (non-gating) precision/lift at 10% and 30%
++    info_metrics = {}
++    for _frac in TOPK_INFO_FRACS:
++        _n = max(1, int(len(y_bin) * _frac))
++        _idx = np.argsort(oof_probs)[-_n:]
++        _prec = float(np.mean(y_bin[_idx]))
++        info_metrics[f"prec_at_{int(_frac*100)}pct"] = _prec
++        info_metrics[f"lift_at_{int(_frac*100)}pct"] = _prec / max(prev, 1e-9)
++
++    fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
++    pos_fold_ratio = float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
++    worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
++
++    # Bootstrap CV(Prec@20) from OOF predictions
++    # This computes the coefficient of variation (std/mean) of precision@20% across bootstrap samples.
++    # Note: This is NOT cross-validation - it measures bootstrap stability of the precision estimate.
++    n_boot = 50
++    rng = np.random.RandomState(42)
++    prec_samples = []
++    n_total = len(y_bin)
++    for _ in range(n_boot):
++        idx_b = rng.choice(n_total, size=n_total, replace=True)
++        _n_k = max(1, int(n_total * k_frac))
++        top_idx = np.argsort(oof_probs[idx_b])[-_n_k:]
++        p_k_b = float(np.mean(y_bin[idx_b][top_idx]))
++        prec_samples.append(p_k_b)
++    prec_arr = np.array(prec_samples)
++    bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
++
++    from sklearn.metrics import average_precision_score
++    # Ensure binary labels and safe probs
++    y_bin_calc = (np.asarray(y_bin) >= 0.5).astype(int)
++    oof_probs_safe = np.nan_to_num(oof_probs, nan=0.0)
++    try:
++        pr_auc = float(average_precision_score(y_bin_calc, oof_probs_safe)) if len(np.unique(y_bin_calc)) > 1 else 0.0
++    except Exception:
++        pr_auc = 0.0
++
++    # Prevalence-aware PR-AUC threshold (matching gate_metrics.py logic)
++    # Threshold = max(1.25 * prev, prev + 0.05)
++    # We remove the 0.50 floor because for low-prevalence (e.g. 0.35), 0.45 is a good score.
++    prev_for_threshold = float(np.mean(y_bin_calc))
++    pr_auc_threshold = max(1.25 * prev_for_threshold, prev_for_threshold + 0.05)
++
++    # Diagnostic: PR-AUC below prevalence indicates model is worse than random
++    if pr_auc < prev_for_threshold:
++        tprint(f"WARNING: PR-AUC ({pr_auc:.4f}) < Prevalence ({prev_for_threshold:.4f}) for {model_name} - model is worse than random!")
++        tprint(f"  Lift@20%: {lift_k:.4f}")
++        # Check if labels might be inverted
++        if lift_k < 1.0 and prec_lift_abs < 0:
++            tprint(f"  CRITICAL: Lift < 1.0 and precision lift negative - possible label inversion!")
++
++    checks = {
++        "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
++        "pr_auc_ge_random": pr_auc >= prev_for_threshold,
++        "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
++        "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
++        "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,
++        "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
++        "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
++        "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= -0.005,
++    }
++
++    metrics = {
++        "pr_auc": pr_auc,
++        "pr_auc_threshold": pr_auc_threshold,
++        "brier_improvement": float(brier_imp),
++        "logloss_improvement": float(ll_imp),
++        "lift_at_20pct": float(lift_k),
++        "precision_lift_abs": float(prec_lift_abs),
++        "bootstrap_prec20_cv": bootstrap_prec20_cv,
++        "fold_logloss_improvement_ratio": pos_fold_ratio,
++        "worst_fold_logloss_improvement": worst_fold_imp,
++        **info_metrics,
++        **timeout_metrics,
++    }
++
++    return {
++        "model": model_name,
++        "side": side,
++        "kind": kind,
++        "score": float(dm.get("rank_score", dm.get("score", 0.0))),
++        "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
++        "metrics": metrics,
++        "passed": bool(all(checks.values())),
++    }
++
++
++def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
++    pred = int(getattr(meta_model, "score_sign", 1)) * np.asarray(meta_model.oof_probs, dtype=float)
++    y_target = np.asarray(y_target, dtype=float)
++    y_ret = np.asarray(y_ret, dtype=float)
++    if pred.size != y_target.size:
++        n = min(pred.size, y_target.size)
++        pred, y_target, y_ret = pred[:n], y_target[:n], y_ret[:n]
++        if groups is not None:
++            groups = np.asarray(groups)[:n]
++
++    tau = 0.85
++    is_quantile = bool(meta_model.model and meta_model.model.get("pool") == "quantile")
++
++    def pinball(y, q, a=tau):
++        e = y - q
++        return float(np.mean(np.maximum(a*e, (a-1.0)*e)))
++
++    cov = float(np.mean(y_target <= pred))
++    pb = pinball(y_target, pred)
++    base_q = float(np.quantile(y_target, tau))
++    pb_base = pinball(y_target, np.full_like(y_target, base_q))
++    pb_imp = (pb_base - pb) / max(pb_base, 1e-9)
++
++    fold_pb_imp = []
++    fold_sign = []
++    if groups is not None:
++        g = np.asarray(groups)
++        for gg in np.unique(g):
++            m = g == gg
++            if np.sum(m) < 20:
++                continue
++            pbf = pinball(y_target[m], pred[m])
++            bqf = float(np.quantile(y_target[m], tau))
++            pbbf = pinball(y_target[m], np.full(np.sum(m), bqf))
++            impf = (pbbf - pbf) / max(pbbf, 1e-9)
++            fold_pb_imp.append(float(impf))
++            fold_sign.append(float(impf) >= 0.02)
++
++    ic = _safe_spearman(pred, y_ret)
++    fold_ics = _fold_stats_from_groups(y_ret, pred, groups, _safe_spearman) if groups is not None else []
++    pos_ic_ratio = float(np.mean(np.array(fold_ics) > 0)) if fold_ics else 0.0
++    stable_sign = True
++    if fold_ics:
++        signs = np.sign(fold_ics)
++        stable_sign = bool(np.mean(signs == np.sign(np.mean(fold_ics))) >= 0.7)
++
++    mono = _build_bin_mono_metrics(y_ret, pred, n_bins=10)
++    mad_y = _mad(y_ret)
++    spread_ok = (mono["top20_bot50_spread"] >= 0.25 * mad_y) or (mono["top20_bot50_spread"] > 0)
++
++    k20 = max(1, int(TOPK_GATE_FRAC * len(pred)))
++    idx_meta = np.argsort(pred)[-k20:]
++    idx_meta_flip = np.argsort(-pred)[-k20:]
++    idx_base = np.argsort(base_score)[-k20:]
++    def es_tail(v):
++        s = np.asarray(v, dtype=float)
++        if s.size == 0:
++            return 0.0
++        q = np.quantile(s, 0.15)
++        tail = s[s <= q]
++        return float(np.mean(tail)) if tail.size else float(q)
++    es_meta = es_tail(y_ret[idx_meta])
++    es_base = es_tail(y_ret[idx_base])
++    es_ok = es_meta <= 1.1 * es_base if es_base > 0 else es_meta >= 1.1 * es_base
++
++    def strat_metrics(sel_idx):
++        r = y_ret[sel_idx]
++        net = float(np.sum(r))
++        dn = r[r < 0]
++        sortino = float(np.mean(r) / (np.std(dn) + 1e-9)) if dn.size else 0.0
++        return net, sortino
++    net_meta, sort_meta = strat_metrics(idx_meta)
++    net_meta_flip, sort_meta_flip = strat_metrics(idx_meta_flip)
++    net_base, sort_base = strat_metrics(idx_base)
++
++    # Informational (non-gating): Top10 and Top30 policy slices
++    info_policy = {}
++    for _frac in TOPK_INFO_FRACS:
++        _k = max(1, int(_frac * len(pred)))
++        _idx_m = np.argsort(pred)[-_k:]
++        _idx_b = np.argsort(base_score)[-_k:]
++        _nm, _sm = strat_metrics(_idx_m)
++        _nb, _sb = strat_metrics(_idx_b)
++        tag = f"{int(_frac*100)}"
++        info_policy[f"net_return_meta_top{tag}"] = _nm
++        info_policy[f"net_return_base_top{tag}"] = _nb
++        info_policy[f"sortino_meta_top{tag}"] = _sm
++        info_policy[f"sortino_base_top{tag}"] = _sb
++
++    checks = {}
++    if is_quantile:
++        checks.update({
++            "coverage_tau": abs(cov - tau) <= 0.05,
++            "pinball_improve_ge_2pct": pb_imp >= 0.02,
++            "pinball_improve_ge_2of3_folds": (np.mean(fold_sign) >= (2/3)) if fold_sign else False,
++        })
++    else:
++        # proxy robust-loss/bias checks based on oof residuals
++        res = pred - y_target
++        loss = float(np.mean(np.abs(res)))
++        loss_base = float(np.mean(np.abs(np.full_like(y_target, np.median(y_target)) - y_target)))
++        loss_imp = (loss_base - loss) / max(loss_base, 1e-9)
++        fold_loss = _fold_stats_from_groups(y_target, pred, groups, lambda yt, pr: (np.mean(np.abs(np.median(yt)-yt)) - np.mean(np.abs(pr-yt))) / max(np.mean(np.abs(np.median(yt)-yt)),1e-9)) if groups is not None else []
++        mean_err = float(np.mean(res))
++        bias_fold = _fold_stats_from_groups(y_target, pred, groups, lambda yt, pr: np.mean(pr-yt)) if groups is not None else []
++        mad_t = _mad(y_target)
++        checks.update({
++            "robust_loss_ge_2pct": loss_imp >= 0.02,
++            "robust_loss_ge_2of3_folds": (np.mean(np.array(fold_loss) > 0) >= 2/3) if fold_loss else False,
++            "robust_loss_worst_fold_ge_1pct": (np.min(fold_loss) >= 0.01) if fold_loss else False,
++            "bias_overall": abs(mean_err) <= 0.05 * mad_t,
++            "bias_per_fold": (np.max(np.abs(bias_fold)) <= 0.07 * mad_t) if bias_fold else False,
++        })
++
++    checks.update({
++        "spearman_ic_ge_0_03": ic >= 0.03,
++        "ic_stable_sign": stable_sign,
++        "ic_pos_ge_70pct_folds": pos_ic_ratio >= 0.70,
++        "bin_monotonicity_ge_0_9": mono["rho_bin_med"] >= 0.90,
++        "top_mid_bottom_ordering": mono["top_gt_mid_gt_bot"],
++        "top20_bottom50_spread": spread_ok,
++        "es20_meta_vs_base": es_ok,
++        "net_return_vs_no_meta": net_meta > net_base,
++        "sortino_vs_no_meta": sort_meta > sort_base,
++    })
++
++    return {
++        "model": name,
++        "model_type": meta_model.model.get("kind") if meta_model.model else None,
++        "passed": bool(all(checks.values())),
++        "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
++        "metrics": {
++            "coverage": cov,
++            "pinball_improvement": pb_imp,
++            "spearman_ic": ic,
++            "ic_positive_fold_ratio": pos_ic_ratio,
++            "bin_spearman": mono["rho_bin_med"],
++            "top20_bottom50_spread": mono["top20_bot50_spread"],
++            "es20_meta": es_meta,
++            "es20_base": es_base,
++            "net_return_meta": net_meta,
++            "net_return_meta_if_flipped": net_meta_flip,
++            "net_return_base": net_base,
++            "sortino_meta": sort_meta,
++            "sortino_meta_if_flipped": sort_meta_flip,
++            "sortino_base": sort_base,
++            "direction_flip_improves": bool((net_meta_flip > net_meta) and (sort_meta_flip > sort_meta)),
++            **info_policy,
++        },
++    }
++
++
++def save_training_gate_report(report_payload, cfg, run_id=None):
++    reports_dir = os.path.join("extreme_price_movements", "reports")
++    os.makedirs(reports_dir, exist_ok=True)
++    rid = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
++    out_path = os.path.join(reports_dir, f"training_gate_report_{rid}.json")
++    with open(out_path, "w", encoding="utf-8") as f:
++        json.dump(report_payload, f, indent=2)
++    return out_path
++
++
++def print_training_gate_report(report_payload):
++    tprint("\n=== Model Quality Gate Report (with thresholds) ===")
++    for section in ["base_models", "meta_models"]:
++        items = report_payload.get(section, [])
++        if not items:
++            tprint(f"{section}: no entries")
++            continue
++        tprint(f"{section}: {len(items)} models")
++        for it in items:
++            status = "✅" if it.get("passed") else "⚠️"
++            tprint(f"  {status} {it.get('model')} score={it.get('score', np.nan):.4f}")
++            for ck, cv in it.get("checks", {}).items():
++                tprint(f"    {cv.get('emoji','⚠️')} {ck}: {cv.get('pass')}" )
++
++
++class AlphaHorizonEnsemble:
++    """Average probabilities across multiple horizon-specific alpha models."""
++    def __init__(self, members):
++        # members: list of dict(model, feat_cols, H, weight, oof_probs)
++        self.members = members
++        self.oof_probs = None
++        if members:
++            oofs = [m.get("oof_probs") for m in members if m.get("oof_probs") is not None]
++            if oofs:
++                self.oof_probs = np.mean(np.vstack(oofs), axis=0).astype(np.float32)
++
++    def predict_proba(self, X):
++        preds = []
++        for m in self.members:
++            mdl = m["model"]
++            cols = m["feat_cols"]
++            if hasattr(X, "reindex"):
++                Xi = X.reindex(columns=cols, fill_value=0.0)
++            else:
++                Xi = X
++            p = mdl.predict_proba(Xi)[:, 1]
++            preds.append(np.asarray(p, dtype=np.float64))
++        if not preds:
++            n = len(X) if hasattr(X, "__len__") else 0
++            p1 = np.full(n, 0.5, dtype=np.float64)
++        else:
++            p1 = np.mean(np.vstack(preds), axis=0)
++        p1 = np.clip(p1, 1e-6, 1 - 1e-6)
++        return np.column_stack([1.0 - p1, p1])
++
++
++
++def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, groups=None) -> np.ndarray:
++    """Build a global meta target as a weighted average of per-horizon log-returns.
++
++    Target is global across opportunities (time+assets), with earlier horizons
++    weighted more heavily: [0.40, 0.35, 0.25] for [H2, H4, H8].
++    The `groups` argument is kept for backward compatibility but intentionally ignored.
++    """
++
++    def _log1p_ret(x: np.ndarray) -> np.ndarray:
++        v = np.asarray(x, dtype=float)
++        v = np.clip(v, -0.999999, None)
++        out = np.log1p(v)
++        if not np.all(np.isfinite(out)):
++            finite = np.isfinite(out)
++            if finite.any():
++                fill = float(np.nanmedian(out[finite]))
++                out = np.where(finite, out, fill)
++            else:
++                out = np.zeros_like(out, dtype=float)
++        return out.astype(np.float32)
++
++    r2 = _log1p_ret(ret2)
++    r4 = _log1p_ret(ret4)
++    r8 = _log1p_ret(ret8)
++    return (0.40 * r2 + 0.35 * r4 + 0.25 * r8).astype(np.float32)
++
++
++def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
++    out = pd.DataFrame(index=X_eval.index)
++    models_by_h = conf.get("models_by_h", {}) if conf else {}
++    for H in [2, 4, 8]:
++        if H in models_by_h:
++            m = models_by_h[H]
++            Xi = X_eval.reindex(columns=m.get("feat_cols", []), fill_value=0.0)
++            out[f"pred_H{H}"] = m["model"].predict_proba(Xi)[:, 1]
++        else:
++            out[f"pred_H{H}"] = 0.5
++    return out
+
+ def _aggregate_alpha_oof_metrics(y_true, probs, returns, sample_weight=None, groups=None):
+     """Aggregate tradability and calibration metrics for alpha models."""
+@@ -234,7 +684,7 @@ def _compute_atr_scale(atr_pct_df, cfg):
+     g_lo, g_hi = cfg.get('atr_norm_clip_global', [0.7, 1.5])
+     m_lo, m_hi = cfg.get('atr_norm_clip_scale', [0.6, 2.5])
+
+-    atr = atr_pct_df.astype(np.float64)
++    atr = atr_pct_df.astype(np.float32)
+     ewm_fast = atr.ewm(halflife=fast_hl, min_periods=12).mean()
+     ewm_slow = atr.ewm(halflife=slow_hl, min_periods=12).mean()
+     atr_ewm = atr.ewm(halflife=global_hl, min_periods=12).mean()
+@@ -317,7 +767,7 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
+         thr = float(cfg["exh_reversal_thr"])
+         is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
+         is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
+-    ret24 = feats["ret24h"].loc[t_index, valid_syms]
++    ret24 = feats["ret24h"].reindex(index=t_index, columns=valid_syms)
+     dir_mat = np.sign(ret24).fillna(0).astype(np.int8)
+     y = np.zeros(current.shape, dtype=np.int8)
+     w = np.ones(current.shape, dtype=np.float32)
+@@ -344,11 +794,11 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
+     # Exhaustion features are specific now
+     for k in cfg.get("exh_feature_keys", cfg.get("exh_feature_keys_legacy", [])):
+         if k in feats:
+-            X_parts.append(feats[k].loc[t_index, valid_syms].stack(future_stack=True).rename(k))
++            X_parts.append(feats[k].reindex(index=t_index, columns=valid_syms).stack(future_stack=True).rename(k))
+     X = pd.concat(X_parts, axis=1)
+     X.index.names = ["ts", "symbol"]
+     if trend_filter:
+-        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(future_stack=True)
++        trend_vals = feats["trend_pct"].reindex(index=t_index, columns=valid_syms).stack(future_stack=True)
+         common_idx = X.index.intersection(trend_vals.index)
+         X = X.loc[common_idx]; trend_vals = trend_vals.loc[common_idx]
+         if trend_filter == "up": keep = trend_vals > 0
+@@ -382,7 +832,8 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
+     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
+     for col in mg.columns:
+         vals = pd.Series(X.index.get_level_values("ts").map(mg[col]).values, index=X.index)
+-        if vals.std() > 1e-9:
++        _std = vals.std()
++        if pd.notna(_std) and _std > 1e-9:
+             X[col] = vals
+
+     return X, y_arr, w_arr, list(X.columns)
+@@ -391,7 +842,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
+     tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
+     t_index = pd.DatetimeIndex([ts], tz="UTC")
+     valid_syms = [s for s in syms if s in panel["close"].columns]
+-    trend_vals = feats["trend_pct"].loc[ts, valid_syms]
++    trend_vals = feats["trend_pct"].reindex(columns=valid_syms).loc[ts] if ts in feats["trend_pct"].index else pd.Series(0.0, index=valid_syms)
+     up_syms = trend_vals[trend_vals > 0].index.tolist()
+     dn_syms = trend_vals[trend_vals <= 0].index.tolist()
+     tprint(f"compute_p_exhaustion_at_t: {len(up_syms)} up, {len(dn_syms)} down")
+@@ -443,7 +894,7 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys
+
+     for k in keys:
+         if k in feats:
+-            X_parts.append(feats[k].loc[t_index, syms].stack(future_stack=True).rename(k))
++            X_parts.append(feats[k].reindex(index=t_index, columns=syms).stack(future_stack=True).rename(k))
+     if not X_parts: return pd.DataFrame()
+
+     Xp = pd.concat(X_parts, axis=1)
+@@ -468,7 +919,6 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
+         tprint("Generating OOF predictions for UP model...")
+         oof_preds, _ = model_up.compute_oof_predictions(X_up, y_up)
+         # Unstack to align with (ts, symbol) grid
+-        s_oof = pd.Series(oof_preds, index=X_up.index)
+         # We need this to match the prediction window structure later
+         # We'll delay unstacking until we have valid_syms and t_idx defined below
+
+@@ -653,13 +1103,21 @@ def build_hourly_training_set_and_weights(
+             horizon_hours=H
+         )
+
++    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
+     if _cached_cand_mask is not None:
+         cand_mask = _cached_cand_mask
+     else:
+-        cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
++        cand_mask = select_trade_candidates_vectorized(
++            panel,
++            feats,
++            pct=train_pct,
++            metric=cfg["trade_deviation_metric"],
++            min_range_pct=train_min_range,
++            min_vol_zscore=train_min_vol,
++        )
+     if cand_mask is None:
+         tprint("No candidates mask returned.")
+-        return None, None, None, None, None
++        return None, None, None, None, None, None
+     tprint(f"Candidates found: {cand_mask.sum().sum()}")
+
+     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
+@@ -696,7 +1154,11 @@ def build_hourly_training_set_and_weights(
+     entry_ts = event_ts + pd.Timedelta(hours=1)
+
+     # Filter: entry_ts must be in tb_labels index
++    n_pre_entry = len(event_ts)
+     entry_valid = entry_ts.isin(tb_labels.index)
++    n_entry_drop = int((~entry_valid).sum())
++    if n_entry_drop > 0:
++        tprint(f"Entry alignment drop (H={H}): removed {n_entry_drop}/{n_pre_entry} events missing in tb_labels index")
+     event_ts = event_ts[entry_valid]
+     event_sym = event_sym[entry_valid]
+     entry_ts = event_ts + pd.Timedelta(hours=1)
+@@ -714,6 +1176,10 @@ def build_hourly_training_set_and_weights(
+             keep = trend_dir > 0
+         else:
+             keep = trend_dir <= 0
++        n_pre_trend = len(event_ts)
++        n_trend_drop = int((~keep).sum())
++        if n_trend_drop > 0:
++            tprint(f"Trend filter drop ({trend_filter}): removed {n_trend_drop}/{n_pre_trend} events")
+         event_ts = event_ts[keep]
+         event_sym = event_sym[keep]
+         entry_ts = event_ts + pd.Timedelta(hours=1)
+@@ -730,44 +1196,48 @@ def build_hourly_training_set_and_weights(
+     ret_vals = _fast_lookup(tb_returns, entry_ts, event_sym)
+
+     # PnL computation
+-    if label_method == "triple_barrier":
+-        pnl = ret_vals
+-    else:
+-        if "trend_pct" in feats:
+-            tv = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
+-            tv = np.nan_to_num(tv, nan=0.0)
+-        else:
+-            tv = np.ones(len(event_ts), dtype=np.float32)
+-        td = np.sign(tv)
+-        td[td == 0] = 1.0
+-        if model_kind == "tf":
+-            trade_dir = td
+-        elif model_kind == "mr":
+-            trade_dir = -td
+-        else:
+-            trade_dir = np.ones(len(event_ts))
+-        pnl = ret_vals * trade_dir
++    # For triple_barrier: ret_vals already encodes the correct directional return
++    # (long returns for side="long", short returns for side="short").
++    # No trade_dir adjustment needed — the side is baked into the barrier labels.
++    pnl = ret_vals
+
+-    # Quantile-based labels: top 30% -> 1, bottom 30% -> 0, middle 40% dropped
++    # Quantile-based labels + weighting.
+     q_lo = float(cfg.get("label_quantile_lo", 0.30))
+     q_hi = float(cfg.get("label_quantile_hi", 0.70))
+     pnl_lo = np.quantile(pnl[np.isfinite(pnl)], q_lo) if np.sum(np.isfinite(pnl)) > 10 else 0.0
+     pnl_hi = np.quantile(pnl[np.isfinite(pnl)], q_hi) if np.sum(np.isfinite(pnl)) > 10 else 0.0
+-    keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
+-    tprint(f"Quantile labels: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
+-           f"kept={keep_mask.sum()}/{len(pnl)} ({keep_mask.mean()*100:.0f}%)")
+-
+-    # Apply mask — drop ambiguous middle samples
+-    event_ts = event_ts[keep_mask]
+-    event_sym = event_sym[keep_mask]
+-    entry_ts = event_ts + pd.Timedelta(hours=1)
+-    pnl = pnl[keep_mask]
+-    lbl_vals = lbl_vals[keep_mask]
+-    ret_vals = ret_vals[keep_mask]
++    quantile_mode = str(cfg.get("label_quantile_mode", "weighted_union")).lower()
++    w_quant = np.ones(len(pnl), dtype=np.float32)
++
++    if quantile_mode == "hard_filter":
++        keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
++        n_kept = int(keep_mask.sum())
++        n_drop = int(len(pnl) - n_kept)
++        tprint(f"Quantile labels [hard_filter]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
++               f"kept={n_kept}/{len(pnl)} ({keep_mask.mean()*100:.0f}%), dropped={n_drop}")
++
++        # Apply mask — drop ambiguous middle samples
++        event_ts = event_ts[keep_mask]
++        event_sym = event_sym[keep_mask]
++        entry_ts = event_ts + pd.Timedelta(hours=1)
++        pnl = pnl[keep_mask]
++        lbl_vals = lbl_vals[keep_mask]
++        ret_vals = ret_vals[keep_mask]
+
+-    if len(event_ts) == 0:
+-        tprint("No rows after quantile filtering.")
+-        return None, None, None, None, None, None
++        if len(event_ts) == 0:
++            tprint("No rows after quantile filtering.")
++            return None, None, None, None, None, None
++    else:
++        # Weighted-union mode: keep all samples, emphasize tails continuously.
++        ranks = pd.Series(pnl).rank(method="average", pct=True).values.astype(np.float32)
++        dist = np.abs(ranks - 0.5) * 2.0  # 0 at median, 1 at extremes
++        tail_floor = float(np.clip(cfg.get("label_quantile_weight_floor", 0.35), 0.0, 1.0))
++        tail_gamma = float(np.clip(cfg.get("label_quantile_weight_gamma", 1.5), 0.5, 4.0))
++        w_quant = tail_floor + (1.0 - tail_floor) * np.power(np.clip(dist, 0.0, 1.0), tail_gamma)
++        tprint(
++            f"Quantile labels [weighted_union]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
++            f"kept={len(pnl)}/{len(pnl)} (100%), w_quant(mean={w_quant.mean():.3f}, p10={np.quantile(w_quant, 0.10):.3f}, p90={np.quantile(w_quant, 0.90):.3f})"
++        )
+
+     y_hard = (pnl >= pnl_hi).astype(np.float32)
+     tprint(f"Hard label dist: 0={int((y_hard==0).sum())} ({(y_hard==0).mean()*100:.1f}%), "
+@@ -816,6 +1286,51 @@ def build_hourly_training_set_and_weights(
+     # Base weight from move magnitude
+     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
+     w_base = np.log1p(pa)
++    w_base = w_base * w_quant
++
++    # MFE/MAE-based weighting (Report 2026-02-12)
++    # Weight by how "decisive" the price movement was relative to barriers
++    # r_mfe = MFE/TP, r_mae = MAE/SL, d = max(r_mfe, r_mae)
++    # w_mfe_mae = w_min + (1-w_min) * clip(d/tau, 0, 1)
++    # This weights samples by excursion quality, not speed or net R:R
++
++    # Get MFE/MAE from features (already computed in features.py)
++    if "mfe_4h" in feats:
++        mfe_vals = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
++    else:
++        mfe_vals = np.maximum(pnl, 0.0)
++    if "mae_4h" in feats:
++        mae_vals = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
++    else:
++        mae_vals = np.maximum(-pnl, 0.0)
++
++    # Get barrier distances (TP/SL) from ATR
++    if "atr_pct" in feats:
++        barrier_vals = np.nan_to_num(_fast_lookup(feats["atr_pct"], event_ts, event_sym), nan=0.02)
++    else:
++        barrier_vals = np.full(len(event_ts), 0.02, dtype=np.float32)
++    tp_vals = np.clip(np.abs(barrier_vals), 1e-4, None)
++    sl_vals = np.clip(0.5 * tp_vals, 1e-4, None)
++
++    # Timeout detection: lbl_vals == 0 means timeout
++    is_timeout = (lbl_vals == 0)
++
++    # Compute MFE/MAE weights
++    w_mfe_mae = compute_mfe_mae_weights(
++        mfe=mfe_vals,
++        mae=mae_vals,
++        tp=tp_vals,
++        sl=sl_vals,
++        is_timeout=is_timeout,
++        touch_margin=None,  # Not available in training data
++        w_min=float(cfg.get("mfe_mae_w_min", 0.5)),
++        tau=float(cfg.get("mfe_mae_tau", 1.0)),
++        cost_floor=float(cfg.get("mfe_mae_cost_floor", 0.001))
++    )
++
++    # Multiply into base weight (before normalization)
++    w_base = w_base * w_mfe_mae
++    tprint(f"MFE/MAE weighting: mean={w_mfe_mae.mean():.3f}, p10={np.quantile(w_mfe_mae, 0.10):.3f}, p90={np.quantile(w_mfe_mae, 0.90):.3f}")
+
+     # Mild class-balance multiplier (inverse-freq with sqrt exponent + hard cap)
+     p_pos = float(np.mean(y_bin)) if len(y_bin) else 0.5
+@@ -850,7 +1365,15 @@ def build_hourly_training_set_and_weights(
+     # event_ts is a DatetimeIndex, event_sym is a numpy array
+     ts_arr = event_ts.values if hasattr(event_ts, 'values') else event_ts
+     sym_arr = event_sym.values if hasattr(event_sym, 'values') else event_sym
+-    parts = {"ts": ts_arr, "symbol": sym_arr, "y_bin": y_bin, "y_ret": pnl.astype(np.float32), "w": weights_raw.astype(np.float32)}
++    # Store raw triple-barrier label (-1, 0, 1) for timeout analysis
++    parts = {
++        "ts": ts_arr,
++        "symbol": sym_arr,
++        "y_bin": y_bin,
++        "y_ret": pnl.astype(np.float32),
++        "w": weights_raw.astype(np.float32),
++        "__y_lbl__": lbl_vals.astype(np.int8)
++    }
+
+     # Store barrier_pct for risk-adjusted meta model target
+     if "atr_pct" in feats:
+@@ -1097,8 +1620,14 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+
+     # Pre-compute shared expensive operations once
+     tprint("Pre-computing candidate mask (shared across all steps)...")
++    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
+     cached_cand_mask = select_trade_candidates_vectorized(
+-        panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"]
++        panel,
++        feats,
++        pct=train_pct,
++        metric=cfg["trade_deviation_metric"],
++        min_range_pct=train_min_range,
++        min_vol_zscore=train_min_vol,
+     )
+
+     # Apply OOS holdout: exclude last N days from training labels
+@@ -1126,16 +1655,22 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+
+     if "atr_pct" in feats:
+         atr_pct_df = feats["atr_pct"]
+-        atr_scale_df, atr_ref = _compute_atr_scale(atr_pct_df, cfg)
+-        tprint(f"ATR normalization: atr_ref={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}")
++        # Adaptive vol-scaling: TP/SL scale with realized volatility
++        # atr_pct / rolling_median(atr_pct, 30d) → low-vol periods get tighter barriers
++        atr_median_30d = atr_pct_df.rolling(24 * 30, min_periods=24).median()
++        atr_scale_df = np.clip(atr_pct_df / (atr_median_30d + 1e-12), 0.7, 2.0).astype(np.float32)
++        atr_ref = float(np.nanmedian(atr_median_30d.values))
++        tprint(f"Adaptive vol-scaling: atr_ref_median={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}, "
++               f"scale_p10={float(np.nanpercentile(atr_scale_df.values, 10)):.3f}, "
++               f"scale_p90={float(np.nanpercentile(atr_scale_df.values, 90)):.3f}")
+     else:
+         atr_pct_df = None
+         atr_scale_df = None
+
+     fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
+-    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [5.0, 3.5, 2.0])]
++    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [3.0, 4.0, 5.0, 6.0])]
+     sl_vals = [float(x) / 100.0 for x in cfg.get("label_sl_values_pct", [0.5, 1.0, 2.0])]
+-    min_net_rr = float(cfg.get("label_min_net_rr", 1.5))
++    min_net_rr = float(cfg.get("label_min_net_rr", 1.2))
+     min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
+     max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
+
+@@ -1162,20 +1697,39 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+                     to_rate = float((lbl.values == 0).sum()) / max(1, lbl.size)
+                     if tp_hit < min_tp_hit or to_rate > max_timeout:
+                         continue
+-                    geom_runs.append((lbl, ret, tpv, slv))
++                    rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
++                    geom_runs.append((lbl, ret, tpv, slv, rr_weight))
+
+             if not geom_runs:
+                 tprint(f"No valid geometry for H={H} side={side}; using fallback.")
+                 lbl, ret = compute_triple_barrier_labels(panel, 0.05, 0.01, H, side=side)
+-                geom_runs = [(lbl, ret, 0.05, 0.01)]
++                geom_runs = [(lbl, ret, 0.05, 0.01, 1.0)]
+
+             labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
+             rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
+-            n_tp_df = pd.DataFrame(np.sum(labels_stack == 1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+-            n_sl_df = pd.DataFrame(np.sum(labels_stack == -1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+-            n_to_df = pd.DataFrame(np.sum(labels_stack == 0, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+-
+-            agg_ret = np.nanmean(rets_stack, axis=0)
++            rr_weights_raw = np.array([x[4] for x in geom_runs], dtype=np.float32)
++
++            # Mild RR weighting: sqrt to compress range, then normalize to unit mean
++            # e.g. raw [0.75, 0.83, 1.0] → sqrt [0.87, 0.91, 1.0] → normalized [0.93, 0.98, 1.07]
++            # This preserves n_eff while mildly favoring high-RR geometries
++            rr_weights = np.sqrt(rr_weights_raw)
++            rr_weights = rr_weights / (rr_weights.mean() + 1e-12)  # normalize to unit mean
++
++            # RR-weighted vote: each geometry's TP/SL/TO counts are scaled by its RR quality
++            w_tp = np.zeros_like(labels_stack[0], dtype=np.float32)
++            w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
++            w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
++            for gi in range(len(geom_runs)):
++                w_tp += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
++                w_sl += rr_weights[gi] * (labels_stack[gi] == -1).astype(np.float32)
++                w_to += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
++            n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
++            n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
++            n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
++
++            # RR-weighted return average
++            w_sum = rr_weights.sum()
++            agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
+             agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
+             tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
+             tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
+@@ -1244,7 +1798,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+     directions = ["up", "down"]
+     for d in directions:
+         tprint(f"Generating exhaustion training set for {d}...")
+-        X, y, w, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
++        X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
+         if X is not None:
+             df_out = X.copy()
+             df_out["__y__"] = y
+@@ -1313,8 +1867,8 @@ def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
+ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret=None):
+     """Print meta model diagnostics with economically meaningful metrics.
+
+-    IC_target: rank corr of pred vs transformed target (what model optimizes)
+-    IC_raw:    rank corr of pred vs raw returns (what trading PnL depends on)
++    IC_target: global rank corr of pred vs transformed target (all time+assets)
++    IC_raw:    global rank corr of pred vs raw returns (all time+assets)
+     R²:        OOS R-squared of pred vs raw returns (variance explained)
+     WinRate@k: fraction with raw_ret > 0 in top k% by pred score
+     AvgRet@k:  mean raw return in top k% (bps)
+@@ -1326,8 +1880,8 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
+     y_true = np.asarray(y_true, dtype=float)
+     y_pred = np.asarray(y_pred, dtype=float)
+
+-    ic_target = ic_cross_sectional(y_pred, y_true, groups=groups)
+-    ic_raw = ic_cross_sectional(y_pred, y_raw_ret, groups=groups) if y_raw_ret is not None else float('nan')
++    ic_target = _safe_spearman(y_pred, y_true)
++    ic_raw = _safe_spearman(y_pred, y_raw_ret) if y_raw_ret is not None else float('nan')
+
+     if groups is not None:
+         trades_day_10 = avg_trades_per_day(y_pred, 0.10, np.asarray(groups))
+@@ -1408,12 +1962,321 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
+         f"(Top10-Bot10 spread={avg_ret_top10 - avg_ret_bot10:+.2f}bps)"
+     )
+
+-def train_models_from_artifacts(datasets, cfg):
++def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
++    """Train only meta models from datasets and pre-trained alpha models."""
++    import time as _time
++    _t0_meta = _time.monotonic()
++    tprint("train_meta_models_from_artifacts: starting")
++    trade_sides = ["long", "short"]
++    kinds = ["mr", "tf"]
++    meta_models = {}
++    meta_gate_results = []
++
++    for side in trade_sides:
++        for k in kinds:
++            conf = alpha_models.get(side, {}).get(k) if alpha_models else None
++            if not conf:
++                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
++                continue
++
++            models_by_h = conf.get("models_by_h", {})
++
++            # --- Build union dataset across all available horizons ---
++            # Each horizon can have a different sample set. We align by (ts, symbol)
++            # and train on the UNION so we preserve available coverage.
++            horizon_dfs = {}  # h -> (df, oof_probs)
++            horizon_skip_reasons = {}
++            for h in [2, 4, 8]:
++                ds_key = f"train_{side}_{k}_{h}"
++                if ds_key not in datasets:
++                    horizon_skip_reasons[h] = "missing_dataset"
++                    continue
++                race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
++                if race_h is None:
++                    horizon_skip_reasons[h] = "missing_alpha_model"
++                    continue
++                if race_h.oof_probs is None:
++                    horizon_skip_reasons[h] = "missing_oof_probs"
++                    continue
++                df_h = datasets[ds_key]
++                oof_h = np.asarray(race_h.oof_probs, dtype=float)
++                if len(oof_h) != len(df_h):
++                    horizon_skip_reasons[h] = f"oof_len_mismatch:{len(oof_h)}!={len(df_h)}"
++                    tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({len(oof_h)} vs {len(df_h)}), skipping horizon")
++                    continue
++                horizon_dfs[h] = (df_h, oof_h)
++
++            if not horizon_dfs:
++                tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
++                if horizon_skip_reasons:
++                    tprint(f"  Horizon availability diagnostics: {horizon_skip_reasons}")
++                continue
++            tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)")
++            if horizon_skip_reasons:
++                tprint(f"  Horizons excluded: {horizon_skip_reasons}")
++
++            # Use the largest horizon dataset as the base (for meta feature columns)
++            base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
++            df_base = horizon_dfs[base_H][0]
++
++            # Build (ts, symbol) index for union + diagnostics
++            tprint(f"  Building union key index ({len(df_base)} base rows)...")
++            if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
++                base_keys = list(zip(df_base["__ts__"].values, df_base["__symbol__"].values))
++                union_keys = []
++                seen_keys = set()
++                key_to_idx_by_h = {}
++
++                for kk in base_keys:
++                    if kk not in seen_keys:
++                        union_keys.append(kk)
++                        seen_keys.add(kk)
++
++                for h in sorted(horizon_dfs.keys()):
++                    df_h, _ = horizon_dfs[h]
++                    ts_vals = df_h["__ts__"]
++                    sym_vals = df_h["__symbol__"]
++                    null_key_rows = int((ts_vals.isna() | sym_vals.isna()).sum())
++                    h_keys = list(zip(ts_vals.values, sym_vals.values))
++                    uniq_keys = len(set(h_keys))
++                    dup_keys = len(h_keys) - uniq_keys
++                    if null_key_rows > 0 or dup_keys > 0:
++                        tprint(
++                            f"    H{h} key hygiene: rows={len(df_h)}, unique={uniq_keys}, duplicates={dup_keys}, null_keys={null_key_rows}"
++                        )
++                    key_to_idx_by_h[h] = {kxy: i for i, kxy in enumerate(h_keys)}
++                    for kk in h_keys:
++                        if kk not in seen_keys:
++                            union_keys.append(kk)
++                            seen_keys.add(kk)
++
++                inter_count = sum(1 for kk in union_keys if all(kk in key_to_idx_by_h[h] for h in horizon_dfs.keys()))
++                tprint(f"  Union: {len(union_keys)} unique samples across horizons (intersection={inter_count})")
++                for h in sorted(horizon_dfs.keys()):
++                    present = np.array([kk in key_to_idx_by_h[h] for kk in union_keys], dtype=bool)
++                    miss_cnt = int((~present).sum())
++                    coverage = float(present.mean() * 100.0)
++                    tprint(f"    H{h} coverage on union: {present.sum()}/{len(union_keys)} ({coverage:.1f}%), missing={miss_cnt}")
++
++                base_lookup = {kk: i for i, kk in enumerate(base_keys)}
++                for h in sorted(horizon_dfs.keys()):
++                    if h == base_H:
++                        continue
++                    h_key_set = set(key_to_idx_by_h[h].keys())
++                    base_key_set = set(base_lookup.keys())
++                    base_only = len(base_key_set - h_key_set)
++                    h_only = len(h_key_set - base_key_set)
++                    if base_only > 0 or h_only > 0:
++                        tprint(
++                            f"    H{h} vs base H{base_H}: base_only={base_only}, h_only={h_only}"
++                        )
++
++                df = df_base.iloc[[base_lookup[kk] for kk in union_keys if kk in base_lookup]].copy()
++
++                missing_keys = [kk for kk in union_keys if kk not in base_lookup]
++                if missing_keys:
++                    donor_horizons = sorted(horizon_dfs.keys(), key=lambda hh: (-len(horizon_dfs[hh][0]), hh))
++                    extra_rows = []
++                    for kk in missing_keys:
++                        for h in donor_horizons:
++                            h_idx = key_to_idx_by_h[h].get(kk, -1)
++                            if h_idx >= 0:
++                                extra_rows.append(horizon_dfs[h][0].iloc[h_idx].reindex(df_base.columns))
++                                break
++                    if extra_rows:
++                        df_extra = pd.DataFrame(extra_rows, columns=df_base.columns)
++                        df = pd.concat([df, df_extra], axis=0, ignore_index=True)
++
++                df = df.reset_index(drop=True)
++                tprint(f"  Union dataset built: {len(df)} rows ({_time.monotonic()-_t0_meta:.1f}s)")
++            else:
++                # Fallback: use min-length truncation
++                min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
++                keep_mask = np.ones(len(df_base), dtype=bool)
++                keep_mask[min_len:] = False
++                df = df_base.loc[keep_mask].reset_index(drop=True).copy()
++                tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
++
++            if len(df) < 100:
++                tprint(f"Meta {side}_{k}: skipped (only {len(df)} union samples)")
++                continue
++
++            # Build OOF predictions for each horizon, aligned to common samples
++            tprint(f"  Aligning OOF predictions across horizons...")
++            pred_h = pd.DataFrame(index=df.index)
++            p_oof_avg_parts = []
++            for h in sorted(horizon_dfs.keys()):
++                df_h, oof_h = horizon_dfs[h]
++                if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
++                    h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
++                    h_lookup = {k: i for i, k in enumerate(h_keys)}
++                    common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
++                    h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
++                    valid = h_idx >= 0
++                    p_h = np.full(len(df), 0.5, dtype=float)
++                    p_h[valid] = oof_h[h_idx[valid]]
++                else:
++                    p_h = oof_h[:len(df)]
++                pred_h[f"pred_H{h}"] = p_h
++                p_oof_avg_parts.append(p_h)
++
++            # Average OOF across horizons as the primary alpha signal for meta
++            p_oof = np.mean(p_oof_avg_parts, axis=0)
++            y_ret = df["__y_ret__"].values
++
++            tprint(f"  OOF alignment done ({_time.monotonic()-_t0_meta:.1f}s). Building meta features...")
++            configured_meta = cfg.get("meta_feature_keys", [])
++            raw_prefix = "__meta_raw__"
++            feat_cols = [mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns]
++            feat_cols = list(dict.fromkeys(feat_cols))
++            if not feat_cols:
++                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
++                continue
++
++            X_feats = pd.DataFrame(index=df.index)
++            for mk in feat_cols:
++                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
++            X_feats = X_feats.fillna(0.0).astype(np.float32)
++
++            # Build y_target from per-horizon returns (aligned to common samples)
++            # Pre-build common keys once to avoid redundant list(zip()) per horizon
++            _has_keys = "__ts__" in df.columns and "__symbol__" in df.columns
++            if _has_keys:
++                _common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
++            _h_lookup_cache = {}
++
++            def _ret_for_h_aligned(h):
++                ds_key = f"train_{side}_{k}_{h}"
++                for source_df in [datasets.get(ds_key), horizon_dfs.get(h, (None,))[0]]:
++                    if source_df is None:
++                        continue
++                    if not (_has_keys and "__ts__" in source_df.columns and "__symbol__" in source_df.columns):
++                        continue
++                    cache_id = id(source_df)
++                    if cache_id not in _h_lookup_cache:
++                        _h_lookup_cache[cache_id] = {
++                            kk: i for i, kk in enumerate(
++                                zip(source_df["__ts__"].values, source_df["__symbol__"].values)
++                            )
++                        }
++                    h_lookup = _h_lookup_cache[cache_id]
++                    h_idx = np.array([h_lookup.get(ck, -1) for ck in _common_keys])
++                    valid = h_idx >= 0
++                    if not valid.any():
++                        continue
++                    ret = np.zeros(len(df), dtype=np.float32)
++                    ret[valid] = source_df["__y_ret__"].values[h_idx[valid]].astype(np.float32)
++                    return ret
++                return y_ret.astype(np.float32)
++
++            tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
++            y_target = compute_meta_target(
++                _ret_for_h_aligned(2),
++                _ret_for_h_aligned(4),
++                _ret_for_h_aligned(8),
++                groups=None,
++            )
++            _yt_finite = y_target[np.isfinite(y_target)]
++            tprint(f"  Meta target stats: n={len(y_target)}, finite={len(_yt_finite)}, "
++                   f"mean={np.mean(_yt_finite):.6f}, std={np.std(_yt_finite):.6f}, "
++                   f"p10={np.percentile(_yt_finite, 10):.6f}, p90={np.percentile(_yt_finite, 90):.6f}")
++
++            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32)
++            keep = n_res >= np.quantile(n_res, 0.20)
++            if keep.sum() < 100:
++                keep = np.ones(len(df), dtype=bool)
++
++            df = df.loc[keep].reset_index(drop=True).copy()
++            X_feats = X_feats.loc[keep].reset_index(drop=True).copy()
++            pred_h = pred_h.loc[keep].reset_index(drop=True).copy()
++            y_target = y_target[keep]
++            p_oof = p_oof[keep]
++            n_res = n_res[keep]
++
++            conf_w = np.abs(p_oof - 0.5) * 2.0
++            conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
++            mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
++            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32), 0.75, 1.25)
++            cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
++            w_meta = mag * cons
++            alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
++            w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
++            ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
++            w_meta = _normalize_cross_sectional(ts_vals, w_meta)
++            w_meta = w_meta / max(np.mean(w_meta), 1e-12)
++
++            tprint(f"  Fitting MetaModel {side}_{k} (n={len(df)}, feats={len(feat_cols)}) ({_time.monotonic()-_t0_meta:.1f}s)...")
++            meta = MetaModel()
++            meta.strategy_name = f"{side}_{k}"
++            X_feats = pd.concat([X_feats, pred_h], axis=1)
++            X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
++
++            pred_logit = X_meta["pred_logit"].values
++            for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
++                if interact_feat in X_meta.columns:
++                    X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
++            for regime_col in ["G_VOL", "G_TREND"]:
++                raw_regime = f"{raw_prefix}{regime_col}"
++                if raw_regime in df.columns:
++                    rv = df[raw_regime].values
++                    for bucket in [0, 1, 2]:
++                        X_meta[f"pred_x_{regime_col}_{bucket}"] = pred_logit * (rv == bucket).astype(float)
++
++            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
++            meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
++            meta_models[f"{side}_{k}"] = meta
++            tprint(f"Meta {side}_{k}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
++
++            if meta.oof_probs is not None:
++                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
++
++                # Orientation safeguard: for MR buckets, allow score-direction flip if
++                # OOF ranking quality is better with -pred than pred.
++                def _top_spread(yv, sv, frac=0.10):
++                    n = len(yv)
++                    if n <= 2:
++                        return 0.0
++                    ksel = max(1, int(frac * n))
++                    it = np.argsort(sv)[-ksel:]
++                    ib = np.argsort(sv)[:ksel]
++                    return float(np.mean(yv[it]) - np.mean(yv[ib]))
++
++                pred_oof = np.asarray(meta.oof_probs, dtype=float)
++                ic_pos = _safe_spearman(pred_oof, y_ret_filtered)
++                ic_neg = _safe_spearman(-pred_oof, y_ret_filtered)
++                sp_pos = _top_spread(y_ret_filtered, pred_oof, frac=0.10)
++                sp_neg = _top_spread(y_ret_filtered, -pred_oof, frac=0.10)
++
++                meta.score_sign = 1
++                if k == "mr" and ((ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)):
++                    meta.score_sign = -1
++                    tprint(f"Meta {side}_{k}: orientation flipped (OOF IC {ic_pos:.4f}->{ic_neg:.4f}, spread10 {sp_pos:.6f}->{sp_neg:.6f})")
++
++                pred_for_gate = meta.score_sign * pred_oof
++                is_quant = bool(meta.model and meta.model.get("pool") == "quantile")
++                gate_type = "quantile_meta" if is_quant else "meta_regression"
++                gate_res = compute_stage_gate_metrics(y_target, pred_for_gate, y_ret_filtered, model_type=gate_type)
++                gate_res["Model"] = f"{side}_{k}"
++                gate_res["Model_Type"] = gate_type
++                gate_res["Score_Sign"] = int(meta.score_sign)
++                gate_res["IC_Pos"] = float(ic_pos)
++                gate_res["IC_Neg"] = float(ic_neg)
++                gate_res["Spread10_Pos"] = float(sp_pos)
++                gate_res["Spread10_Neg"] = float(sp_neg)
++                meta_gate_results.append(gate_res)
++
++    tprint(f"train_meta_models_from_artifacts: done ({_time.monotonic()-_t0_meta:.1f}s), {len(meta_models)} meta models")
++    return meta_models, meta_gate_results
++
++def train_models_from_artifacts(datasets, cfg, train_meta=True):
+     tprint(f"Entering function: train_models_from_artifacts in training.py")
+     directions = ["up", "down"]
+     kinds = ["mr", "tf"]
+     final_models = {}
+
++    alpha_gate_results = []
++    meta_gate_results = []
++
+     # 1. Train Spike Models (Best & Worst)
+     spike_models = {}
+     for mode in ["best", "worst"]:
+@@ -1454,7 +2317,6 @@ def train_models_from_artifacts(datasets, cfg):
+                         # If index was MultiIndex, restore it?
+                         # We reset_index earlier for df_spike_num if it was MI.
+                         # But typically datasets[key] comes loaded via pd.read_parquet which might have lost MI if not handled.
+-                        # `load_artifact_df` usually returns default range index unless instructed.
+                         # Let's check datasets[key] structure.
+                         # If `df_spike` had index, we want to align `df_oof` to it.
+                         # df_spike_num was reset-indexed if MI.
+@@ -1553,6 +2415,8 @@ def train_models_from_artifacts(datasets, cfg):
+         final_models[side] = {}
+         for k in kinds:
+             best_ic = -1.0; best_m = None
++            per_h_models = {}
++            feature_selection_by_h = {}
+             horizons = cfg["label_horizons_hours"]
+
+             for H in horizons:
+@@ -1582,7 +2446,6 @@ def train_models_from_artifacts(datasets, cfg):
+                         # Map values. Fill NaN with 0.5 (neutral) or median?
+                         # Trap: 0=Trap, 1=Quality. Gamma: Volatility.
+                         # Use 0.0 for missing gamma? 0.0 for Trap?
+-                        # Trap: mean ~ 0.5. Gamma: mean ~ 0.5.
+                         # Let's fill with median of OOF to avoid bias.
+                         fill_val = oof_ser.median() if not oof_ser.empty else 0.0
+
+@@ -1605,6 +2468,7 @@ def train_models_from_artifacts(datasets, cfg):
+                 # We need to know which feature_key was used.
+                 # k is "mr" or "tf"
+                 feat_key_name = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
++
+                 allowed_keys = set(cfg.get(feat_key_name, []))
+
+                 # Also include "causal_cols" if feature_key fallback logic was used, but
+@@ -1679,7 +2543,8 @@ def train_models_from_artifacts(datasets, cfg):
+                 )
+
+                 selected_feats = sel_res.selected_features
+-                tprint(f"MDI selected {len(selected_feats)} features (from {X.shape[1]}).")
++                feature_selection_by_h[H] = list(selected_feats)
++                tprint(f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}.")
+
+                 X_sel = X[selected_feats]
+                 cols = list(selected_feats)
+@@ -1688,7 +2553,7 @@ def train_models_from_artifacts(datasets, cfg):
+                 tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
+                        f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
+
+-                race = ModelRace(kind=k, n_splits=5)
++                race = ModelRace(kind=k, n_splits=3)
+                 groups = df["__ts__"].values if "__ts__" in df.columns else None
+                 race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
+                 score = race.metrics.get(race.best_model_name, -1.0)
+@@ -1802,163 +2667,88 @@ def train_models_from_artifacts(datasets, cfg):
+                     best_ic = score
+                     best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
+
+-            final_models[side][k] = best_m
+-
+-    # 3. Train Meta Models (One per Alpha Model: Side x Kind)
+-    # Using OOF predictions from Alpha Models to train Meta Model (re-calibration/sizing)
+-    # The Alpha models (ModelRace) already generate OOF predictions via CV.
+-    meta_models = {}
+-    for side in trade_sides:
+-        for k in kinds:
+-            # Check if alpha model exists
+-            conf = final_models[side].get(k)
+-            if not conf:
+-                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
+-                continue
+-
+-            H = conf["H"]
+-            key = f"train_{side}_{k}_{H}"
+-            if key not in datasets:
+-                tprint(f"Meta {side}_{k}: skipped (missing dataset)")
+-                continue
+-
+-            df = datasets[key].copy()
+-
+-            # Ensure index meta columns exist (though not strictly needed if we use df directly)
+-            if "__ts__" not in df.columns or "__symbol__" not in df.columns:
+-                 # If missing, we might still proceed if row order is preserved (it should be)
+-                 pass
+-
+-            # Use the OOF probs from the race (generated via CV)
+-            race = conf["model"]
+-            if race.oof_probs is None:
+-                tprint(f"Meta {side}_{k}: skipped (no OOF probs found)")
+-                continue
+-
+-            p_oof = race.oof_probs
+-            y_ret = df["__y_ret__"].values
+-
+-            if len(p_oof) != len(y_ret):
+-                tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
+-                continue
+-
+-            # Prepare meta features using RAW feature names (not interaction-toggled).
+-            # At inference time (engine.py), the meta model receives raw feature names
+-            # like "ambig", not toggled names like "ambig_G_VOL_0".
+-            # Raw values were preserved as __meta_raw__{name} columns in
+-            # build_hourly_training_set_and_weights before interaction toggles.
+-            configured_meta = cfg.get("meta_feature_keys", [])
+-            feat_cols = []
+-            raw_prefix = "__meta_raw__"
+-            for mk in configured_meta:
+-                prefixed = f"{raw_prefix}{mk}"
+-                if prefixed in df.columns:
+-                    feat_cols.append(mk)  # use raw name for column in X_feats
+-            feat_cols = list(dict.fromkeys(feat_cols))  # dedupe preserving order
+-            if not feat_cols:
+-                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
+-                continue
+-
+-            # Build X_feats with raw feature names (matching inference column names)
+-            X_feats = pd.DataFrame(index=df.index)
+-            for mk in feat_cols:
+-                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
+-            X_feats = X_feats.fillna(0.0)
+-
+-            # Cross-sectional rank percentile target.
+-            # For each timestamp, rank raw returns across symbols and convert to
+-            # percentile [0, 1]. This is the cleanest target for a meta layer
+-            # whose job is cross-sectional selection:
+-            #   - Immune to market-wide drift (rank is relative)
+-            #   - No tail warping (unlike log/winsor transforms)
+-            #   - IC on rank_pct ≡ IC on raw returns (monotone transform)
+-            #   - Ridge learns "which features predict relative outperformance"
+-            _ts_meta = df["__ts__"].values if "__ts__" in df.columns else None
+-            if _ts_meta is not None:
+-                y_target = np.zeros(len(y_ret), dtype=np.float64)
+-                for t in np.unique(_ts_meta):
+-                    _tmask = _ts_meta == t
+-                    n_t = _tmask.sum()
+-                    if n_t > 1:
+-                        from scipy.stats import rankdata
+-                        y_target[_tmask] = (rankdata(y_ret[_tmask]) - 1) / (n_t - 1)
+-                    else:
+-                        y_target[_tmask] = 0.5
+-            else:
+-                from scipy.stats import rankdata
+-                y_target = (rankdata(y_ret) - 1) / max(len(y_ret) - 1, 1)
+-            tprint(f"  Using rank_pct target: mean={np.mean(y_target):.4f}, "
+-                   f"std={np.std(y_target):.4f}, range=[{np.min(y_target):.4f}, {np.max(y_target):.4f}]")
+-
+-            # Meta weights: magnitude + MAE/MFE proxy + consensus; remove 20% lowest n_res
+-            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
+-            keep = n_res >= np.quantile(n_res, 0.20)
+-            if keep.sum() < 100:
+-                keep = np.ones(len(df), dtype=bool)
+-
+-            df = df.loc[keep].copy()
+-            X_feats = X_feats.loc[keep].copy()
+-            y_target = y_target[keep]
+-            p_oof = p_oof[keep]
+-            n_res = n_res[keep]
+-
+-            # Confidence weight: upweight samples where alpha model is more decisive
+-            # (further from 0.5). Meta should focus on "strong calls" where gating matters.
+-            conf_w = np.abs(p_oof - 0.5) * 2.0  # [0, 1] range
+-            conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
+-            mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
+-
+-            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
+-            cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
+-
+-            w_meta = mag * cons
+-            alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
+-            w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
+-            ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
+-            w_meta = _normalize_cross_sectional(ts_vals, w_meta)
+-            w_meta = w_meta / max(np.mean(w_meta), 1e-12)
+-
+-            tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} raw meta features...")
+-            tprint(f"  Meta feature names: {feat_cols[:10]}{'...' if len(feat_cols) > 10 else ''}")
+-            tprint(f"  Target: mean={np.mean(y_target):.6f}, std={np.std(y_target):.6f}, "
+-                   f"min={np.min(y_target):.4f}, max={np.max(y_target):.4f}")
+-            tprint(f"  OOF probs input: mean={np.mean(p_oof):.4f}, std={np.std(p_oof):.4f}")
+-
+-            meta = MetaModel()
+-            X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
+-
+-            # Add feature interactions: pred_logit × key features + regime buckets
+-            pred_logit = X_meta["pred_logit"].values
+-            for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
+-                if interact_feat in X_meta.columns:
+-                    X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
+-            # Regime bucket interactions: pred_logit × vol/trend regime indicators
+-            for regime_col in ["G_VOL", "G_TREND"]:
+-                raw_regime = f"{raw_prefix}{regime_col}"
+-                if raw_regime in df.columns:
+-                    rv = df[raw_regime].values
+-                    for bucket in [0, 1, 2]:
+-                        X_meta[f"pred_x_{regime_col}_{bucket}"] = pred_logit * (rv == bucket).astype(float)
+-
+-            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+-            meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
+-
+-            # --- Meta model OOF diagnostics ---
+-            if meta.oof_probs is not None:
+-                m_oof = meta.oof_probs
+-                tprint(f"  Meta OOF preds: mean={np.mean(m_oof):.6f}, std={np.std(m_oof):.6f}, "
+-                       f"min={np.min(m_oof):.6f}, max={np.max(m_oof):.6f}")
++                per_h_models[H] = {
++                    "model": race,
++                    "H": H,
++                    "feat_cols": cols,
++                    "per_regime": per_regime,
++                    "alpha_diag": alpha_diag,
++                    "score": score,
++                }
+
+-                meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+-                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
+-                _compute_and_print_meta_metrics(y_target, m_oof, name=f"Meta {side}_{k}",
+-                                                groups=meta_groups, y_raw_ret=y_ret_filtered)
++            # --- Multi-horizon deployment: all horizons are kept ---
++            # best_m serves as the "primary" (highest score) for backward compat.
++            # models_by_h stores all trained horizons for inference averaging.
++            if best_m is not None:
++                best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"])} for h, v in per_h_models.items()}
++                tprint(f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})")
++
++            # --- Save OOF predictions as lightweight parquet for fast meta loading ---
++            _run_id = cfg.get("run_id", "default")
++            oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
++            os.makedirs(oof_dir, exist_ok=True)
++            for _h, _v in per_h_models.items():
++                _race = _v["model"]
++                if _race.oof_probs is not None:
++                    _oof_path = os.path.join(oof_dir, f"oof_{side}_{k}_H{_h}.parquet")
++                    pd.DataFrame({"oof_prob": _race.oof_probs}).to_parquet(_oof_path, index=False)
++
++            # --- Save each ModelRace in native format (fast load) ---
++            models_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "models", "native")
++            for _h, _v in per_h_models.items():
++                _race = _v["model"]
++                _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
++                _race.save_native(_model_dir)
++                import json as _json
++                with open(os.path.join(_model_dir, "columns.json"), "w") as _cf:
++                    _json.dump({"feat_cols": _v.get("feat_cols", []), "selected_features": _v.get("selected_features", _v.get("feat_cols", []))}, _cf)
++            # Strip for pickle fallback
++            for _h, _v in per_h_models.items():
++                _v["model"].strip_for_serialization()
++
++            # --- Stage Gate Check (Alpha) — per horizon ---
++            for _gate_H, _gate_v in per_h_models.items():
++                _gate_race = _gate_v["model"]
++                _gate_key = f"train_{side}_{k}_{_gate_H}"
++                if _gate_key not in datasets or _gate_race.oof_probs is None:
++                    continue
++                _gate_df = datasets[_gate_key]
++                _gate_y = _gate_df["__y_bin__"].values
++                _gate_yret = _gate_df["__y_ret__"].values
++                _gate_oof = _gate_race.oof_probs
++                if len(_gate_oof) != len(_gate_y):
++                    continue
++                # Bootstrap CV(Prec@20)
++                _yb_hard = (_gate_y >= 0.5).astype(np.float64)
++                _rng = np.random.RandomState(42)
++                _prec_samples = []
++                _n = len(_yb_hard)
++                _kf = 0.20
++                for _ in range(50):
++                    _ib = _rng.choice(_n, size=_n, replace=True)
++                    _nk = max(1, int(_n * _kf))
++                    top_idx = np.argsort(_gate_oof[_ib])[-_nk:]
++                    p_k_b = float(np.mean(_yb_hard[_ib][top_idx]))
++                    _prec_samples.append(p_k_b)
++                _pa = np.array(_prec_samples)
++                _cv20 = float(np.std(_pa) / (np.mean(_pa) + 1e-9))
++                tprint(f"  {side}_{k} H={_gate_H}: Bootstrap CV(Prec@20)={_cv20:.3f}")
++
++                gate_res = compute_stage_gate_metrics(
++                    _gate_y, _gate_oof, _gate_yret,
++                    model_type="classifier",
++                    cv_prec10=_cv20
++                )
++                gate_res["Model"] = f"{side}_{k}_H{_gate_H}"
++                alpha_gate_results.append(gate_res)
+
+-            if meta.selected_features:
+-                tprint(f"  Meta selected features ({len(meta.selected_features)}): {meta.selected_features[:8]}{'...' if len(meta.selected_features) > 8 else ''}")
++            final_models[side][k] = best_m
+
+-            meta_models[f"{side}_{k}"] = meta
+-            tprint(f"Meta {side}_{k}: fitted.")
++    # 3. Train Meta Models (One per Alpha Model: Side x Kind)
++    if train_meta:
++        meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, final_models)
++    else:
++        meta_models, meta_gate_results = {}, []
+
+     # 4. Train Exhaustion Models
+     exh_models = {}
+@@ -2009,6 +2799,157 @@ def train_models_from_artifacts(datasets, cfg):
+             tprint(f"Exhaustion {d}: no dataset found")
+             exh_models[d] = None
+
++    # --- Stage Gate Reporting ---
++    tprint("\n=== Stage Gate Report: Alpha Models (Classifiers) ===")
++    alpha_pass_count = 0
++    if alpha_gate_results:
++        df_alpha_gate = pd.DataFrame(alpha_gate_results)
++        cols_order = ["Model", "passed", "PR_AUC", "Brier_Imp", "Lift_k", "CV_Prec_k"]
++        # Print main columns
++        tprint(df_alpha_gate[ [c for c in cols_order if c in df_alpha_gate.columns] ].to_string(index=False))
++        alpha_pass_count = df_alpha_gate["passed"].sum()
++    else:
++        tprint("No Alpha models evaluated.")
++
++    n_alpha_models = len(alpha_gate_results) if alpha_gate_results else 0
++    alpha_half = max(1, n_alpha_models // 2)
++    tprint(f"\nAlpha Stage: {alpha_pass_count}/{n_alpha_models} passed (need {alpha_half}).")
++    if alpha_pass_count < alpha_half:
++        tprint(f"WARNING: Alpha Stage FAILED (< {alpha_half} models passed).")
++
++    tprint("\n=== Stage Gate Report: Meta Models (Quantile) ===")
++    meta_pass_count = 0
++    if meta_gate_results:
++        df_meta_gate = pd.DataFrame(meta_gate_results)
++        cols_order = ["Model", "passed", "Coverage_Diff", "Pinball_Imp", "Spearman_IC", "Pass_Spread", "Pass_Downside"]
++        tprint(df_meta_gate[ [c for c in cols_order if c in df_meta_gate.columns] ].to_string(index=False))
++        meta_pass_count = df_meta_gate["passed"].sum()
++    else:
++        tprint("No Meta models evaluated.")
++
++    n_meta_models = len(meta_gate_results) if meta_gate_results else 0
++    meta_half = max(1, n_meta_models // 2)
++    tprint(f"\nMeta Stage: {meta_pass_count}/{n_meta_models} passed (need {meta_half}).")
++    if meta_pass_count < meta_half:
++        tprint(f"WARNING: Meta Stage FAILED (< {meta_half} models passed).")
++
++    # Extended per-model quality report (base + meta) — per horizon per bucket.
++    base_quality_rows = []
++    for side in trade_sides:
++        for kind in kinds:
++            conf = final_models.get(side, {}).get(kind)
++            if not conf:
++                continue
++            models_by_h = conf.get("models_by_h", {})
++            if not models_by_h:
++                # Fallback: single-model legacy format
++                models_by_h = {conf.get("H", 4): {"model": conf["model"], "feat_cols": conf["feat_cols"]}}
++            for H_rep, h_info in models_by_h.items():
++                ds_key = f"train_{side}_{kind}_{H_rep}"
++                if ds_key not in datasets:
++                    continue
++                race = h_info["model"]
++                if race.oof_probs is None:
++                    continue
++                dfm = datasets[ds_key]
++                y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
++                y_ret = dfm["__y_ret__"].values.astype(float)
++                y_lbl = dfm["__y_lbl__"].values.astype(int) if "__y_lbl__" in dfm.columns else None
++                groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
++                for cand_name, dm in race.detailed_metrics.items():
++                    # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
++                    oof_probs = dm.get("oof_probs")
++                    if oof_probs is None:
++                        # Fallback to winner's OOF if per-model not available (legacy)
++                        oof_probs = np.asarray(race.oof_probs, dtype=float)
++                    else:
++                        oof_probs = np.asarray(oof_probs, dtype=float)
++                    n = min(len(y_bin), len(oof_probs), len(y_ret))
++                    y_bin_model, oof_probs_model, y_ret_model = y_bin[:n], oof_probs[:n], y_ret[:n]
++                    y_lbl_model = y_lbl[:n] if y_lbl is not None else None
++                    if groups is not None:
++                        groups_model = np.asarray(groups)[:n]
++                    else:
++                        groups_model = None
++                    entry = _base_model_report_entry(
++                        model_name=f"{side}_{kind}_H{H_rep}:{cand_name}",
++                        side=side,
++                        kind=kind,
++                        dm=dm,
++                        y_bin=y_bin_model,
++                        oof_probs=oof_probs_model,
++                        y_ret=y_ret_model,
++                        groups=groups_model,
++                        y_lbl=y_lbl_model,
++                    )
++                    entry["H"] = H_rep
++                    entry["is_winner"] = (cand_name == race.best_model_name)
++                    base_quality_rows.append(entry)
++
++    meta_quality_rows = []
++    for key, meta in meta_models.items():
++        if not key or "_" not in key:
++            continue
++        side, kind = key.split("_", 1)
++        conf = final_models.get(side, {}).get(kind)
++        if not conf:
++            continue
++        models_by_h = conf.get("models_by_h", {})
++        # Collect available horizon OOFs (same logic as train_meta)
++        _h_oofs = {}
++        for h in [2, 4, 8]:
++            ds_key = f"train_{side}_{kind}_{h}"
++            if ds_key not in datasets:
++                continue
++            race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
++            if race_h is None or race_h.oof_probs is None:
++                continue
++            df_h = datasets[ds_key]
++            oof_h = np.asarray(race_h.oof_probs, dtype=float)
++            if len(oof_h) == len(df_h):
++                _h_oofs[h] = (df_h, oof_h)
++        if not _h_oofs:
++            continue
++        # Use largest-H dataset as base, average OOF across horizons
++        _base_H = max(_h_oofs.keys(), key=lambda h: len(_h_oofs[h][0]))
++        dfm = _h_oofs[_base_H][0]
++        y_ret = dfm["__y_ret__"].values.astype(float)
++        # Average base_score from all horizon OOFs (truncated to base length)
++        _oof_parts = []
++        for h, (df_h, oof_h) in _h_oofs.items():
++            _oof_parts.append(oof_h[:len(dfm)] if len(oof_h) >= len(dfm) else np.pad(oof_h, (0, len(dfm) - len(oof_h)), constant_values=0.5))
++        base_score = np.mean(_oof_parts, axis=0)
++        y_target = compute_meta_target(
++            datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
++            datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
++            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
++            groups=None,
++        )
++        groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
++        n = min(len(y_ret), len(y_target), len(base_score), len(meta.oof_probs) if meta.oof_probs is not None else 0)
++        if n <= 10:
++            continue
++        y_ret, y_target, base_score = y_ret[:n], y_target[:n], base_score[:n]
++        if groups is not None:
++            groups = np.asarray(groups)[:n]
++        meta_quality_rows.append(_meta_report_entry(key, meta, y_target, y_ret, base_score, groups))
++
++    winners_base = sorted([r for r in base_quality_rows if r.get("is_winner")], key=lambda x: x.get("score", -1e9), reverse=True)
++    others_base = sorted([r for r in base_quality_rows if not r.get("is_winner")], key=lambda x: x.get("score", -1e9), reverse=True)
++    winners_meta = sorted([r for r in meta_quality_rows if r.get("passed")], key=lambda x: x.get("metrics", {}).get("spearman_ic", -1e9), reverse=True)
++    others_meta = sorted([r for r in meta_quality_rows if not r.get("passed")], key=lambda x: x.get("metrics", {}).get("spearman_ic", -1e9), reverse=True)
++
++    gate_report = {
++        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
++        "base_models": winners_base + others_base,
++        "meta_models": winners_meta + others_meta,
++        "winners": {
++            "base": [r["model"] for r in winners_base],
++            "meta": [r["model"] for r in winners_meta],
++        },
++    }
++    print_training_gate_report(gate_report)
++
+     return {
+         "alpha_models": final_models,
+         "alpha_oof_metrics": {f"{side}_{kind}": final_models.get(side, {}).get(kind, {}).get("alpha_diag", {}) for side in trade_sides for kind in kinds},
+@@ -2016,14 +2957,16 @@ def train_models_from_artifacts(datasets, cfg):
+         "meta_models": meta_models,
+         "spike_models": spike_models,
+         "specialist_models": specialist_models,
++        "quality_gate_report": gate_report,
+     }
+
+-def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
++
++def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts):
+     # DEPRECATED / LEGACY WRAPPER
+     # This function is kept for backward compatibility if needed,
+     # but strictly we should use the new split.
+     # We can implement it by calling the new functions in sequence.
+-    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist)
++    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, None)
+     return train_models_from_artifacts(datasets, cfg)
+
+ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_hist, alpha_models):
+@@ -2280,7 +3223,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
+                 cands = row[row].index.intersection(assets)
+
+                 # Check trend
+-                trend_vals = feats["trend_pct"].loc[t, cands]
++                trend_vals = feats["trend_pct"].reindex(columns=cands).loc[t] if t in feats["trend_pct"].index else pd.Series(0.0, index=cands)
+
+                 for sym in cands:
+                     tv = trend_vals[sym]
+@@ -2382,7 +3325,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
+             _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)
+             _abs_tp_risk = summary.final_tp_mult * _opt_bp_risk
+             _ratio_risk = summary.final_tp_mult / max(summary.final_sl_mult, 0.01)
+-            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.5))
++            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.2))
+             min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
+             _tp_m = summary.final_tp_mult
+             _sl_m = summary.final_sl_mult

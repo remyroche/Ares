@@ -5892,6 +5892,7 @@ def tbm_outcomes_atr_nb(
     horizon: int,
     tp_atr: float,
     sl_atr: float,
+    side_mult: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     n = close.shape[0]
     tp_first = np.zeros(n, dtype=np.int8)
@@ -5900,6 +5901,65 @@ def tbm_outcomes_atr_nb(
 
     if horizon <= 0:
         return tp_first, sl_first, timeout
+
+    for i in range(n - horizon):
+        entry = close[i]
+
+        # Guard against zero or negative entry prices
+        if entry <= 1e-9:
+            timeout[i] = 1
+            continue
+
+        atr_i = max(atr[i], 1e-9)
+        atr_pct = atr_i / entry
+
+        # Thresholds in terms of percentage returns
+        tp_thresh = tp_atr * atr_pct
+        sl_thresh = sl_atr * atr_pct
+
+        for j in range(i + 1, i + horizon + 1):
+            hi = high[j]
+            lo = low[j]
+
+            if side_mult > 0:
+                ret_fav = (hi - entry) / entry
+                ret_adv = (entry - lo) / entry
+            else:
+                ret_fav = (entry - lo) / entry
+                ret_adv = (hi - entry) / entry
+
+            hit_tp = ret_fav >= tp_thresh
+            hit_sl = ret_adv >= sl_thresh
+
+            if hit_tp and not hit_sl:
+                tp_first[i] = 1
+                break
+            if hit_sl and not hit_tp:
+                sl_first[i] = 1
+                break
+            if hit_tp and hit_sl:
+                # If both hit in the same bar, fallback to checking which price median is closer to
+                median = 0.5 * (hi + lo)
+
+                if side_mult > 0:
+                    tp_price = entry * (1.0 + tp_thresh)
+                    sl_price = entry * (1.0 - sl_thresh)
+                else:
+                    tp_price = entry * (1.0 - tp_thresh)
+                    sl_price = entry * (1.0 + sl_thresh)
+
+                d_tp = abs(median - tp_price)
+                d_sl = abs(median - sl_price)
+                if d_tp < d_sl:
+                    tp_first[i] = 1
+                else:
+                    sl_first[i] = 1
+                break
+
+        if tp_first[i] == 0 and sl_first[i] == 0:
+            timeout[i] = 1
+
+    return tp_first, sl_first, timeout
 
     for i in range(n - horizon):
         entry = close[i]
@@ -6110,6 +6170,7 @@ def compute_tbm_outcomes_per_symbol(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute TBM outcomes independently within each symbol's time series.
+    Evaluated using true forward percentage returns as required.
 
     Assumes `data` has columns:
       - symbol
@@ -6134,6 +6195,8 @@ def compute_tbm_outcomes_per_symbol(
     work = data.reset_index(drop=False).rename(columns={"index": "_orig_idx"})
     work = work.sort_values(["symbol", "timestamp"], kind="mergesort")
 
+    side_mult = -1.0 if side == "short" else 1.0
+
     for sym, g in work.groupby("symbol", sort=False):
         idx = g["_orig_idx"].to_numpy()
 
@@ -6142,19 +6205,15 @@ def compute_tbm_outcomes_per_symbol(
         low = g["low"].to_numpy(dtype=np.float64, copy=False)
         atr = g["atr"].to_numpy(dtype=np.float64, copy=False)
 
-        if side == "short":
-            c, h, l = -close, -low, -high
-        else:
-            c, h, l = close, high, low
-
         tp_f, sl_f, to_f = tbm_outcomes_atr_nb(
-            close=c,
-            high=h,
-            low=l,
+            close=close,
+            high=high,
+            low=low,
             atr=atr,
             horizon=horizon,
             tp_atr=tp_atr,
             sl_atr=sl_atr,
+            side_mult=side_mult,
         )
 
         out_tp[idx] = tp_f

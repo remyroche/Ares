@@ -482,12 +482,33 @@ class PredictionLedger:
             return
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
+
+        # Deduplicate updates to prevent 'cannot reindex' errors
+        upd_idx = upd_idx[~upd_idx.index.duplicated(keep="last")]
+
+        # Find matching indices
+        match_idx = upd_idx.index.intersection(old_idx.index)
+
+        if len(match_idx) > 0:
+            # Handle schema evolution
+            missing_cols = [c for c in upd_idx.columns if c not in old_idx.columns]
+            for c in missing_cols:
+                if pd.api.types.is_numeric_dtype(upd_idx[c]):
+                    old_idx[c] = float('nan')
+                else:
+                    old_idx.loc[:, c] = pd.Series(index=old_idx.index, dtype=object)
+
+            # Bulk update existing rows
+            for c in upd_idx.columns:
+                if c in key_cols:
+                    continue
+                old_idx.loc[match_idx, c] = upd_idx.loc[match_idx, c].values
+
+        # Find new rows and append
+        new_idx = upd_idx.index.difference(old_idx.index)
+        if len(new_idx) > 0:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_idx]], axis=0, sort=False)
+
         self._write_atomic(old_idx.reset_index(drop=True))
 
 

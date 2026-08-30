@@ -8482,6 +8482,12 @@ def get_inference_required_feature_keys(
                 if _is_required_live_feature_key(k)
             )
 
+    from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
+    required.update(POSITION_SIZER_V2_FEATURE_CONFIG.get("shared_feature_keys", []))
+    required.update(POSITION_SIZER_V2_FEATURE_CONFIG.get("model1_edge_feature_keys", []))
+    required.update(POSITION_SIZER_V2_FEATURE_CONFIG.get("model2_downside_feature_keys", []))
+    required.update(POSITION_SIZER_V2_FEATURE_CONFIG.get("model3_uncertainty_feature_keys", []))
+
     # Keep a small set of always-needed raw features used across inference glue.
     required.update(
         {

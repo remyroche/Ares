@@ -1,5 +1,6 @@
 from .dataset import build_position_sizer_dataset
 from .models import train_pwin_classifier
+from ..utils import tprint
 
 
 def train(
@@ -13,6 +14,8 @@ def train(
     mfe_col="mfe",
     mae_col="mae",
 ):
+    tprint(f"Entering function: train in train_pwin.py")
+    tprint(f"Building position sizer dataset...")
     ds = build_position_sizer_dataset(
         df,
         feature_cols=feature_cols,
@@ -22,6 +25,7 @@ def train(
         pwin_soft_cfg=pwin_soft_cfg,
     )
     regime_labels = df[regime_col].values if regime_col and regime_col in df.columns else None
+    tprint(f"Training pwin classifier...")
     model = train_pwin_classifier(
         ds.X,
         ds.pwin_target,

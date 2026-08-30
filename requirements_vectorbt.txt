@@ -1,0 +1,25 @@
+# VectorBT Integration Requirements
+# Core VectorBT package
+vectorbt>=0.25.0
+
+# Additional dependencies for enhanced functionality
+numpy>=1.21.0
+pandas>=1.3.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+
+# Optional: GPU acceleration
+# torch>=1.9.0  # Uncomment if GPU acceleration needed
+# cupy>=9.0.0   # Uncomment for CUDA support
+
+# Visualization (VectorBT uses plotly)
+plotly>=5.0.0
+kaleido>=0.2.1
+
+# Performance monitoring
+psutil>=5.8.0
+memory-profiler>=0.60.0
+
+# Additional research utilities
+statsmodels>=0.13.0
+arch>=5.0.0  # For GARCH models

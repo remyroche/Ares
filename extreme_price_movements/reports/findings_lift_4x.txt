@@ -1,0 +1,8 @@
+Report: extreme_price_movements/reports/analysis_tbm_vs_base_20260220.md
+Date: 2026-02-20 (within the last 7 days)
+Key Finding: Section 4 explicitly states: "Base event rate is likely ~1%. 4% precision represents a **4x Lift** (400% improvement over random). This is a strong signal for a base model."
+
+Context & Supporting Data:
+- This analysis was triggered by discrepancies between TBM optimization results (commit 414531af2) and base model training.
+- The supporting data is found in extreme_price_movements/reports/20260214_190000/training_report.md (Artifact run 20260214_190000), where LONG_MR and LONG_TF show Precision@10/40 around 2.8%-3.6% (consistent with the 4% / 4x Lift claim), while SHORT_TF shows even higher precision (~8.7%, >8x Lift).
+- The "4x Lift" is derived from the low base rate (~1%) of successful trades within the high-volatility candidate set.

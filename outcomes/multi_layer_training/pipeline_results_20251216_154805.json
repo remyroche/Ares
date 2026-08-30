@@ -1,0 +1,24 @@
+{
+  "steps_1_4": {
+    "success": false,
+    "layers": {
+      "L1": {
+        "n_models": 3,
+        "models": [
+          "lgbm_conservative",
+          "lgbm_balanced",
+          "lgbm_aggressive"
+        ],
+        "metrics": [
+          "lgbm_conservative",
+          "lgbm_balanced",
+          "lgbm_aggressive"
+        ]
+      }
+    },
+    "comparison": {},
+    "best_combination": {},
+    "integrity_checks": [],
+    "error": "Cannot have number of folds=6 greater than the number of samples=0."
+  }
+}

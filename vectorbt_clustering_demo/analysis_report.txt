@@ -1,0 +1,48 @@
+================================================================================
+VECTORBT FINANCIAL CLUSTERING ANALYSIS REPORT
+================================================================================
+Analysis Date: 2025-10-15 03:05:53
+Data Period: 2023-01-01 00:00:00 to 2023-03-25 07:00:00
+Total Data Points: 2000
+VectorBT Enabled: False
+
+FEATURE ENGINEERING
+----------------------------------------
+Total Features Generated: 52
+Feature Types: {dtype('float64'): 40, dtype('int64'): 9, dtype('int32'): 3}
+
+CLUSTERING RESULTS
+----------------------------------------
+KMEANS:
+  Best Clusters: 2
+  Silhouette Score: 0.143
+  Calinski-Harabasz Score: 394.776
+  Davies-Bouldin Score: 2.162
+
+HIERARCHICAL:
+  Best Clusters: 2
+  Silhouette Score: 0.165
+  Calinski-Harabasz Score: 296.728
+  Davies-Bouldin Score: 2.058
+
+REGIME ANALYSIS
+----------------------------------------
+REGIME_0:
+  Size: 1586 (79.3%)
+  Avg Return: 0.0012
+  Volatility: 0.0210
+  Avg Volume: 35292
+  Period: 2023-01-01 00:00:00 to 2023-03-24 21:00:00
+
+REGIME_1:
+  Size: 414 (20.7%)
+  Avg Return: 0.0046
+  Volatility: 0.0301
+  Avg Volume: 37050
+  Period: 2023-01-03 19:00:00 to 2023-03-25 07:00:00
+
+PERFORMANCE SUMMARY
+----------------------------------------
+⚠️ Using pandas fallbacks (VectorBT not available)
+
+================================================================================

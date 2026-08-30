@@ -1,0 +1,9 @@
+{title}
+
+Mood: {mood}
+Genre: {genre}
+
+Instrumental focus music featuring rain ambience background.
+Perfect for studying, coding, or relaxing.
+
+License this track for your own content at our site.

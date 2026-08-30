@@ -1,0 +1,6 @@
+{title} is a {genre} track perfect for {mood}.
+
+Licenses available:
+- Personal License (EUR {price_personal}): For non-commercial personal use.
+- Creator License (EUR {price_creator}): For monetized social media content.
+- Commercial License (EUR {price_commercial}): For commercial projects and broadcast.

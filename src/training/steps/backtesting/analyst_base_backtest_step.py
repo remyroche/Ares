@@ -26,6 +26,16 @@ from src.utils.ml_common.trading_grid_backtester import (
     run_simple_short_grid_backtest,
 )
 
+# Optional import for model diagnosis
+try:
+    from src.training.steps.models_training.trading_model_diagnosis import (
+        ModelLoader,
+        ModelDiagnostician,
+    )
+    DIAGNOSIS_AVAILABLE = True
+except ImportError:
+    DIAGNOSIS_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -935,9 +945,106 @@ class AnalystBaseBacktestStep(BaseStep):
 
             tprint_success(f"Base analyst backtest report saved to: {filepath}")
 
+            # ------------------------------------------------------------------
+            # 8) Run Trading Model Diagnosis (if model and targets available)
+            # ------------------------------------------------------------------
+            diagnosis_report_path = None
+            if DIAGNOSIS_AVAILABLE:
+                try:
+                    tprint_info("🏥 Running Trading Model Diagnosis...")
+
+                    # Attempt to identify target column in ml_df
+                    target_candidates = [
+                        "target",
+                        "label",
+                        "y",
+                        "actual",
+                        "target_long",
+                        "target_short",
+                        "ret_forward",
+                    ]
+                    target_col = next(
+                        (c for c in ml_df.columns if c in target_candidates), None
+                    )
+
+                    if target_col:
+                        y_test_series = ml_df[target_col]
+                        # Assume remaining numeric columns (excluding pred/target) are features
+                        # or let ModelDiagnostician handle it.
+                        # For robustness, we try to load the actual model object.
+
+                        model = None
+                        try:
+                            # Try to find a base model pickle in artifacts
+                            model, _ = ModelLoader.load_latest_model(model_type="base")
+                        except Exception:
+                            # Fallback: dummy model or None (Diagnostician might handle None for some checks)
+                            pass
+
+                        # Prepare X_test (features)
+                        # Drop known non-feature columns
+                        drop_cols = [target_col, pred_col]
+                        if "confidence" in locals():
+                            # we extracted 'confidence' series, need to find its column name if present
+                            conf_candidates = [
+                                c for c in ml_df.columns if "confidence" in c.lower()
+                            ]
+                            drop_cols.extend(conf_candidates)
+
+                        X_test = ml_df.drop(
+                            columns=[c for c in drop_cols if c in ml_df.columns]
+                        )
+                        X_test = X_test.select_dtypes(include=[np.number])
+
+                        # Initialize Diagnostician
+                        # Note: Diagnostician expects y_pred as numpy array
+                        diag = ModelDiagnostician(
+                            model=model,
+                            X_test=X_test,
+                            y_test=y_test_series,
+                            y_pred=predictions.values,
+                        )
+
+                        diag_results = diag.run_full_diagnosis()
+
+                        diag_filename = f"trading_model_diagnosis_{symbol}_{timeframe}_{direction}_{timestamp}.html"
+                        diag_path = outcomes_dir / diag_filename
+                        diag.generate_report(diag_results, str(diag_path))
+
+                        diagnosis_report_path = str(diag_path)
+                        tprint_success(f"Diagnosis report saved to: {diag_path}")
+
+                        # Append to markdown report
+                        with open(filepath, "a") as f:
+                            f.write("\n## Model Diagnosis\n\n")
+                            f.write(
+                                f"- Diagnosis Report: [{diag_filename}](./{diag_filename})\n"
+                            )
+
+                            if "oracle" in diag_results:
+                                f.write(
+                                    f"- Noise Ceiling Gap: {diag_results['oracle'].get('noise_ceiling', {}).get('gap', 'N/A')}\n"
+                                )
+                            if "performance" in diag_results:
+                                f.write(
+                                    f"- Diagnosis Sharpe: {diag_results['performance'].get('sharpe_ratio', {}).get('sharpe_ratio', 'N/A')}\n"
+                                )
+
+                    else:
+                        tprint_info(
+                            "Skipping diagnosis: Target column not found in ml_scored data"
+                        )
+
+                except Exception as diag_e:
+                    tprint_error(f"Trading model diagnosis failed: {diag_e}")
+
+            result_artifacts = {"backtest_report_markdown": str(filepath)}
+            if diagnosis_report_path:
+                result_artifacts["model_diagnosis_report"] = diagnosis_report_path
+
             return {
                 "success": True,
-                "artifacts": {"backtest_report_markdown": str(filepath)},
+                "artifacts": result_artifacts,
                 "metrics": metrics,
             }
 

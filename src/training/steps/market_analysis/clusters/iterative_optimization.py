@@ -6752,9 +6752,9 @@ class IterativeOptimization:
     def _relabel_compact(self, labels: np.ndarray) -> np.ndarray:
         """Compact labels to eliminate 0-size clusters."""
         try:
-            u = np.unique(labels)
-            m = {old: i for i, old in enumerate(u)}
-            return np.vectorize(m.get)(labels)
+            # ⚡ Bolt: Replace slow dict lookup and np.vectorize with fast unique index mapping
+            _, out = np.unique(labels, return_inverse=True)
+            return out
         except Exception as e:
             tprint(f"Relabel compact failed: {e}", "ERROR")
             return labels
@@ -7659,9 +7659,9 @@ class IterativeOptimization:
     def _relabel_compact(self, labels):
         """Remove empty labels and remap to 0..K-1 to avoid size=0 clusters & DBI=inf."""
         import numpy as np
-        u = np.unique(labels)
-        remap = {cid:i for i, cid in enumerate(u)}
-        return np.vectorize(remap.get)(labels)
+        # ⚡ Bolt: Replace slow dict lookup and np.vectorize with fast unique index mapping
+        _, out = np.unique(labels, return_inverse=True)
+        return out
 
     def _balanced_two_way_split(self, labels, cid):
         """Split cluster ensuring both children meet MIN_SIZE requirement."""
@@ -7696,9 +7696,8 @@ class IterativeOptimization:
     def _prune_empty(self, labels):
         """Remove empty/zero-size labels and reindex 0..K-1 to avoid size=0 clusters and DBI=inf."""
         import numpy as np
-        u = np.unique(labels)
-        remap = {cid:i for i, cid in enumerate(u)}
-        out = np.vectorize(remap.get)(labels)
+        # ⚡ Bolt: Replace slow dict lookup and np.vectorize with fast unique index mapping
+        _, out = np.unique(labels, return_inverse=True)
         return out
 
     def _size_penalty(self, dest_after: float, mean_size: float, soft_cap: float,
@@ -7965,8 +7964,16 @@ class IterativeOptimization:
         unique, counts = np.unique(child_labels, return_counts=True)
         kept = unique[np.argmax(counts)]
         order = [kept] + [u for u in unique if u != kept]
-        remap = {u:i for i,u in enumerate(order)}
-        child_labels = np.vectorize(remap.get)(child_labels)
+
+        # ⚡ Bolt: Replace slow np.vectorize with fast array indexing for label remapping
+        # Create lookup array instead of dictionary for O(1) mapping without Python loops
+        max_child_id = np.max(child_labels)
+        remap_array = np.zeros(max_child_id + 1, dtype=int)
+        for i, u in enumerate(order):
+            remap_array[u] = i
+
+        # Apply the mapping vectorised
+        child_labels = remap_array[child_labels]
 
         next_lab = int(assignments.max()) + 1
         assignments = assignments.copy()

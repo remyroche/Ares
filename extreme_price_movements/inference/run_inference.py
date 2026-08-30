@@ -27918,11 +27918,18 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        open_arr = bars.get("open", pd.Series(np.nan, index=bars.index)).to_numpy()
+        high_arr = bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy()
+        low_arr = bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy()
+        close_arr = bars.get("close", pd.Series(np.nan, index=bars.index)).to_numpy()
+
+        for bar_ts, b_open, b_high, b_low, b_close in zip(
+            bars.index.to_numpy(), open_arr, high_arr, low_arr, close_arr
+        ):
+            bar_open = float(b_open)
+            bar_high = float(b_high)
+            bar_low = float(b_low)
+            bar_close = float(b_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

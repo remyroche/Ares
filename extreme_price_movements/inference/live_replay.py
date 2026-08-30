@@ -449,78 +449,166 @@ def _base_replay_table(
 ) -> pd.DataFrame:
     src = _normalise_times(live_trades)
     src = _join_oos(src, oos_policy, oos_join_tolerance=oos_join_tolerance)
+    def _get_arr(cols, default):
+        s_combined = None
+        for col in cols:
+            if col in src.columns:
+                s = src[col]
+                s_clean = s.copy()
+                if s_clean.dtype == object:
+                    mask = (s_clean == "") | s_clean.isna()
+                else:
+                    mask = s_clean.isna()
+                s_clean.loc[mask] = np.nan
+                if s_combined is None:
+                    s_combined = s_clean
+                else:
+                    s_combined = s_combined.combine_first(s_clean)
+
+        if s_combined is not None:
+            if isinstance(default, np.ndarray):
+                return s_combined.fillna(pd.Series(default, index=src.index)).values
+            else:
+                return s_combined.fillna(default).values
+
+        if isinstance(default, np.ndarray):
+            return default
+        return np.full(len(src), default)
+
+    side_arr = _get_arr(["side"], "long")
+    signal_price_arr = _get_arr(["signal_price", "ohlcv_entry_price", "entry_price"], np.nan).astype(float)
+    decision_mid_arr = _get_arr(["decision_mid", "ticker_mid", "signal_price"], signal_price_arr).astype(float)
+    expected_fill_arr = _get_arr(["expected_fill_price", "expected_entry_price", "entry_price"], decision_mid_arr).astype(float)
+    realized_entry_arr = _get_arr(["realized_entry_price", "actual_entry_price", "entry_price"], expected_fill_arr).astype(float)
+    realized_exit_arr = _get_arr(["realized_exit_price", "actual_exit_price", "exit_price"], np.nan).astype(float)
+    expected_exit_arr = _get_arr(["expected_exit_price", "oos_exit_price", "signal_exit_price"], np.nan).astype(float)
+
+    fee_arr = _get_arr(["realized_fee_bps", "fees_bps"], np.nan).astype(float)
+    gross_arr = _get_arr(["gross_to_net_cost_pct"], np.nan).astype(float)
+    for i in range(len(fee_arr)):
+        if not np.isfinite(fee_arr[i]):
+            fee_arr[i] = gross_arr[i] * 10000.0 if np.isfinite(gross_arr[i]) else default_expected_fee_bps
+
+    funding_arr = _get_arr(["realized_funding_bps", "funding_bps"], np.nan).astype(float)
+    borrow_arr = _get_arr(["realized_borrow_bps", "borrow_bps"], np.nan).astype(float)
+    if allow_legacy_cost_features:
+        funding_cost_arr = _get_arr(["funding_cost"], np.nan).astype(float)
+        borrow_cost_arr = _get_arr(["borrow_cost"], np.nan).astype(float)
+        for i in range(len(funding_arr)):
+            if not np.isfinite(funding_arr[i]):
+                funding_arr[i] = funding_cost_arr[i]
+            if not np.isfinite(borrow_arr[i]):
+                borrow_arr[i] = borrow_cost_arr[i]
+
+    realized_cost_bps_arr = np.nansum([fee_arr, funding_arr, borrow_arr], axis=0)
+    extra_cost_bps_arr = np.nansum([fee_arr - default_expected_fee_bps, funding_arr, borrow_arr], axis=0)
+
+    realized_net_bps_arr = _get_arr(["realized_trade_net_bps"], np.nan).astype(float)
+    net_pct_arr = _get_arr(["net_pnl_pct", "net_ret_equity", "net_pnl"], np.nan).astype(float)
+
+    oos_bps_arr = _get_arr(["oos_expected_net_bps"], np.nan).astype(float)
+    oos_expected_net_arr = _get_arr(["oos_expected_net_for_same_policy", "oos_expected_net", "expected_net"], np.nan).astype(float)
+
+    rank_score_arr = _get_arr(["rank_score", "adjusted_rank_score", "calibrated_score", "normalized_rank_score", "meta_pred"], np.nan).astype(float)
+    rank_pct_arr = _get_arr(["rank_percentile", "sizer_rank_percentile", "base_rank_pct", "meta_train_rank_pct"], np.nan).astype(float)
+    threshold_arr = _get_arr(["threshold", "final_threshold", "effective_threshold", "rank_threshold", "deployment_rank_threshold"], np.nan).astype(float)
+
+    was_traded_arr = _get_arr(["was_traded"], True)
+
+    ts_arr = _get_arr(["timestamp"], pd.NaT)
+    decision_ts_arr = _get_arr(["decision_ts"], ts_arr)
+    signal_bar_ts_arr = _get_arr(["signal_bar_ts"], ts_arr)
+
+    sym_arr = _get_arr(["symbol"], "")
+    strat_arr = _get_arr(["strategy_id"], "")
+    pos_arr = _get_arr(["position_id"], "")
+    trade_id_arr = _get_arr(["trade_id"], "")
+    entry_ts_arr = _get_arr(["lifecycle_entry_ts"], ts_arr)
+    exit_ts_arr = _get_arr(["lifecycle_exit_ts"], pd.NaT)
+
+    pd_arr = _get_arr(["portfolio_decision"], np.where(was_traded_arr, "traded", "rejected"))
+    pr_arr = _get_arr(["portfolio_reject_reason"], "")
+    lr_arr = _get_arr(["liquidity_reject_reason"], "")
+
+    spread_arr = _get_arr(["spread_bps", "ticker_spread_bps"], np.nan).astype(float)
+    fric_arr = _get_arr(["expected_total_entry_friction_bps", "expected_fill_slippage_bps"], np.nan).astype(float)
+    exit_reason_arr = _get_arr(["exit_reason", "exit_reason_detail"], "")
+    holding_arr = _get_arr(["holding_bars", "duration", "duration_bars"], np.nan).astype(float)
+    oos_sel_arr = _get_arr(["oos_selected"], np.nan)
+
     rows = []
-    for _, row in src.iterrows():
-        side = _first_present(row, ["side"], "long")
-        signal_price = _numeric(_first_present(row, ["signal_price", "ohlcv_entry_price", "entry_price"]))
-        decision_mid = _numeric(_first_present(row, ["decision_mid", "ticker_mid", "signal_price"], signal_price))
-        expected_fill = _numeric(_first_present(row, ["expected_fill_price", "expected_entry_price", "entry_price"], decision_mid))
-        realized_entry = _numeric(_first_present(row, ["realized_entry_price", "actual_entry_price", "entry_price"], expected_fill))
-        realized_exit = _numeric(_first_present(row, ["realized_exit_price", "actual_exit_price", "exit_price"]))
-        expected_exit = _numeric(_first_present(row, ["expected_exit_price", "oos_exit_price", "signal_exit_price"]))
-        realized_cost_bps, extra_cost_bps = _realized_cost_bps(
-            row, default_expected_fee_bps, allow_legacy_cost_features=allow_legacy_cost_features
-        )
-        realized_net_bps = _bps_value(_first_present(row, ["realized_trade_net_bps"]))
+
+    src_dicts = src.to_dict(orient="records")
+
+    for i in range(len(src)):
+        side = side_arr[i]
+        realized_entry = realized_entry_arr[i]
+        realized_exit = realized_exit_arr[i]
+        realized_net_bps = realized_net_bps_arr[i]
+
         if not np.isfinite(realized_net_bps):
-            realized_net_bps = _fraction_to_bps(
-                _first_present(row, ["net_pnl_pct", "net_ret_equity", "net_pnl"])
-            )
+            if np.isfinite(net_pct_arr[i]):
+                realized_net_bps = net_pct_arr[i] * 10000.0
+
+        realized_cost_bps = realized_cost_bps_arr[i]
         if not np.isfinite(realized_net_bps):
             raw = _side_return(realized_entry, realized_exit, side)
             realized_net_bps = raw * 10000.0 - realized_cost_bps if np.isfinite(raw) else np.nan
-        oos_bps = _numeric(_first_present(row, ["oos_expected_net_bps"]))
+
+        oos_bps = oos_bps_arr[i]
         if not np.isfinite(oos_bps):
-            oos_bps = _fraction_to_bps(
-                _first_present(row, ["oos_expected_net_for_same_policy", "oos_expected_net", "expected_net"])
-            )
-        rank_score = _numeric(_first_present(row, ["rank_score", "adjusted_rank_score", "calibrated_score", "normalized_rank_score", "meta_pred"]))
-        rank_pct = _numeric(_first_present(row, ["rank_percentile", "sizer_rank_percentile", "base_rank_pct", "meta_train_rank_pct"]))
-        threshold = _numeric(_first_present(row, ["threshold", "final_threshold", "effective_threshold", "rank_threshold", "deployment_rank_threshold"]))
+            if np.isfinite(oos_expected_net_arr[i]):
+                oos_bps = oos_expected_net_arr[i] * 10000.0
+
+        expected_fill = expected_fill_arr[i]
+        expected_exit = expected_exit_arr[i]
+
         entry_drag = _entry_adverse_slippage_bps(expected_fill, realized_entry, side)
         exit_drag = _exit_adverse_slippage_bps(expected_exit, realized_exit, side) if np.isfinite(expected_exit) else np.nan
-        was_traded = _truthy(_first_present(row, ["was_traded"], True))
+
+        was_traded = _truthy(was_traded_arr[i])
+
         rows.append(
             {
-                "timestamp": row.get("timestamp"),
-                "decision_ts": row.get("decision_ts", row.get("timestamp")),
-                "signal_bar_ts": row.get("signal_bar_ts", row.get("timestamp")),
-                "symbol": row.get("symbol"),
+                "timestamp": ts_arr[i],
+                "decision_ts": decision_ts_arr[i],
+                "signal_bar_ts": signal_bar_ts_arr[i],
+                "symbol": sym_arr[i],
                 "side": side,
-                "strategy_id": row.get("strategy_id"),
-                "position_id": row.get("position_id"),
-                "trade_id": row.get("trade_id"),
-                "lifecycle_entry_ts": row.get("lifecycle_entry_ts", row.get("timestamp")),
-                "lifecycle_exit_ts": row.get("lifecycle_exit_ts", pd.NaT),
+                "strategy_id": strat_arr[i],
+                "position_id": pos_arr[i],
+                "trade_id": trade_id_arr[i],
+                "lifecycle_entry_ts": entry_ts_arr[i],
+                "lifecycle_exit_ts": exit_ts_arr[i],
                 "was_traded": was_traded,
-                "portfolio_decision": _first_present(row, ["portfolio_decision"], "traded" if was_traded else "rejected"),
-                "portfolio_reject_reason": _first_present(row, ["portfolio_reject_reason"], ""),
-                "liquidity_reject_reason": _first_present(row, ["liquidity_reject_reason"], ""),
-                "rank_score": rank_score,
-                "rank_percentile": rank_pct,
-                "threshold": threshold,
-                "signal_price": signal_price,
-                "decision_mid": decision_mid,
+                "portfolio_decision": pd_arr[i],
+                "portfolio_reject_reason": pr_arr[i],
+                "liquidity_reject_reason": lr_arr[i],
+                "rank_score": rank_score_arr[i],
+                "rank_percentile": rank_pct_arr[i],
+                "threshold": threshold_arr[i],
+                "signal_price": signal_price_arr[i],
+                "decision_mid": decision_mid_arr[i],
                 "expected_fill_price": expected_fill,
                 "realized_entry_price": realized_entry,
                 "realized_exit_price": realized_exit,
                 "entry_drag_bps": entry_drag,
                 "exit_drag_bps": exit_drag,
                 "fees_bps": realized_cost_bps,
-                "spread_bps": _numeric(_first_present(row, ["spread_bps", "ticker_spread_bps"])),
-                "expected_total_entry_friction_bps": _numeric(_first_present(row, ["expected_total_entry_friction_bps", "expected_fill_slippage_bps"])),
-                "exit_reason": str(_first_present(row, ["exit_reason", "exit_reason_detail"], "")),
-                "holding_bars": _numeric(_first_present(row, ["holding_bars", "duration", "duration_bars"])),
+                "spread_bps": spread_arr[i],
+                "expected_total_entry_friction_bps": fric_arr[i],
+                "exit_reason": str(exit_reason_arr[i]),
+                "holding_bars": holding_arr[i],
                 "oos_expected_net_for_same_policy": oos_bps / 10000.0 if np.isfinite(oos_bps) else np.nan,
                 "realized_net": realized_net_bps / 10000.0 if np.isfinite(realized_net_bps) else np.nan,
                 "oos_expected_net_bps": oos_bps,
                 "realized_trade_net_bps": realized_net_bps,
-                "realized_extra_cost_bps": extra_cost_bps,
+                "realized_extra_cost_bps": extra_cost_bps_arr[i],
                 "oos_assumed_cost_bps": default_expected_fee_bps,
-                "oos_selected": _first_present(row, ["oos_selected"], np.nan),
+                "oos_selected": oos_sel_arr[i],
                 "primary_horizon_bars": np.nan,
                 "bar_minutes": np.nan,
-                "unit_warning": _unit_warnings(row),
+                "unit_warning": _unit_warnings(src_dicts[i]),
             }
         )
     return pd.DataFrame(rows)
@@ -615,21 +703,36 @@ def attach_forward_outcomes(
         for prefix in ("signal", "fill"):
             out[f"{prefix}_forward_mfe_{h}bar"] = np.nan
             out[f"{prefix}_forward_mae_{h}bar"] = np.nan
-    for idx, row in out.iterrows():
-        ts = row.get("signal_bar_ts", row.get("timestamp"))
-        symbol = row.get("symbol")
-        side = row.get("side")
+
+    ts_arr = out.get("signal_bar_ts", out.get("timestamp")).values
+    sym_arr = out.get("symbol").values
+    side_arr = out.get("side").values
+
+    price_signal_arr = out.get(price_col_signal).values if price_col_signal in out.columns else np.full(len(out), np.nan)
+    price_decision_arr = out.get(price_col_decision).values if price_col_decision in out.columns else np.full(len(out), np.nan)
+    price_fill_arr = out.get(price_col_fill).values if price_col_fill in out.columns else np.full(len(out), np.nan)
+
+    idx_arr = out.index.to_numpy()
+
+    for i, idx in enumerate(idx_arr):
+        ts = ts_arr[i]
+        symbol = sym_arr[i]
+        side = side_arr[i]
+        psig = price_signal_arr[i]
+        pdec = price_decision_arr[i]
+        pfil = price_fill_arr[i]
+
         for h in horizons:
             fut = _future_price(close, ts, symbol, int(h))
-            out.at[idx, f"signal_forward_return_{h}bar"] = _side_return(row.get(price_col_signal), fut, side)
-            out.at[idx, f"decision_mid_forward_return_{h}bar"] = _side_return(row.get(price_col_decision), fut, side)
-            out.at[idx, f"fill_forward_return_{h}bar"] = _side_return(row.get(price_col_fill), fut, side)
+            out.at[idx, f"signal_forward_return_{h}bar"] = _side_return(psig, fut, side)
+            out.at[idx, f"decision_mid_forward_return_{h}bar"] = _side_return(pdec, fut, side)
+            out.at[idx, f"fill_forward_return_{h}bar"] = _side_return(pfil, fut, side)
             out.at[idx, f"signal_forward_mfe_{h}bar"] = _future_extreme_return(
                 high if _side_sign(side) > 0 else low,
                 ts,
                 symbol,
                 int(h),
-                row.get(price_col_signal),
+                psig,
                 side,
                 favorable=True,
             )
@@ -638,7 +741,7 @@ def attach_forward_outcomes(
                 ts,
                 symbol,
                 int(h),
-                row.get(price_col_signal),
+                psig,
                 side,
                 favorable=False,
             )
@@ -647,7 +750,7 @@ def attach_forward_outcomes(
                 ts,
                 symbol,
                 int(h),
-                row.get(price_col_fill),
+                pfil,
                 side,
                 favorable=True,
             )
@@ -656,7 +759,7 @@ def attach_forward_outcomes(
                 ts,
                 symbol,
                 int(h),
-                row.get(price_col_fill),
+                pfil,
                 side,
                 favorable=False,
             )

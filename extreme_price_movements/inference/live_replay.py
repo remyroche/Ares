@@ -406,18 +406,40 @@ def _join_oos(
         return out
     # Asof fallback against OOS timestamp, grouped by symbol/side/strategy_id.
     group_cols = [c for c in ["symbol", "side", "strategy_id"] if c in out.columns and c in oos.columns]
-    for idx, row in out.loc[needs].iterrows():
-        cand = oos.copy()
-        for col in group_cols:
-            cand = cand[cand[col].astype(str) == str(row[col])]
-        if cand.empty or "timestamp" not in cand.columns:
-            continue
-        deltas = (cand["timestamp"] - row["signal_bar_ts"]).abs()
-        best_idx = deltas.idxmin()
-        if pd.notna(deltas.loc[best_idx]) and deltas.loc[best_idx] <= oos_join_tolerance:
-            for col in ("oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected"):
-                if col in cand.columns:
-                    out.at[idx, col] = cand.loc[best_idx, col]
+
+    left = out.loc[needs].copy()
+    if left.empty:
+        return out
+
+    left["_orig_idx"] = left.index
+
+    left["signal_bar_ts"] = pd.to_datetime(left["signal_bar_ts"], utc=True)
+    oos_copy = oos.copy()
+    oos_copy["timestamp"] = pd.to_datetime(oos_copy["timestamp"], utc=True)
+
+    left = left.sort_values("signal_bar_ts")
+    right = oos_copy.sort_values("timestamp")
+
+    for col in group_cols:
+        left[col] = left[col].astype(str)
+        right[col] = right[col].astype(str)
+
+    merged = pd.merge_asof(
+        left, right,
+        left_on="signal_bar_ts", right_on="timestamp",
+        by=group_cols,
+        direction="nearest",
+        tolerance=oos_join_tolerance,
+        suffixes=("", "_cand")
+    )
+
+    merged = merged.set_index("_orig_idx")
+    for col in ("oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected"):
+        right_col = f"{col}_cand" if col in left.columns else col
+        if right_col in merged.columns:
+            valid_mask = merged[right_col].notna()
+            if valid_mask.any():
+                out.loc[merged.index[valid_mask], col] = merged.loc[valid_mask, right_col].values
     return out
 
 

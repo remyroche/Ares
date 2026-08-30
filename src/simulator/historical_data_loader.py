@@ -15,7 +15,7 @@ import numpy as np
 
 from src.utils.tprint import (
     tprint, tprint_logged, tprint_timer, tprint_performance,
-    tprint_data_preview, tprint_data_format, tprint_feature_counts, LogLevel
+    tprint_data_preview, LogLevel
 )
 
 
@@ -233,23 +233,43 @@ class HistoricalDataLoader:
         # Convert to KlineRecord objects
         records = []
         if isinstance(df, pd.DataFrame):
-            for _, row in df.iterrows():
-                try:
-                    # Explicitly convert timestamp to datetime
-                    ts = pd.to_datetime(row['timestamp'])
-                    records.append(KlineRecord(
-                        timestamp=ts if isinstance(ts, datetime) else ts.to_pydatetime(),
-                        open=float(row['open']),
-                        high=float(row['high']),
-                        low=float(row['low']),
-                        close=float(row['close']),
-                        volume=float(row['volume']),
-                        symbol=symbol.upper(),
-                        interval=interval
-                    ))
-                except Exception as e:
-                    self.logger.warning(f"Error converting row to KlineRecord: {e}")
-                    continue
+            try:
+                ts_series = pd.to_datetime(df['timestamp'])
+
+                # Helper to get numpy array or fallback
+                def get_col_arr(col_name, default_val=0.0):
+                    if col_name in df.columns:
+                        return df[col_name].to_numpy()
+                    return np.full(len(df), default_val)
+
+                # Fetch columns
+                opens = get_col_arr('open', 0.0)
+                highs = get_col_arr('high', 0.0)
+                lows = get_col_arr('low', 0.0)
+                closes = get_col_arr('close', 0.0)
+                volumes = get_col_arr('volume', 0.0)
+
+                symbol_upper = symbol.upper()
+
+                for ts_val, o, h, low_val, c, v in zip(
+                    ts_series, opens, highs, lows, closes, volumes
+                ):
+                    try:
+                        records.append(KlineRecord(
+                            timestamp=ts_val if isinstance(ts_val, datetime) else ts_val.to_pydatetime(),
+                            open=float(o),
+                            high=float(h),
+                            low=float(low_val),
+                            close=float(c),
+                            volume=float(v),
+                            symbol=symbol_upper,
+                            interval=interval
+                        ))
+                    except Exception as e:
+                        self.logger.warning(f"Error converting row to KlineRecord: {e}")
+                        continue
+            except Exception as e:
+                self.logger.warning(f"Error extracting columns for KlineRecords: {e}")
         
         # Preview loaded data
         if records:
@@ -318,7 +338,7 @@ class HistoricalDataLoader:
                 price = records[-1].close
                 tprint(f"[HIST_LOADER] get_latest_price -> {price:.6f}")
                 return price
-            tprint(f"[HIST_LOADER] get_latest_price -> No data available", color="yellow")
+            tprint("[HIST_LOADER] get_latest_price -> No data available", color="yellow")
             return None
         except Exception as e:
             tprint(f"[HIST_LOADER] get_latest_price -> ERROR: {e}", color="red")
@@ -487,7 +507,7 @@ class HistoricalDataLoader:
         tprint(f"[HIST_LOADER] clear_cache: Clearing cache with {len(self._cache)} entries")
         self._cache.clear()
         self._cache_timestamps.clear()
-        tprint(f"[HIST_LOADER] clear_cache -> cache cleared")
+        tprint("[HIST_LOADER] clear_cache -> cache cleared")
         self.logger.info("Cache cleared")
 
 

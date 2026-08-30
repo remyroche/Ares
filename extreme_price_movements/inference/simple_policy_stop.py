@@ -1514,10 +1514,13 @@ def compute_simple_policy_stop_decision(
             state=state,
         )
     if not bars.empty:
-        for _, row in bars.iterrows():
+        for high_v, low_v in zip(
+            bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy(),
+            bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy(),
+        ):
             bars_in_trade += 1
-            high = _safe_float(row.get("high"), default=np.nan)
-            low = _safe_float(row.get("low"), default=np.nan)
+            high = _safe_float(high_v, default=np.nan)
+            low = _safe_float(low_v, default=np.nan)
             if side_l == "long":
                 if np.isfinite(high):
                     peak_price = max(peak_price, high)

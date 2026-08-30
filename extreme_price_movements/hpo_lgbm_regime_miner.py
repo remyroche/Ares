@@ -290,6 +290,17 @@ def build_candidate_rule_matrix(model: lgb.Booster, X_val: np.ndarray) -> np.nda
 # 6) VECTORIZED MODEL-LEVEL SCORING
 # ============================================================
 
+# Custom family groupings for specific features
+CUSTOM_FEATURE_FAMILIES = {
+    "bars_since_ema20_ema50_cross_log_norm": "persistence",
+    "bars_in_high_vol_state_log_norm": "persistence",
+    "bars_outside_ema20_atr_band_log_norm": "persistence",
+    "up_down_semivol_ratio_tanh": "structure",
+    "up_down_return_mass_ratio_tanh": "structure",
+    "tail_asymmetry_q90_q10_atr_norm": "structure",
+}
+
+
 def score_rule_matrix_vectorized(
     y_val: np.ndarray,
     vol_val: np.ndarray,
@@ -454,7 +465,9 @@ def score_rule_matrix_vectorized(
             family_importance = defaultdict(float)
             for imp, name in zip(feature_importance, feature_names):
                 if imp > 0:
-                    family = get_feature_family(name)
+                    family = CUSTOM_FEATURE_FAMILIES.get(name)
+                    if not family:
+                        family = get_feature_family(name)
                     family_importance[family] += imp
 
             if family_importance:

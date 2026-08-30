@@ -482,12 +482,27 @@ class PredictionLedger:
             return
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
+
+        # Keep duplicates in old_idx to maintain its original state and structure,
+        # but upd_idx needs unique elements for vectorized updates.
+        upd_idx = upd_idx[~upd_idx.index.duplicated(keep='last')]
+
+        missing_cols = upd_idx.columns.difference(old_idx.columns)
+        if len(missing_cols) > 0:
+            # We assign float('nan') instead of pd.NA to avoid introducing 'object' dtypes
+            for col in missing_cols:
+                old_idx[col] = float('nan')
+
+        intersection = upd_idx.index.intersection(old_idx.index)
+        if len(intersection) > 0:
+            # Directly assign using loc to ensure we overwrite values, even if they are NaNs
+            # (pd.DataFrame.update ignores NaNs in the update source)
+            old_idx.loc[intersection, upd_idx.columns] = upd_idx.loc[intersection]
+
+        new_keys = upd_idx.index.difference(old_idx.index)
+        if len(new_keys) > 0:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_keys]], axis=0, sort=False)
+
         self._write_atomic(old_idx.reset_index(drop=True))
 
 

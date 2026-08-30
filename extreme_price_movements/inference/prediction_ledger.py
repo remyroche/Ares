@@ -447,9 +447,7 @@ class PredictionLedger:
         new = new.reindex(columns=ordered_cols)
         for ts_col in ("timestamp", "signal_bar_ts", "decision_ts"):
             if ts_col in new.columns:
-                new[ts_col] = pd.to_datetime(
-                    new[ts_col], utc=True, errors="coerce"
-                )
+                new[ts_col] = pd.to_datetime(new[ts_col], utc=True, errors="coerce")
         old = self._read()
         out = new if old.empty else pd.concat([old, new], ignore_index=True, sort=False)
         subset = self._identity_columns(out)
@@ -480,14 +478,33 @@ class PredictionLedger:
         if not key_cols:
             self._write_atomic(pd.concat([old, updates], ignore_index=True, sort=False))
             return
+        # Align datatypes on key columns to ensure intersection works (e.g. timestamp strings vs datetime64[ns, UTC])
+        for col in key_cols:
+            if col in ("timestamp", "signal_bar_ts"):
+                old[col] = pd.to_datetime(old[col], utc=True, errors="coerce")
+                updates[col] = pd.to_datetime(updates[col], utc=True, errors="coerce")
+            else:
+                old[col] = old[col].astype(str)
+                updates[col] = updates[col].astype(str)
+
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
+
+        upd_idx = upd_idx[~upd_idx.index.duplicated(keep="last")]
+        common_idx = upd_idx.index.intersection(old_idx.index)
+
+        for col in upd_idx.columns:
+            if col not in old_idx.columns:
+                old_idx[col] = pd.NA
+
+        if not common_idx.empty:
+            for col in upd_idx.columns:
+                old_idx.loc[common_idx, col] = upd_idx.loc[common_idx, col]
+
+        new_idx = upd_idx.index.difference(old_idx.index)
+        if not new_idx.empty:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_idx]], axis=0, sort=False)
+
         self._write_atomic(old_idx.reset_index(drop=True))
 
 

@@ -1,0 +1,42 @@
+{
+  "task": "strict-r3-p8u-exact1m-balanced-trailing-hpo",
+  "scope": "Repaired the exact-one-minute rich-policy optimiser so that the mutually exclusive fixed-gap and dynamic-giveback trailing branches each receive an explicit, equal development HPO budget. August remains a frozen final evaluation window and is not used to allocate branch trials or select a policy.",
+  "changed_paths": [
+    "scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py",
+    "tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py": "b1eaebb9503b741baf2354fc8d736ece1a68f5f7a1df3a0e07c5db690ad43126",
+    "tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py": "10ae05d4bd6a030d5a22c2ebdf702e4e323bcf797aea491522508a481ad7f663"
+  },
+  "contracts": [
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "causality": {
+    "development_windows": "2026-05-01 through 2026-07-31; May calibrates the adverse threshold and June-July supply HPO/tournament rows.",
+    "frozen_evaluation_window": "2026-08-01 through 2026-08-27; it is replayed only after a development winner is selected.",
+    "selection_inputs": "Score-routed target-free candidates and subsequently joined complete one-minute paths. No August outcome, exit, or path-validity field enters selection."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py tests/test_exact_1m_rich_policy_contract.py tests/test_simple_policy_optimiser_deployment.py -q",
+      "python3 -m py_compile scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py"
+    ],
+    "results": "18 passed"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "task": "strict-r3-p8u-exact1m-branch-hpo-120-earlystop",
+  "scope": "Expanded the exact one-minute rich-policy development HPO to a maximum of 120 trials in each mutually exclusive trailing branch, with independent early stopping after 30 non-improving trials. The static-gap and dynamic-giveback branches remain separately identified; August is evaluated only after the May-July tournament winner is fixed.",
+  "changed_paths": [
+    "scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py",
+    "tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py": "3ed60271d37846e0ecccefb28b40ff64e8f172c0631db21ffc24eaeb0fc3be01",
+    "tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py": "a6de38cfee6c2ebed1ba73fd027c733995dc6092c620027e43710f34b019c3f4"
+  },
+  "contracts": [
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "causality": {
+    "development_windows": "May 2026 is the adverse-threshold calibration reserve. June-July 2026 supply all HPO and tournament rows.",
+    "frozen_evaluation_window": "August 1-27 2026 is replayed only after branch HPO and full development tournament selection are complete.",
+    "selection_inputs": "Score-routed target-free candidates; complete one-minute paths join only downstream for development labels and final replay."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest tests/test_strict_r3_p8u_exact_1m_simple_policy_optimiser.py tests/test_exact_1m_rich_policy_contract.py tests/test_simple_policy_optimiser_deployment.py -q",
+      "python3 -m py_compile scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py",
+      "python3 scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py --help"
+    ],
+    "results": "19 passed; CLI exposes trials-per-trailing-branch and early-stop-patience."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

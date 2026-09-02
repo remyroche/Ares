@@ -1,0 +1,45 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T00:00:00Z",
+  "scope": "Record the selected offline-only P8U Router50 + F72 Base + Under F120 research canonical. No live inference, execution, exchange state, policy geometry, admission threshold, or deployed canonical bundle is modified.",
+  "change": "Freeze Under F120 as the sole downstream confirmation coordinate for the best routed P8U research Base. Preserve independent strict-prequential BCF and Current MC1 maps, the dual +50-bps EV gate, and BCF MC1 expected-EV auction priority.",
+  "changed_paths": [
+    "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v1.json",
+    "docs/P8U_ROUTED_F72_UNDERF120_RESEARCH_CANONICAL_20260828.md",
+    "docs/P8U_META_LAYER_FAMILY_SELECTION_HANDOVER_20260828.md",
+    "agents/receipts/20260828_strict_r3_p8u_routed_f72_underf120_research_canonical.json"
+  ],
+  "source_contracts": [
+    "config/strict_r3_p8u_raw_catboost_base_research_canonical_20260828_v1.json",
+    "config/strict_r3_p8u_meta_under_fullfeature_xendcg_20260828_v1.json",
+    "data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_selection_20260828_v2/contracts/under_f120.json",
+    "data_perp/artifacts/strict_r3_p8u_meta_fullfeatures_mc1_f120_janjul2026_20260828_v2/run_manifest.json",
+    "data_perp/artifacts/strict_r3_p8u_meta_fullfeatures_mc1_f120_janjul2026_20260828_v2/correctness_report.json"
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "JSON parse and source-path existence audit",
+      "canonical contract equality audit against the immutable MC1 replay manifest",
+      "review that the new contract contains no live/exchange authority"
+    ],
+    "result": "The canonical file exactly matches the sealed Router50/F72/Under-F120 MC1 source: one Under arm at weight 1.0, distinct BCF and Current score families, independent prequential maps, a dual +50-bps gate, and BCF EV auction priority. Source paths, target-free identity, label-resolution, and no-live-mutation checks all passed."
+  },
+  "implementation_sha256": {
+    "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v1.json": "44ca657cc6cef57d0d2938c8a2cad7b6493055d7fd3f6fb3b3565b30d8a02583",
+    "docs/P8U_ROUTED_F72_UNDERF120_RESEARCH_CANONICAL_20260828.md": "e8a4e04f856583f3073d74bc495820d1c73c654e5ddc8f79e754245b074db008",
+    "docs/P8U_META_LAYER_FAMILY_SELECTION_HANDOVER_20260828.md": "e220d0ad4fdb0da33e6a20bcfd768647ca761c294fe2b54e9eabe5ea55b21df5"
+  },
+  "selected_evidence": {
+    "period": "2026-04 through 2026-07",
+    "entries": 3634,
+    "net_ev_bps_per_trade": 119.20764069008153,
+    "total_net_bps": 433200.5662677563,
+    "worst_month_bps": 68.27676128475827,
+    "worst_week_bps": 50.43551286856032,
+    "max_drawdown": -0.21963202656779623
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

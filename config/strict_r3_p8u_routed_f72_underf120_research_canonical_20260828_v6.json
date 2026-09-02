@@ -1,0 +1,57 @@
+{
+  "schema": "strict_r3_p8u_routed_f72_underf120_research_canonical_successor_v6",
+  "status": "CANONICAL_RESEARCH_STACK_NOT_LIVE",
+  "created_at": "2026-08-28",
+  "side": "long",
+  "parent_contract": "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v5.json",
+  "purpose": "Capacity-corrected, offline canonical research receipt. This file does not authorize inference, exchange access, or a live-stack change.",
+  "frozen_stack": {
+    "router": "P8U top-50% timestamp-local identity gate; numeric score has no downstream feature authority",
+    "base": "F72 Raw-bps CatBoost QueryRMSE tail_linear_125",
+    "current_family": "0.75 * Base rank + 0.25 * Under F120 rank",
+    "bcf_family": "Base rank only",
+    "under": "F120 Rank-XENDCG bps100 confirmation head",
+    "admission": "independent BCF and Current MC1 expected policy-net maps, both >= 50 bps",
+    "auction_priority": "BCF MC1 expected policy-net bps"
+  },
+  "repaired_receipts": {
+    "dual_mc1_predictions": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_nov25_aug27_20260828_v1/dual_predictions.parquet",
+    "capacity_sensitivity": "data_perp/artifacts/strict_r3_p8u_f72_underf120_gate_capacity_sweep_aug27_20260828_v3_committed_margin",
+    "extended_quality": "data_perp/artifacts/strict_r3_p8u_f72_underf120_extended_quality_aug27_20260828_v5_committed_margin",
+    "realism_audit": "data_perp/artifacts/strict_r3_p8u_f72_underf120_replay_realism_audit_20260828_v1"
+  },
+  "evaluation": {
+    "decision_timestamps": "2025-11-01T00:00:00Z <= timestamp < 2026-08-28T00:00:00Z",
+    "canonical_control": "dual MC1 >= 50 bps; maximum two new entries per timestamp",
+    "entries": 8461,
+    "raw_dual_admitted_rows": 29474,
+    "net_ev_bps_per_trade": 129.108391,
+    "total_net_bps": 1092386.330688,
+    "worst_month_bps": 68.276761,
+    "worst_week_bps": 39.417373,
+    "max_drawdown": -0.317663,
+    "capacity_semantics": "80% wallet cap on committed initial margin at entry; marked exposure after price movement is diagnostic only"
+  },
+  "policy": {
+    "frozen_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+    "frozen_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+    "resolution": "15-minute aggregate rich-policy proxy; exact one-minute exit parity is not established by this research receipt",
+    "cost": "100 bps round-trip policy cost embedded exactly once"
+  },
+  "mc1_provenance": {
+    "recorded_artifact_training_months": 3,
+    "current_runner_source_training_months": 6,
+    "status": "METADATA_MISMATCH_BLOCKS_LIVE_PACKAGING",
+    "required_repair": "Reproduce or reseal the MC1 artifact from hash-bound source and resolve the training-window discrepancy before any live bundle is built."
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_promotion": [
+      "resolve MC1 training-window provenance mismatch",
+      "build hash-bound inference bundle including all models, score references, maps, and feature state",
+      "exact target-free inference/replay parity test",
+      "later untouched forward validation",
+      "separate explicit authorization"
+    ]
+  }
+}

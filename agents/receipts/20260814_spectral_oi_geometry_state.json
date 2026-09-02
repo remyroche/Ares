@@ -1,0 +1,48 @@
+{
+  "task": "strict-r3-frozen-spectral-oi-geometry-state",
+  "scope": "Add an exact causal bootstrap/update/snapshot state node for the three strict-R3 market-spectral fields and the open-interest effective-rank field. Source and OI parent identity/order are frozen in the state contract; no geometry selection, relabelling, or monthly refit occurs. The node is standalone-proven and does not alter features.py, any live materializer/configuration, or the long-memory fallback list.",
+  "changed_paths": [
+    "extreme_price_movements/inference/spectral_oi_geometry_state.py",
+    "scripts/bootstrap_strict_r3_spectral_oi_geometry_state.py",
+    "scripts/benchmark_strict_r3_spectral_oi_geometry_state.py",
+    "tests/test_spectral_oi_geometry_state.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/inference/spectral_oi_geometry_state.py scripts/bootstrap_strict_r3_spectral_oi_geometry_state.py scripts/benchmark_strict_r3_spectral_oi_geometry_state.py",
+      "python3 -m pytest -q tests/test_spectral_oi_geometry_state.py",
+      "python3 scripts/benchmark_strict_r3_spectral_oi_geometry_state.py --rows 120 --steady-updates 12 --symbols 170 --spectral-fields 64 --oi-fields 13"
+    ],
+    "not_run_reason": "",
+    "promotion_status": "standalone-proven-not-wired",
+    "evidence": {
+      "batch_parity": "all four requested fields exactly match the existing full-batch formulas under normal values and missing parents",
+      "snapshot_resume": "passed across an 85-row checkpoint",
+      "timestamp_gap": "fails closed",
+      "contract_relabelling": "fails closed",
+      "monthly_geometry_refit": "not implemented; frozen spectral_definition_id and oi_geometry_definition_id are hash-bound state identity",
+      "170_symbol_64_spectral_13_oi_bootstrap_120_rows_seconds": 2.016966459,
+      "170_symbol_64_spectral_13_oi_steady_update_seconds": 0.017532913,
+      "source_sha256": "d0518b8d2cc5cb7c743bc6c4c9085577f11763c2cdabf31a19f27dd685f1da10",
+      "bootstrap_sha256": "a4aa4093d985c9c802dc7c8326a276dcc2fb7b9e962fdbb5da6dbbddddc2c70a",
+      "benchmark_sha256": "929548d0f831155bafa0f3ae885dc3628b39f0822a82bf8b3392ba6df4b51a9f",
+      "test_sha256": "a7a299dd02e439e7aed414706bcc1f2315836521e989596a0fb263933f7a6810"
+    },
+    "decision": "A caller must supply complete point-in-time parent values using the frozen ordered contracts. Bind this node to the incremental materializer only after full 120-field and downstream score/admission/policy parity; until then the existing exact fallback remains authoritative."
+  },
+  "agent_plan": {
+    "subagents": [],
+    "delegation_note": "Bounded high-stakes production-inference state implementation retained by the lead worker; no additional delegation."
+  }
+}

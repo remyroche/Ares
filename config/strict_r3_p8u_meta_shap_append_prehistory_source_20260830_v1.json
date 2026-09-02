@@ -1,0 +1,9 @@
+{
+  "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_prequential_bridge_mar25_jul26_20260830_v1/target_free_shap_features",
+  "full_feature_roots": [
+    "data_perp/artifacts/strict_r3_p8u_underf120_pathidentity_marjul25_features_20260830_v1",
+    "data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1"
+  ],
+  "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+}

@@ -1,0 +1,67 @@
+{
+  "schema": "strict_r3_inference_bundle_overlay_v1",
+  "base_bundle": "config/strict_r3_inference_bundle_long_v168_v197_paired_current_peer_historical_recovery_candidate.json",
+  "overrides": {
+    "paths": {
+      "same_model_reference_candidates": "data_perp/artifacts/strict_r3_bcf_live_promotion_recovery_20260824_v1/recovered_reference_candidates.parquet",
+      "same_model_reference_features": "data_perp/artifacts/strict_r3_state_advance_validation_aug22_23_20260824_v7_independent_full/score_inputs/reference_features_exact111710.parquet",
+      "bcf_mc1_ledger": "data_perp/artifacts/strict_r3_bcf_same_lineage_challenger_20260824_v1/bcf_mc1_oos_ledger.parquet"
+    },
+    "sha256": {
+      "same_model_reference_candidates": "6e81f996ddba9dd213efbe011b7ed825269aac793eec0b82f979a5fc067b707a",
+      "same_model_reference_features": "e68bc797c9e5dcc8cea7e4705134352cf38540b03b65d918b5628a2632f3ae50",
+      "dual_bcf_mc1_ledger": "974a9782045994619a0a8b3ca1f002cfcf2101bf0caa961b451e39eaa2e83996"
+    },
+    "runtime": {
+      "feature_state": {
+        "contract_sha256": "12672f92789107fab4c9ab76a20c0c6504e8adce215b4a7f3fc83171dc5705c4",
+        "final14_contract_sha256": "46103989c66b5f2b286386bca747efe5132151787e22365387922154c783d978",
+        "full_reconstruction_allowed": false,
+        "hybrid_exact_long_memory_allowed": false,
+        "initial_seed_bundle": "data_perp/artifacts/strict_r3_stateful_recovery_v155_20260822T110000Z_130000Z_v2/hour_20260822T130000Z/run/feature_state/bundle",
+        "initial_seed_expected_state_timestamp": "2026-08-22T12:00:00+00:00",
+        "initial_seed_manifest_sha256": "35159f49b324bf9f058b1556b84542c9469247bc924a649126ee886c0f57eecd",
+        "mode": "persisted_state_only",
+        "one_time_state_reseal": {
+          "operator_state_payload_sha256": "1db0ae51633e978117d85aeda94afb130024b84636df7ab5d8d9cc6ade18d1fa",
+          "reason": "Inherited v175 state re-receipt lineage; unavailable outside those sealed historical recovery bundles.",
+          "resealed_bundle": "data_perp/artifacts/strict_r3_runtime_reseal_v174_indexed_state_snapshot_20260823_v1/bootstrap_0900_feature_state_bundle",
+          "resealed_manifest_sha256": "8f9c41796923aed8d5c6c1c5683560f7d334f2445e6e1bfc2190627e4f55836c",
+          "superseded_bundle": "data_perp/artifacts/strict_r3_stateful_recovery_v172_20260823T090000Z_v1/hour_20260823T090000Z/run/feature_state/bundle",
+          "superseded_manifest_sha256": "34433e3e120cc3f30dbc9015fb1a9734ff62910901b3656d1d8be9cd5871a95b"
+        },
+        "implementation_rereceipt": {
+          "resealed_bundle": "data_perp/artifacts/strict_r3_feature_state_rereceipt_20260824_v1/bundle",
+          "receipt": "data_perp/artifacts/strict_r3_feature_state_rereceipt_20260824_v1/implementation_rereceipt.json",
+          "receipt_sha256": "3f1900d0ed06b279cf5a41ec3e745966436e302b9e4c87af347fae0fc519b4e0"
+        },
+        "orderbook_precomposite_contract_sha256": "b51a5a9ff5baf838684196e13d0095b1e9b8b5a0eb71da126e1739a08ad4ea27",
+        "panel_tail_hours": 1536,
+        "required_state_kinds": [
+          "raw_rolling",
+          "causal_transform",
+          "derived_history",
+          "nested_derived",
+          "oi_long_iqr",
+          "fixed_ffd",
+          "strict_r3_final14",
+          "orderbook_precomposite"
+        ],
+        "runtime_checkpoint_before_order_submission": true,
+        "runtime_checkpoint_required": true,
+        "schema": "strict_r3_causal_feature_state_bundle_v2",
+        "stateful_exact_families": [
+          "final14",
+          "orderbook_precomposite"
+        ]
+      }
+    },
+    "runtime_code_sha256": {
+      "extreme_price_movements/features.py": "34558c6181de889a95d05b0656c8797c5e5ef2aa1896772c8be2f1816f99f104",
+      "extreme_price_movements/strict_r3_shadow_portfolio.py": "cb8684e69d8ac602c4c84dcf5734d4d351e157b1a9cb5d9a731555f028464dc0",
+      "scripts/materialize_strict_r3_forward_features_incremental_v13.py": "8732c45e85557d8229516d01635f22e4f9573247e90a0adf13deba152ec94b86",
+      "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "402b63f42d24452d5f59418b4f3e30e37cbd4f37c89f573aaf46805ecafeca1e",
+      "scripts/run_strict_r3_hourly_shadow_resume_v15.py": "3af410eac2a9cef4b2fc77859b1e6acf151127f1e0daed967ec5c80bae64ff31"
+    }
+  }
+}

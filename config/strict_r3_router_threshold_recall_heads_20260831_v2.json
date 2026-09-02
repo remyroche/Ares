@@ -1,0 +1,72 @@
+{
+  "schema": "strict_r3_router_threshold_recall_heads_v1",
+  "supersedes": {
+    "path": "strict_r3_router_threshold_recall_heads_20260831_v1.json",
+    "reason": "v1 trained on the Router-50 subset feature panel (about 75 candidates/timestamp) while the current Router scores the full 149-candidate/timestamp universe. No v1 blend metrics were emitted; this v2 is the only candidate-comparable run."
+  },
+  "scope": "research-only strict-OOF long Router recall ablation; no canonical or live-stack mutation",
+  "side": "long",
+  "months": [
+    "2025-04", "2025-05", "2025-06",
+    "2025-07", "2025-08", "2025-09",
+    "2025-10", "2025-11", "2025-12"
+  ],
+  "folds": {
+    "2025_q2": ["2025-04", "2025-05", "2025-06"],
+    "2025_q3": ["2025-07", "2025-08", "2025-09"],
+    "2025_q4": ["2025-10", "2025-11", "2025-12"]
+  },
+  "feature_roots": [
+    "data_perp/artifacts/strict_r3_p8u_f72_router_early_dec24_feb25_20260829_v2",
+    "data_perp/artifacts/strict_r3_p8u_f72_router_early_marjul25_identityonly_source_repaired_20260829_v1",
+    "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_v1"
+  ],
+  "policy_path": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_aug27_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "bundle": "data_perp/artifacts/strict_r3_lockstep_successor28_long_aug1_7_current_spread_20260812_v1/bundles/cutoff=20260801/upstream/monthly_upstream_bundle.joblib",
+  "source_current_router": "data_perp/artifacts/strict_r3_p8u_router_oof_apr25_jul26_successorlabels_20260828_v1",
+  "source_current_router_score_column": "router_primary_only_rank",
+  "train_months": 3,
+  "reserve_days": 28,
+  "train_cap": 120000,
+  "route_fraction": 0.5,
+  "targets": [
+    "R50_policy_net_gt50",
+    "R100_policy_net_gt100",
+    "R200_policy_net_gt200"
+  ],
+  "ranker": {
+    "objective": "rank_xendcg",
+    "n_estimators": 1000,
+    "learning_rate": 0.0567571124,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_fraction": 0.0170376482,
+    "min_child_floor": 500,
+    "min_split_gain": 0.0032153844,
+    "subsample": 0.7279092484,
+    "feature_fraction": 0.7873548972,
+    "l1": 0.01416746,
+    "l2": 0.2167458327,
+    "max_bin": 127,
+    "truncation": 12,
+    "label_gains": [0.0, 1.0],
+    "row_weight_scheme": "sqrt_excess",
+    "row_weight_floor_bps": 100.0,
+    "row_weight_cap_bps": 250.0,
+    "early_stopping_rounds": 30,
+    "inner_validation_fraction": 0.2,
+    "n_jobs": 4
+  },
+  "blend_weight_grid_step": 0.25,
+  "selection": {
+    "primary": "timestamp-macro Recall@50 / Recall@100 / Recall@200 at the exact timestamp-local 50% Router route",
+    "economics_guardrail": "report only; it does not affect score fitting or blend construction",
+    "promotion": "development-only; no live or canonical promotion"
+  },
+  "causality": {
+    "training": "only policy labels with policy_label_available_ts strictly before the fold reserve start",
+    "held_scoring": "target-free features and held scores are sealed before the outcome sidecar is joined",
+    "routing": "ceil(0.50 * candidates at each decision timestamp), deterministic candidate-id ties",
+    "outcomes": "joined only for post-score evaluation"
+  }
+}

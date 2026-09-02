@@ -1,0 +1,28 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-21",
+  "scope": "Short P0→O→C→K0 roadmap Round 1 strict-OOF opportunity definition sweep; research only, no canonical/live change.",
+  "artifacts": {
+    "output": "data_perp/artifacts/strict_r3_short_p0_oc_k0_round1_20260821_v1",
+    "manifest_sha256": "ca5f4d3ef671d1dff9642b251c5cc84ef16ca53c69bd6ee57c7fd22f721555a7",
+    "runner_sha256": "711a9f7fb6b3d9233272920e8a88f7813a6e6885d7bbfb17141f440961482fd3",
+    "test_sha256": "2be6e02ed37dca49009bad4e688894903e1293dc54447ddcb825a1b547b035fe"
+  },
+  "contract": {
+    "architecture": "P0 target-free winner → O opportunity probability → C conditional T5 policy-regret conversion → K0 analytic mixture",
+    "outer_fit": "label_available_at < held_month_start",
+    "inner_oof": "label_available_at < inner_validation_start",
+    "inference_population": "all target-free P0 candidates; invalid paths excluded only after scoring",
+    "selection": "outer-training inner-OOF p80 K0 expected-policy-EV threshold"
+  },
+  "winner_selection": {
+    "advance_to_round_2": ["O250_H6", "O300_H12"],
+    "not_advanced": ["O200_H6", "O200_H3", "O250_H12", "O150_H12", "O225_H12", "O200_H12_control", "O175_H12"],
+    "rationale": "O250_H6 has the strongest 2025–26 mean economics (+113.46 bps/trade) while satisfying both-era and participation gates. O300_H12 has the strongest stability among advancing arms (all 2026 months positive, +13.72 bps worst month), with +104.18 bps/trade and the highest total net bps. O200_H6 passed the minimum gate but is dominated on mean economics and has a weaker worst month."
+  },
+  "validation": {
+    "command": "python -m pytest -q extreme_price_movements/tests/test_short_p0_oc_k0_round1.py",
+    "result": "3 passed"
+  },
+  "caveat": "2025–2026 are model-selection evidence, not an untouched promotion period."
+}

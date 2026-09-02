@@ -1,0 +1,89 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline, source-repaired P8u Meta target/query evaluation; no live, admission, execution, or exchange mutation",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "research_contract": "source_repaired_early_history_v2_expanded_base_lineage_f72_target_stage",
+  "lineage_supersedes": "none; this is a target/query-only predecessor to the immutable expanded-base full-1400 CMI contract",
+  "lineage_note": "The only source difference from v2 is the use of the sealed, source-repaired F72 target-free panels for the F72 target/query screen. Full-1400 CMI selection remains exclusively bound to v2 and its expanded-base panels.",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_base_score_union_dec24_jul25_source_repaired_20260829_v2/target_free_scores",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_f72_router_early_dec24_feb25_20260829_v2",
+      "data_perp/artifacts/strict_r3_p8u_f72_router_early_marjul25_identityonly_source_repaired_20260829_v1"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "folds": {
+    "held_months": ["2025-05", "2025-06", "2025-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 100000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM LambdaRank common screen",
+    "objective": "lambdarank",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0,
+    "fixed_iterations_note": "The target/query screen uses a common frozen fit. Causal early-stop and HPO, if justified, are downstream of target selection."
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.75,
+    "meta_rank_weight": 0.25,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "magnitude": {
+      "definition": "strict-prequential rich-policy-net residual against a train-only Base-rank-to-policy-EV isotonic anchor; ordinalized into seven train-only quantile grades",
+      "arms": [
+        {"name": "magnitude_bps__base_band", "scale": "bps", "query": "base_band"},
+        {"name": "magnitude_bps__base_band_block28", "scale": "bps", "query": "base_band_block28"}
+      ]
+    },
+    "under": {
+      "definition": "unexpected favorable path: policy residual clears the declared threshold and the resolved path reached the frozen 0.5-ATR trailing-profit activation",
+      "query": "timestamp",
+      "arms": [
+        {"name": "under_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "under_bps100__timestamp", "scale": "bps", "threshold": 100.0}
+      ]
+    },
+    "over": {
+      "definition": "unexpected adverse path: policy residual breaches the declared negative threshold and the canonical policy exits through stop-loss or fast-adverse protection",
+      "query": "timestamp",
+      "arms": [
+        {"name": "over_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "over_bps100__timestamp", "scale": "bps", "threshold": 100.0}
+      ]
+    }
+  },
+  "selection": {
+    "one_winner_per_family": true,
+    "primary": "SStableMeta",
+    "secondary": ["conditional_mi_meta_policy_given_base", "mean_top2_substitution_ev_bps", "worst_week_smeta"],
+    "final_authority": "A candidate must improve the strict Meta-to-MC1 constrained portfolio. This stage alone cannot promote a Meta head."
+  },
+  "causality": {
+    "feature_inputs": "base target-free scores/ranks and point-in-time causal features only",
+    "labels": "policy and path outcomes join only after target-free input identity is fixed; training labels must be available before the fold reserve",
+    "train_residual": "expanding 14-day Base-to-EV anchors use only earlier fully resolved policy labels",
+    "held_score": "held target-free score receipt is persisted before any held outcome metric is computed",
+    "held_outcomes": "metrics only; never an input to prediction"
+  }
+}

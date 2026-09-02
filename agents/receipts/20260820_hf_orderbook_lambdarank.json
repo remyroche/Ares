@@ -1,0 +1,56 @@
+{
+  "schema": "ares.agent_receipt.v1",
+  "date_utc": "2026-08-20",
+  "scope": "Compact-only Hugging Face Kraken order-book recap expansion and chronological LambdaRank spread-target ablation",
+  "source": {
+    "repository": "Abraxasccs/kraken-market-data",
+    "market": "spot",
+    "futures_status": "No futures order-book tree exists in this source; every row is explicitly marked spot_fallback_no_futures_in_abraxasccs_dataset."
+  },
+  "retention": {
+    "raw_book_payloads": "streamed in process memory and discarded after L2 recap",
+    "individual_trade_data": "never requested or retained",
+    "audit": "data/execution/hf_kraken_orderbook_recap_v1/contract_audit.json",
+    "audit_sha256": "1c0dc7ef8e931c3c1beafa9192fa02b0cb212b285fa8e18bef2fb3f468039ece",
+    "surface_partitions": 54,
+    "compact_rows": 67302,
+    "symbols": 14,
+    "source_payload_bytes_discarded": 490507848,
+    "persisted_raw_columns": [],
+    "prohibited_raw_like_files": [],
+    "retention_violations": []
+  },
+  "implementation": {
+    "scripts": {
+      "materialize_hf_kraken_orderbook_recap.py": "da00799b7189f4209403eb04f46aa477194c718440ca72f21f48f2c669cd39d1",
+      "audit_hf_kraken_orderbook_recap.py": "8e2b818004ae268d70d3f7e4edd2f2dd79b50a3412f6b801bc5384101dc7b101",
+      "evaluate_liquidity_transition.py": "3d67eb3c426258efc9eda5eeefa74d6b98c0881e320a622f1f4da4cf0715a2f9"
+    },
+    "target_contract": {
+      "absolute_future_spread": "literal future full spread in bps",
+      "spread_delta": "future spread minus current spread, normalized by strictly-prior per-symbol robust spread MAD scale",
+      "asset_relative_deviation": "future spread minus strictly-prior per-symbol median, normalized by the same scale"
+    },
+    "cross_profile_normalization": "strictly-prior per-symbol spread baseline plus bid/ask displayed depth ratios at 10, 50, and 100 bps; no trade volume is present in the compact order-book-only contract"
+  },
+  "validation": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPYCACHEPREFIX=/private/tmp/ares_pycache python3 -m pytest -q tests/execution",
+    "result": "31 passed",
+    "tests": {
+      "test_hf_orderbook_recap.py": "e0c38f8ed491795a800c6346d5530922c56ddc37015c28b6d5d9154abea54b0d",
+      "test_liquidity_transition.py": "119185c88f6baaed16d9c4cd367cfeeaa8e172adf4b84d67a27c16db56267f8b"
+    }
+  },
+  "final_artifacts": {
+    "h15_spread_delta_manifest": {
+      "path": "data/execution/hf_kraken_orderbook_recap_v1/models/lambdarank_h15_spread_delta_v3/run_manifest.json",
+      "sha256": "a9031bf8a80341dca99cc835811101084636ae4efbec2d35f8a13d21c20f2448"
+    },
+    "h30_spread_delta_manifest": {
+      "path": "data/execution/hf_kraken_orderbook_recap_v1/models/lambdarank_h30_spread_delta_v3/run_manifest.json",
+      "sha256": "7ebf9ec97e14ce2d3cab88b1b8bca6e4d6acf315ed974be43a41bf9d95feadef"
+    },
+    "report": "docs/KRAKEN_HF_ORDERBOOK_LAMBDARANK_20260820.md"
+  },
+  "promotion_status": "research-only; the ranker has not been wired into live admission or execution."
+}

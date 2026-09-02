@@ -1,0 +1,48 @@
+{
+  "base_bundle": "config/strict_r3_inference_overlay_long_v153_v181_hash_stability_capacity_fallback.json",
+  "overrides": {
+    "runtime_code_sha256": {
+      "extreme_price_movements/config.py": "d0928e31676c7d8edd242a667433c4a505592ffd30b1155dad7b2869ce6f575e",
+      "extreme_price_movements/features.py": "f79b497899385764a97eaacd95e82deb9df138f7e0b6fc5fef8d3c0d47e8d3b2",
+      "extreme_price_movements/hf_data_loader.py": "d124904b2a80ef6c8233d8f0e0ca282f273755b4de2d04d97a65b19583dfb694",
+      "extreme_price_movements/inference/orderbook_feature_state.py": "c1736b3fd5c12b8c13d0f7ff957fe125d3112a2eb14d0844ad1c62f8860783bb",
+      "extreme_price_movements/inference/strict_r3_live_execution.py": "d84752729056fbb3987efd38595bcc18608d86d47a37b7a087183db35fc3a63e",
+      "extreme_price_movements/portfolio_policy_replay.py": "63045491d58cc603fa4ab77d38b681c1b9a1c36310c50fd2ff4bba9efe4f58b8",
+      "extreme_price_movements/strict_r3_canonical_v2.py": "8179b547c337f48fe68892592c89957f3b1e1018c5668a7d298ac6ecd5c1d9ae",
+      "extreme_price_movements/strict_r3_inference_bundle.py": "c14a0ceb7e2dff7993803ce41d537018334250724046c96c18d07debbe4d86d5",
+      "extreme_price_movements/strict_r3_shadow_portfolio.py": "cb8684e69d8ac602c4c84dcf5734d4d351e157b1a9cb5d9a731555f028464dc0",
+      "scripts/assemble_strict_r3_runtime_resolved_ledger.py": "95b99bf852bd08379c822fbeefa701e0cd532b9d4e1665bdb71cbc70315e9e65",
+      "scripts/materialize_strict_r3_forward_features.py": "465d822922cddcdbf129deae399dccac373370b37b20a570feeab3d80d20e8ca",
+      "scripts/materialize_strict_r3_forward_features_incremental_v13.py": "c41a873e69a8ebf45b6a78699cc08c5926e37ec0582acc880e6ac33a5409390b",
+      "scripts/materialize_strict_r3_frozen_policy_labels_v2.py": "9b501ae0f88bf994c6cd20b081aa69766e914ca4eb683f49d9e0ce4e481d5094",
+      "scripts/run_strict_r3_hourly_shadow_resume_v15.py": "e4b6829ee5c541c0a5515714bfff27850a77d11e49b33b19ed9f2e582828ed73",
+      "scripts/run_strict_r3_shadow_cycle.py": "1af56ab1995a96ffca91980eded6d821ef01984c38efcc47c9b605799bd22408",
+      "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "44a0aa1a78795929eed498d32ddcc72809c2e5271581d63d77b3ad9dbad15cd7"
+    }
+  },
+  "purpose": "v154/v182 candidate: binds the currently checked-out 16-file runtime set to the immutable v153/v181 inference contract for no-order validation. It changes no model, feature contract, geometry, calibration, admission, auction, sizing, source, or exit-policy reference. It is not an exchange-writing activation.",
+  "runtime_reseal": {
+    "changed_runtime_paths": [
+      "extreme_price_movements/config.py",
+      "extreme_price_movements/features.py",
+      "extreme_price_movements/hf_data_loader.py",
+      "extreme_price_movements/inference/orderbook_feature_state.py",
+      "extreme_price_movements/inference/strict_r3_live_execution.py",
+      "extreme_price_movements/portfolio_policy_replay.py",
+      "extreme_price_movements/strict_r3_canonical_v2.py",
+      "extreme_price_movements/strict_r3_inference_bundle.py",
+      "extreme_price_movements/strict_r3_shadow_portfolio.py",
+      "scripts/assemble_strict_r3_runtime_resolved_ledger.py",
+      "scripts/materialize_strict_r3_forward_features.py",
+      "scripts/materialize_strict_r3_forward_features_incremental_v13.py",
+      "scripts/materialize_strict_r3_frozen_policy_labels_v2.py",
+      "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+      "scripts/run_strict_r3_shadow_cycle.py",
+      "scripts/run_tp6_sl4_exact170_canonical_consensus.py"
+    ],
+    "economic_contract_changed": "unreviewed; candidate blocked from exchange-writing activation",
+    "schema": "strict_r3_runtime_reseal_candidate_v1",
+    "supersedes": "config/strict_r3_inference_overlay_long_v153_v181_hash_stability_capacity_fallback.json"
+  },
+  "schema": "strict_r3_inference_bundle_overlay_v1"
+}

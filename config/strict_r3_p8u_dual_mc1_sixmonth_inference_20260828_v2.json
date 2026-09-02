@@ -1,0 +1,56 @@
+{
+  "schema": "strict_r3_p8u_dual_mc1_sixmonth_inference_config_v1",
+  "status": "RESEARCH_PACKAGE_NOT_LIVE",
+  "supersedes": "config/strict_r3_p8u_dual_mc1_sixmonth_inference_20260828_v1.json",
+  "purpose": "Hash-bound dual-MC1 inference package selector for the P8U Router/F72/UnderF120 stack. This config does not authorize exchange access or order submission.",
+  "package_root": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_sixmonth_aug25_aug26_20260828_v4",
+  "run_manifest_sha256": "05731b94c8e35a19d70e55392a1335e468ccd568ba96279e32466794b4a449d6",
+  "correctness_report_sha256": "46f7657026e536166731c86d3598c518b7ea382cd0da21ad86a8729b0407648d",
+  "audit_root": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_sixmonth_aug25_aug26_20260828_v4_audit_20260828_v1",
+  "audit_status": "pass",
+  "training": {
+    "train_months": 6,
+    "prequential_rule": "six complete calendar months ending at held-vintage start; each policy label available strictly before held-vintage start",
+    "first_eligible_vintage": "2026-02",
+    "model": "HistGradientBoostingRegressor(max_depth=2,max_iter=80,learning_rate=0.04,l2_regularization=20.0,min_samples_leaf=100,random_state=1729)",
+    "score_band_curve_population": "complete six-month fit population before deterministic day-balanced sampling"
+  },
+  "feature_contract": [
+    "final_score",
+    "base_rank42",
+    "conditional_consensus_rank",
+    "upstream",
+    "ordinary_shadow_consensus_rank",
+    "correctness_rank"
+  ],
+  "calibration": {
+    "static_model": "family-specific HGB absolute policy-net expected-bps map",
+    "score_band_curve": "serialized monotone 10-band curve used only by the shift residual",
+    "shift": "prior 21 fully-resolved calendar days; 10% trimmed mean of policy_net_bps minus per-band curve; update incrementally at inference",
+    "policy_cost": "embedded exactly once in canonical policy_net_bps"
+  },
+  "families": {
+    "bcf": {
+      "coordinate": "Base rank only",
+      "latest_package": "mc1_packages/family=bcf/month=2026-08",
+      "latest_package_sha256": "f1b473ace65f3deade2213972e7742e3fa45c59502d40159a09172a248f4e9e3"
+    },
+    "current": {
+      "coordinate": "0.75 * Base rank + 0.25 * Under F120 rank",
+      "latest_package": "mc1_packages/family=current/month=2026-08",
+      "latest_package_sha256": "6441b94784bda822ceec0792328d83497f74fcf41bfcfd4280612b22f07bf5b7"
+    }
+  },
+  "admission": {
+    "both_family_expected_bps_at_least": 50.0,
+    "priority": "bcf_mc1_expected_bps",
+    "order_submission": false
+  },
+  "requirements_before_live_promotion": [
+    "retrain and serialize the Router, F72 Base, and Under F120 model packages under the same hash-bound bundle",
+    "replace the historical prior21d shift snapshot with append-only live resolved-outcome state",
+    "run target-free live/replay parity against the complete assembled bundle",
+    "run a later untouched forward validation",
+    "receive separate explicit live authorization"
+  ]
+}

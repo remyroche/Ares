@@ -1,0 +1,41 @@
+{
+  "schema": "strict_r3_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T01:00:00Z",
+  "scope": "offline P8u Base-only versus Base-plus-Meta independent dual-MC1 comparison",
+  "live_or_exchange_mutation": false,
+  "changed_files": {
+    "scripts/run_strict_r3_p8u_singlebase_true_dual_mc1_v1.py": "735ff76dcf407a98f5fe9994b6afbb049c90ebd5e964aabf9ee053c0ece7359d",
+    "docs/P8U_BASE_PRECISION_PRESERVATION_HANDOVER_20260828.md": "41e502596a4ff19c3ff8e4dab5e21d51e71ffee355cd39cb809e3d3ef9b73b15"
+  },
+  "inputs": {
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "raw_base": "data_perp/artifacts/strict_r3_p8u_tail125_singlehead_downstream_source_aug25_jul26_20260828_v1",
+    "raw_meta": "data_perp/artifacts/strict_r3_p8u_tail125_meta_three_arms_jan_jul_successorlabels_20260828_v1",
+    "policy_base": "data_perp/artifacts/strict_r3_p8u_policyordinal_singlehead_downstream_source_aug25_jul26_20260828_v3",
+    "policy_meta": "data_perp/artifacts/strict_r3_p8u_policyordinal_meta_under_jan26_jul26_successorlabels_20260828_v3"
+  },
+  "outputs": {
+    "raw": "data_perp/artifacts/strict_r3_p8u_tail125_true_dual_mc1_aprjul_successorlabels_20260828_v1",
+    "policy": "data_perp/artifacts/strict_r3_p8u_policyordinal_true_dual_mc1_aprjul_successorlabels_20260828_v1"
+  },
+  "contract": {
+    "route": "frozen P8u Router50 identity gate",
+    "current_family": "0.75*Base timestamp rank + 0.25*strict-OOF under_atr1 Meta timestamp rank",
+    "bcf_family": "Base timestamp rank only",
+    "mc1_fit": "separate strict-prequential three-calendar-month maps",
+    "admission": "both MC1 expected nets >= +50 bps",
+    "portfolio": "one shared chronological constrained replay, BCF MC1 expected net priority",
+    "evaluation": "2026-04 through 2026-07"
+  },
+  "validation": {
+    "syntax_check": true,
+    "policy_schema_check": true,
+    "raw_correctness_receipt_all_true": true,
+    "policy_correctness_receipt_all_true": true,
+    "diff_check": true,
+    "target_free_scores_persisted_before_policy_join": true,
+    "independent_current_bcf_mc1_maps": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "decision": "Raw-bps CatBoost tail-125 is the retained P8u Base research winner. The four-month result is not a live promotion."
+}

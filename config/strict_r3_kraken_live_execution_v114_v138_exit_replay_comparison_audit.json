@@ -1,0 +1,197 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260821_v41_v113_exit_replay_comparison_audit.json",
+  "activation_authorization_sha256": "32f1e7e77b8a2f19215b60a90a04476e47ea7a935ca66034faa3b8eeaaceb739",
+  "baseline_policy_cost_bps": 100.0,
+  "close_based_hard_stop_monitor_enabled": true,
+  "exchange_id": "krakenfutures",
+  "executable_vwap_frozen_threshold_sentinel_enabled": true,
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - (1.2 * live_full_spread_bps + 2 * entry_vwap_impact_bps + 10 bps); the resulting executable EV must be >= +30 bps after frozen dual MC1 admission and the common portfolio auction; it is a final veto only and never a reranking signal.",
+  "execution_adjusted_ev_veto_enabled": true,
+  "execution_book_telemetry_only": true,
+  "execution_entry_authority": "sealed_dual_mc1_admission_then_common_portfolio_auction_then_execution_adjusted_ev_ge_30bps",
+  "execution_microstructure_buffer_bps": 10.0,
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "failure_policy": "fail_closed",
+  "full_vwap_hard_stop_monitor_enabled": false,
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v113_bcf_current_dual_exit_replay_comparison_audit.json",
+  "inference_bundle_sha256": "b3a181ea947967b74d135a55ac227f3f5dda48fd3be29d33cd6d38ea8d749ed5",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 30.0,
+  "native_last_stop_backstop_bps": 50.0,
+  "openpositions_503_fills_fallback_enabled": true,
+  "order_submission_authorized": true,
+  "position_monitor": [
+    "every 30 seconds: evaluate the prior completed-1m frozen policy threshold against remaining-size fresh directional executable VWAP (long sell-through-bids; short buy-through-asks), after recorded entry half-spread and directional adverse entry-slippage allowance; the completed-bar favourable extreme (high for long, low for short) updates MFE/trailing/smooth state only for the next interval; the 50-bps directionally farther native last stop is the catastrophe backstop. Production authority remains long-only.",
+    "When Kraken /openpositions specifically returns HTTP 503, the minute monitor may reconstruct only already-tracked position inventory from authenticated /fills. Every tracked entry fill must be present and its signed post-entry amount must be exactly open or zero; anything else fails closed. The fallback never discovers positions and never grants entry authority."
+  ],
+  "protective_stop_book_levels": 10,
+  "protective_stop_exit_vwap_adjustment": true,
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "c178f9498bc7ead9d09128eb0e80ba98b9fadc6e0c983b0fa0ab0b4cfcfa4943",
+    "extreme_price_movements/inference/run_inference.py": "c61f73857373f209cbba4f01bcb0d8ce05a7efe92f67dabb079e5f83afaf1bfa",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "a8a357d4a6027b2cb4f440f8d4eabdeceb1849afcacddb3bf39d6f5c7b322631",
+    "extreme_price_movements/inference/trade_executor.py": "ae3e240d836ad09120a1ad08807358767fda17ce3018294fa2c4e354f644a535",
+    "extreme_price_movements/strict_r3_rich_policy.py": "4ed85ee171fcd500deac9492e184d7244c3c703bd755b310cffb3c253b9c392e",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "bf2ce41ddd728a592af8e19b57c25dee4176fba966cba0500181921a1a6ef1f5",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "fbce9cb21d13aa4d298200812da39f6a648846aa24fb8612cdeb7f407970e8e5"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "scripts/run_strict_r3_live_hourly_entry_producer.py"
+      ],
+      "current_inference_bundle_sha256": "7b0e23cd1bc870b20afd8477b4ebd05c6d8f9a492c9be156547d6efca224acf8",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v102_bcf_current_dual_exit_postclose_confirmation_timing.json",
+      "predecessor_inference_bundle_sha256": "a81bbf1c1094b54f3563188dcf9e4038ac754fb83c71d24865d673f5021f0cc8",
+      "reason": "State bridge producer wiring and shadow-state validation only; static model, feature, admission, portfolio, policy and execution gates are unchanged."
+    },
+    {
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/strict_r3_live_execution.py"
+      ],
+      "changed_execution_fields": [
+        "openpositions_503_fills_fallback_enabled"
+      ],
+      "fallback_failure_mode": "fail_closed",
+      "fallback_scope": "minute_monitor_existing_tracked_positions_only",
+      "fallback_trigger": "kraken_openpositions_http_503_only",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v104_v128_feature_state_snapshot_reseal.json",
+      "predecessor_execution_sha256": "5686999edbc149a418e990e9ae738cad7fb73c8e7c9122978db410fe1868565a",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v104_bcf_current_dual_feature_state_snapshot_reseal.json",
+      "predecessor_inference_bundle_sha256": "7b0e23cd1bc870b20afd8477b4ebd05c6d8f9a492c9be156547d6efca224acf8",
+      "successor_execution_semantics": "openpositions_503_fills_monitor_fallback_v1"
+    },
+    {
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/canonical_stack_reporting.py",
+        "extreme_price_movements/inference/run_inference.py",
+        "extreme_price_movements/inference/strict_r3_live_execution.py"
+      ],
+      "changed_execution_fields": [],
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v106_v130_openpositions503_fills_fallback.json",
+      "predecessor_execution_sha256": "3916f5b8e124b23b75ef727d4ab3ce825c9a0fad9cb593184cf9557fa9bf7f9e",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v105_bcf_current_dual_openpositions503_fills_fallback.json",
+      "predecessor_inference_bundle_sha256": "6bf6ad2a9e9e20747b0a2de8144e65e79e2389571388626f95e8cccfaa09ae22",
+      "report_only": true,
+      "successor_execution_semantics": "close_email_dual_mapper_fill_reporting_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "scripts/run_strict_r3_live_hourly_entry_producer.py"
+      ],
+      "changed_execution_fields": [],
+      "current_inference_bundle_sha256": "e6e6fffaeaae93f05f13bf0c0423fa5267d711c30dc31d9efc6170ab097f5d50",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v107_v131_close_email_dual_mapper_fill_reporting.json",
+      "predecessor_execution_sha256": "5bedc929dcbec98605dbadb2b6c26ccca1d87a959bbe0d7abd20162c3af2c0ef",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v106_bcf_current_dual_close_email_dual_mapper_fill_reporting.json",
+      "predecessor_inference_bundle_sha256": "eef51c19a947af8bfea7d68fd29cc6986103f71dbef06f6dcc11dbea6ebd4693",
+      "report_only": false,
+      "successor_execution_semantics": "runtime_reseal_bridge_chainfix_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/adaptive_exit_v1.py",
+        "extreme_price_movements/config.py",
+        "extreme_price_movements/features.py",
+        "extreme_price_movements/inference/strict_r3_live_execution.py",
+        "extreme_price_movements/strict_r3_canonical_current.py",
+        "extreme_price_movements/strict_r3_canonical_v2.py",
+        "extreme_price_movements/strict_r3_inference_bundle.py",
+        "extreme_price_movements/strict_r3_rich_policy.py",
+        "extreme_price_movements/strict_r3_shadow_portfolio.py",
+        "scripts/build_adaptive_exit_v1_canonical_bundle.py",
+        "scripts/build_strict_r3_mc1_d2_canonical_bundle.py",
+        "scripts/materialize_strict_r3_forward_features.py",
+        "scripts/materialize_strict_r3_forward_features_incremental_v13.py",
+        "scripts/materialize_strict_r3_frozen_policy_labels_v2.py"
+      ],
+      "changed_execution_fields": [],
+      "current_inference_bundle_sha256": "2abfb3974e5123c958296ec811ade100ec85511909da50fe262e9bd3e718d039",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v108_v132_runtime_bridge_chainfix.json",
+      "predecessor_execution_sha256": "5f90b124ba4c500bf440aa0eb4e67aa89d3e34c0088136269bcf0a616ffd3f3c",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v107_bcf_current_dual_runtime_bridge_chainfix.json",
+      "predecessor_inference_bundle_sha256": "e6e6fffaeaae93f05f13bf0c0423fa5267d711c30dc31d9efc6170ab097f5d50",
+      "reviewed_current_runtime": true,
+      "successor_execution_semantics": "full_runtime_review_integrity_reseal_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/trade_executor.py"
+      ],
+      "changed_execution_fields": [],
+      "current_inference_bundle_sha256": "d74bc16cb69af4c9874c160a46db5063bbade5008d549b9cf7f4c2987ab9ec65",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v109_v133_full_runtime_review.json",
+      "predecessor_execution_sha256": "1a2d6359cbe22135a7557411a7e2214c5c797a516f3d3c8f53788be48803dff5",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v108_bcf_current_dual_full_runtime_review.json",
+      "predecessor_inference_bundle_sha256": "2abfb3974e5123c958296ec811ade100ec85511909da50fe262e9bd3e718d039",
+      "reviewed_current_runtime": true,
+      "successor_execution_semantics": "authoritative_kraken_private_fill_reporting_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/features.py",
+        "scripts/materialize_strict_r3_forward_features_incremental_v13.py"
+      ],
+      "changed_execution_fields": [],
+      "current_inference_bundle_sha256": "0d483f1bfc749e8eae929e807cf3f4ab7f1e29b9e914a60c125df321e066e4e9",
+      "operator_state_payload_preserved_exact": true,
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v110_v134_authoritative_kraken_fills.json",
+      "predecessor_execution_sha256": "ce62b9d1fb6e9ee91ef02641f91acfdd3de5d3076f16086dd4a53b41ccaf69b9",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v109_bcf_current_dual_authoritative_kraken_fills.json",
+      "predecessor_inference_bundle_sha256": "d74bc16cb69af4c9874c160a46db5063bbade5008d549b9cf7f4c2987ab9ec65",
+      "reviewed_current_runtime": true,
+      "successor_execution_semantics": "feature_state_session_contract_parity_reseal_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/strict_r3_live_execution.py",
+        "extreme_price_movements/strict_r3_bcf_mc1_mapper.py",
+        "extreme_price_movements/strict_r3_canonical_current.py",
+        "extreme_price_movements/strict_r3_cell_day_trust.py",
+        "extreme_price_movements/strict_r3_mc1_mapper.py",
+        "scripts/build_strict_r3_mc1_d2_canonical_bundle.py",
+        "scripts/replay_strict_r3_forward_portfolio.py",
+        "scripts/run_strict_r3_live_hourly_entry_producer.py"
+      ],
+      "changed_execution_fields": [],
+      "current_inference_bundle_sha256": "5dc200fa614ba8101343acf35a769e032fe1d82c1f872920302b99e7d6f52188",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v112_v136_feature_state_session_output_schema_fix.json",
+      "predecessor_execution_sha256": "0bbdc7974513e11b75994b24a42f1196e95ba409198ac9bc18aa974610741f9b",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v111_bcf_current_dual_feature_state_session_output_schema_fix.json",
+      "predecessor_inference_bundle_sha256": "0d483f1bfc749e8eae929e807cf3f4ab7f1e29b9e914a60c125df321e066e4e9",
+      "reviewed_current_runtime": true,
+      "successor_execution_semantics": "bounded_oi_worker_runtime_integrity_v1"
+    },
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/run_inference.py",
+        "extreme_price_movements/inference/strict_r3_live_execution.py"
+      ],
+      "changed_execution_fields": [],
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v113_v137_oi_timeout_runtime_integrity.json",
+      "predecessor_execution_sha256": "2192d08291a3540e91a2484320388fef3dcc064dc99eddf5b02fd784089fa023",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v112_bcf_current_dual_oi_timeout_runtime_integrity.json",
+      "predecessor_inference_bundle_sha256": "5dc200fa614ba8101343acf35a769e032fe1d82c1f872920302b99e7d6f52188",
+      "report_only": true,
+      "successor_execution_semantics": "exit_replay_comparison_audit_v1"
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long",
+  "version_note": "v138: audit-only exit-comparison telemetry. Records actual fill, live executable VWAP, parent-policy replay threshold and same-minute completed close; no execution authority or rich parent policy change."
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "strict_r3_live_operations_controller_config_v1",
+  "enabled": false,
+  "auto_restart_authorized": false,
+  "reason_disabled": "BCF same-lineage challenger remains unpromoted; do not restart live entry from this controller.",
+  "max_auto_restarts_per_24h": 2,
+  "restart_verification_seconds": 2,
+  "sealed_contract_files": {},
+  "services": {
+    "producer": {
+      "pid_path": "/private/tmp/strict_r3_live_hourly_entry_producer_v181.pid",
+      "expected_command_fragment": "run_strict_r3_live_hourly_entry_producer.py",
+      "launcher": "scripts/start_strict_r3_live_hourly_entry_producer_v181.sh",
+      "launcher_sha256": ""
+    },
+    "monitor": {
+      "pid_path": "/private/tmp/strict_r3_live_position_monitor_v181.pid",
+      "expected_command_fragment": "run_strict_r3_live_position_monitor.py",
+      "launcher": "scripts/start_strict_r3_live_position_monitor_v181.sh",
+      "launcher_sha256": ""
+    }
+  },
+  "safe_auto_repair_scope": [
+    "restart a missing hash-verified monitor",
+    "restart a missing hash-verified producer for the next fresh hour only"
+  ],
+  "never_auto_repair": [
+    "model, policy, feature, calibration, state-lineage, or artifact changes",
+    "source or parity failures",
+    "post-execution-boundary failures",
+    "process identity mismatches",
+    "stale decision execution"
+  ]
+}

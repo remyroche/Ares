@@ -1,0 +1,67 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260818_v15_bcf_current_dual_exit_vwap_stop_bridgefix.json",
+  "activation_authorization_sha256": "896eb9bdebe84ed11d13881ec4b4a3374d3d58386dab9a710e06e47244a23ac3",
+  "baseline_policy_cost_bps": 100.0,
+  "exchange_id": "krakenfutures",
+  "execution_adjusted_ev": "raw_expected_gross_bps - (calculated microstructure friction + adverse delay gap + 10 bps); raw_expected_gross_bps uses the explicit MC1 gross convention and the historical 100-bps policy cost is not debited again; adjusted EV must remain >=50 bps at preflight and after fill.",
+  "execution_microstructure_buffer_bps": 10.0,
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "failure_policy": "fail_closed",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v87_bcf_current_dual_exit_vwap_stop_bridgefix.json",
+  "inference_bundle_sha256": "ec9a61cd2e876927eeb59c173da485d4328c5a255d591d9d24d55473c138d612",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 50.0,
+  "order_submission_authorized": true,
+  "position_monitor": "persistent one-minute controller: hard stop -> prior smooth lock -> trailing -> fast adverse -> next-bar MFE/arm; entry ATR immutable; Adaptive Exit V1 only modulates parent trailing activation.",
+  "protective_stop": "native exchange reduce-only stop-market; trigger is raised by full-position bid-side VWAP impact so expected executable exit equals frozen rich-policy stop; persist native request and book receipts",
+  "protective_stop_book_levels": 10,
+  "protective_stop_exit_vwap_adjustment": true,
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "a76cdaa9ba69500c9f585e3a065c3ac84b51216d94da950cd43a7e7687fa1057",
+    "extreme_price_movements/inference/trade_executor.py": "000017a0dbf063083a271fe9fae5d08f40d09b5fd175d7949789b7389af326bd",
+    "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "516dd1a3ac3f53a2a67fff6497bee459aac8bcbce21eef6aa915de7a2e4a70af"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/strict_r3_live_execution.py",
+        "extreme_price_movements/inference/trade_executor.py"
+      ],
+      "current_inference_bundle_sha256": "ec9a61cd2e876927eeb59c173da485d4328c5a255d591d9d24d55473c138d612",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v84_bcf_current_dual_recovered_terminal_1000.json",
+      "predecessor_inference_bundle_sha256": "22051b5a8789f034f86247a83637656ae120926c189faf3bd1c56ac93204cb0c"
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long",
+  "stateful_recovery_successor": {
+    "allowed_live_predecessor": "data_perp/artifacts/strict_r3_stateful_recovery_v60_extension_20260818T100000Z_v5/hour_20260818T100000Z/run",
+    "orders_during_recovery": 0,
+    "recovery_chain": [
+      "data_perp/artifacts/strict_r3_stateful_recovery_v60_20260817T200000Z_20260818T090000Z_v4",
+      "data_perp/artifacts/strict_r3_stateful_recovery_v60_extension_20260818T100000Z_v5"
+    ],
+    "schema": "strict_r3_stateful_recovery_successor_v1",
+    "source_bootstrap": "v60_only",
+    "terminal_feature_state_bundle": "data_perp/artifacts/strict_r3_stateful_recovery_v60_extension_20260818T100000Z_v5/hour_20260818T100000Z/run/feature_state/bundle",
+    "terminal_feature_state_manifest_sha256": "afb7692f3700a72dad51ff51e3125762fe9968c6836b5089ca2e5dd6a9c7ec15",
+    "terminal_run": "data_perp/artifacts/strict_r3_stateful_recovery_v60_extension_20260818T100000Z_v5/hour_20260818T100000Z/run",
+    "terminal_run_manifest_sha256": "9580fe98e87155bfaf2c4b84ab6bf51381e2e0d07465d97fb427b55484de1ecd",
+    "terminal_stateful_replay_parity": "data_perp/artifacts/strict_r3_stateful_recovery_v60_extension_20260818T100000Z_v5/terminal_state_replay_parity_manifest.json",
+    "terminal_stateful_replay_parity_sha256": "a67477e9ca277a6be6c4dd872853b49ea8576afda109df711ddf4c2004006cdb"
+  },
+  "version_note": "v107: v105 exit-VWAP stop protection; corrected v84 bridge declares strict_r3_live_execution and trade_executor as changed runtime sources."
+}

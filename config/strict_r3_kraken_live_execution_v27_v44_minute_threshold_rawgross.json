@@ -1,0 +1,29 @@
+{
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "exchange_id": "krakenfutures",
+  "side": "long",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v44_validated_entryopen_reseal.json",
+  "inference_bundle_sha256": "8fd1571d2c920572ab37381d8c08477a4afe126d517bf524fef3f43399b666a5",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 900,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "baseline_policy_cost_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "order_submission_authorized": true,
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260815_v10_v44_late1500.json",
+  "activation_authorization_sha256": "03bd4304069a1be524df08637f327244e171d6a895f410fd50c4da26eeac5c24",
+  "late_entry_override_decision_ts": "2026-08-15T15:00:00+00:00",
+  "late_entry_override_expires_at": "2026-08-15T15:45:00+00:00",
+  "runtime_checkpoint_required_before_order_submission": true,
+  "execution_adjusted_ev": "raw_expected_gross_bps - 100-bps canonical policy cost - adverse_delay_gap_bps - min(80 bps, 1.2 * live_full_spread_bps + 2 * entry_impact_bps); must remain at least +50 bps at preflight and after fill",
+  "position_monitor": "persistent one-minute threshold monitor: stop/trailing/timeout use closed 1m bars; the ML-selected adaptive activation is a retained 15m input and is never recomputed on the minute loop",
+  "failure_policy": "fail_closed",
+  "runtime_code_sha256": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "5b9afe74d5839cbda20985fe0dbfdda76860160891706e4236c993a969a3bbad",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "2cf10909c88278a571f36ae7253a6be202cacff9fcbd953b1b0a04e609de10d5"
+  }
+}

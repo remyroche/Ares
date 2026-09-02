@@ -1,0 +1,50 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "task": "short-p0-f90-m4-domain-and-era-diagnostic-funnel",
+  "scope": "Offline-only, frozen-M4 short conversion-regime diagnostics. No target, feature contract, consensus, policy, admission, portfolio, live inference, or exchange-writing behavior is changed.",
+  "changed_paths": [
+    "scripts/run_strict_r3_short_p0_m4_domain_diagnostic.py",
+    "extreme_price_movements/tests/test_short_m4_domain_diagnostic_contract.py",
+    "docs/SHORT_P0_M4_DOMAIN_REGIME_DIAGNOSTIC_20260821.md",
+    "agents/receipts/20260821_short_p0_m4_domain_regime_diagnostic.json"
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "implementation": {
+    "D0": "preserves stored short P0/F90 M4 OOF rows and their causal train-p80 admission exactly",
+    "D1": "re-fits only the frozen M4 ordinal target, inputs, model and OOF isotonic mapping under 3/6/9/12-month history and requested whole-day row-cap controls",
+    "D2_D8": "separate calibration, terminal-policy/path, score-domain, market-state, interaction, strict-train OOD/support and composition diagnostics",
+    "D9_D10": "hierarchical shrinkage gate can only remove an existing M4 p80 admission, and is disabled unless at least two predeclared markers are same-direction with support across all three eras",
+    "k9": "raw Geometry/K9 memberships are prohibited; unavailable bundle-invariant K9 OOD/support values remain explicitly unavailable"
+  },
+  "causality": {
+    "supervised_train_rows": "decision_ts < held_month and policy_label_available_at < held_month",
+    "M4_scores": "stored strict-prequential P0/F90 scores; no held outcome is consumed in a fit or map",
+    "marker_percentiles": "strictly-prior 90-day target-free observed marker distributions",
+    "ood_support": "covariance, nearest-neighbour radius, feature ranges and leaf counts are fit only on each held fold's prior training rows",
+    "same_era_deciles": "descriptive-only and never admission inputs"
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_short_p0_m4_domain_diagnostic.py",
+      "python3 -m pytest -q extreme_price_movements/tests/test_short_m4_domain_diagnostic_contract.py extreme_price_movements/tests/test_short_absolute_conversion_funnel_contract.py extreme_price_movements/tests/test_short_topk_hierarchical_contract.py: 12 passed",
+      "bounded one-era immutable smoke run completed all D0-D10 output stages at /private/tmp/strict_r3_short_m4_domain_diagnostic_smoke_20260821_v7",
+      "full immutable cross-era run completed all D0-D10 stages at data_perp/artifacts/strict_r3_short_p0_m4_domain_regime_diagnostic_20260821_v2; D9 correctly failed closed and D10 is empty"
+    ],
+    "full_artifact": "data_perp/artifacts/strict_r3_short_p0_m4_domain_regime_diagnostic_20260821_v2",
+    "outcome": "No D9 marker had the required supported same-direction relationship across 2024, 2025 and 2026; no D10 gate was emitted or promoted."
+  },
+  "source_hashes": {
+    "scripts/run_strict_r3_short_p0_m4_domain_diagnostic.py": "5653410d72bccec2c45fb42c066744f27628195f35f86ad17be91f0b5e9faf17",
+    "extreme_price_movements/tests/test_short_m4_domain_diagnostic_contract.py": "152e52a9087b869c0602fe57d22f1113405f44af5f595d3c0ebb6ceb99f86737",
+    "docs/SHORT_P0_M4_DOMAIN_REGIME_DIAGNOSTIC_20260821.md": "baa1f170479be9e0b6542ccfd673844d361388db690d4e790da6ad0fbf2e1c5c"
+  },
+  "agent_plan": {"subagents": []},
+  "promotion": "none"
+}

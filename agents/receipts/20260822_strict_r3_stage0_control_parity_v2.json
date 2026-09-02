@@ -1,0 +1,21 @@
+{
+  "schema": "strict_r3_research_code_receipt_v1",
+  "scope": "offline long-only :00-only Stage-0 parity audit; no live, canonical, admission, portfolio, or execution artifact changed",
+  "verified_at_utc": "2026-08-22T00:00:00Z",
+  "files": {
+    "scripts/audit_strict_r3_full_control_parity.py": "48aadb374e483caf40dee521993908f36ea8895ee5253a71b1c1c83f66f4de91",
+    "scripts/seal_strict_r3_stage0_control_parity.py": "1b5194bee301c89ec51a0a774996da410b4b55d8ad1b8d5357c5cd98633264a2",
+    "extreme_price_movements/tests/test_seal_strict_r3_stage0_control_parity.py": "c2a5093a757c3b5aeef296bf4b4b1e59dc1f4e0b3a0706311fd1a9e4dd8e9b7b"
+  },
+  "validated_commands": [
+    "python3 -m py_compile scripts/seal_strict_r3_stage0_control_parity.py",
+    "python3 -m pytest -q extreme_price_movements/tests/test_seal_strict_r3_stage0_control_parity.py",
+    "python3 scripts/seal_strict_r3_stage0_control_parity.py --out-dir data_perp/artifacts/strict_r3_base_recall_residual2_consensus_research_20260822_v4/stage0_control_parity_receipt_20260822_v2"
+  ],
+  "result": "2 passed; aggregate target-free current-score, current-native MC1, BCF-native MC1, dual-admission/auction, and five rich-parent portfolio/exit arms reproduced within the 0.01% numeric contract with exact categorical state.",
+  "contract_repairs": [
+    "The aggregate receipt directly verifies the frozen ordered 120-field long contract in every current upstream and conversion bundle.",
+    "The receipt makes the frozen Geometry/K9 no-refit and same-model reserve invariants explicit rather than relying on a score aggregate.",
+    "Adaptive Exit V1 is explicitly marked pending candidate-bound exact-OOF parity; no parent-only receipt can promote a challenger as a complete exit stack."
+  ]
+}

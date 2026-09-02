@@ -1,0 +1,29 @@
+{
+  "task": "strict-r3-independent-current-hour-replay-parity",
+  "status": "passed_and_required_for_promotion",
+  "auditor": "scripts/audit_strict_r3_schema_v6_current_replay.py",
+  "tolerance_relative": 0.0001,
+  "hours": {
+    "2026-08-14T01:00:00Z": {
+      "features": {"rows": 170, "fields": 120, "maximum_delta": 0.0},
+      "model_outputs": {"rows": 121, "fields": 90, "maximum_delta": 0.0},
+      "admission_and_trust": {"rows": 121, "fields": 126, "maximum_delta": 0.0},
+      "admitted_identities_exact": true,
+      "artifact": "data_perp/artifacts/strict_r3_schema_v6_current_replay_audit_20260814T010000Z_v1"
+    },
+    "2026-08-14T02:00:00Z": {
+      "features": {"rows": 170, "fields": 120, "maximum_delta": 0.0},
+      "model_outputs": {"rows": 84, "fields": 90, "maximum_delta": 0.0},
+      "admission_and_trust": {"rows": 84, "fields": 126, "maximum_delta": 0.0},
+      "admitted_identities_exact": true,
+      "artifact": "data_perp/artifacts/strict_r3_schema_v6_current_replay_audit_20260814T020000Z_v1"
+    }
+  },
+  "promotion_audit": "data_perp/artifacts/strict_r3_schema_v6_live_promotion_chain_20260814T020000Z_v2",
+  "promotion_requirements_added": [
+    "all_hours_independently_replayed",
+    "current_replay_within_0_01pct"
+  ],
+  "outcomes_consumed": [],
+  "exchange_calls": 0
+}

@@ -1,0 +1,59 @@
+{
+  "task": "causal-sr-e2-mc1-input-comparison",
+  "scope": "Offline-only strict-OOS comparison of the paired MC1 residual mapper control against causal S/R inputs, a retrained all-candidate 15-minute E2 input, and both. No live, canonical, execution, policy, or frozen model artifact changed.",
+  "changed_paths": [
+    "scripts/run_causal_sr_e2_mc1_input_ablation.py",
+    "tests/test_causal_sr_e2_mc1_input_contract.py",
+    "docs/CAUSAL_SR_E2_MC1_INPUT_COMPARISON_20260831.md"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_causal_sr_e2_mc1_input_ablation.py": "fe5bc47989310286a9ca72e86aa7d8d02f342da7da3baa9f4471c924f25833b7",
+    "tests/test_causal_sr_e2_mc1_input_contract.py": "f14d0b5487c72377986ac3450f02f65219228c43dc7713d598407dc75794a55c",
+    "docs/CAUSAL_SR_E2_MC1_INPUT_COMPARISON_20260831.md": "52763ff9c254a2b5804ef619e87f77c5bc76d9203c949f35539db887544b842d"
+  },
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "causality": {
+    "candidate_and_portfolio_contract": "All four arms retain the same target-free candidate stream, labels, paired residual target, residual clipping, dual >=30 admission, BCF-priority top-two route, portfolio replay and one-time 100-bps policy cost.",
+    "sr_inputs": "Only causal_sr_heads_oof_20260830_v3_entrypivotfix is accepted; oracle/noncausal paths are rejected. Missing S/R remains a LightGBM feature plus availability indicator and never alters eligibility.",
+    "e2_inputs": "The new E2-15m input is a fresh non-pairwise all-candidate 70-feature L1 policy-net model. Its held score is fit on outer prior-resolved rows. Each nonmissing MC1 training feature is an inner prediction fit strictly before that row's month; no same-row label calibration is an MC1 feature.",
+    "labels": "The immutable rich-policy label source is read identically for every arm. Unreadable parts are excluded by whole symbol from every compared arm and never imputed or replaced.",
+    "execution": "All runs are offline and no exchange-writing or live execution path is invoked."
+  },
+  "artifacts": [
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_mc1_input_ablation_20260831_v2/run_manifest.json",
+      "sha256": "3c9d76c082635b96b539f0639b33106a79a9e91d637cd3f5cee9d115f12f4f26"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_mc1_input_ablation_20260831_v2/portfolio_summary.parquet",
+      "sha256": "a1214d5b64706a981c07a0a663048f1e26864d8076df98d3b15504c47ca3a8a2"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_e2_mc1_pycache python3 -m py_compile scripts/run_causal_sr_e2_mc1_input_ablation.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_e2_mc1_pycache python3 -m pytest -q tests/test_causal_sr_e2_mc1_input_contract.py tests/test_causal_sr_mc1_input_contract.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_e2_mc1_pycache python3 scripts/run_causal_sr_e2_mc1_input_ablation.py --output data_perp/artifacts/causal_sr_e2_mc1_input_ablation_20260831_v2 --residual-weight 1.0 --label-read-workers 8",
+      "repeat identical run comparison: portfolio_summary row equality true, maximum numeric delta 0.0",
+      "post-run target-free audit: no duplicate selected IDs, at most two selections per timestamp, no policy or label fields in selections, all held E2 scores finite"
+    ],
+    "results": "Focused tests: 6 passed. Jun-Aug portfolio OOS: S/R alone improves control from +9.27 to +38.84 bps/trade; E2-15m alone reaches +10.21 bps/trade; S/R+E2-15m reaches +36.09 bps/trade and is inferior to S/R alone. No promotion or live change."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

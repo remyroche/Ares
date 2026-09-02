@@ -1,0 +1,10 @@
+{
+  "base_execution": "config/strict_r3_kraken_live_execution_v151_v175_indexed_state_snapshot_state_rebind_live.json",
+  "overrides": {
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260823_v78_v176_direct_15m_book_guard_live.json",
+    "activation_authorization_sha256": "0f47f395c17253d4145fa6b6156a0bdd10ae080db0bbb4e00b7627aaa6223160",
+    "inference_bundle": "config/strict_r3_inference_overlay_long_v150_v176_direct_15m_book_guard.json",
+    "inference_bundle_sha256": "c01231514ce6e5a530b8aef4eb785f2cc833a83ebbb7aec1ec3a20d999302004"
+  },
+  "schema": "strict_r3_kraken_live_execution_overlay_v1"
+}

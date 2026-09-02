@@ -1,0 +1,45 @@
+{
+  "task": "strict-r3-live-completion-window-hardening",
+  "status": "implemented_tested_and_resealed",
+  "finding": {
+    "decision_ts": "2026-08-14T05:00:00+00:00",
+    "artifact": "data_perp/artifacts/strict_r3_schema_v7_live_chain_reconciliation_20260814T050000Z_v1",
+    "result": "reconciliation_only",
+    "reason": "orchestration completed after the sealed 900-second decision window",
+    "model_and_state_checks": "all passed except completion timing",
+    "admitted_rows": 0,
+    "accepted_rows": 0,
+    "realized_exit_rows": 0,
+    "exchange_calls": 0
+  },
+  "canonical_contracts": {
+    "inference_bundle": {
+      "path": "config/strict_r3_inference_bundle_long_20260801_v8_timedcompletion_robust21_mc1_d2_adaptive_exit_v1.json",
+      "sha256": "2098fb680232a7a438b770643b59a855a79136822c7971a847271383aa4889c3"
+    },
+    "execution": {
+      "path": "config/strict_r3_kraken_live_execution_v3_timedcompletion.json",
+      "sha256": "c607de326bf05490709149246fca8ef7e4118ae77c001695fcaf279e9932d5da",
+      "order_submission_authorized": false
+    },
+    "promotion": {
+      "path": "config/strict_r3_schema_v6_live_promotion_20260814_v3_timedcompletion.json",
+      "sha256": "14393801d9a66e3914c2cade429d424ba8a587f0af79238005711b9da739184d",
+      "first_decision_ts": "2026-08-14T06:00:00+00:00"
+    }
+  },
+  "implementation_sha256": {
+    "scripts/run_strict_r3_hourly_shadow.py": "626f7cd1fb636ee0a1517a37d3154fec5c0fd3c980deedb71ff7aebf547d14d9",
+    "scripts/audit_strict_r3_schema_v6_live_hour.py": "3e52d650fc1211fed1d96f0d25d18907264b23fbd6b730e670866c2f655a1d2e",
+    "scripts/audit_strict_r3_schema_v6_current_replay.py": "14d83a1a1877f75269233ef6d643b0ae5e6662a1da2d82e372eae2f61194de01",
+    "scripts/audit_strict_r3_schema_v6_promotion_chain.py": "90da42bd492801c33acd2c164841869d927012aea4099199aaf8dcb62713321f",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md": "0bd93e2f5a51e944c7e244b2cf243fa3018ef6d8f9f2566f1c64f0b13704b5f3"
+  },
+  "verification": {
+    "bundle_artifact_hashes": "28/28",
+    "bundle_runtime_hashes": "39/39",
+    "tests": "45/45 passed",
+    "late_checkpoint_audit": "failed closed only on completed_inside_live_decision_window",
+    "automation": "active hourly at minute 05; exact frozen-170 refresh; --enforce-live-wall-clock required"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "strict_r3_mc1_d2_forward_promotion_gates_v1",
+  "frozen_before_forward_outcomes": true,
+  "champion_contract_sha256": "b1485219617884dfb1cb9bc7b58bf8faf3c8b1dfa87fa1e38786c2384b0ca8bc",
+  "minimum_evidence": {
+    "calendar_days": 42,
+    "accepted_trades": 300,
+    "mc1_only_resolved_trades": 100,
+    "resolved_weeks": 6
+  },
+  "economic_gates": {
+    "mc1_only_net_bps_per_trade_min": 25.0,
+    "mc1_only_minus_r21_only_net_bps_min": 40.0,
+    "overall_mc1_minus_r21_net_bps_min": -10.0,
+    "total_net_bps_ratio_vs_r21_min": 1.0
+  },
+  "risk_gates": {
+    "cvar10_degradation_vs_r21_bps_max": 50.0,
+    "worst_week_degradation_vs_r21_bps_max": 50.0,
+    "maximum_consecutive_zero_trade_days": 7,
+    "maximum_consecutive_zero_trade_weeks": 1
+  },
+  "calibration_gates": {
+    "agreement_within_score_mean_spearman_min": 0.10,
+    "agreement_positive_score_bands_min_fraction": 0.60,
+    "mc1_predicted_ev_decile_spearman_min": 0.30
+  },
+  "concentration_gates": {
+    "largest_asset_total_net_share_max": 0.25,
+    "largest_day_total_net_share_max": 0.20,
+    "largest_week_total_net_share_max": 0.40,
+    "leave_best_week_out_overall_net_bps_min": 0.0
+  },
+  "decision_rule": "all gates must pass; failures do not authorize retuning on the forward period",
+  "comparison": "matched frozen-score population, exact frozen policy, identical portfolio rules"
+}

@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from extreme_price_movements.config import (  # noqa: E402
+    SESSION_CALENDAR_BASE_CANDIDATE_FEATURE_KEYS,
+)
 from scripts.run_tp6_sl4_exact170_canonical_consensus import (  # noqa: E402
     _add_frozen_input_backfill, _add_oi_funding_panels, _add_orderbook_panels,
     _load_contract, _make_panel, materialize_features,
@@ -28,6 +31,65 @@ from scripts.run_tp6_sl4_exact170_canonical_consensus import (  # noqa: E402
 _IDENTITY_COLUMNS = [
     'candidate_id', '__ts__', '__decision_ts__', '__symbol__', 'side_name',
 ]
+
+
+def _assert_complete_market_universe(
+    candidate_path: Path,
+    candidates: pd.DataFrame,
+) -> dict[str, object] | None:
+    """Fail closed when a target-free grid was filtered before feature work.
+
+    Cross-sectional features are properties of the point-in-time market, not
+    of the subset that later passes spread/executability gates.  Canonical
+    target-free candidate artifacts carry their full universe in the sibling
+    manifest.  When that contract is present, require every signal timestamp
+    to contain exactly that same symbol set before any feature is generated.
+
+    Older research inputs without this schema remain readable, but they do
+    not receive a canonical complete-universe attestation.
+    """
+    manifest_path = candidate_path.parent / "run_manifest.json"
+    if not manifest_path.exists():
+        return None
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("schema") != "strict_r3_canonical_forward_v2_target_free_hourly_grid":
+        return None
+    source_map = manifest.get("source_map")
+    if not isinstance(source_map, dict) or not source_map:
+        raise ValueError("target-free candidate manifest lacks a non-empty source_map")
+    expected = frozenset(str(symbol) for symbol in source_map)
+    declared_rows = int(manifest.get("universe_rows", len(expected)))
+    if declared_rows != len(expected):
+        raise ValueError(
+            "target-free manifest universe_rows disagrees with source_map: "
+            f"{declared_rows} != {len(expected)}"
+        )
+    observed = frozenset(candidates["__symbol__"].astype(str).unique())
+    missing = sorted(expected.difference(observed))
+    extra = sorted(observed.difference(expected))
+    if missing or extra:
+        raise ValueError(
+            "feature generation requires the complete point-in-time market universe "
+            "before eligibility filtering; "
+            f"missing={missing[:10]} extra={extra[:10]}"
+        )
+    counts = candidates.groupby("__ts__", sort=False)["__symbol__"].nunique()
+    bad = counts.ne(len(expected))
+    if bad.any():
+        examples = {
+            str(ts): int(count)
+            for ts, count in counts.loc[bad].head(5).items()
+        }
+        raise ValueError(
+            "feature generation requires every timestamp to contain the full "
+            f"{len(expected)}-symbol universe; bad_timestamp_counts={examples}"
+        )
+    return {
+        "candidate_manifest": str(manifest_path),
+        "universe_rows": len(expected),
+        "timestamp_rows": int(len(counts)),
+        "complete_universe_before_candidate_filtering": True,
+    }
 
 
 def _attach_target_free_identity(feature_path: Path, candidates: pd.DataFrame) -> None:
@@ -78,6 +140,8 @@ def _repair_cross_asset_state_fields(
     start: pd.Timestamp,
     end: pd.Timestamp,
     repair_only: set[str] | None = None,
+    source_panel: dict[str, pd.DataFrame] | None = None,
+    bar_phase_minutes: int = 0,
 ) -> None:
     """Attach two causal state fields omitted by the generic materializer.
 
@@ -91,6 +155,7 @@ def _repair_cross_asset_state_fields(
     out = pd.read_parquet(feature_path)
     needed = {
         'median_alt_minus_btc', 'cross_asset_corr_1h',
+        'cross_asset_downside_corr_4h',
         'q_lower_tail__xasset_mkt_spread_bps',
         'q_lower_tail__ob_spread_bps_z_24h',
         'xs_dispersion__ob_spread_bps_z_24h',
@@ -112,7 +177,28 @@ def _repair_cross_asset_state_fields(
     if not requested:
         return
     symbols = sorted(candidates['__symbol__'].astype(str).unique())
-    panel, _ = _make_panel(symbols, start, end)
+    # Incremental producers have already loaded and causally bounded this
+    # complete-universe panel. Reopening 170 archive sources here duplicated
+    # identical I/O and dominated hourly latency. The optional handoff is an
+    # exact input reuse: callers remain responsible for the same symbol/time
+    # contract, which is asserted below. Batch callers retain the historical
+    # loader fallback.
+    if source_panel is None:
+        panel, _ = _make_panel(
+            symbols, start, end, bar_phase_minutes=bar_phase_minutes,
+        )
+    else:
+        panel = source_panel
+        if not isinstance(panel.get('close'), pd.DataFrame):
+            raise ValueError('source_panel lacks close matrix')
+        panel_index = pd.DatetimeIndex(panel['close'].index)
+        if len(panel_index) == 0 or panel_index.min() > start or panel_index.max() >= end:
+            raise ValueError('source_panel does not match declared causal time bounds')
+        missing_symbols = sorted(set(symbols).difference(panel['close'].columns))
+        if missing_symbols:
+            raise ValueError(
+                f'source_panel misses repair symbols: {missing_symbols[:8]}'
+            )
     close = panel['close'].reindex(columns=symbols).replace([np.inf, -np.inf], np.nan)
     log_close = np.log(close.where(close > 0.0))
     ret_1h = log_close.diff(1)
@@ -129,6 +215,23 @@ def _repair_cross_asset_state_fields(
         'median_alt_minus_btc': (median_alt - btc_ret).astype(np.float32),
         'cross_asset_corr_1h': corr.astype(np.float32),
     })
+    # A downside-only correlation is undefined when the complete causal
+    # four-hour window has no downside variation.  In that precise state the
+    # economically neutral value is zero: there is no observed downside
+    # co-movement.  Do not carry another timestamp and do not replace missing
+    # values caused by inadequate source coverage.
+    downside_field = 'cross_asset_downside_corr_4h'
+    if downside_field in out.columns:
+        downside = pd.to_numeric(out[downside_field], errors='coerce').replace(
+            [np.inf, -np.inf], np.nan,
+        )
+        close_coverage = close.notna().mean(axis=1)
+        neutral_ts = set(close.index[
+            close_coverage.ge(0.90)
+            & close.index.to_series().sub(close.index.min()).ge(pd.Timedelta(hours=4))
+        ])
+        neutral_rows = downside.isna() & out['__ts__'].isin(neutral_ts)
+        out.loc[neutral_rows, downside_field] = np.float32(0.0)
     # Rebuild the cross-sectional spread composites from the causal per-asset
     # parent already persisted by the canonical generator.  This also repairs
     # older panels created before the parent/composite dependency ordering was
@@ -176,7 +279,10 @@ def _repair_cross_asset_state_fields(
         ).astype(np.float32)
         state['q_lower_tail__volume_z_24'] = volume_z24.quantile(0.10, axis=1).astype(np.float32)
     if 'q_lower_tail__xasset_mkt_spread_bps' in out.columns:
-        _add_orderbook_panels(panel, symbols, close.index, start, end)
+        bid_ready = isinstance(panel.get('orderbook_best_bid'), pd.DataFrame)
+        ask_ready = isinstance(panel.get('orderbook_best_ask'), pd.DataFrame)
+        if not (bid_ready and ask_ready):
+            _add_orderbook_panels(panel, symbols, close.index, start, end)
         bid = panel.get('orderbook_best_bid')
         ask = panel.get('orderbook_best_ask')
         if isinstance(bid, pd.DataFrame) and isinstance(ask, pd.DataFrame):
@@ -202,15 +308,28 @@ def _repair_cross_asset_state_fields(
         # of that scale-invariant ratio.  Reproduce the native formula here
         # from the authoritative hourly OI and quote-volume panels, then
         # reduce across the complete universe before joining candidates.
-        _add_oi_funding_panels(panel, symbols, close.index, start, end)
-        # Match the main canonical materialiser's source precedence.  The
-        # current OI sidecar is incremental and can lag the authoritative
-        # frozen Kraken backfill; without this merge an otherwise available
-        # forward OI panel is incorrectly treated as missing after its latest
-        # sidecar timestamp.  Both sources are decision-time primitives and
-        # ``combine_first`` retains the higher-priority current sidecar where
-        # present.
-        _add_frozen_input_backfill(panel, symbols, close.index, start, end)
+        # Incremental callers pass a panel that was already assembled from
+        # the authoritative current sidecar plus frozen backfill.  Reopening
+        # every per-symbol OI/funding archive here duplicates that exact I/O
+        # and can dominate the hourly latency.  Batch callers, or incomplete
+        # panels, retain the historical loading/merge path.
+        oi_frame = panel.get('open_interest')
+        # ``_make_panel`` always allocates every primitive key, including an
+        # empty all-NaN OI matrix when the coarse source lacks OI.  Treating
+        # that allocation as loaded data made the surgical path skip the
+        # authoritative OI sidecars entirely.  A batch repair without a
+        # preassembled source panel must always merge those sidecars; an
+        # incremental caller may reuse its already-complete panel.
+        oi_ready = (
+            isinstance(oi_frame, pd.DataFrame)
+            and bool(oi_frame.notna().to_numpy().any())
+        )
+        if source_panel is None or not oi_ready:
+            _add_oi_funding_panels(panel, symbols, close.index, start, end)
+            # Match the main canonical materialiser's source precedence.  The
+            # current OI sidecar can lag the authoritative frozen Kraken
+            # backfill; combine-first retains the higher-priority sidecar.
+            _add_frozen_input_backfill(panel, symbols, close.index, start, end)
         oi = panel.get('open_interest')
         if isinstance(oi, pd.DataFrame) and isinstance(quote_volume, pd.DataFrame):
             from extreme_price_movements.features_oi import (
@@ -291,6 +410,11 @@ def _refresh_feature_coverage(feature_path: Path, coverage_path: Path) -> None:
                 'same-timestamp complete-universe median of the authorised 15m coarse proxy; '
                 'no later timestamp fill'
             ),
+            'cross_asset_downside_corr_4h_zero_variance': (
+                'undefined downside-only correlation is neutral zero only after four '
+                'causal hours and with complete-universe close coverage at least 90%; '
+                'no value from another timestamp is used'
+            ),
         }
         manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
 
@@ -305,6 +429,14 @@ def main() -> None:
     )
     parser.add_argument("--history-start", required=True)
     parser.add_argument("--end-exclusive", required=True)
+    parser.add_argument(
+        "--bar-phase-minutes", type=int, default=0, choices=(0, 15, 30, 45),
+        help=(
+            "hour-boundary phase for research sampling. The model still sees "
+            "one H1 observation per row; phase only moves the completed-H1 "
+            "window and never upsamples feature rows."
+        ),
+    )
     parser.add_argument("--side", choices=("long", "short"), required=True)
     parser.add_argument(
         "--repair-existing-features", type=Path,
@@ -312,6 +444,13 @@ def main() -> None:
             "copy an existing target-free feature panel then recompute only "
             "the declared causal OI cross-sections; avoids a full feature "
             "rebuild when all other frozen fields are already verified"
+        ),
+    )
+    parser.add_argument(
+        "--full-feature-universe", action="store_true",
+        help=(
+            "research only: materialize the canonical engine's complete current "
+            "causal-config feature union instead of the frozen inference contract"
         ),
     )
     args = parser.parse_args()
@@ -336,13 +475,29 @@ def main() -> None:
     # the complete Severe contract on both side-local runs: 44 of these fields
     # are not in the short base list, and omitting them makes short scoring
     # impossible even though base feature generation succeeds.
-    requested = list(dict.fromkeys([*base_contract[args.side], *severe_context]))
+    # Always materialise the registered session candidate pool.  Frozen model
+    # matrices continue to select only their declared fields, while a successor
+    # base/conditional-consensus contract can consume the exact same inference
+    # columns without requiring a divergent feature path.
+    requested = list(
+        dict.fromkeys(
+            [
+                *base_contract[args.side],
+                *severe_context,
+                *SESSION_CALENDAR_BASE_CANDIDATE_FEATURE_KEYS,
+            ]
+        )
+    )
     contract = {
         "long": requested if args.side == "long" else [],
         "short": requested if args.side == "short" else [],
     }
     history_start = pd.to_datetime(args.history_start, utc=True)
     end_exclusive = pd.to_datetime(args.end_exclusive, utc=True)
+    if int(history_start.minute) != int(args.bar_phase_minutes):
+        raise ValueError("history-start minute must equal --bar-phase-minutes")
+    if int(end_exclusive.minute) != int(args.bar_phase_minutes):
+        raise ValueError("end-exclusive minute must equal --bar-phase-minutes")
     candidate_start = (
         pd.to_datetime(args.candidate_start, utc=True)
         if args.candidate_start is not None else None
@@ -354,6 +509,7 @@ def main() -> None:
         ].copy()
         if candidates.empty:
             raise ValueError("candidate-start/end-exclusive selected no target-free candidates")
+    universe_attestation = _assert_complete_market_universe(args.candidates, candidates)
     if args.repair_existing_features is not None:
         source = args.repair_existing_features
         if not source.exists():
@@ -382,6 +538,7 @@ def main() -> None:
             'history_start': str(history_start),
             'end_exclusive': str(end_exclusive),
             'candidate_rows': int(len(candidates)),
+            'complete_universe_attestation': universe_attestation,
             'causal_source_precedence': (
                 'incremental OI sidecar followed by frozen Kraken backfill; '
                 'complete point-in-time cross-section before candidate filtering'
@@ -396,6 +553,7 @@ def main() -> None:
                 'xs_dispersion__oi_to_volume_7d_z_180d',
                 'q_tail_width__oi_to_volume_7d_z_180d',
             },
+            bar_phase_minutes=args.bar_phase_minutes,
         )
         _attach_target_free_identity(path, candidates)
         _refresh_feature_coverage(path, args.out_dir / 'feature_coverage.parquet')
@@ -410,20 +568,37 @@ def main() -> None:
         contract,
         history_start,
         end_exclusive,
+        bar_phase_minutes=args.bar_phase_minutes,
+        full_feature_universe=bool(args.full_feature_universe),
     )
-    _repair_cross_asset_state_fields(
-        path,
-        candidates=candidates,
-        start=history_start,
-        end=end_exclusive,
-    )
+    if not args.full_feature_universe:
+        _repair_cross_asset_state_fields(
+            path,
+            candidates=candidates,
+            start=history_start,
+            end=end_exclusive,
+            bar_phase_minutes=args.bar_phase_minutes,
+        )
+    # The research-only full-universe branch has just calculated the complete
+    # causal engine surface from the same pre-filtered point-in-time panel,
+    # including the OI/funding and cross-asset parents.  Recomputing the two
+    # legacy frozen-contract repair fields would duplicate the most expensive
+    # panel load without changing their value.
     _attach_target_free_identity(path, candidates)
-    _refresh_feature_coverage(path, args.out_dir / 'feature_coverage.parquet')
+    if not args.full_feature_universe:
+        _refresh_feature_coverage(path, args.out_dir / 'feature_coverage.parquet')
+    manifest_path = args.out_dir / 'feature_manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['complete_universe_attestation'] = universe_attestation
+    if args.full_feature_universe:
+        manifest['postbuild_cross_asset_repair'] = 'not_run: complete causal engine surface already computed directly'
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
     print(json.dumps({
         "event": "complete", "features": str(path), "rows": len(candidates),
         "side": args.side, "base_fields": len(base_contract[args.side]),
         "severe_context_fields": len(severe_context),
         "requested_unique_fields": len(requested),
+        "full_feature_universe": bool(args.full_feature_universe),
     }))
 
 

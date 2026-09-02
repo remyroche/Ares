@@ -1,0 +1,67 @@
+{
+  "task": "strict-r3-exact-decision-open-live-coverage-repair",
+  "status": "implemented_tested_resealed_awaiting_first_timely_checkpoint",
+  "finding": {
+    "decision_ts": "2026-08-14T05:00:00+00:00",
+    "frozen_universe_rows": 170,
+    "actionable_before_repair": 10,
+    "entry_not_executable_before_repair": 153,
+    "spread_unavailable": 6,
+    "spread_above_100bps": 1,
+    "cause": "the public 15-minute chart cache lagged the live bar open; its primary raw cache had zero exact 05:00 opens and the shared cache had ten",
+    "spread_finding": "AUD and TON order-book histories stop 2026-06-29; BNT, CHR and ONG stop 2026-07-22; GAS has no supported Kraken order-book analytics history under the frozen identifier"
+  },
+  "repair": {
+    "source_order": [
+      "raw Kraken 15-minute open",
+      "shared 15-minute open for the identical timestamp",
+      "official Kraken one-hour trade-candle open for the identical timestamp"
+    ],
+    "prohibited": [
+      "overwriting an available 15-minute open",
+      "timestamp carry",
+      "high/low/close/volume consumption",
+      "completed-hour or future-path qualification"
+    ],
+    "overlap_check": {
+      "rows": 10,
+      "exact_matches": 10,
+      "maximum_absolute_delta_bps": 0.0
+    },
+    "offline_rematerialization": {
+      "actionable_rows": 163,
+      "spread_unavailable_rows": 6,
+      "spread_above_limit_rows": 1,
+      "entry_not_executable_rows": 0
+    }
+  },
+  "canonical_contracts": {
+    "inference_bundle": {
+      "path": "config/strict_r3_inference_bundle_long_20260801_v9_exactopenfallback_robust21_mc1_d2_adaptive_exit_v1.json",
+      "sha256": "f4cf9961cd025fd439b46193d21d1b3586e4ec4906c53a34bd22e50ae00d8b04"
+    },
+    "execution": {
+      "path": "config/strict_r3_kraken_live_execution_v4_exactopenfallback.json",
+      "sha256": "d292e16dab93384cd6900e04fbd4010b193e04b65e5a56b880a2a183701bd09a",
+      "order_submission_authorized": false
+    },
+    "promotion": {
+      "path": "config/strict_r3_schema_v6_live_promotion_20260814_v4_exactopenfallback.json",
+      "sha256": "2cc5d271195d904c64b42405099960cdb3125d281329b8132ee091c3d088ecda",
+      "first_decision_ts": "2026-08-14T07:00:00+00:00"
+    }
+  },
+  "implementation_sha256": {
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "79183f3a523909eba1e99c8e9e1de46e777b98225326037d193d902f7498dcfb",
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "f2438f0aab1f6526f069b1f09773c4cb0d9f90293b343c17a91f5bab8ec50d97",
+    "scripts/run_strict_r3_hourly_shadow.py": "d98a9b64f5020e87563eb6e51fc2e1d511fd883ed628b5aca3d3a9600112417f",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md": "f54bd457ec44281ee0b97dce19e425cc1046658f78afcf3e3c0bbb40e33a16b2"
+  },
+  "verification": {
+    "bundle_artifact_hashes": "28/28",
+    "bundle_runtime_hashes": "39/39",
+    "targeted_tests": "41/41 passed",
+    "hourly_automation": "active at minute 05 with v9 exact-open fallback contract",
+    "exchange_calls": 0
+  }
+}

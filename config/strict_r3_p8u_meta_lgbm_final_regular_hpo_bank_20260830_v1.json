@@ -1,0 +1,64 @@
+{
+  "schema": "strict_r3_p8u_meta_lgbm_final_regular_hpo_bank_v1",
+  "scope": "Predeclared offline final LightGBM Rank-XENDCG regular-HPO bank for the two strict-MC1-retained P8u Meta target families. It changes no label, query, feature, sample-weight, MC1, portfolio, live, or exchange contract. GateProxy shortlists this bank and fresh strict MC1 remains the only advancement authority.",
+  "search_dimensions": [
+    "max_depth",
+    "num_leaves",
+    "min_child_samples",
+    "min_split_gain",
+    "colsample_bytree",
+    "subsample",
+    "reg_alpha",
+    "reg_lambda",
+    "n_estimators",
+    "learning_rate"
+  ],
+  "candidates": [
+    {
+      "name": "lgbm_final_00_sparse_control",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 460, "learning_rate": 0.028, "max_depth": 4, "num_leaves": 15, "min_child_samples": 760, "min_split_gain": 0.004, "colsample_bytree": 0.72, "subsample": 0.88, "reg_alpha": 0.15, "reg_lambda": 20.0}
+    },
+    {
+      "name": "lgbm_final_01_depth3_smooth",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 560, "learning_rate": 0.022, "max_depth": 3, "num_leaves": 11, "min_child_samples": 700, "min_split_gain": 0.002, "colsample_bytree": 0.80, "subsample": 0.84, "reg_alpha": 0.06, "reg_lambda": 16.0}
+    },
+    {
+      "name": "lgbm_final_02_depth3_sparse",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 420, "learning_rate": 0.030, "max_depth": 3, "num_leaves": 7, "min_child_samples": 820, "min_split_gain": 0.004, "colsample_bytree": 0.74, "subsample": 0.88, "reg_alpha": 0.12, "reg_lambda": 24.0}
+    },
+    {
+      "name": "lgbm_final_03_depth4_balanced",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 400, "learning_rate": 0.032, "max_depth": 4, "num_leaves": 15, "min_child_samples": 580, "min_split_gain": 0.002, "colsample_bytree": 0.80, "subsample": 0.82, "reg_alpha": 0.05, "reg_lambda": 14.0}
+    },
+    {
+      "name": "lgbm_final_04_depth4_wide",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 340, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 31, "min_child_samples": 520, "min_split_gain": 0.002, "colsample_bytree": 0.84, "subsample": 0.78, "reg_alpha": 0.03, "reg_lambda": 10.0}
+    },
+    {
+      "name": "lgbm_final_05_depth5_regular",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 360, "learning_rate": 0.040, "max_depth": 5, "num_leaves": 31, "min_child_samples": 620, "min_split_gain": 0.003, "colsample_bytree": 0.78, "subsample": 0.80, "reg_alpha": 0.08, "reg_lambda": 18.0}
+    },
+    {
+      "name": "lgbm_final_06_depth5_capacity",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 280, "learning_rate": 0.060, "max_depth": 5, "num_leaves": 47, "min_child_samples": 450, "min_split_gain": 0.001, "colsample_bytree": 0.86, "subsample": 0.76, "reg_alpha": 0.01, "reg_lambda": 6.0}
+    },
+    {
+      "name": "lgbm_final_07_depth5_sparse",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 420, "learning_rate": 0.030, "max_depth": 5, "num_leaves": 23, "min_child_samples": 760, "min_split_gain": 0.004, "colsample_bytree": 0.74, "subsample": 0.86, "reg_alpha": 0.12, "reg_lambda": 22.0}
+    },
+    {
+      "name": "lgbm_final_08_depth6_guarded",
+      "model_family": "lgbm_xendcg",
+      "params": {"n_estimators": 300, "learning_rate": 0.045, "max_depth": 6, "num_leaves": 31, "min_child_samples": 800, "min_split_gain": 0.005, "colsample_bytree": 0.72, "subsample": 0.84, "reg_alpha": 0.15, "reg_lambda": 26.0}
+    }
+  ],
+  "selection_protocol": "Target-free strict-OOF scoring over the frozen retained target/query/feature/weight contract; GateProxy Top-3 plus uncertainty plus diverse control; then a fresh strict MC1 replay. No candidate may advance directly from this bank."
+}

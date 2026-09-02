@@ -1,0 +1,58 @@
+{
+  "task": "strict-r3-p8u-e2-h4-live-parity-candidate",
+  "scope": "Materialises a current, prior-resolved, hash-bound E2/H4 bundle and no-order inference components for a separately sealed P8U successor. The active exchange-writing gateway and minute monitor are deliberately not modified.",
+  "changed_paths": [
+    "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260830_v1.json",
+    "extreme_price_movements/inference/p8u_e2_h4_live_parity.py",
+    "extreme_price_movements/inference/p8u_e2_h4_live_features.py",
+    "extreme_price_movements/inference/p8u_e2_h4_continuation.py",
+    "scripts/refit_strict_r3_p8u_e2_h4_live_parity_bundle.py",
+    "scripts/score_strict_r3_p8u_e2_live_parity_noorder.py",
+    "tests/test_p8u_e2_h4_live_parity.py",
+    "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md"
+  ],
+  "changed_path_hashes": {
+    "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260830_v1.json": "63d6b0fe5a1060396f481d41e553a97628796100d70b630d73dc0d2007bd5bef",
+    "extreme_price_movements/inference/p8u_e2_h4_live_parity.py": "a139939704cbacd09b19addf91e76d0a645d45f1a0391d6ef14d721be1e446ef",
+    "extreme_price_movements/inference/p8u_e2_h4_live_features.py": "dc75ae3cc49aef72dc4148500533d30d1c42a2743d3c6e269201f0a170a34f70",
+    "extreme_price_movements/inference/p8u_e2_h4_continuation.py": "3c023fa10a457717714cb52a6d08232c274cbe9fe8315d613e926e52f83b7d71",
+    "scripts/refit_strict_r3_p8u_e2_h4_live_parity_bundle.py": "a21637f2010fba30e4e23a7249985165f0d7d889f9cc2e81f88e0971089a879a",
+    "scripts/score_strict_r3_p8u_e2_live_parity_noorder.py": "c9b5b5546fdda88be9fe4b6a31cbbc96877ed6e08d6cbc14582c3cc8ab897e91",
+    "tests/test_p8u_e2_h4_live_parity.py": "89ca9f9bc876f371a96b9ce2f4b1ac1be1771929b4a3885d7c47cf54233f491a",
+    "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md": "3db78697e0c53b6f38baa94d6bc49a12e96936693dc4abc8c19426f3c868061a"
+  },
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1/bundle_manifest.json",
+    "sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd",
+    "cutoff": "2026-08-29T00:00:00Z",
+    "e2_prior_resolved_pairs": 1021,
+    "h4_prior_resolved_states": 59131
+  },
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "causality": {
+    "entry": "The feature materializer reads only locally persisted 15-minute bars strictly before decision time. E2 sees only target-free score/feature data, uses the current H0/H3 models fit only from labels resolved before cutoff, and may replace at most one marginal dual-30 top-two candidate per timestamp.",
+    "continuation": "The state constructor requires an exact completed 15-minute bar, immutable actual entry data, and strictly earlier state references. H4 produces an instruction for the following 15-minute interval only; it has no direct order authority.",
+    "costs": "No label/replay cost is recalculated or added by this no-order release candidate. The parent rich-policy 100-bps cost remains embedded exactly once in the supervised labels.",
+    "boundary": "The active exchange-writing gateway config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json is hash-bound as an unchanged exclusion boundary. This candidate has order_submission=false."
+  },
+  "validation": {
+    "status": "passed_no_order",
+    "commands": [
+      "python3 scripts/refit_strict_r3_p8u_e2_h4_live_parity_bundle.py --output data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1 --cutoff 2026-08-29T00:00:00Z",
+      "python3 -m pytest -q tests/test_p8u_e2_h4_giveback20_contract.py tests/test_p8u_e2_h4_live_parity.py (5 passed)",
+      "Historical target-free E2 full-panel smoke: 6,677 rows, 1,176 valid pair rows, 26 E2 intersections/replacements, maximum two selections per timestamp",
+      "Historical completed-state H4 smoke: exact 15-minute state -> 45-field contract -> sealed H4 prediction succeeded with no missing model fields",
+      "Temporary isolated target-free E2 selection smoke emitted an immutable no-order receipt; it consumed no outcome columns and proposed no exchange action",
+      "python3 -m py_compile for all five new Python components; release-candidate config hash validation passed"
+    ],
+    "results": "E2 and H4 refit bundle validation passed. The active exchange-facing monitor remains intentionally unmodified; a future live activation must use a distinct successor gateway/monitor and parity receipt."
+  },
+  "agent_plan": {"subagents": []}
+}

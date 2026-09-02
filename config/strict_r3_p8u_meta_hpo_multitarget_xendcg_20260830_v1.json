@@ -1,0 +1,86 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline P8U Meta target/query screen under the successor source binding; no live, admission, execution, or exchange authority",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "research_contract": "P8U_META_HPO_MULTITARGET_XENDCG_SUCCESSOR_V1",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_underlineage_aug25_jul26_20260829_v1/target_free_shap_features",
+    "full_feature_roots": ["data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1"],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_p8u_supportive_path_labels_fullcurrent_source_mar25jul26_20260830_v2/parts"
+  },
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 100000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM Rank-XENDCG frozen common target/query screen",
+    "objective": "rank_xendcg",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.75,
+    "meta_rank_weight": 0.25,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "under": {
+      "definition": "strict-prequential unexpected favorable policy residual with trailing activation",
+      "query": "timestamp",
+      "arms": [
+        {"name": "under_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "under_bps100__timestamp", "scale": "bps", "threshold": 100.0}
+      ]
+    },
+    "over": {
+      "definition": "strict-prequential unexpected adverse stop-loss or fast-adverse residual",
+      "query": "timestamp",
+      "arms": [
+        {"name": "over_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "over_bps100__timestamp", "scale": "bps", "threshold": 100.0}
+      ]
+    },
+    "magnitude": {
+      "definition": "strict-prequential rich-policy-net residual ordinalized into train-only seven quantile grades",
+      "arms": [
+        {"name": "magnitude_bps__base_band_block28", "scale": "bps", "query": "base_band_block28"}
+      ]
+    },
+    "state": {
+      "definition": "signed strict-prequential Base calibration state",
+      "arms": [
+        {"name": "state_bps__base_band_block28", "scale": "bps", "query": "base_band_block28", "edges": [-150, -50, -10, 10, 50, 150]}
+      ]
+    }
+  },
+  "selection": {
+    "screening": "GateProxy screen only: nominate Top-3 expected gate-improving candidates, one uncertainty candidate, and one descriptor-diverse control for full strict MC1 confirmation.",
+    "promotion_authority": "Fresh target-free strict-OOF scoring followed by dual-MC1 admission and one constrained chronological portfolio; never GateProxy alone.",
+    "feature_selection": "The frozen F72 is always present. The successor 212-field SHAP/state pool is only append-eligible in downstream feature-selection stages."
+  },
+  "causality": {
+    "feature_inputs": "frozen F72 target-free fields only at target/query stage; add-on features are unavailable to this stage and enter only later selection",
+    "labels": "policy and supportive-path labels are joined after target-free score persistence and must resolve before each fold reserve",
+    "train_residual_anchor": "strict prequential block anchor uses only earlier fully resolved policy outcomes",
+    "held_outcomes": "diagnostics only; never model input"
+  }
+}

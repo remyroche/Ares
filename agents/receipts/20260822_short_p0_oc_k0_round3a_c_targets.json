@@ -1,0 +1,35 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-22",
+  "scope": "Short P0→O→C→K0 roadmap Round 3A; conditional conversion-target comparison above the frozen Round-2 opportunity winner. Research only; no canonical/live change.",
+  "artifacts": {
+    "output": "data_perp/artifacts/strict_r3_short_p0_oc_k0_round3_c_targets_20260821_v1",
+    "runner_sha256": "7f854ca91b37d2e55175bbf56093cb039b15b3cc87bbae198e2741098ca260a5",
+    "test_sha256": "79c827d4edf214688e8bb52fd7461da4eed934cd00e57ead7a89a53ae20e8a02",
+    "manifest_sha256": "90ba73f1ce58d764fd56e7a18fe9f9804dd0e0592b667c27780899ec36ac6b17",
+    "ranking_sha256": "ccdce4e9e962f353e8c01669cd84d294a8622531cc6d78e450639b8df39bcd88"
+  },
+  "contract": {
+    "frozen_opportunity": "MFE6 > 250 bps; target-specific stable 45 fields; uniform training weight; strict-OOF Platt calibration",
+    "conversion_population": "only true O-positive training rows; all target-free held rows scored",
+    "outer_and_inner_purge": "label_available_at < each validation decision start",
+    "combiner": "K0 = p(O) * mu1(C) + (1-p(O)) * shrunk mu0"
+  },
+  "target_arms": ["C0_t5_regret", "C1_policy_net_ordinal", "C2_capture_efficiency", "C3_normalized_regret", "C4_hybrid_quality"],
+  "decision": {
+    "winner": "C3_normalized_regret",
+    "definition": "five-state ordinalized negative normalized regret; high score means the H12 policy captured a larger share of the defined opportunity",
+    "net_bps_per_trade_2025": 127.36720503171782,
+    "net_bps_per_trade_2026": 142.82754459417228,
+    "pooled_net_bps_per_trade": 130.04116313214232,
+    "total_net_bps": 248118.53925612755,
+    "participation_vs_t5": 0.7848621966269025,
+    "mean_cvar10_bps": -407.34670929710114,
+    "reason": "best two-era mean and material CVaR improvement; its 78.5% participation clears the 70% gate. Its more negative worst month must be monitored in subsequent C feature/weight work."
+  },
+  "validation": {
+    "command": "python -m pytest -q extreme_price_movements/tests/test_short_p0_oc_k0_round1.py extreme_price_movements/tests/test_short_p0_oc_k0_round2.py extreme_price_movements/tests/test_short_p0_oc_k0_round3_c_targets.py",
+    "result": "10 passed"
+  },
+  "caveat": "2025–2026 are sequential model-selection evidence, not an untouched promotion period."
+}

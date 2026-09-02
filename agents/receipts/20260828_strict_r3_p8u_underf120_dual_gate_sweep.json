@@ -1,0 +1,34 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T00:00:00Z",
+  "scope": "Offline terminal-policy sensitivity replay of the sealed P8U Router50/F72/Under-F120 score and MC1 receipts. No model, feature, calibration, live stack, execution, or exchange state is changed.",
+  "change": "Extend the sealed-MC1 terminal replay utility from the original 30/50 pair to the bounded 30/35/40/45/50/60/70/80-bps common dual-admission grid. Record the result without changing the retained 50-bps research gate.",
+  "changed_paths": [
+    "scripts/replay_strict_r3_threeway_admission_threshold_v1.py",
+    "docs/P8U_ROUTED_F72_UNDERF120_RESEARCH_CANONICAL_20260828.md",
+    "agents/receipts/20260828_strict_r3_p8u_underf120_dual_gate_sweep.json"
+  ],
+  "source": "data_perp/artifacts/strict_r3_p8u_meta_fullfeatures_mc1_f120_janjul2026_20260828_v2",
+  "outputs": [
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_30bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_35bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_40bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_45bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_50bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_60bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_70bps_aprjul2026_20260828_v1",
+    "data_perp/artifacts/strict_r3_p8u_routed_f72_underf120_gate_80bps_aprjul2026_20260828_v1"
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/replay_strict_r3_threeway_admission_threshold_v1.py",
+      "eight terminal replays from immutable MC1 receipts",
+      "replay manifests assert no model refit and preserve canonical portfolio adapter"
+    ],
+    "result": "All eight replay outputs have 100% selected-row outcome coverage. The 50-bps gate remains the risk-adjusted winner: 45 bps provides only a +1.34k-bps total increase while worsening drawdown and all worst-period metrics; 60/70/80 bps improve unit EV but lower total contribution and weaken lower-tail day/week or drawdown measures."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

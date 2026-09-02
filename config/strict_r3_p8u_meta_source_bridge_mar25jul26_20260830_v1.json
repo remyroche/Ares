@@ -1,0 +1,18 @@
+{
+  "schema": "strict_r3_p8u_meta_targetfree_source_bridge_v1",
+  "scope": "Audited March 2025–July 2026 target-free Base and F120+SHAP+state feature bridge. This can override source roots only; target, query, folds, weights, and model definitions remain in the enclosing staged Meta config.",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_prequential_bridge_mar25_jul26_20260830_v1/target_free_shap_features",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_meta_f120_shap_state_stack_bridge_mar25jul26_20260830_v1"
+    ],
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "correctness": {
+    "base_aug25jul26_identity_and_rank_exact_to_enclosing_source": true,
+    "feature_schema_and_order_exact_across_march_july_and_august_july_owners": true,
+    "source_override_cannot_change_target_query_fold_weight_or_model_contract": true,
+    "target_free_only": true
+  }
+}

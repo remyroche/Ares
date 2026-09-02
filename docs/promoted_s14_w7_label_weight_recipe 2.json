@@ -1,0 +1,43 @@
+{
+  "name": "s14_policy_path_blend_w7_timestamp_balanced_temporal_holdout_v1",
+  "stage": "base",
+  "provenance": {
+    "source": "label_feature_store_model_smoke_v3_temporal_holdout",
+    "candidate": "S14_policy_net_path_blend::W7_timestamp_balanced",
+    "fit_months": ["2026-04", "2026-05"],
+    "holdout_month": "2026-06",
+    "top_frac": 0.01,
+    "fit_mean_u": 0.0111512709408998,
+    "fit_worst_month_mean_u": 0.0085649099200963,
+    "holdout_mean_u": 0.0007902213837951,
+    "holdout_wide_barrier_25bps_rate": 0.0185185185185185,
+    "report": "data_perp/reports/label_feature_store_model_smoke_v3_temporal_holdout/label_smoke_temporal_holdout.md",
+    "required_label_ablation_mode": "s14_policy_net_path_blend"
+  },
+  "geometry": {
+    "enabled": false
+  },
+  "generator": {
+    "policy_net_label_center": 0.0,
+    "policy_net_label_temperature": 0.012,
+    "policy_net_label_min_std": 1e-8,
+    "policy_net_label_min_finite_frac": 0.98
+  },
+  "label": {
+    "label_modifier_strength": 0.0
+  },
+  "weight": {
+    "base_weight_power": 0.0,
+    "weight_modifier_strength": 0.0,
+    "class_rebalance_strength": 0.0,
+    "recency_half_life_days": 0.0,
+    "concurrency_penalty": 0.0,
+    "timestamp_balance_strength": 1.0
+  },
+  "distillation": {
+    "distillation_strength": 0.0
+  },
+  "objective": {
+    "portfolio_alignment_strength": 0.0
+  }
+}

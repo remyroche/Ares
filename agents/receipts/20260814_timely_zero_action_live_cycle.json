@@ -1,0 +1,48 @@
+{
+  "task": "strict-r3-timely-zero-action-live-cycle",
+  "status": "passed_resealed",
+  "problem": "Waiting for delayed official hourly analytics beyond minute 15 made a decision non-executable; the former zero-action path aborted before exit/state advancement.",
+  "contract": {
+    "decision_age_limit_seconds": 900,
+    "scheduled_validation_minute": 5,
+    "missing_row_policy": "skip only the affected timestamp x symbol",
+    "empty_snapshot_policy": "zero new entries; advance existing SimplePolicyOptimiser and Adaptive Exit V1 exits and portfolio state",
+    "retrospective_repair": "prohibited"
+  },
+  "changed_paths": [
+    "scripts/run_strict_r3_hourly_shadow.py",
+    "scripts/audit_strict_r3_schema_v6_live_hour.py",
+    "scripts/admit_strict_r3_mc1_forward.py",
+    "tests/test_admit_strict_r3_mc1_forward.py",
+    "tests/test_run_strict_r3_hourly_shadow.py",
+    "tests/test_audit_strict_r3_schema_v6_live_hour.py",
+    "config/strict_r3_inference_bundle_long_20260801_v7_timely_noaction_robust21_mc1_d2_adaptive_exit_v1.json",
+    "config/strict_r3_kraken_live_execution_v2_timely_noaction.json",
+    "config/strict_r3_schema_v6_live_promotion_20260814_v2_timely_noaction.json"
+  ],
+  "sealed_identities": {
+    "inference_bundle_sha256": "1206a67458f6378b5080d65d8870f4e978edd84cdd1c24f55026a76b66bd60b8",
+    "execution_contract_sha256": "19e2671b6e74134d0baed1b17a8361b292d6d1f2c7d5c9f8ba1d972d36d312a5",
+    "hourly_orchestrator_sha256": "4cd4e2df23be66775feb16f1860529fcd443f7210e26e309fdd906a42bf9ab34",
+    "mc1_admission_wrapper_sha256": "b6031ce0f1841242301d48daf0638843bf9337070bce049451427d26d5175614"
+  },
+  "validation": {
+    "focused_tests_passed": 49,
+    "focused_tests_failed": 0,
+    "bundle_artifact_hashes_verified": 28,
+    "bundle_runtime_hashes_verified": 39,
+    "offline_zero_entry_smoke": "data_perp/artifacts/strict_r3_timely_noaction_offline_smoke_20260814T040000Z_v2",
+    "smoke_current_rows": 0,
+    "smoke_mapped_admitted_accepted": [0, 0, 0],
+    "smoke_open_positions_before_after": [3, 3],
+    "smoke_realized_exits": 2,
+    "smoke_exchange_calls": 0,
+    "smoke_next_state_as_of": "2026-08-14T05:00:00+00:00"
+  },
+  "promotion": {
+    "prior_chain_preserved": true,
+    "new_first_decision_ts": "2026-08-14T05:00:00+00:00",
+    "promotion_clock_restarted": true,
+    "order_submission_authorized": false
+  }
+}

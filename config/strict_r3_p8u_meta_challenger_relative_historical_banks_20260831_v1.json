@@ -1,0 +1,30 @@
+{
+  "schema": "strict_r3_p8u_meta_challenger_relative_historical_banks_v1",
+  "scope": "offline historical protocol bootstrap only; all banks use the previously completed February-July 2026 development evaluation and can never be used as promotion evidence",
+  "banks": [
+    {
+      "bank_id": "under_model_family",
+      "candidate_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_gateproxy_descriptors_under100_unweighted_allfamilies_20260830_v1",
+      "candidate_summary": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_selected_mc1_under100_fullprehistory_aug25jul26_20260830_v2/candidate_mc1_summary.parquet",
+      "incumbent_trial": "lgbm_hpo_05_depth4_sparse",
+      "incumbent_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_gateproxy_descriptors_under100_unweighted_allfamilies_20260830_v1",
+      "incumbent_summary": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_selected_mc1_under100_fullprehistory_aug25jul26_20260830_v2/candidate_mc1_summary.parquet"
+    },
+    {
+      "bank_id": "under_regular_hpo",
+      "candidate_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_final_lgbm_hpo_under100_gateproxy_descriptors_20260830_v1",
+      "candidate_summary": "data_perp/artifacts/strict_r3_p8u_meta_final_lgbm_hpo_under100_selected_mc1_fullprehistory_aug25jul26_20260830_v1/candidate_mc1_summary.parquet",
+      "incumbent_trial": "lgbm_hpo_05_depth4_sparse",
+      "incumbent_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_gateproxy_descriptors_under100_unweighted_allfamilies_20260830_v1",
+      "incumbent_summary": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_selected_mc1_under100_fullprehistory_aug25jul26_20260830_v2/candidate_mc1_summary.parquet"
+    },
+    {
+      "bank_id": "state_regular_hpo",
+      "candidate_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_final_lgbm_hpo_state_weighted_gateproxy_descriptors_20260830_v1",
+      "candidate_summary": "data_perp/artifacts/strict_r3_p8u_meta_final_lgbm_hpo_state_weighted_selected_mc1_fullprehistory_aug25jul26_20260830_v1/candidate_mc1_summary.parquet",
+      "incumbent_trial": "lgbm_hpo_07_depth5_capacity",
+      "incumbent_descriptor_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_gateproxy_descriptors_state_weighted_lgbm_query_20260830_v1",
+      "incumbent_summary": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_fullf120_selected_mc1_state_weighted_fullprehistory_aug25jul26_20260830_v1/candidate_mc1_summary.parquet"
+    }
+  ]
+}

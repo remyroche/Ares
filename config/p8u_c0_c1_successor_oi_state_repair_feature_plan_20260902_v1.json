@@ -1,0 +1,7 @@
+{
+  "full_union": [
+    "dist_oiw_z_delta_12h_atr",
+    "oiw_z_delta_entry_dist_1d_atr"
+  ],
+  "purpose": "Offline-only, target-free state repair for the two resumed OI-weighted features whose exact accumulator was previously registered only at 14d. This is not an inference feature contract."
+}

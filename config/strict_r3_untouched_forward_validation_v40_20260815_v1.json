@@ -1,0 +1,38 @@
+{
+  "schema": "strict_r3_untouched_forward_validation_v1",
+  "side": "long",
+  "status": "active_live_with_offline_audit",
+  "freeze_ts": "2026-08-15T08:20:00+00:00",
+  "first_decision_ts": "2026-08-15T09:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_successor_v39_live_ready_20260815T070000Z_v1",
+  "frozen_universe_rows": 170,
+  "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+  "reason": "v40 preserves all frozen model, feature, Geometry/K9, MC1, admission, portfolio and economic artifacts from v39. It seals the shared canonical exit engine for completed 15-minute invocation and keeps independent reconstruction offline rather than on the live critical path.",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v40_top30_canonical_monitor.json",
+    "sha256": "8efb3edefbd3014e278a7ddbd7b393988113d860a4bfc173683182eb44c9d3b2"
+  },
+  "portfolio": {
+    "initial_wallet": 1000,
+    "initial_open_positions": [],
+    "sizing": "unit_relative_size",
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "promotion_evidence_rules": {
+    "hourly_primary_receipt_required": true,
+    "current_features_and_scores_must_be_target_free": true,
+    "outcomes_may_be_attached_only_after_h12_resolution": true,
+    "portfolio_state_must_chain_from_exact_predecessor": true,
+    "no_model_feature_policy_admission_or_sizing_changes_during_interval": true,
+    "incomplete_base_contract_must_fail_trust_and_auction_closed": true,
+    "offline_independent_parity_required_after_execution": true,
+    "offline_identity_match_required": true,
+    "offline_maximum_relative_delta": 0.0001,
+    "offline_failure_blocks_subsequent_new_entries": true,
+    "automatic_exchange_enablement": false,
+    "maximum_primary_completion_age_seconds": 900
+  },
+  "expected_artifact_hashes": 28,
+  "expected_runtime_code_hashes": 45
+}

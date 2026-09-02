@@ -1,0 +1,35 @@
+{
+  "task": "strict-r3-p8u-exact1m-policy-optimiser",
+  "scope": "Added a research-only exact one-minute rich-policy optimiser for the frozen P8U dual-MC1 route. It binds a target-free route to an immutable path panel, evaluates only complete 720-minute outcomes after routing, optimises all active stop/trailing/giveback/smooth-protection branches on May-July, and preserves August for a single frozen comparison.",
+  "changed_paths": [
+    "extreme_price_movements/exact_1m_rich_policy_contract.py",
+    "scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_p8u_exact_1m_simple_policy_optimiser.py extreme_price_movements/exact_1m_rich_policy_contract.py",
+      "python3 -m pytest tests/test_exact_1m_rich_policy_contract.py extreme_price_movements/tests/test_exact_1m_rich_policy_stop_extensions.py -q",
+      "frozen target-free identity/path audit: 12,623 routed identities = 9,758 valid paths + 2,865 explicit invalid outcomes; five distributed canonical raw-path comparisons had zero delta",
+      "completed May-July HPO and single frozen August replay: data_perp/artifacts/strict_r3_p8u_exact1m_simple_policy_optimiser_mayjul_frozenaug2026_20260829_v7_corrected"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

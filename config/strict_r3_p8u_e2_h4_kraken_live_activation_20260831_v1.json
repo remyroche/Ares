@@ -1,0 +1,27 @@
+{
+  "authorization_basis": "User explicit instruction on 2026-08-31: ‘A separate, explicit exchange-writing activation remains required to switch live trading to this successor. -> Proceed’. Authorization is limited to the exact P8U E2 q50 agreement + H4 Giveback-20 successor bound below.",
+  "authorized": true,
+  "authorized_after": "2026-08-31T00:00:00Z",
+  "e2_h4_bundle_manifest_sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd",
+  "expires_at": "2026-08-31T23:59:59Z",
+  "gateway_contract_sha256": "5d025952c2554e0567662d539a35eda06c9eb42ba04c1f6a3bdab54f4a8976fe",
+  "gateway_runtime_sha256": "51396919a2a37538edc52ce517a17f59d5ac6f0bc83dc59ae1c32ac2ec0f1210",
+  "h4_expectation_reference_sha256": "ec789929954cc831aa4b6c63a251108c4e21089f20daa951aee389f48996f0d7",
+  "manual_user_authorization": true,
+  "p8u_e2_h4_position_monitor_runtime": {
+    "path": "scripts/run_strict_r3_p8u_e2_h4_live_position_monitor.py",
+    "sha256": "1700c183f4a613c07f9b6168e9bf5273d1d9b99f65ec355a23d80d9ff2732027"
+  },
+  "policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "release_candidate_sha256": "502768ad252b9e8f5a83e79c898f701dc5a133781589fbdb2c8c7e1db9839d7f",
+  "schema": "strict_r3_p8u_e2_h4_kraken_live_activation_v1",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "session_contract_sha256": "e0297041736ca39ee0d2198cff1dd5beb9cbe5c44f6d3b219bea87206972bf4d",
+  "session_runtime_sha256": "e979a55db5533e26cf743868d13ae173d5ebd7207ee1ff7d3cf3ea847f85e559",
+  "source_refresh_runtime": {
+    "path": "scripts/refresh_strict_r3_p8u_live_source_overlap.py",
+    "sha256": "e6531429527d50a870b67bd933cba92a40a5232dd053c3be9cbaa2dd1df2ea3d"
+  },
+  "stale_signal_execution_prohibited": true,
+  "upstream_bundle_sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c"
+}

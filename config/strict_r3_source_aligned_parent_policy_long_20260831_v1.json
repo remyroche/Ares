@@ -1,0 +1,14 @@
+{
+  "schema": "strict_r3_source_aligned_parent_policy_wrapper_v1",
+  "side": "long",
+  "source_policy_manifest": "data_perp/artifacts/cleanup_receipts_20260826_f72_v1/retained_artifact_level/strict_r3_source_aligned_optimized_policy_outcomes_long_2024jan_jul2026_20260812_v1/run_manifest.json",
+  "source_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "entry": "first available 15-minute open at signal close + one hour",
+  "timeout_hours": 12,
+  "cost_bps_once": 100.0,
+  "winner": {
+    "sl_mult": 4.15200064332387,
+    "trailing_activation_mult": 2.326224919759605,
+    "fixed_trailing_gap_mult": 0.10237198997143725
+  }
+}

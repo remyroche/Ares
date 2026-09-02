@@ -1,0 +1,40 @@
+{
+  "schema": "ares.change_receipt.v1",
+  "date": "2026-08-20",
+  "scope": "short-side R3 base-only 2024 chronological probe; no HPO, calibration, residual, consensus, policy, portfolio, or live-execution change",
+  "result_artifact": "data_perp/artifacts/strict_r3_short_base_3m_train_3m_oos_2024_20260820_v3",
+  "status": "complete_nonpromotional_research",
+  "contract": {
+    "side": "short",
+    "train_decisions": "2024-01-01 <= decision timestamp < 2024-04-01, with label_available_at < 2024-04-01",
+    "oos_decisions": "2024-04-01 <= decision timestamp < 2024-07-01",
+    "entry": "exact 1-minute open at signal close +1 hour",
+    "label": "H12 TP +6 ATR / SL -4 ATR; adverse same-minute tie; R3 adverse=0, weak=1, robust_clear=2 with cost+25-bps robust-clear hurdle and 50-bps softness",
+    "cost": "100 bps is applied once: net_bps = gross_bps - 100",
+    "model": "frozen long base HPO only: 140 trees, learning rate 0.05, 31 leaves, minimum child 350, feature/subsample 0.8, L2 8; no short HPO",
+    "score": "P(robust_clear) - 0.5*P(adverse)",
+    "feature_contract": "short base_fields_by_side.short (120 requested); target-free Jan-Mar 90%-coverage gate retained 48 fields; all medians fit on resolved training rows only"
+  },
+  "causality_and_parity": {
+    "target_free_features": "The short 120-field feature panel was generated before joining any labels from the full point-in-time market universe.",
+    "label_substrate": "For every month, short candidate validity, exact entry price, and causal ATR are byte-for-byte identical to the frozen long 2024 label substrate. Only directional path outcomes are rematerialised for short from exact one-minute high/low/close.",
+    "invalid_handling": "Invalid/incomplete paths have target_invalid=true and null economic/R3 targets; they are excluded from fit and metrics, not encoded as failures.",
+    "cross_side_audit": "All six 2024 months passed identity, label-validity, exact-entry, ATR, and gross-minus-cost parity checks.",
+    "oos_boundary": "The final 102 June 23:00 signal rows are outside the scored decision window because their decision timestamp is 2024-07-01; they were not silently included."
+  },
+  "validation": {
+    "r3_reconstruction": "Verified against the long artifact: all valid rows map to canonical class order adverse=0, weak=1, robust_clear=2.",
+    "duplicate_shared_atr_march": "Independent March shared-ATR materialisations have identical IDs and zero numerical delta.",
+    "final_label_support": "Jan 31,753; Feb 30,906; Mar 34,735; Apr 32,302; May 34,387; Jun 38,071 exact valid short labels.",
+    "final_oos_support": "104,706 valid exact labels; 371,110 target-free rows scored before outcome metrics.",
+    "superseded_outputs": "v1 used an outcome-conditioned feature coverage screen; v2 repaired that screen but used generic Apr-Jun ATR warm-up semantics rather than the frozen long substrate. Both are retained for audit but are not results. v3 is authoritative."
+  },
+  "source_hashes": {
+    "scripts/materialize_short_r3_labels_from_shared_atr.py": "f09f410f509671d71e29d5172c34a08d6a64bad1fe14c2bc70263e043d412417",
+    "scripts/run_strict_r3_short_base_3m_oos.py": "fce65b3097ca265f43f188c550a14ba59c26e00f43cfdf149527dacf7f787624",
+    "base_probe_manifest.json": "54fbb814c93b32587d543033f7d7e301300c9d698aeb113388f4a60eda0c32cb",
+    "metrics_by_scope.parquet": "ae74ce74899e7ca7925b0521488e6629cf5b6a9f7e6c73caa2952d104132aa5c",
+    "metrics_by_scope_tail.parquet": "7feed3b1e875b1364644128dac59995d943cf71c413ace9b450a382b5a8d275c"
+  },
+  "live_effect": "None. This probe has no model-bundle, execution, exchange, or promotion authority."
+}

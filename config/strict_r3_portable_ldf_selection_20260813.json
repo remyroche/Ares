@@ -1,0 +1,54 @@
+{
+  "schema": "strict_r3_portable_ldf_selection_v1",
+  "side": "long",
+  "decision": "portable_contract_selected_but_overlay_inactive",
+  "selected_portable_ldf_contract": {
+    "path": "config/strict_r3_ldf_support_compact20_matched_score_v1.json",
+    "sha256": "00130ecc9491880f46005ca88eb04ab7744c2703739bcee62f71bb3c1acf2750",
+    "feature_count": 20,
+    "raw_k9_memberships_used": false,
+    "causal_generation": "strictly prior-resolved 3/7/14-day aggregates under one frozen Geometry/K9 identity",
+    "role": "best portable LDF challenger feature contract"
+  },
+  "canonical_portfolio_sizing": {
+    "mode": "unit_relative_size",
+    "ldf_enabled": false,
+    "reason": "matched downstream replay favors unit sizing on EV, Sortino, drawdown, worst week, trade count, and 2026 June/July robustness"
+  },
+  "matched_replay": {
+    "period": "2025-01-01 through 2026-07-31",
+    "identical_upstream_score": true,
+    "identical_a5_admission": true,
+    "identical_a5_auction_order": true,
+    "exit_policy": "frozen SimplePolicyOptimiser policy; H12; 100 bps cost once",
+    "unit": {
+      "trades": 8449,
+      "trades_per_day": 14.642980935875217,
+      "net_bps_per_trade": 163.1551642779942,
+      "sortino": 0.4661222938634192,
+      "max_drawdown": -0.765279585114093,
+      "worst_week": -0.3508664708632042,
+      "mean_margin_utilization": 0.7928881573102099,
+      "june_2026_net_bps_per_trade": 4.429694,
+      "july_2026_net_bps_per_trade": 121.526725
+    },
+    "compact20_ldf": {
+      "trades": 7661,
+      "trades_per_day": 13.277296360485268,
+      "net_bps_per_trade": 162.1019579173225,
+      "sortino": 0.4405175803582095,
+      "max_drawdown": -0.7801865933228479,
+      "worst_week": -0.5090626769530269,
+      "mean_margin_utilization": 0.8871228944310178,
+      "june_2026_net_bps_per_trade": -25.753183,
+      "july_2026_net_bps_per_trade": 71.515327
+    }
+  },
+  "evidence": {
+    "features": "data_perp/artifacts/strict_r3_ldf_compact20_a5_features_long_2024apr_jul2026_20260813_v1",
+    "block_oof_predictions": "data_perp/artifacts/strict_r3_ldf_compact20_a5_oof_long_2025_jul2026_20260813_v2",
+    "fixed_admission_projection": "data_perp/artifacts/strict_r3_canonical_a5_compact20_fixed_admission_projection_20260813_v2",
+    "ldf_portfolio": "data_perp/artifacts/strict_r3_canonical_a5_compact20_ldf_portfolio_long_2025_jul2026_20260813_v4",
+    "unit_portfolio": "data_perp/artifacts/strict_r3_canonical_a5_long_2025_jul2026_2024warmup_20260812_v1/portfolio"
+  }
+}

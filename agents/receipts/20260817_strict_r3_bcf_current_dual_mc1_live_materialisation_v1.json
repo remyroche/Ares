@@ -1,0 +1,51 @@
+{
+  "schema": "strict_r3_bcf_current_dual_mc1_live_materialisation_receipt_v1",
+  "status": "offline_challenger_materialised_not_order_capable",
+  "scope": "long-only BCF scorer plus BCF-native MC1 confirmation for the current-v5 live candidate contract",
+  "bcf_monthly_bundle": {
+    "path": "data_perp/artifacts/strict_r3_schema_v2_walkforward_targetfree_long_2025_aug7_2026_20260809_v1/bundles/month=2026-08/monthly_bundle.joblib",
+    "sha256": "7c98bc4f048df717fee840f78df93a7928b0eab8651125957181ad28fc805ade",
+    "cutoff": "2026-08-01T00:00:00+00:00",
+    "same_model_reference_days": 42
+  },
+  "bcf_native_mc1": {
+    "ledger": "data_perp/artifacts/strict_r3_bcf_live_mc1_native_ledger_20260817_v1/bcf_mc1_native_ledger.parquet",
+    "ledger_sha256": "b938c8e1545e992f0ae129f7980aaaefdc187e0829c197a49eb569cd0fbad136",
+    "bundle": "data_perp/artifacts/strict_r3_bcf_mc1_d2_canonical_long_20260801_native_v1/bcf_mc1_d2.joblib",
+    "bundle_sha256": "b6655f44a063dfedc908865b5f8cbe5a28cddad8024dc4515f165671139712cf",
+    "manifest_sha256": "278fe0b6b3d87c0a2f0b0d7ebd5752e3db17ac4401ec34c6b14dc31059b1fc25",
+    "bundle_id": "c633771df8a5154ea38a",
+    "native_feature_contract": "native_bcf_ten_head_agreement_v1",
+    "fit_cutoff": "2026-08-01T00:00:00+00:00",
+    "admission_threshold_bps": 30.0
+  },
+  "hybrid_contract": {
+    "admission": "current-v5 MC1 expected net >=30 bps AND BCF MC1 expected net >=30 bps",
+    "auction_priority": "BCF MC1 expected net bps descending, then BCF final score, then candidate_id",
+    "portfolio": "one common 8-concurrent, 2-new-entry, 80%-margin, 7x long-only auction",
+    "exit": "retain the already active frozen rich SimplePolicyOptimiser policy with Adaptive Exit V1 activation modulation; no revert"
+  },
+  "smoke_tests": {
+    "bcf_same_model_score": "data_perp/artifacts/strict_r3_bcf_live_score_smoke_20260817T050000Z_v2/run_manifest.json",
+    "bcf_same_model_score_manifest_sha256": "e0acb43830a11476e3887cba1892f43616e474799e369539b54c6939d1234157",
+    "dual_admission": "data_perp/artifacts/strict_r3_bcf_current_dual_admission_smoke_20260817T050000Z_v1/run_manifest.json",
+    "dual_admission_manifest_sha256": "3464311079e1adbbbb264503e95beb3d83667d14771b021607be7d16f40676ec",
+    "focused_pytest": "5 passed: dual auction + rich exit",
+    "exchange_calls": 0
+  },
+  "not_yet_authorized": [
+    "No successor inference/execution/state contract is activated.",
+    "No entry producer has been restarted with this hybrid.",
+    "No rich-exit source-aligned hybrid portfolio replay is promotion evidence.",
+    "BCF post-cutoff resolved-score history must be appended and audited before order-capable activation."
+  ],
+  "implementation_sha256": {
+    "extreme_price_movements/strict_r3_bcf_mc1_mapper.py": "fc9dc62a8f301bbcb9946048b089f322074d709a8ef23b3747b4f7e90033b3b7",
+    "scripts/materialize_strict_r3_bcf_mc1_ledger.py": "e8e9b995d252a2f54d98ab18c769275a42f67663fb8aad9d908ec01976a1d78a",
+    "scripts/build_strict_r3_bcf_mc1_d2_bundle.py": "2334d59153cffba1f98e94e7356f3a725fcc55cb2d6ed30686f80404a3b822ba",
+    "scripts/score_strict_r3_bcf_forward.py": "e55f1eed11efd3bc90b5b9be0245ac993eaef767b4e0b8f6bbd60d2b698d10f4",
+    "scripts/admit_strict_r3_bcf_current_dual_forward.py": "d8bc2cd6dfa0d5e61744d0cfb9e6d098eb11fba39926a229cbd0907fad222a38",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "8e6e0d5de1fc50b9d8fe058434c0ed09c0e895654b5313fe26a7484b3a7606a8",
+    "config/strict_r3_bcf_current_dual_mc1_portfolio_challenger_v1.json": "ca7d1bbea4af0e1bf38e2a46e9471d6a451013157bf7e1f98ff412b86d961fc3"
+  }
+}

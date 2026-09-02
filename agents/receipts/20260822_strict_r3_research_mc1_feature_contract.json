@@ -1,0 +1,28 @@
+{
+  "task": "strict-r3-long-ablation-native-mc1-feature-contract",
+  "scope": "Offline-only feature-family contracts for future native current and BCF MC1 research maps. No model bundle, calibration artifact, policy, portfolio, exchange, or live inference path was modified.",
+  "implementation": {
+    "canonical_control": "M0 retains the ordered six-field canonical contract: final_score, base_rank42, conditional_consensus_rank, upstream, ordinary_shadow_consensus_rank, correctness_rank.",
+    "target_free_guard": "Feature contracts reject policy_, label_, outcome_, and target_ fields and reject missing or duplicate names.",
+    "native_separation": "The module builds contracts per supplied score-family frame only; it has no current/BCF join or cross-family field source.",
+    "cross_layer_geometry": "M3 fields derive only layer consensus, corrections, support, and OOD values. Realized outcomes remain MC1 targets and are excluded from inference inputs.",
+    "complexity_cap": "Contracts fail rather than silently truncate when more than 24 selected fields are requested."
+  },
+  "validation_evidence": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_research_mc1_contract.py",
+      "python3 -m py_compile extreme_price_movements/research/*.py",
+      "git diff --check -- extreme_price_movements/research extreme_price_movements/tests/test_strict_r3_research_*.py"
+    ],
+    "result": "3 focused tests passed; outcome-field rejection, cross-layer directionality, deterministic exact-duplicate elimination, and canonical ordering were verified."
+  },
+  "changed_paths": [
+    "extreme_price_movements/research/mc1_feature_contract.py",
+    "extreme_price_movements/tests/test_strict_r3_research_mc1_contract.py"
+  ],
+  "file_hashes": {
+    "extreme_price_movements/research/mc1_feature_contract.py": "743369beefa57391fa0274a30030a345921324a8a0970038715ca4841deb3b8f",
+    "extreme_price_movements/tests/test_strict_r3_research_mc1_contract.py": "affbb3a42a8f1d62776b301228870641beacea8287cd0c8f19444aace019b1c9"
+  },
+  "agent_plan": {"subagents": []}
+}

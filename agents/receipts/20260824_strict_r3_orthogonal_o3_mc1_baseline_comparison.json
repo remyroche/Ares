@@ -1,0 +1,71 @@
+{
+  "schema": "ares_governed_change_receipt_v1",
+  "status": "pass_research_challenger_only",
+  "purpose": "Create and assess a strict-OOF, target-free orthogonal O3 meta family as a new MC1 input, with a fair common-ID comparison against the current live stack.",
+  "scope": {
+    "research_only": true,
+    "live_bundle_changed": false,
+    "exchange_calls": 0,
+    "order_submission": false,
+    "promotion": "blocked pending a later untouched period"
+  },
+  "changed_paths": [
+    "scripts/materialize_strict_r3_orthogonal_meta_semantics.py",
+    "scripts/run_strict_r3_orthogonal_meta_label_funnel.py",
+    "scripts/run_strict_r3_orthogonal_meta_mc1.py",
+    "extreme_price_movements/portfolio_policy_replay.py",
+    "tests/test_strict_r3_orthogonal_meta_semantics.py",
+    "tests/test_strict_r3_orthogonal_meta_label_funnel.py",
+    "tests/test_strict_r3_orthogonal_meta_mc1.py",
+    "docs/ENHANCED_BASE_CONSENSUS_MC1_DECISION_REPORT_20260824.md"
+  ],
+  "contracts": {
+    "base_scores": "pre-existing strict-OOF enhanced B0/efficiency/timing scores",
+    "o3_train": "six preceding resolved calendar months, 28-day reserve purge, policy labels/path semantics available before reserve start",
+    "o3_inference": "five target-free head scores, their ranks, consensus rank and rank dispersion only",
+    "mc1": "separate six-month chronological current and BCF maps with prior-resolved 21-day shift",
+    "admission": "both experimental MC1 expected values >= 30 bps",
+    "auction": "one global constrained 7x / 10%-margin-slot / 80%-margin portfolio, priority BCF experimental mapped EV",
+    "economic_outcome": "canonical reconciled rich policy net; all selected portfolio trades resolved"
+  },
+  "fairness": {
+    "comparison": "O3 matched stack minus current live baseline",
+    "common_candidate_ids": 287571,
+    "baseline_source_ids": 522070,
+    "experimental_full_rows": 1165677,
+    "baseline_and_challenger_policy_source": "same canonical reconciled policy ledger",
+    "outcome_coverage_selected": 1.0
+  },
+  "result": {
+    "2025_q4": {
+      "baseline": {"trades": 2071, "net_bps_per_trade": 140.654446, "net_sum_bps": 291295.358345, "worst_month_bps": 98.203722, "worst_week_bps": 30.931827, "max_drawdown": -0.297236},
+      "o3_mc1": {"trades": 1878, "net_bps_per_trade": 162.117390, "net_sum_bps": 304456.458938, "worst_month_bps": 126.917632, "worst_week_bps": 90.037625, "max_drawdown": -0.196928}
+    },
+    "2026_apr_jul": {
+      "baseline": {"trades": 2366, "net_bps_per_trade": 139.496277, "net_sum_bps": 330048.190574, "worst_month_bps": 113.664084, "worst_week_bps": 88.936066, "max_drawdown": -0.216142},
+      "o3_mc1": {"trades": 2510, "net_bps_per_trade": 140.768880, "net_sum_bps": 353329.889677, "worst_month_bps": 106.931843, "worst_week_bps": 89.469182, "max_drawdown": -0.196929}
+    },
+    "decision": "retain as frozen offline challenger; 2026 worst-month delta is -6.732242 bps/trade despite aggregate/drawdown gains"
+  },
+  "validation": {
+    "tests": "python3 -m pytest -q tests/test_strict_r3_orthogonal_meta_semantics.py tests/test_strict_r3_orthogonal_meta_label_funnel.py tests/test_strict_r3_orthogonal_meta_mc1.py (6 passed)",
+    "compile": "python3 -m py_compile scripts/materialize_strict_r3_orthogonal_meta_semantics.py scripts/run_strict_r3_orthogonal_meta_label_funnel.py scripts/run_strict_r3_orthogonal_meta_mc1.py extreme_price_movements/portfolio_policy_replay.py",
+    "target_free_panel_audit": "13 O3 monthly panels, Jul-2025 through Jul-2026: no prohibited policy/semantic columns; score-field coverage minimum 100% each month",
+    "selected_outcome_audit": "0 unresolved selected outcomes in each of baseline/challenger x 2025-Q4/2026-Apr-Jul"
+  },
+  "hashes": {
+    "materialiser": "fdd67a768931fde3cc097f07b8c4557572a964caa9f468f13e5b43a2c3ac8118",
+    "label_funnel": "ed226e9277a1df0227d3e7b11a396e60cc3133aeae31d01d7a59190b5ae97b10",
+    "mc1_runner": "cd252d3b44fb38757ea56b2b55a205dabca8c19f28237c9050a35e75e7c04d74",
+    "controlled_portfolio_replay": "e1df4959255651012492fecc8e03959bfd606ce9336d42a855e8c96649996885",
+    "semantics_test": "c9f2be12829e786d51ef055839944b40be1e004f5d6276423951182393d259d0",
+    "label_funnel_test": "fac7452fa694c1dab78de1ddf205c62f600df0421ba935b281f43ef25b731793",
+    "mc1_test": "34ac924488167437458d1f7cf09e48f34adebe9db6d17f64f78ff83a69d3e2ef",
+    "funnel_manifest": "d782cd643ec8709322691ae7c4365b678198db755230ffa06834ceef5c552576",
+    "mc1_manifest": "e89ad1001b73f632609530e8bff436c26f3d93763ec10c780de3fca10411c62c"
+  },
+  "superseded": [
+    "strict_r3_orthogonal_meta_semantics_20260824_v1 (partial substrate)",
+    "strict_r3_orthogonal_meta_mc1_20260824_v1 through v6 (startup, outcome-source, or non-common-ID comparison attempts)"
+  ]
+}

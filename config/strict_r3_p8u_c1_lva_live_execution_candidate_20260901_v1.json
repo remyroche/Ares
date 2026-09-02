@@ -1,0 +1,59 @@
+{
+  "schema": "strict_r3_p8u_c1_lva_live_execution_candidate_v1",
+  "status": "SEALED_NO_ORDER_AWAITING_CURRENT_C1_VINTAGE",
+  "order_submission": false,
+  "side": "long",
+  "purpose": "Hash-bound successor execution contract for canonical C1-LVA dual-MC1 scoring. This file has no exchange authority and must fail closed until the declared current-month C1 mapper and upstream dual-coordinate score producer are sealed.",
+  "c1_lva": {
+    "canonical_contract": {
+      "path": "config/strict_r3_p8u_c1_lva_canonical_20260901_v1.json",
+      "sha256": "3173421008d2c7d59f616f97da4372989d4a97ce3b898ae02d9b2eec4a0b98ae"
+    },
+    "staged_current_coordinates_filename": "routed_scores.parquet",
+    "staged_bcf_coordinates_filename": "bcf_coordinates_target_free.parquet",
+    "staged_snapshot_filename": "c1_snapshots_target_free.parquet",
+    "required_population": "the exact Router50 target-free population; BCF and Current coordinate identities must match exactly; C1 snapshot absence is a mapper input, not a candidate filter"
+  },
+  "admission": {
+    "rule": "BCF C1-MC1 expected net >= 50 bps AND Current C1-MC1 expected net >= 50 bps",
+    "auction_priority": "BCF C1-MC1 expected net bps",
+    "candidate_expansion": false
+  },
+  "execution": {
+    "baseline_policy_cost_bps": 100.0,
+    "minimum_execution_adjusted_ev_bps": 50.0,
+    "price_gap_guard_bps": 100.0,
+    "execution_adjusted_ev_formula": "raw_expected_gross_bps = bcf_c1_mc1_expected_net_bps + 100; execution_adjusted_ev_bps = raw_expected_gross_bps - adverse_only_delay_gap_bps - (1.2 * live_full_spread_bps + 2 * entry_vwap_impact_bps + 10 bps buffer). No 80-bps friction floor is applied.",
+    "order_of_operations": "dual C1-MC1 admission -> normal portfolio auction -> live ticker and order-book preflight -> execution-adjusted EV and price-gap veto -> submit"
+  },
+  "terminal_telemetry": {
+    "contract": "Every confirmed terminal trade must preserve the immutable entry prediction and execution economics together with fee-confirmed realised net bps before it may enter an execution-adjusted calibration map.",
+    "prediction_fields": [
+      "raw_expected_gross_bps",
+      "mapped_expected_net_bps",
+      "execution_adjusted_expected_net_bps",
+      "adverse_only_delay_gap_bps",
+      "live_full_spread_bps",
+      "entry_vwap_impact_bps",
+      "execution_friction_bps",
+      "bcf_mc1_expected_net_bps",
+      "current_mc1_expected_net_bps",
+      "c1_lva_adapter"
+    ],
+    "outcome_field": "pnl.net_bps only when pnl.fees_verified is true",
+    "runtime": {
+      "path": "extreme_price_movements/inference/strict_r3_live_execution.py",
+      "sha256": "d84752729056fbb3987efd38595bcc18608d86d47a37b7a087183db35fc3a63e"
+    }
+  },
+  "live_readiness": {
+    "required_before_exchange_activation": [
+      "An immutable current-month C1 BCF and Current mapper package index with strict prior-resolved six-month training.",
+      "A current append-only C1 state checkpoint and completed-15-minute snapshot materializer.",
+      "A restored or freshly sealed P8U upstream score bundle that persists independent target-free BCF coordinates alongside Current routed scores.",
+      "A no-order end-to-end parity receipt for the exact current source, C1 snapshot, dual maps, admission, auction, and execution preflight inputs.",
+      "A separate exchange-writing activation receipt binding this successor's hashes."
+    ],
+    "failure_mode": "fail closed; no fallback to the non-C1 MC1 mapper or a previous-month C1 package"
+  }
+}

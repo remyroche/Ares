@@ -1,0 +1,97 @@
+{
+  "schema": "strict_r3_p8u_direct_router_foundation_state_receipt_v8",
+  "task": "p8u-one-row-direct-router-foundation-state",
+  "scope": "offline preproduction inference-graph work only; adds exact bounded fixed-FFD d=0.4/d=0.6, FFD return/volatility, cross-asset beta/relative-volatility, EWMA high/low range-volatility, volatility-of-volatility, transformed hour-of-day relative volume, seasonality, range-per-volume, 7/15-day price-RV robust-z, 720-hour cross-asset liquidity-peer residual, and 720-hour order-book L20-depth portability-normalisation states to the target-free P8U direct executor. The order-book parent is explicitly raw close-times-volume with a one-bar delayed book snapshot; its final log robust-z includes canonical warm-up, support, and dispersion gates. A separate router-first vectorised bridge is feature-construction-only: it computes Router fields over the full universe, then projects only exact Router50 identities for inexpensive Base/Under transforms. No model scoring, admission, portfolio, live execution, or exchange I/O is enabled.",
+  "changed_sources": [
+    "extreme_price_movements/inference/p8u_single_timestamp_graph.py",
+    "extreme_price_movements/inference/orderbook_feature_state.py",
+    "extreme_price_movements/inference/p8u_router_first_vectorized.py",
+    "tests/test_p8u_single_timestamp_graph.py",
+    "tests/test_p8u_router_first_vectorized.py",
+    "agents/receipts/20260829_strict_r3_p8u_direct_ffd_state.json"
+  ],
+  "contracts": {
+    "AGENTS.md": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4",
+    "agents/dataset_contract.md": "3350cb34ff2ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+  },
+  "causality": {
+    "inputs_are_target_free_source_close_only": true,
+    "hourly_append_requires_exact_predecessor_timestamp": true,
+    "no_batch_feature_graph_or_history_replay_is_callable_from_the_executor": true,
+    "all_states_commit_atomically_with_the_timestamp_transaction": true,
+    "outcome_columns_consumed": [],
+    "model_scores_emitted": false
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q tests/test_p8u_single_timestamp_graph.py tests/test_p8u_router_first_vectorized.py tests/test_p8u_canonical_feature_adapter.py tests/test_p8u_warm_feature_state.py",
+      "python3 scripts/audit_p8u_direct_reference_parity.py --source-state data_perp/artifacts/strict_r3_p8u_canonical_source_append_20260829_t13_v1/source_panel_state.joblib --reference-features data_perp/artifacts/strict_r3_p8u_canonical_warm_sequence_20260829_v5/reference_20260814T110000Z.parquet --source-timestamp 2026-08-14T11:00:00Z --out-dir data_perp/artifacts/strict_r3_p8u_direct_reference_parity_20260829_t11_v21"
+    ],
+    "direct_reference_receipt": "data_perp/artifacts/strict_r3_p8u_direct_reference_parity_20260829_t11_v21/summary.json",
+    "exact_fields": [
+      "asset_atr_level",
+      "cvar_5pct",
+      "dist_prior_day_high",
+      "dist_prior_day_low",
+      "dist_rolling_7d_high",
+      "ffd_rv_24h_04",
+      "ffd_rv_24h_06",
+      "ffd_rv_2h_04",
+      "ffd_rv_2h_06",
+      "ffd_rv_6h_06",
+      "fund_rate",
+      "hour_of_week_sin",
+      "ker_10",
+      "ker_16",
+      "ker_24",
+      "prior_volatility",
+      "price_rv_15d_robust_z",
+      "price_rv_7d_robust_z",
+      "range_24h_pct",
+      "range_per_volume",
+      "range_volatility",
+      "realized_volatility_24h",
+      "rv_48h",
+      "rv_rel_universe",
+      "seasonality_strength",
+      "upside_semivariance_8",
+      "upside_semivariance_24"
+    ],
+    "bounded_float32_fields": {
+      "liq_stop_safety_short_atr": 6.866455078125e-05,
+      "liquidity_ratio_peer_resid": 3.337860107421875e-06,
+      "mark_perp_dislocation": 2.3248137906193733e-07,
+      "ob_depth_l20_to_qv_24h": 9.5367431640625e-07,
+      "rvol_hod_base": 2.9802322387695312e-08,
+      "t_be_proxy": 1.1920928955078125e-07,
+      "t_pl_proxy": 2.384185791015625e-07,
+      "vov_iqr_20": 4.656612873077393e-10,
+      "vov_mad_60": 4.656612873077393e-10
+    },
+    "cross_asset_router_max_abs_delta": {
+      "beta_btc_24h": 1.1920928955078125e-07,
+      "beta_eth_24h": 1.1920928955078125e-07,
+      "rv_rel_universe": 0.0
+    },
+    "range_volatility_max_abs_delta": 0.0,
+    "sealed_union_direct_coverage": {
+      "router": "29/30",
+      "base": "16/72",
+      "under": "24/120",
+      "union": "38/175"
+    },
+    "router_first_vectorised_bridge": {
+      "status": "implemented_and_unit_tested_feature_construction_only",
+      "router_population": "complete frozen universe before Router50",
+      "base_under_population": "exact Router50 identities only",
+      "canonical_vectorised_constructor_input": "complete source panel and complete frozen universe in both stages",
+      "model_or_scoring_activation": false
+    }
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

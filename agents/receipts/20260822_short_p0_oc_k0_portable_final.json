@@ -1,0 +1,34 @@
+{
+  "schema": "strict_r3_short_p0_oc_k0_portable_final_receipt_v1",
+  "status": "complete_research_only",
+  "side": "short",
+  "promotion": "not canonical and not live",
+  "frozen_stack": {
+    "opportunity": "O250_H6, stable45, uniform, Platt",
+    "conversion": "C3 normalized regret, C59 portable fields, uniform",
+    "k0": "isotonic mu1; P0-anchor quintile mu0 shrinkage k=500; absolute +75 bps admission"
+  },
+  "strict_oos_metrics": {
+    "2025_net_bps_per_trade": 166.388614,
+    "2026_net_bps_per_trade": 167.122173,
+    "mean_net_bps_per_trade": 166.528287,
+    "total_net_bps": 218651.640215,
+    "known_selected": 1313,
+    "worst_month_bps_per_trade": -0.788403,
+    "mean_cvar10_bps": -343.608653
+  },
+  "correctness": {
+    "candidate_ids": 13081,
+    "all_score_component_max_abs_delta": 0.0,
+    "analytic_formula_max_abs_delta": 0.000024387143184867455,
+    "all_map_history_prior_resolved": true,
+    "feature_contract_coverage_minimum": 0.9677814862747769,
+    "extra_mapper_or_consensus_present": false
+  },
+  "hashes": {
+    "c59_runner": "894aae9ca7c98f118c40db85e2670eabef8a4c482055d28874921121a50a1518",
+    "k0_runner": "759e184068f7e731f5736da96f5bff714cb6cdd8a72af00c835a4701e9015634",
+    "final_audit_runner": "bad33d462d1f0351c7495ddf5f7e43eb2933d111d7262c71ba49ce46d7f725a7",
+    "final_audit_manifest": "2befbcd876613d1a6e70a9edc4febace3c01a91a2133f21528d2ef84cc7092b2"
+  }
+}

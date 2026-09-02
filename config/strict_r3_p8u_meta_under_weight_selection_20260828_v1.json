@@ -1,0 +1,58 @@
+{
+  "schema": "strict_r3_p8u_meta_training_weight_selection_v1",
+  "scope": "offline strict-OOF P8u under-confidence meta selection; no live or exchange use",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "target": "under_bps50__timestamp",
+  "objective": "rank_xendcg",
+  "selection_rule": "A training-only weight profile advances only if its independently prequential dual-MC1, 50-bps-admitted, chronologically constrained portfolio does not deteriorate total realised net EV, net EV per trade, or maximum drawdown versus the unweighted under-confidence arm.",
+  "sequential_stages": {
+    "base_score_weighting": {
+      "artifact": "data_perp/artifacts/strict_r3_p8u_meta_under_weight_stage1_base_janjun2026_20260828_v1",
+      "winner_by_sstable_meta": "equal_timestamp",
+      "decision": "reject_base_score_multiplier"
+    },
+    "positive_recall_weighting": {
+      "artifact": "data_perp/artifacts/strict_r3_p8u_meta_under_weight_stage2_positive_janjun2026_20260828_v1",
+      "winner_by_sstable_meta": "equal_timestamp",
+      "decision": "reject_positive_recall_multiplier"
+    },
+    "magnitude_awareness_weighting": {
+      "artifact": "data_perp/artifacts/strict_r3_p8u_meta_under_weight_stage3_magnitude_janjun2026_20260828_v2",
+      "winner_by_sstable_meta": "magnitude_p10_s050",
+      "strict_mc1_artifact": "data_perp/artifacts/strict_r3_p8u_meta_mc1_under_weighted_magnitude_p10_janjun2026_20260828_v1",
+      "decision": "reject_after_mc1_portfolio_gate",
+      "reason": "It increased internal SStableMeta but reduced realised constrained total net EV versus both the base control and the unweighted under-confidence head, while worsening drawdown versus the latter."
+    }
+  },
+  "retained_profile": {
+    "name": "unweighted_under_xendcg",
+    "sample_weight": {
+      "equal_timestamp": true,
+      "components": [],
+      "clip": [0.5, 2.0],
+      "inference_feature": false
+    },
+    "meta_artifact": "data_perp/artifacts/strict_r3_p8u_meta_stage3b_under_janjun2026_20260828_v1",
+    "strict_mc1_artifact": "data_perp/artifacts/strict_r3_p8u_meta_mc1_stage3b_under_xendcg_janjun2026_20260828_v1",
+    "strict_mc1_eval": {
+      "months_scored": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+      "portfolio_evaluation_months": ["2026-04", "2026-05", "2026-06"],
+      "admission_threshold_bps": 50.0,
+      "accepted_rows": 2633,
+      "net_ev_bps_per_trade": 138.9022743824434,
+      "net_sum_bps": 365729.68844897347,
+      "max_drawdown": -0.23435203589079456
+    },
+    "matched_base_control": {
+      "artifact": "data_perp/artifacts/strict_r3_p8u_meta_mc1_stage3b_base_control_janjun2026_20260828_v1",
+      "accepted_rows": 2700,
+      "net_ev_bps_per_trade": 134.5346915311598,
+      "net_sum_bps": 363243.6671341315,
+      "max_drawdown": -0.2831560006595684
+    }
+  },
+  "immutability": {
+    "decision_date_utc": "2026-08-28",
+    "use_for_next_stage": "The retained unweighted arm only. Weighting outcomes are not inference inputs and are never added to feature columns."
+  }
+}

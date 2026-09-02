@@ -1,0 +1,20 @@
+{
+  "schema": "strict_r3_p8u_market_state_meta_contract_v1",
+  "scope": "offline state-representation research; feature selection frozen before 2026",
+  "selected_features": [
+    "ms_transition_breadth_downside_fast5d_slow21d_kalman_level",
+    "ms_transition_breadth_negative_fast7d_slow42d_kalman_level",
+    "ms_transition_execution_spread_level_fast7d_slow42d_level_normalized",
+    "ms_transition_return_iqr_fast2d_slow14d_kalman_level",
+    "ms_transition_volatility_level_fast3d_slow21d_kalman_level",
+    "ms_transition_volatility_level_fast5d_slow42d_level_normalized",
+    "ms_synergy__breadth_downside_x_return_iqr",
+    "ms_synergy__execution_spread_x_return_iqr",
+    "ms_synergy__breadth_downside_x_execution_spread"
+  ],
+  "selection": {
+    "raw_state_features": "pre-2026 frozen timestamp State-Meta beam winner",
+    "synergy_features": "target-free signed geometric-mean interactions; selected only as a grouped exploratory sub-block",
+    "upstream_contract": "config/strict_r3_p8u_market_state_timestamp_block_pre2026_20260829_v1.json"
+  }
+}

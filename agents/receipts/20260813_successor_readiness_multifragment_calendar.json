@@ -1,0 +1,37 @@
+{
+  "task": "strict-r3-successor-readiness-multifragment-calendar",
+  "scope": "Repair the external successor-bundle preflight so it audits the union of immutable historical and current exact-170 runtime stores, verifies the physical 28-day hourly/day calendar and resolved-label availability, and replaces the stale July-only readiness conclusion without changing the sealed trading scorer.",
+  "changed_paths": [
+    "scripts/audit_strict_r3_successor_bundle_readiness.py",
+    "tests/test_audit_strict_r3_successor_bundle_readiness.py",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q tests/test_audit_strict_r3_successor_bundle_readiness.py: 3 passed",
+      "strict_r3_successor_bundle_readiness_homogeneous28_exact170_20260813_v6.json: ready=true; 3,216,892 candidate-identity-preserved source rows; 2,202,314 policy rows; source calendar 671/672 hours; resolved-policy calendar 659/660 hours; every day represented; all 11 checks pass",
+      "strict_r3_untouched_homogeneous28_shadow_chain_audit_20260813T100000Z_v1: two continuous hours, 340 population rows, 273 actionable rows, minimum all-120 completeness 0.993902, append-only numeric delta 0.0, zero exchange calls",
+      "python3 -m pytest -q strict-R3 causality/execution/admission/portfolio/shadow suite: 69 passed",
+      "python3 -m pytest -q focused A5/inference/parity suite: 27 passed"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

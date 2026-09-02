@@ -1,0 +1,45 @@
+{
+  "schema": "promoted_base_side_continuous_target_v1",
+  "source": "data_perp/reports/base_ablation_1y3m_matrix_20260720_v1/C_hierarchical_target_weight_hpo/stage_c_manifest.json",
+  "selection_scope": "Apr-2025_to_Mar-2026_internal_purged_folds",
+  "execution_geometry_promoted": false,
+  "purpose": "base_ranking_target_only; execution geometry remains downstream",
+  "target_mode": "side_continuous_geometry_v1",
+  "weight_arm": "W_side_target_strength_v1",
+  "winner_by_side": {
+    "long": {
+      "geometry": {
+        "first_pass_penalty": 1.9289979935495771,
+        "gross_edge": -0.0026154438400992543,
+        "mae_penalty": 1.1789279646214192,
+        "max_profit_bars": 32,
+        "sl_r": 0.5,
+        "slow_profit_bars": 24.496794377352362,
+        "temperature": 0.006194586400915836,
+        "timeout_penalty": 0.003746497593619315,
+        "tp_r": 1.5
+      },
+      "weight": {
+        "target_exponent": 1.0,
+        "weight_range_ratio": 3.0
+      }
+    },
+    "short": {
+      "geometry": {
+        "first_pass_penalty": 1.97535669195639,
+        "gross_edge": 0.017784852890542983,
+        "mae_penalty": 0.38315789543238427,
+        "max_profit_bars": 16,
+        "sl_r": 0.5,
+        "slow_profit_bars": 10.294365175339747,
+        "temperature": 0.004086619210125374,
+        "timeout_penalty": 0.02020325796478746,
+        "tp_r": 0.75
+      },
+      "weight": {
+        "target_exponent": 1.75,
+        "weight_range_ratio": 8.909046571481328
+      }
+    }
+  }
+}

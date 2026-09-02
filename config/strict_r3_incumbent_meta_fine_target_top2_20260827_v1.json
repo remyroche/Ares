@@ -1,0 +1,15 @@
+{
+  "schema": "strict_r3_incumbent_meta_fine_target_top2_v1",
+  "selection_source": "data_perp/artifacts/strict_r3_incumbent_meta_fine_target_grid_20260827_v1/target_query_summary.parquet",
+  "selection_rule": "top two local screen_score variants within each target family; downstream MC1 selection remains pending",
+  "arms": [
+    {"name":"magnitude_sqrtatr_q7__base_band_block28","family":"magnitude","scale":"sqrt_atr","query":"base_band_block28","classes":7},
+    {"name":"magnitude_sqrtatr_q5__base_band_block28","family":"magnitude","scale":"sqrt_atr","query":"base_band_block28","classes":5},
+    {"name":"under_atr075__timestamp","family":"under","scale":"atr","query":"timestamp","threshold":0.75},
+    {"name":"under_atr100__timestamp","family":"under","scale":"atr","query":"timestamp","threshold":1.0},
+    {"name":"over_atr125__timestamp","family":"over","scale":"atr","query":"timestamp","threshold":1.25},
+    {"name":"over_atr100__timestamp","family":"over","scale":"atr","query":"timestamp","threshold":1.0},
+    {"name":"state_atr_c7__timestamp","family":"state","scale":"atr","query":"timestamp","state_edges":[-1.25,-0.5,-0.15,0.15,0.5,1.25]},
+    {"name":"state_atr_c6__timestamp","family":"state","scale":"atr","query":"timestamp","state_edges":[-1.0,-0.4,0.0,0.4,1.0]}
+  ]
+}

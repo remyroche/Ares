@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Matched residual-query/HPO stage using the frozen specialist contract.
+"""Strict-prequential short residual LambdaRank control.
 
-The specialist contract is loaded once and reused for every transport fold.
-Specialists use the frozen binary exact-H12-net>+50-bps target while residual
-query construction and ranker parameters are selected only on the designated
-development transport folds.  The final fold is emitted once, after selection.
+This is intentionally a *research control*, not a promotion path.  It first
+creates side-local, chronological base OOF predictions, maps timestamp-local
+base rank to H12 net only from prior OOF outcomes, and trains a residual
+ranker on the remaining error.  No in-sample base prediction or April--June
+outcome is consumed by the residual fit or its HPO.
 """
 from __future__ import annotations
 
 import argparse
-import gc
+import hashlib
 import json
+import math
 import sys
 from pathlib import Path
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -23,307 +26,306 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from extreme_price_movements.funnel_selection import global_tail_metrics, monthly_stability
 from extreme_price_movements.query_candidate_definitions import assign_query_ids, query_definitions_by_name
-from extreme_price_movements.query_funnel import load_frozen_query_shortlist
 from extreme_price_movements.residual_lambdarank_hpo import (
     adjusted_hpo_score,
     era_portability_summary,
     make_pruned_study,
     materialize_lambdarank_params,
     ranker_early_stopping_callbacks,
-    report_portability_progress,
     restore_broad_lambdarank_params,
-    select_portability_winner,
+    stop_after_no_improvement,
     suggest_broad_lambdarank_params,
 )
-from scripts.run_frozen_multiview_specialist_input_ablation import (
-    MAX_TRAIN_ROWS, SEED, STORE, _store_rows, _utc,
+from scripts.run_frozen_specialist_query_hpo import (
+    DEFAULT_CANDIDATES,
+    DEFAULT_FEATURES,
+    DEFAULT_LABELS,
+    MAX_TRAIN_QUERY_ROWS,
+    _ledger,
+    _rank_oos_metrics,
 )
-from scripts.run_market_spine_covariance_meta import LONG_HISTORY_FOLDS
+from scripts.run_strict_r3_short_base_3m_oos import OOS_END, OOS_START, TRAIN_START, _matrix
+from scripts.run_strict_r3_short_target_ablations_3m_oos import _valid_label
 
-CONTRACT = ROOT / "data_perp/artifacts/frozen_multiview_specialist_input_ablation_20260805_v1/frozen_view_contract.json"
-QUERY_POP = ROOT / "data_perp/artifacts/query_screen_population_20260810_v1.parquet"
-OUT = ROOT / "data_perp/artifacts/frozen_residual_query_hpo_20260810_v1"
-SPECIALIST_SELECTION = ROOT / "data_perp/artifacts/frozen_specialist_query_hpo_20260810_v1/specialist_target_query_selected.parquet"
-BASE_FEATURES = ["p_clear", "p_adverse", "p_weak", "base_score", "prequential_base_expected_net_bps"]
-HPO_TRIALS = 12
+
+DEFAULT_WINNERS = ROOT / "data_perp/artifacts/strict_r3_short_specialist_query_hpo_20260820_v5/specialist_target_query_winners.parquet"
+DEFAULT_OUT = ROOT / "data_perp/artifacts/strict_r3_short_residual_query_hpo_20260820_v1"
+SEED = 1729
+HPO_TRIALS = 4
+NO_IMPROVEMENT_PATIENCE = 20
 EARLY_STOPPING_ROUNDS = 30
-RESIDUAL_QUERY_CANDIDATES = (
-    "q0_exact_timestamp_side",
-    "q1_cycle_1h_side",
-    "q1_cycle_4h_side",
-    "q1_cycle_8h_side",
-    "q1_cycle_12h_side",
-)
+RESIDUAL_QUERIES = ("q0_exact_timestamp_side", "q1_cycle_4h_side")
+RESIDUAL_EDGES_BPS = (-200.0, -50.0, 50.0, 200.0)
+MIN_MAP_ROWS = 500
+RESIDUAL_BLEND = 0.25
 
 
-def _query_ids(frame: pd.DataFrame, mode: str) -> pd.Series:
-    aliases = {
-        "timestamp_side": "q0_exact_timestamp_side",
-        "q1h_side": "q1_cycle_1h_side",
-        "q4h_side": "q1_cycle_4h_side",
-        "q8h_side": "q1_cycle_8h_side",
-        "q12h_side": "q1_cycle_12h_side",
-        "q24h_side": "q1_cycle_24h_side",
-    }
-    definition, = query_definitions_by_name([aliases.get(mode, mode)])
-    return assign_query_ids(frame, definition)
-
-
-def _target(frame: pd.DataFrame, target_column: str) -> np.ndarray:
-    """Return only the frozen specialist label selected by the prior stage."""
-    return pd.to_numeric(frame[target_column], errors="coerce").fillna(0).to_numpy(np.int32)
-
-
-def _rank_model(frame: pd.DataFrame, fields: list[str], target: np.ndarray, query: pd.Series,
-                params: dict) -> tuple[lgb.LGBMRanker, list[str], pd.Series]:
-    """Fit a ranker with a query-disjoint chronological early-stop slice."""
-    x = frame[["candidate_id", "__ts__", *fields]].copy()
-    x["__q__"] = query.to_numpy()
-    x["__row__"] = np.arange(len(x))
-    x = x.sort_values(["__q__", "candidate_id"], kind="stable")
-    sizes = x.groupby("__q__", sort=False).size()
-    x = x[x["__q__"].isin(sizes.index[sizes.ge(2)])].copy()
-    if x.empty:
-        raise ValueError("no rankable queries")
-    query_time = x.groupby("__q__", sort=False)["__ts__"].min().sort_values(kind="stable")
-    n_early = max(1, int(np.ceil(len(query_time) * .2)))
-    early_queries = set(query_time.index[-n_early:])
-    fit = x.loc[~x["__q__"].isin(early_queries)].copy()
-    early = x.loc[x["__q__"].isin(early_queries)].copy()
-    if fit.empty or early.empty or fit["__q__"].nunique() < 2:
-        fit, early = x, pd.DataFrame(columns=x.columns)
-    order = fit["__row__"].to_numpy(np.int64)
-    med = fit[fields].apply(pd.to_numeric, errors="coerce").median()
-    model_params = dict(params)
-    model_params.pop("objective", None)
-    model_params.pop("metric", None)
-    model_params.pop("label_gain_name", None)
-    model = lgb.LGBMRanker(objective="lambdarank", metric="ndcg", **model_params)
-    fit_args: dict[str, object] = {"group": fit.groupby("__q__", sort=False).size().to_numpy(np.int32)}
-    if not early.empty:
-        early_order = early["__row__"].to_numpy(np.int64)
-        fit_args.update({
-            "eval_set": [(early[fields].apply(pd.to_numeric, errors="coerce").fillna(med).fillna(0.0), target[early_order])],
-            "eval_group": [early.groupby("__q__", sort=False).size().to_numpy(np.int32)],
-            "callbacks": ranker_early_stopping_callbacks(rounds=EARLY_STOPPING_ROUNDS),
-        })
-    model.fit(fit[fields].apply(pd.to_numeric, errors="coerce").fillna(med).fillna(0.0), target[order], **fit_args)
-    return model, fields, med
-
-
-def _resid_params(trial: optuna.Trial, *, median_candidates_per_query: float) -> dict:
-    return suggest_broad_lambdarank_params(
-        trial,
-        retained_fraction=.05,
-        median_candidates_per_query=median_candidates_per_query,
-    )
-
-
-def _load_specialist_selection(path: Path) -> tuple[str, str, dict[str, object]]:
-    """Load the sole target/query/HPO winner from the preceding stage."""
-    if not path.exists():
-        raise FileNotFoundError(
-            f"specialist selection is required before residual HPO: {path}. "
-            "Run run_frozen_specialist_query_hpo.py first."
-        )
-    selected = pd.read_parquet(path)
-    if len(selected) != 1:
-        raise ValueError("specialist selection must contain exactly one frozen winner")
-    row = selected.iloc[0]
-    required = {"target_column", "query", "params_json"}
-    missing = required.difference(selected.columns)
+def _winner(path: Path) -> dict[str, Any]:
+    winners = pd.read_parquet(path)
+    required = {"spec", "query", "params_json", "adjusted_hpo_score", "mean_best_iteration"}
+    missing = required.difference(winners.columns)
     if missing:
-        raise KeyError(f"specialist selection missing {sorted(missing)}")
-    return (
-        str(row["target_column"]),
-        str(row["query"]),
-        restore_broad_lambdarank_params(json.loads(str(row["params_json"]))),
+        raise KeyError(f"specialist winner artifact missing {sorted(missing)}")
+    # Development score only.  The later Apr--Jun tail is never used here.
+    return winners.sort_values(["adjusted_hpo_score", "spec"], ascending=[False, True], kind="stable").iloc[0].to_dict()
+
+
+def _base_fit(
+    frame: pd.DataFrame,
+    fields: list[str],
+    *, spec: str, query: str, params: dict[str, Any], cutoff: pd.Timestamp,
+    start: pd.Timestamp, end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Fit only labels resolved before ``cutoff`` and score one held window."""
+    from scripts.run_frozen_specialist_query_hpo import _fit
+    from scripts.run_strict_r3_short_target_ablations_3m_oos import SPECS
+
+    train = frame.loc[
+        frame.__ts__.ge(TRAIN_START) & frame.__ts__.lt(cutoff)
+        & _valid_label(frame) & frame.__label_available_at__.lt(cutoff)
+    ].copy()
+    held = frame.loc[frame.__ts__.ge(start) & frame.__ts__.lt(end)].copy()
+    if train.empty or held.empty:
+        raise ValueError(f"base prequential window {start} has no strict train/held rows")
+    # `_fit` accepts the target selector name and applies the same fixed
+    # target transformation that won the prior development funnel.
+    _, _, score, iteration = _fit(train, held, fields, spec, query, params)
+    result = held.loc[:, [
+        "candidate_id", "__ts__", "__decision_ts__", "__label_available_at__", "__symbol__", "side_name",
+        "label_valid", "target_invalid", "invalid_reason", "t4_tp6_sl4_gross_bps", "t4_tp6_sl4_net_bps",
+    ]].copy()
+    result["base_score"] = score
+    result["base_iteration"] = int(iteration)
+    result["base_rank_ts"] = result.groupby("__ts__", sort=False)["base_score"].rank(pct=True, method="first")
+    return result
+
+
+def _rank_bin(value: pd.Series) -> pd.Series:
+    return np.minimum(19, np.floor(np.clip(pd.to_numeric(value, errors="coerce").to_numpy(float), 0.0, .999999) * 20.0)).astype(np.int16)
+
+
+def _prior_map(history: pd.DataFrame, ranks: pd.Series) -> np.ndarray:
+    net = pd.to_numeric(history.t4_tp6_sl4_net_bps, errors="coerce")
+    valid = np.isfinite(net.to_numpy(float))
+    if int(valid.sum()) < MIN_MAP_ROWS:
+        return np.full(len(ranks), np.nan, dtype=np.float32)
+    x = history.loc[valid, ["base_rank_ts", "t4_tp6_sl4_net_bps"]].copy()
+    x["bin"] = _rank_bin(x.base_rank_ts)
+    overall = float(pd.to_numeric(x.t4_tp6_sl4_net_bps, errors="coerce").mean())
+    grouped = x.groupby("bin", observed=True).t4_tp6_sl4_net_bps.agg(["mean", "count"])
+    # Side-local shrinkage only; it makes sparse rank cells conservative
+    # without accessing same- or future-time outcomes.
+    estimates = np.full(20, overall, dtype=np.float64)
+    for index, row in grouped.iterrows():
+        estimates[int(index)] = (float(row["count"]) * float(row["mean"]) + 200.0 * overall) / (float(row["count"]) + 200.0)
+    return estimates[_rank_bin(ranks)].astype(np.float32)
+
+
+def _prequential_base_anchor(oof: pd.DataFrame) -> pd.DataFrame:
+    """Map OOF base ranks using only fully resolved earlier OOF outcomes."""
+    source = oof.sort_values(["__ts__", "candidate_id"], kind="stable").copy()
+    source["base_anchor_bps"] = np.nan
+    pending: list[pd.DataFrame] = []
+    history: list[pd.DataFrame] = []
+    for timestamp, group in source.groupby("__ts__", sort=True, observed=True):
+        if pending:
+            ready = [piece for piece in pending if piece.__label_available_at__.max() <= timestamp]
+            pending = [piece for piece in pending if piece.__label_available_at__.max() > timestamp]
+            if ready:
+                history.extend(ready)
+        previous = pd.concat(history, ignore_index=True) if history else pd.DataFrame(columns=group.columns)
+        source.loc[group.index, "base_anchor_bps"] = _prior_map(previous, group.base_rank_ts)
+        labelled = group.loc[_valid_label(group)].copy()
+        if not labelled.empty:
+            pending.append(labelled)
+    source["policy_residual_bps"] = (
+        pd.to_numeric(source.t4_tp6_sl4_net_bps, errors="coerce")
+        - pd.to_numeric(source.base_anchor_bps, errors="coerce")
     )
+    return source
 
 
-def _load(target_column: str) -> tuple[pd.DataFrame, dict[str, dict[str, list[str]]], list[str], list[str]]:
-    from scripts.run_frozen_multiview_specialist_input_ablation import _base
-    base = _base()
-    contract = json.loads(CONTRACT.read_text())
-    views = {side: {name: list(fields) for name, fields in groups.items()} for side, groups in contract["views_by_side"].items()}
-    query_columns = ["candidate_id"] + ([] if target_column == "binary_h12_net50" else [target_column])
-    q = pd.read_parquet(QUERY_POP, columns=query_columns).drop_duplicates("candidate_id")
-    frame = base.merge(q, on="candidate_id", how="inner", validate="one_to_one")
-    if target_column == "binary_h12_net50":
-        frame[target_column] = (pd.to_numeric(frame["net_bps"], errors="coerce") > 50.0).astype(np.int32)
-    store_cols = set(pd.read_parquet(STORE, engine="pyarrow", columns=[]).columns) if False else None
-    ae = [str(f) for f in contract.get("ae_gmm_fields", [])]
-    ctx = [str(f) for f in contract.get("selected_context_fields", [])]
-    return frame, views, ae, ctx
+def _frozen_prior_map(oof: pd.DataFrame, ranks: pd.Series) -> np.ndarray:
+    """Return the pre-April rank-to-net map for held OOS rows."""
+    resolved = oof.loc[_valid_label(oof)].copy()
+    return _prior_map(resolved, ranks)
 
 
-def _fit_specialists(train: pd.DataFrame, cal: pd.DataFrame, test: pd.DataFrame,
-                     views: dict[str, list[str]], query_mode: str,
-                     target_column: str, specialist_params: dict[str, object]) -> tuple[pd.DataFrame, pd.DataFrame]:
-    train = train if len(train) <= MAX_TRAIN_ROWS else train.sample(MAX_TRAIN_ROWS, random_state=SEED)
-    cal_out, test_out = cal[["candidate_id"]].copy(), test[["candidate_id"]].copy()
-    for name, fields in views.items():
-        fx = train.merge(_store_rows(train, fields), on="candidate_id", validate="one_to_one")
-        cx = cal.merge(_store_rows(cal, fields), on="candidate_id", validate="one_to_one")
-        tx = test.merge(_store_rows(test, fields), on="candidate_id", validate="one_to_one")
-        params = dict(specialist_params)
-        if "min_child_samples_fraction" in params:
-            params = materialize_lambdarank_params(params, training_rows=len(fx))
-        params.update({"verbosity": -1, "random_state": SEED, "n_jobs": 1})
-        model, used, med = _rank_model(fx, fields, _target(fx, target_column), _query_ids(fx, query_mode), params)
-        cal_out["mv__" + name] = model.predict(cx[used].apply(pd.to_numeric, errors="coerce").fillna(med).fillna(0.0))
-        test_out["mv__" + name] = model.predict(tx[used].apply(pd.to_numeric, errors="coerce").fillna(med).fillna(0.0))
-        del fx, cx, tx, model
-        gc.collect()
-    return cal_out, test_out
+def _residual_grade(value: pd.Series) -> pd.Series:
+    return pd.Series(np.digitize(pd.to_numeric(value, errors="coerce"), RESIDUAL_EDGES_BPS, right=True), index=value.index, dtype="Int8")
 
 
-def _make_features(frame: pd.DataFrame, scores: pd.DataFrame, extra_fields: list[str]) -> tuple[pd.DataFrame, list[str]]:
-    out = frame[["candidate_id", "__ts__", "net_bps", "gross_bps", "side_name", *BASE_FEATURES]].merge(scores, on="candidate_id", validate="one_to_one")
-    if extra_fields:
-        out = out.merge(_store_rows(out, extra_fields), on="candidate_id", validate="one_to_one")
-    score_fields = [c for c in scores.columns if c.startswith("mv__")]
-    fields = list(dict.fromkeys(BASE_FEATURES + score_fields + extra_fields))
-    return out, [f for f in fields if f in out.columns]
-
-
-def _fit_residual(train: pd.DataFrame, test: pd.DataFrame, fields: list[str], query_mode: str, params: dict, grade_edges: tuple[float, float, float, float] = (-150., -50., 50., 150.)) -> np.ndarray:
-    residual = train.net_bps.to_numpy(float) - train.prequential_base_expected_net_bps.to_numpy(float)
-    e0, e1, e2, e3 = grade_edges
-    grade = np.select((residual <= e0, residual <= e1, residual <= e2, residual <= e3), (0, 1, 2, 3), default=4).astype(np.int32)
-    actual_params = dict(params)
-    if "min_child_samples_fraction" in actual_params:
-        actual_params = materialize_lambdarank_params(actual_params, training_rows=len(train))
-    actual_params.update({"verbosity": -1, "random_state": SEED, "n_jobs": 1})
-    model, used, med = _rank_model(train, fields, grade, _query_ids(train, query_mode), actual_params)
-    return model.predict(test[used].apply(pd.to_numeric, errors="coerce").fillna(med).fillna(0.0))
-
-
-def _fold_scores(base: pd.DataFrame, views: dict[str, dict[str, list[str]]], ae: list[str], ctx: list[str],
-                 fold, specialist_query: str, specialist_target: str, specialist_params: dict[str, object],
-                 residual_query: str, residual_params: dict) -> pd.DataFrame:
-    a, b, c, e = map(_utc, (fold.train_start, fold.calibration_start, fold.test_start, fold.test_end))
-    tr = base[base.__ts__.between(a, b, inclusive="left") & base.label_available_ts.lt(b)]
-    ca = base[base.__ts__.between(b, c, inclusive="left") & base.label_available_ts.lt(c)]
-    te = base[base.__ts__.between(c, e, inclusive="left")]
-    pieces = []
-    for side in ("long", "short"):
-        train, cal, test = (x[x.side_name.eq(side)].copy() for x in (tr, ca, te))
-        cal_scores, test_scores = _fit_specialists(
-            train, cal, test, views[side], specialist_query, specialist_target, specialist_params,
-        )
-        calx, fields = _make_features(cal, cal_scores, ae + ctx)
-        testx, _ = _make_features(test, test_scores, ae + ctx)
-        # Use the later calibration half to fit the residual, preserving the
-        # earlier half for query/HPO decisions in the outer driver.
-        raw = _fit_residual(calx, testx, fields, residual_query, residual_params)
-        z = test[["candidate_id", "__ts__", "side_name", "net_bps", "gross_bps", "prequential_base_expected_net_bps"]].copy()
-        z["score"] = test.prequential_base_expected_net_bps.to_numpy(float) + raw
-        z["fold"] = fold.name
-        pieces.append(z)
-    return pd.concat(pieces, ignore_index=True)
-
-
-def _monthly_top5_evs(pred: pd.DataFrame) -> list[float]:
-    x = pred.copy()
-    x["_month"] = pd.to_datetime(x["__ts__"], utc=True).dt.to_period("M").astype(str)
-    return [
-        float(global_tail_metrics(group)["top5_net_bps"])
-        for _, group in x.groupby("_month", sort=True, observed=True)
-    ]
-
-
-def _objective(base: pd.DataFrame, views, ae, ctx, folds, specialist_query: str,
-               specialist_target: str, specialist_params: dict[str, object], residual_query: str,
-               trial: optuna.Trial) -> float:
-    sample = base[base.__ts__.lt(_utc(folds[0].calibration_start))].copy()
-    median_candidates = float(_query_ids(sample, residual_query).groupby(
-        _query_ids(sample, residual_query), observed=True,
-    ).size().median())
-    suggested = _resid_params(trial, median_candidates_per_query=median_candidates)
-    predictions: list[pd.DataFrame] = []
-    era_evs: list[float] = []
-    for fold in folds:
-        pred = _fold_scores(
-            base, views, ae, ctx, fold, specialist_query, specialist_target,
-            specialist_params, residual_query, suggested,
-        )
-        predictions.append(pred)
-        for value in _monthly_top5_evs(pred):
-            era_evs.append(value)
-            report_portability_progress(trial, era_evs)
-    pooled = pd.concat(predictions, ignore_index=True)
-    metrics = global_tail_metrics(pooled)
-    stability = monthly_stability(pooled)
-    summary = era_portability_summary(era_evs)
-    for key, value in {**metrics, **stability, **summary}.items():
-        trial.set_user_attr(key, value)
-    return adjusted_hpo_score(
-        era_evs=era_evs,
-        max_depth=int(suggested["max_depth"]),
-        num_leaves=int(suggested["num_leaves"]),
+def _cap_and_query(frame: pd.DataFrame, query: str) -> pd.DataFrame:
+    definition, = query_definitions_by_name([query])
+    x = frame.copy()
+    x["__query__"] = assign_query_ids(x, definition)
+    x["__sample__"] = x.candidate_id.astype(str).map(
+        lambda value: int(hashlib.sha256(value.encode("utf-8")).hexdigest()[:16], 16)
     )
+    x = (
+        x.sort_values(["__query__", "__sample__", "candidate_id"], kind="stable")
+        .groupby("__query__", sort=False, observed=True).head(MAX_TRAIN_QUERY_ROWS)
+        .drop(columns="__sample__")
+    )
+    sizes = x.groupby("__query__", observed=True)["__grade__"].agg(["size", "nunique"])
+    return x.loc[x.__query__.isin(sizes.index[sizes["size"].ge(2) & sizes["nunique"].ge(2)])].sort_values(["__query__", "candidate_id"], kind="stable")
 
 
-def run(out: Path = OUT, trials: int = HPO_TRIALS,
-        residual_queries: tuple[str, ...] = RESIDUAL_QUERY_CANDIDATES,
-        specialist_selection: Path = SPECIALIST_SELECTION,
-        query_shortlist: Path | None = None) -> Path:
-    out.mkdir(parents=True, exist_ok=True)
-    specialist_target, specialist_query, specialist_params = _load_specialist_selection(specialist_selection)
-    base, views, ae, ctx = _load(specialist_target)
-    if query_shortlist is not None:
-        residual_queries = load_frozen_query_shortlist(query_shortlist)
-    folds = LONG_HISTORY_FOLDS[3:]
-    if len(folds) < 3:
-        raise ValueError("residual HPO needs at least two development folds and one final fold")
-    development_folds, final_folds = folds[:-1], folds[-1:]
-    query_definitions_by_name(residual_queries)
-    rows = []
-    best_rows: list[dict[str, object]] = []
-    for residual_query in residual_queries:
-        study = make_pruned_study(seed=SEED + len(rows), n_startup_trials=2, n_warmup_steps=1)
-        study.optimize(lambda t: _objective(base, views, ae, ctx, development_folds, specialist_query, specialist_target, specialist_params, residual_query, t), n_trials=trials, show_progress_bar=False)
-        for t in study.trials:
-            rows.append({"query": residual_query, "trial": t.number, "state": t.state.name, "value": t.value, **t.params, **{f"metric_{k}": v for k, v in t.user_attrs.items()}})
+def _inner_early(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    starts = frame.groupby("__query__", sort=False).__ts__.min().sort_values(kind="stable")
+    count = max(1, int(math.ceil(len(starts) * .20)))
+    names = set(starts.index[-count:])
+    early = frame.loc[frame.__query__.isin(names)].copy()
+    fit = frame.loc[~frame.__query__.isin(names)].copy()
+    if fit.empty or early.empty or fit.__query__.nunique() < 2:
+        return frame, None
+    return fit, early
+
+
+def _fit_residual(
+    train: pd.DataFrame, predict: pd.DataFrame, fields: list[str], query: str, params: dict[str, Any], *, early: pd.DataFrame | None = None,
+) -> tuple[np.ndarray, int]:
+    prepared = _cap_and_query(train, query)
+    if prepared.empty:
+        raise ValueError("no rankable residual training queries")
+    medians = prepared.loc[:, fields].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).median().fillna(0.0)
+    actual = materialize_lambdarank_params(params, training_rows=len(prepared)) if "min_child_samples_fraction" in params else dict(params)
+    actual.update({"verbosity": -1, "random_state": SEED, "n_jobs": 1, "deterministic": True, "force_col_wise": True})
+    model = lgb.LGBMRanker(**actual)
+    kwargs: dict[str, Any] = {"group": prepared.groupby("__query__", sort=False).size().to_numpy(np.int32)}
+    if early is not None and not early.empty:
+        early = _cap_and_query(early, query)
+        if not early.empty:
+            kwargs.update({
+                "eval_set": [(_matrix(early, fields, medians), early.__grade__.astype(np.int32).to_numpy())],
+                "eval_group": [early.groupby("__query__", sort=False).size().to_numpy(np.int32)],
+                "callbacks": ranker_early_stopping_callbacks(rounds=EARLY_STOPPING_ROUNDS),
+            })
+    model.fit(_matrix(prepared, fields, medians), prepared.__grade__.astype(np.int32).to_numpy(), **kwargs)
+    iteration = int(model.best_iteration_ or actual["n_estimators"])
+    return np.asarray(model.predict(_matrix(predict, fields, medians), num_iteration=iteration), dtype=np.float32), iteration
+
+
+def _combine(base_rank: pd.Series, residual_score: np.ndarray, timestamp: pd.Series) -> np.ndarray:
+    residual_rank = pd.Series(residual_score, index=base_rank.index).groupby(timestamp, sort=False).rank(pct=True, method="first")
+    return (pd.to_numeric(base_rank, errors="coerce") + RESIDUAL_BLEND * (residual_rank - .5)).to_numpy(np.float32)
+
+
+def _tail(frame: pd.DataFrame, score_column: str) -> dict[str, float]:
+    ordered = frame.sort_values([score_column, "candidate_id"], ascending=[False, True], kind="stable")
+    valid = _valid_label(ordered)
+    values: dict[str, float] = {}
+    for fraction in (.01, .02, .05):
+        picked = ordered.iloc[:max(1, int(math.ceil(len(ordered) * fraction)))]
+        outcome = picked.loc[_valid_label(picked)]
+        values[f"top{int(fraction * 100)}_net_bps"] = float(pd.to_numeric(outcome.t4_tp6_sl4_net_bps, errors="coerce").mean())
+    return values
+
+
+def run(*, winners: Path, features: Path, labels: Path, candidates: Path, out: Path, hpo_trials: int) -> Path:
+    if out.exists():
+        raise FileExistsError(f"output must be new: {out}")
+    selected = _winner(winners)
+    params = restore_broad_lambdarank_params(json.loads(str(selected["params_json"])))
+    params["n_estimators"] = int(round(float(selected["mean_best_iteration"])))
+    frame, fields = _ledger(features, labels, candidates)
+    feb = _base_fit(frame, fields, spec=str(selected["spec"]), query=str(selected["query"]), params=params,
+                    cutoff=pd.Timestamp("2024-02-01", tz="UTC"), start=pd.Timestamp("2024-02-01", tz="UTC"), end=pd.Timestamp("2024-03-01", tz="UTC"))
+    mar = _base_fit(frame, fields, spec=str(selected["spec"]), query=str(selected["query"]), params=params,
+                    cutoff=pd.Timestamp("2024-03-01", tz="UTC"), start=pd.Timestamp("2024-03-01", tz="UTC"), end=pd.Timestamp("2024-04-01", tz="UTC"))
+    oof = _prequential_base_anchor(pd.concat([feb, mar], ignore_index=True))
+    oof = oof.loc[oof.base_anchor_bps.notna() & _valid_label(oof)].copy()
+    oof["__grade__"] = _residual_grade(oof.policy_residual_bps)
+    # Carry all causal base fields only after OOF target construction.
+    oof = oof.merge(frame[["candidate_id", *fields]], on="candidate_id", validate="one_to_one")
+    residual_fields = ["base_score", "base_rank_ts", "base_anchor_bps", *fields]
+    feb_train = oof.loc[oof.__ts__.lt(pd.Timestamp("2024-03-01", tz="UTC"))].copy()
+    mar_valid = oof.loc[oof.__ts__.ge(pd.Timestamp("2024-03-01", tz="UTC"))].copy()
+    if feb_train.empty or mar_valid.empty:
+        raise ValueError("prequential residual control has insufficient February/March support")
+    trials: list[dict[str, Any]] = []
+    winners_rows: list[dict[str, Any]] = []
+    for query in RESIDUAL_QUERIES:
+        probe = _cap_and_query(feb_train, query)
+        median_query = float(probe.groupby("__query__", observed=True).size().median())
+        study = make_pruned_study(seed=SEED + len(winners_rows), n_startup_trials=2, n_warmup_steps=1)
+
+        def objective(trial: optuna.Trial) -> float:
+            suggested = suggest_broad_lambdarank_params(trial, retained_fraction=.05, median_candidates_per_query=median_query)
+            prepared = _cap_and_query(feb_train, query)
+            fit, early = _inner_early(prepared)
+            score, iteration = _fit_residual(fit, mar_valid, residual_fields, query, suggested, early=early)
+            combined = _combine(mar_valid.base_rank_ts, score, mar_valid.__ts__)
+            current = mar_valid.copy()
+            current["score"] = combined
+            metrics = _tail(current, "score")
+            for key, value in {**metrics, "best_iteration": iteration}.items():
+                trial.set_user_attr(key, value)
+            return adjusted_hpo_score(era_evs=[metrics["top5_net_bps"]], max_depth=int(suggested["max_depth"]), num_leaves=int(suggested["num_leaves"]))
+
+        study.optimize(
+            objective,
+            n_trials=hpo_trials,
+            show_progress_bar=False,
+            callbacks=[stop_after_no_improvement(patience=NO_IMPROVEMENT_PATIENCE)],
+        )
+        for trial in study.trials:
+            trials.append({"query": query, "trial": trial.number, "state": trial.state.name, "adjusted_hpo_score": trial.value, **trial.params, **{f"metric_{key}": value for key, value in trial.user_attrs.items()}})
         best = study.best_trial
-        best_rows.append({"arm": residual_query, "query": residual_query, "trial": best.number,
-                          "adjusted_hpo_score": best.value, **{f"metric_{k}": v for k, v in best.user_attrs.items()},
-                          "params_json": json.dumps(best.params, sort_keys=True)})
-    trials_df = pd.DataFrame(rows)
-    trials_df.to_parquet(out / "residual_hpo_trials.parquet", index=False)
-    development = pd.DataFrame(best_rows)
-    development.to_parquet(out / "residual_hpo_development_winners.parquet", index=False)
-    select_table = development.copy()
-    select_table = select_table.rename(columns={
-        "metric_top5_net_bps": "top5_net_bps", "metric_top1_net_bps": "top1_net_bps",
-        "metric_month_std_net_bps": "month_std_net_bps", "metric_month_worst_net_bps": "month_worst_net_bps",
-    })
-    selected = select_portability_winner(select_table, tie_tolerance_bps=1.0)
-    query = str(selected["query"])
-    p = restore_broad_lambdarank_params(json.loads(str(selected["params_json"])))
-    preds = []
-    for f in final_folds:
-        preds.append(_fold_scores(base, views, ae, ctx, f, specialist_query, specialist_target, specialist_params, query, p))
-    allp = pd.concat(preds, ignore_index=True)
-    allp.to_parquet(out / "final_oos_predictions.parquet", index=False)
-    winner = {"specialist_target": specialist_target, "specialist_query": specialist_query, "residual_query": query,
-              "residual_params": json.dumps(p, sort_keys=True), "development_selection": "portability score; within 1 bps then top5, monthly stability, top1",
-              **global_tail_metrics(allp), **monthly_stability(allp)}
-    pd.DataFrame([winner]).to_parquet(out / "residual_query_winner.parquet", index=False)
-    (out / "manifest.json").write_text(json.dumps({"schema": "frozen_residual_query_hpo_v2", "contract": str(CONTRACT), "specialist_selection": str(specialist_selection), "specialist_target": specialist_target, "specialist_query": specialist_query, "query_shortlist": str(query_shortlist) if query_shortlist else None, "residual_queries": list(residual_queries), "hpo_trials_per_query": trials, "development_folds": [f.name for f in development_folds], "final_oos_folds": [f.name for f in final_folds], "selection": "adjusted portability score; within 1 bps, monthly stability then top1 net", "early_stopping_rounds": EARLY_STOPPING_ROUNDS}, indent=2) + "\n")
+        winners_rows.append({"query": query, "trial": best.number, "adjusted_hpo_score": best.value, "params_json": json.dumps(best.params, sort_keys=True), "stop_reason": study.user_attrs.get("stop_reason", "trial_budget"), "no_improvement_patience": int(NO_IMPROVEMENT_PATIENCE), **{f"metric_{key}": value for key, value in best.user_attrs.items()}})
+    selected_resid = pd.DataFrame(winners_rows).sort_values(["adjusted_hpo_score", "query"], ascending=[False, True], kind="stable").iloc[0].to_dict()
+    residual_params = restore_broad_lambdarank_params(json.loads(str(selected_resid["params_json"])))
+    residual_params["n_estimators"] = int(selected_resid["metric_best_iteration"])
+    final_base = _base_fit(frame, fields, spec=str(selected["spec"]), query=str(selected["query"]), params=params,
+                           cutoff=OOS_START, start=OOS_START, end=OOS_END)
+    final_base["base_anchor_bps"] = _frozen_prior_map(oof, final_base.base_rank_ts)
+    final_base = final_base.merge(frame[["candidate_id", *fields]], on="candidate_id", validate="one_to_one")
+    score, iteration = _fit_residual(oof, final_base, residual_fields, str(selected_resid["query"]), residual_params)
+    final_base["residual_score"] = score
+    final_base["combined_score"] = _combine(final_base.base_rank_ts, score, final_base.__ts__)
+    final_base["score"] = final_base.combined_score
+    total, tails = _rank_oos_metrics(final_base, str(selected["spec"]), scope="2024-04_to_2024-06")
+    months: list[dict[str, Any]] = []
+    month_tails: list[dict[str, Any]] = []
+    for month, group in final_base.groupby(final_base.__ts__.dt.strftime("%Y-%m"), sort=True):
+        result, current_tails = _rank_oos_metrics(group, str(selected["spec"]), scope=str(month))
+        months.append(result)
+        month_tails.extend(current_tails)
+    out.mkdir(parents=True)
+    oof.to_parquet(out / "prequential_base_residual_training.parquet", index=False, compression="zstd")
+    final_base.to_parquet(out / "final_oos_predictions.parquet", index=False, compression="zstd")
+    pd.DataFrame(trials).to_parquet(out / "residual_hpo_trials.parquet", index=False, compression="zstd")
+    pd.DataFrame(winners_rows).to_parquet(out / "residual_query_winners.parquet", index=False, compression="zstd")
+    pd.DataFrame([{**total, "final_iteration": iteration}, *months]).to_parquet(out / "final_oos_metrics.parquet", index=False, compression="zstd")
+    pd.DataFrame(tails + month_tails).to_parquet(out / "final_oos_tail_metrics.parquet", index=False, compression="zstd")
+    (out / "run_manifest.json").write_text(json.dumps({
+        "schema": "strict_r3_short_prequential_residual_lambdarank_v1", "side": "short",
+        "base_selection": {key: selected[key] for key in ("spec", "query", "adjusted_hpo_score", "mean_best_iteration")},
+        "base_oof": "Jan model -> Feb, Jan-Feb model -> Mar; target labels resolved before each fit",
+        "base_anchor": "timestamp-local base rank mapped only from prior resolved base-OOF outcomes; 20 rank bins with side-local shrinkage",
+        "residual_target": f"exact H12 TP6/SL4 net minus causal base anchor; ordinal bins {RESIDUAL_EDGES_BPS}",
+        "residual_features": "base score/rank/anchor plus repaired 120 short causal base fields; research-only shared contract",
+        "residual_queries": list(RESIDUAL_QUERIES), "query_train_cap": MAX_TRAIN_QUERY_ROWS,
+        "hpo": "broad residual_lambdarank_hpo search, 4 trials/query, chronological inner 20% query early-stop, 30 rounds",
+        "combination": f"timestamp-local base rank + {RESIDUAL_BLEND} * (residual rank - 0.5)",
+        "final_oos": "April-June scored once after all selection; ranks all entry-executable candidates before outcome resolution",
+        "no_promotion": "This is a short residual negative control. It cannot promote an architecture without an independently positive base target.",
+    }, indent=2) + "\n")
     return out
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--winners", type=Path, default=DEFAULT_WINNERS)
+    parser.add_argument("--features", type=Path, default=DEFAULT_FEATURES)
+    parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS)
+    parser.add_argument("--candidates", type=Path, default=DEFAULT_CANDIDATES)
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--hpo-trials", type=int, default=HPO_TRIALS)
+    args = parser.parse_args()
+    print(run(winners=args.winners, features=args.features, labels=args.labels, candidates=args.candidates, out=args.out, hpo_trials=args.hpo_trials))
+
+
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", type=Path, default=OUT)
-    ap.add_argument("--trials", type=int, default=HPO_TRIALS)
-    ap.add_argument("--residual-queries", nargs="*", default=list(RESIDUAL_QUERY_CANDIDATES))
-    ap.add_argument("--specialist-selection", type=Path, default=SPECIALIST_SELECTION)
-    ap.add_argument("--query-shortlist", type=Path, default=None)
-    args = ap.parse_args()
-    print(run(args.out, args.trials, tuple(args.residual_queries), args.specialist_selection,
-              args.query_shortlist))
+    main()

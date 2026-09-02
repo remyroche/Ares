@@ -1,0 +1,22 @@
+{
+  "schema": "strict_r3_p8u_kraken_live_activation_v1",
+  "authorized": true,
+  "manual_user_authorization": true,
+  "authorization_basis": "User instruction on 2026-08-30: August was the OOS period; launch live trading with session persistence.",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "stale_signal_execution_prohibited": true,
+  "authorized_after": "2026-08-30T10:00:00Z",
+  "expires_at": "2026-08-31T23:59:59Z",
+  "bundle_sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c",
+  "no_order_adapter_sha256": "1039becdd09dfa8b2fb702d0f0cafe0cd98ebf225c87a8f52989746fa257e309",
+  "policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "gateway_contract_sha256": "e7225a6ed390985d67f5115a136f49a99634988c323e08f401238e6e766af51a",
+  "gateway_runtime_sha256": "21485ee5f1e2575ae2cf8450b595bd81598e2c06c6aab395ed29eec9925a94f3",
+  "session_contract_sha256": "74fdaa532e7ac02ef3662e19abdf45ba7c535c6382efa29d907dba8923f28a37",
+  "session_runtime_sha256": "199ef7afeb9499799a141d24d6a00fa9c659775dffe2ff777875ae13a7c257fa",
+  "p8u_position_monitor_runtime": {
+    "path": "scripts/run_strict_r3_p8u_live_position_monitor.py",
+    "sha256": "c12f7e8fa35e1168b81a0e43e3d57f737c4e4ad561064d1584a9b862d93bec1d"
+  },
+  "promotion_note": "Manual promotion override is limited to this hash-bound P8U contract and ends with the August MC1 vintage. A fresh causally trained September MC1 package and activation receipt are required before any September order."
+}

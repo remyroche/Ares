@@ -1,0 +1,28 @@
+{
+  "schema": "strict_r3_p8u_meta_targetquery_family_winners_v1",
+  "scope": "offline P8U Meta target/query family selection only; no MC1, admission, portfolio, live, or exchange authority",
+  "selection_source": [
+    "data_perp/artifacts/strict_r3_p8u_meta_targetquery_xendcg_successor_under_20260830_v1/target_query_summary.parquet",
+    "data_perp/artifacts/strict_r3_p8u_meta_targetquery_xendcg_successor_over_20260830_v1/target_query_summary.parquet",
+    "data_perp/artifacts/strict_r3_p8u_meta_targetquery_xendcg_successor_magnitude_state_20260830_v1/target_query_summary.parquet"
+  ],
+  "selection_rule": {
+    "primary": "highest strict-OOF sstable_meta within target family",
+    "tie_breakers": [
+      "conditional_mi_meta_policy_given_base",
+      "mean_top2_substitution_ev_bps"
+    ],
+    "required_next_step": "only these four family winners receive head-specific feature selection; global GateProxy controls do not override this family-local rule"
+  },
+  "winners": {
+    "under": "under_bps100__timestamp",
+    "over": "over_bps50__timestamp",
+    "magnitude": "magnitude_bps__base_band_block28",
+    "state": "state_bps__base_band_block28"
+  },
+  "diagnostic_controls_only": {
+    "uncertainty": "under_bps50__timestamp",
+    "diverse": "over_bps100__timestamp"
+  },
+  "causality": "all source scores were persisted target-free before held policy/path outcomes were joined for diagnostics"
+}

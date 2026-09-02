@@ -129,6 +129,20 @@ def main() -> int:
     )
     parser.add_argument("--perp-root", default="data_perp/exchanges/krakenfutures")
     parser.add_argument("--end-ts", default="")
+    parser.add_argument(
+        "--force-range-start-ts",
+        default="",
+        help=(
+            "optional UTC start of one contiguous source range to fetch for every "
+            "selected symbol; existing rows remain immutable and only missing "
+            "timestamps are appended"
+        ),
+    )
+    parser.add_argument(
+        "--force-range-end-ts",
+        default="",
+        help="optional UTC end (exclusive) paired with --force-range-start-ts",
+    )
     parser.add_argument("--partition-count", type=int, default=1)
     parser.add_argument("--partition-id", type=int, default=0)
     parser.add_argument("--max-gap-hours", type=int, default=720)
@@ -145,6 +159,28 @@ def main() -> int:
     parser.add_argument("--sleep", type=float, default=0.02)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    forced_start_text = str(args.force_range_start_ts).strip()
+    forced_end_text = str(args.force_range_end_ts).strip()
+    if bool(forced_start_text) != bool(forced_end_text):
+        raise ValueError("--force-range-start-ts and --force-range-end-ts must be supplied together")
+    forced_range: tuple[pd.Timestamp, pd.Timestamp] | None = None
+    if forced_start_text:
+        forced_start = pd.Timestamp(forced_start_text)
+        forced_end = pd.Timestamp(forced_end_text)
+        forced_start = (
+            forced_start.tz_localize("UTC")
+            if forced_start.tzinfo is None
+            else forced_start.tz_convert("UTC")
+        ).floor("h")
+        forced_end = (
+            forced_end.tz_localize("UTC")
+            if forced_end.tzinfo is None
+            else forced_end.tz_convert("UTC")
+        ).floor("h")
+        if forced_end <= forced_start:
+            raise ValueError("forced source range must have a positive duration")
+        forced_range = (forced_start, forced_end)
 
     symbols = (
         _load_symbols_file(Path(args.symbols_file))
@@ -177,11 +213,15 @@ def main() -> int:
                 stats["skipped_no_local"] += 1
                 tprint(f"[{i:04d}/{len(symbols):04d}] {symbol}: skip no local OHLCV seed")
                 continue
-            ranges = _gap_ranges(
-                existing.index,
-                end_ts=end_ts,
-                max_gap_hours=int(args.max_gap_hours),
-                start_ts=start_ts,
+            ranges = (
+                [forced_range]
+                if forced_range is not None
+                else _gap_ranges(
+                    existing.index,
+                    end_ts=end_ts,
+                    max_gap_hours=int(args.max_gap_hours),
+                    start_ts=start_ts,
+                )
             )
             if not ranges:
                 stats["no_gaps"] += 1

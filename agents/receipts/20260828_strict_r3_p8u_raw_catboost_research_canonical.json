@@ -1,0 +1,38 @@
+{
+  "schema": "strict_r3_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T01:15:00Z",
+  "scope": "canonicalize the P8u Raw-bps CatBoost F72 tail-125 Base contract for offline research only",
+  "live_or_exchange_mutation": false,
+  "changed_files": {
+    "config/strict_r3_p8u_raw_catboost_base_research_canonical_20260828_v1.json": "e968171a378f6d9e901181abd46ff5fe6c939eb7077ac7c58f9db310f794f484",
+    "docs/P8U_BASE_PRECISION_PRESERVATION_HANDOVER_20260828.md": "995a060b139dece95f3129d0c4e7aad8a2be81af41c1a7508b8b5fd790f14710"
+  },
+  "selection": {
+    "name": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+    "status": "CANONICAL_RESEARCH_BASE_CONTRACT_NOT_LIVE",
+    "supersedes": "P8u policy-ordinal LightGBM Base control for future P8u Base research",
+    "does_not_authorize": [
+      "live stack replacement",
+      "exchange execution",
+      "modification of existing canonical live bundles"
+    ]
+  },
+  "evidence": {
+    "standalone_five_fold_score_stable": 1.7137201582366475,
+    "standalone_mean_dtp2_bps": 190.2953083232199,
+    "standalone_mean_dtp5_bps": 131.26274215486478,
+    "standalone_mean_dtp10_bps": 86.14497245750444,
+    "matched_apr_jul_2026_constrained_net_ev_bps_per_trade": 160.48179483313544,
+    "matched_apr_jul_2026_total_net_bps": 409068.09502966225,
+    "matched_delta_vs_policyordinal_ev_bps_per_trade": 31.61994083313543,
+    "matched_delta_vs_policyordinal_total_net_bps": 77119.96000266226
+  },
+  "validation": {
+    "config_json_parse": true,
+    "diff_check": true,
+    "separate_independent_current_bcf_mc1_maps": true,
+    "target_free_scores_before_policy_join": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "promotion_boundary": "Research canonicalization only. Promotion needs six or more common post-Meta months, an untouched later forward period, inference/execution parity review, and explicit authorization."
+}

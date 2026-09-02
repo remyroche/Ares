@@ -1,0 +1,47 @@
+{
+  "task": "strict-r3-a5-complete-contract-successor",
+  "scope": "Make bounded A5 and the portfolio auction independently fail closed on incomplete frozen-base contracts, prove same-hour economic parity and unchanged admissions, seal an immutable successor inference bundle, restart untouched validation under that seal, and align August daily tails with model-eligible rows.",
+  "changed_paths": [
+    "extreme_price_movements/strict_r3_a5_trust.py",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py",
+    "scripts/replay_strict_r3_forward_portfolio.py",
+    "scripts/run_strict_r3_hourly_shadow.py",
+    "scripts/apply_strict_r3_frozen_a5_period.py",
+    "scripts/report_strict_r3_daily_forward_metrics.py",
+    "tests/test_a5_bounded_integration.py",
+    "tests/test_strict_r3_shadow_portfolio.py",
+    "tests/test_apply_strict_r3_frozen_a5_period.py",
+    "tests/test_report_strict_r3_daily_forward_metrics.py",
+    "config/strict_r3_inference_bundle_long_20260801_v5_homogeneous28_a5_b10_exactpolicy_v2.json",
+    "config/strict_r3_untouched_forward_validation_homogeneous28_completegate_20260813_v3.json",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q A5/auction/shadow/frozen-period/daily suite: 24 passed before final daily eligibility refinement; focused final A5/auction/daily suite: 19 passed",
+      "successor bundle v2 SHA-256 d496dee40bf06d600b6f920c231e52151303b81288cfcde0b045fa6daf8b4d7d: 23 artifact hashes and 28 runtime-code hashes verified",
+      "10:00 final-seal successor reconciliation v2: complete 170-symbol population, 164 actionable rows, 99.3902% all-120 completeness, zero changed historical fields/numeric delta, zero exchange calls; manifest records final bundle SHA-256 d496dee40bf06d600b6f920c231e52151303b81288cfcde0b045fa6daf8b4d7d",
+      "same-hour v1 versus v2: final score, Cell-day EV, R5 posterior, and A5 expected bps maximum absolute delta 0.0; zero admission mismatches; incomplete GBP row becomes A5-unavailable while remaining rejected",
+      "August daily v4: tails selected from 27,554 complete-contract rows before outcome inspection; zero causal admissions and zero portfolio trades"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

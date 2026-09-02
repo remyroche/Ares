@@ -1,0 +1,73 @@
+{
+  "task": "kraken-l2-execution-risk-research-pipeline",
+  "scope": "Add an offline, target-separated Tardis Kraken L2 execution-risk research pipeline. It does not import or modify the live trader, canonical close-price policy, exit optimiser, model bundles, admission map, or exchange execution configuration.",
+  "changed_paths": [
+    "src/execution/__init__.py",
+    "src/execution/tardis_book.py",
+    "src/execution/book_walk.py",
+    "src/execution/surface.py",
+    "scripts/execution/build_tardis_free_manifest.py",
+    "scripts/execution/download_tardis_kraken_free.py",
+    "scripts/execution/build_kraken_execution_states.py",
+    "scripts/execution/validate_tardis_snapshot5.py",
+    "scripts/execution/build_execution_oracle.py",
+    "scripts/execution/train_execution_risk.py",
+    "scripts/execution/report_execution_risk.py",
+    "tests/execution/test_tardis_book.py",
+    "tests/execution/test_book_walk.py",
+    "tests/execution/test_execution_targets.py",
+    "tests/execution/test_execution_oracle.py",
+    "docs/KRAKEN_L2_EXECUTION_RISK_RESEARCH.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "implementation": {
+    "raw_data": "Manifest is exact-map plus official Tardis metadata, first UTC day of each month only. Downloader is resumable and atomic; raw files are immutable after checksum validation.",
+    "reconstruction": "L2 snapshots reset state; zero quantity deletes a level; nonzero quantity replaces a level; same-local-timestamp messages are atomic; pre-snapshot and invalid books never form state features.",
+    "spot_futures_boundary": "Book walker accepts Kraken Spot base quantities and quote notionals only. Futures integration needs a separately validated adapter.",
+    "surface": "Causal minute/message state features are separate from future-only deterioration labels. No forward fill across missing or crossed books.",
+    "oracle": "Uses the existing policy exit timestamp and a predeclared earlier-exit set only. The parent close policy is never optimised or altered.",
+    "models": "Only date-level chronological controls: empirical shrinkage, OHLCV-only shallow LGBM, and L2-aware shallow LGBM. No random row split or broad HPO."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "synthetic exact-mapping and train-bin sanity check",
+      "python3 scripts/execution/report_execution_risk.py --out /private/tmp/KRAKEN_L2_EXECUTION_RISK_REPORT.md",
+      "python3 -m pytest -q tests/execution",
+      "python3 -m py_compile src/execution/*.py scripts/execution/*.py"
+    ],
+    "results": {
+      "focused_tests": "9 passed",
+      "raw_tardis_download": "not run: no explicit exact mapping or pre-existing Tardis raw data was present; this is an offline research pipeline and the live stack was not touched"
+    }
+  },
+  "file_hashes": {
+    "src/execution/tardis_book.py": "686a19bbac901b9345618e46077de67f0cb29dd9a9486b823c811316e156da95",
+    "src/execution/book_walk.py": "806cb0a312c088413ef34bc024f6d64d15b53fc21f5a533d78d717b35c4d5023",
+    "src/execution/surface.py": "d1d71378832956a06098e7f1228d2a4dfab1938d294399635edbb743a264d21d",
+    "scripts/execution/build_tardis_free_manifest.py": "00acce729e207f797c125cd296db36dca1d1cb79626bf5f1c28f280de02248f3",
+    "scripts/execution/download_tardis_kraken_free.py": "7c3854adbbebc819faaf57096df370ae9e0534597ff7f517f47854242b193ac2",
+    "scripts/execution/build_kraken_execution_states.py": "c0aa39272bfc01be698e620ebb34fe3dfe4308d4fb8097e3af5d1e2fcb9f1365",
+    "scripts/execution/validate_tardis_snapshot5.py": "66533734d2dca19fe7e8152c0129ca92543971a3cbd601b3f57dd1808b3fa0b9",
+    "scripts/execution/build_execution_oracle.py": "8556dee72a55f9c22b7dd82c01f629f82da32d2f3123a956c9129ca6d125b3ae",
+    "scripts/execution/train_execution_risk.py": "4b29922dbfeb44b27c69937e8961e534ffe6f8c5824700afa7795dcfbd9d5925",
+    "scripts/execution/report_execution_risk.py": "8e173587c4c19689de83361bf4cc768e1d6e66d09cba5a946105e678290e591c",
+    "docs/KRAKEN_L2_EXECUTION_RISK_RESEARCH.md": "311f5fc4cdd1dbd2f1721272f5e99d662cf00351062a118250a7d8831d445cf0"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

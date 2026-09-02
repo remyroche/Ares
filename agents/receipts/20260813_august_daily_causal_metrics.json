@@ -1,0 +1,39 @@
+{
+  "task": "strict-r3-august-daily-causal-metrics",
+  "scope": "Generate reproducible day-by-day August 1-12 metrics for the unchanged August-1 homogeneous-28 canonical bundle, including raw daily tails and the full causal EV/R5/A5/portfolio path, while physically excluding held outcomes from EV-map inputs and marking August 12 partial.",
+  "changed_paths": [
+    "scripts/apply_strict_r3_frozen_a5_period.py",
+    "tests/test_apply_strict_r3_frozen_a5_period.py",
+    "scripts/report_strict_r3_daily_forward_metrics.py",
+    "tests/test_report_strict_r3_daily_forward_metrics.py",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q frozen-A5/daily-report suite: 4 passed",
+      "strict_r3_homogeneous28_a5_forward_long_aug1_12_resolved_20260813_v3: 28,000 rows, 12 days, all rows mapped, R5 available on every row, A5 available on 27,554 complete-contract rows, held outcomes physically absent from EV-map inputs, zero causal admissions",
+      "pre-patch versus complete-contract successor reconciliation: maximum absolute delta 0.0 for final score, Cell-day EV, R5 posterior, and A5 bounded expected bps; zero admission mismatches; one incomplete row changes only from A5 available/rejected to unavailable/rejected",
+      "strict_r3_homogeneous28_a5_portfolio_long_aug1_12_resolved_20260813_v3: zero accepted trades because fixed causal admission admits none",
+      "strict_r3_homogeneous28_daily_metrics_long_aug1_12_20260813_v4: 12 daily rows; August 1-11 complete; August 12 partial through 11:00 UTC; incomplete-contract rows and outcomes excluded before tail selection"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

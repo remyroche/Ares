@@ -16,7 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from extreme_price_movements.portfolio_policy_replay import normalise_candidate_table  # noqa: E402
+from extreme_price_movements.portfolio_policy_replay import (  # noqa: E402
+    PortfolioPolicyParams,
+    normalise_candidate_table,
+    replay_candidates,
+)
 from extreme_price_movements.strict_r3_canonical_current import (  # noqa: E402
     OptimizedPolicyContract,
     SCHEMA as CURRENT_SCHEMA,
@@ -38,9 +42,6 @@ from extreme_price_movements.strict_r3_cell_day_admission import (  # noqa: E402
 from extreme_price_movements.strict_r3_cell_day_trust import (  # noqa: E402
     load_cell_day_residual_trust_bundle,
 )
-from scripts.replay_strict_r3_policy_portfolio_2025_2026 import _run  # noqa: E402
-
-
 # Canonical admission already maps every candidate into common net-bps space.
 # The portfolio auction therefore needs no second, outcome-fitted EV curve.
 # This frozen curve preserves the rank-surplus priority formula while making
@@ -53,6 +54,125 @@ CAUSAL_AUCTION_CURVE = {
     "n_rows": 0,
     "source": "fixed_after_causal_expected_net_mapping",
 }
+
+
+def _frozen_portfolio_params(
+    *,
+    threshold: float,
+    perp_leverage: float,
+    margin_slot_wallet_fraction: float,
+    strategy_ids: tuple[str, ...],
+) -> PortfolioPolicyParams:
+    """Return the frozen global-auction policy used by the old replay helper.
+
+    ``replay_strict_r3_policy_portfolio_2025_2026.py`` was intentionally
+    removed during the source clean-up, but this wrapper still imported its
+    private ``_run`` helper.  Keep the adapter here rather than reconstructing
+    outcomes or changing any portfolio settings: this is the same fixed
+    80%-margin, two-new-entries, one-position-per-asset global auction.
+    """
+    return PortfolioPolicyParams(
+        capacity_mode="pre_leverage_wallet",
+        enforce_position_count_cap=True,
+        max_concurrent_positions=8,
+        max_concurrent_per_side=8,
+        max_concurrent_per_strategy=None,
+        max_concurrent_per_symbol=1,
+        max_new_entries_per_bar=2,
+        max_new_entries_per_strategy_per_bar=2,
+        max_total_wallet_allocation_pct=0.80,
+        perp_default_leverage=float(perp_leverage),
+        max_position_quote_notional=1_000_000_000.0,
+        margin_slot_wallet_fraction=float(margin_slot_wallet_fraction),
+        global_threshold_floor=float(threshold),
+        threshold_viability_margin=0.0,
+        occupancy_threshold_alpha=0.0,
+        allocation_threshold_alpha=0.0,
+        rank_size_power=1.0,
+        rank_multiplier_min=1.0,
+        rank_multiplier_max=1.0,
+        max_signal_gap_bps=None,
+        min_liquidity_capacity_weight=None,
+        cooldown_hours_after_loss=0.0,
+        max_consecutive_losing_trades=0,
+        global_loss_cooldown_hours=0.0,
+        max_consecutive_losing_trades_per_archetype=0,
+        archetype_loss_cooldown_hours=0.0,
+        portfolio_policy_version="strict_r3_frozen_15m_global_auction_v1",
+        strategy_ids=tuple(strategy_ids),
+    )
+
+
+def _run(
+    candidates: pd.DataFrame,
+    threshold: float,
+    period: str,
+    *,
+    initial_wallet: float,
+    perp_leverage: float,
+    margin_slot_wallet_fraction: float,
+    ev_curve: dict | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """Run the legacy-compatible fixed global auction without stale imports."""
+    eligible = candidates.loc[
+        pd.to_numeric(candidates["calibrated_score"], errors="coerce").ge(threshold)
+    ].copy()
+    strategy_ids = tuple(sorted(eligible["strategy_id"].astype(str).unique()))
+    if not strategy_ids:
+        strategy_ids = ("strict_r3_base_plus_consensus25_long",)
+    decisions, equity, engine_metrics = replay_candidates(
+        eligible,
+        _frozen_portfolio_params(
+            threshold=float(threshold),
+            perp_leverage=float(perp_leverage),
+            margin_slot_wallet_fraction=float(margin_slot_wallet_fraction),
+            strategy_ids=strategy_ids,
+        ),
+        mode="global_auction",
+        ev_curve=ev_curve,
+        market_mode="perps",
+        initial_wallet=float(initial_wallet),
+    )
+    accepted = decisions.loc[decisions["accepted"].fillna(False).astype(bool)].copy()
+    accepted["month"] = pd.to_datetime(accepted["timestamp"], utc=True).dt.to_period("M").astype(str)
+    accepted["net_bps"] = pd.to_numeric(accepted["position_net_return"], errors="coerce") * 10_000.0
+    accepted["gross_bps"] = pd.to_numeric(accepted["position_gross_return"], errors="coerce") * 10_000.0
+    monthly = accepted.groupby("month", as_index=False).agg(
+        trades=("accepted", "size"),
+        net_bps_per_trade=("net_bps", "mean"),
+        gross_bps_per_trade=("gross_bps", "mean"),
+        net_sum_bps=("net_bps", "sum"),
+        positive_rate=("net_bps", lambda value: float((value > 0.0).mean())),
+    ).assign(threshold=float(threshold))
+    start = pd.to_datetime(accepted["timestamp"], utc=True).min() if len(accepted) else pd.NaT
+    finish = pd.to_datetime(accepted["timestamp"], utc=True).max() if len(accepted) else pd.NaT
+    days = max((finish - start).total_seconds() / 86_400.0, 1.0) if pd.notna(start) and pd.notna(finish) else 1.0
+    net = pd.to_numeric(accepted.get("position_net_return"), errors="coerce")
+    gross = pd.to_numeric(accepted.get("position_gross_return"), errors="coerce")
+    summary = {
+        "period": period,
+        "threshold": float(threshold),
+        "input_candidates": int(len(decisions)),
+        "candidate_trades": int(len(decisions)),
+        "accepted_trades": int(len(accepted)),
+        "trades_per_day": float(len(accepted) / days),
+        "gross_bps_per_trade": float(gross.mean() * 10_000.0) if len(accepted) else np.nan,
+        "net_bps_per_trade": float(net.mean() * 10_000.0) if len(accepted) else np.nan,
+        "net_sum_bps": float(net.sum() * 10_000.0) if len(accepted) else 0.0,
+        "positive_rate": float((net > 0.0).mean()) if len(accepted) else np.nan,
+        "wallet_start": float(initial_wallet),
+        "wallet_end": float(equity["wallet"].iloc[-1]) if len(equity) else float(initial_wallet),
+        "wallet_pnl": (
+            float(equity["wallet"].iloc[-1]) - float(initial_wallet)
+            if len(equity) else 0.0
+        ),
+        "wallet_return_pct": (
+            100.0 * (float(equity["wallet"].iloc[-1]) - float(initial_wallet)) / float(initial_wallet)
+            if len(equity) else 0.0
+        ),
+        "replay_metric_summary": json.dumps(engine_metrics, default=str),
+    }
+    return decisions, equity, monthly, summary
 
 
 def _sha(path: Path) -> str:
@@ -158,14 +278,19 @@ def _resolve_policy(
 def _auction_candidates(
     frame: pd.DataFrame, *, strategy_prefix: str = "strict_r3_current_v5",
 ) -> pd.DataFrame:
-    posterior_mode = "trust_posterior_admitted_ge_50bps" in frame
+    a5_mode = "a5_bounded10_admitted" in frame
+    posterior_mode = not a5_mode and "trust_posterior_admitted_ge_50bps" in frame
     admission_field = (
-        "trust_posterior_admitted_ge_50bps"
-        if posterior_mode else "causal_21d_side_admitted_ge_50bps"
+        "a5_bounded10_admitted" if a5_mode else (
+            "trust_posterior_admitted_ge_50bps"
+            if posterior_mode else "causal_21d_side_admitted_ge_50bps"
+        )
     )
     expected_field = (
-        "trust_posterior_expected_bps"
-        if posterior_mode else "causal_21d_side_expected_net_bps"
+        "a5_bounded10_expected_bps" if a5_mode else (
+            "trust_posterior_expected_bps"
+            if posterior_mode else "causal_21d_side_expected_net_bps"
+        )
     )
     admitted = frame.loc[
         frame[admission_field].fillna(False).astype(bool)
@@ -175,7 +300,7 @@ def _auction_candidates(
     # research adjustment may only refine auction ordering after that gate;
     # it cannot add a candidate or rewrite the mapped EV retained for audit.
     adjustment = pd.Series(0.0, index=admitted.index)
-    if not posterior_mode:
+    if not posterior_mode and not a5_mode:
         adjustment = pd.to_numeric(
             admitted.get(
                 "auction_rank_adjustment_bps",
@@ -284,7 +409,14 @@ def _load_authoritative_cell_day_provenance(
     persisted map only when its candidate identity, producer lineage, mapping
     status and strictly-prior audit all match the score ledger exactly.
     """
-    provenance = pd.read_parquet(path)
+    decision = pd.to_datetime(ledger["__decision_ts__"], utc=True)
+    provenance = pd.read_parquet(
+        path,
+        filters=[
+            ("__decision_ts__", ">=", decision.min()),
+            ("__decision_ts__", "<=", decision.max()),
+        ],
+    )
     required = {
         "candidate_id", "causal_21d_side_expected_net_bps",
         "causal_21d_side_admitted_ge_50bps",
@@ -411,6 +543,63 @@ def _wallet_periods(
     return out.reset_index(drop=True)
 
 
+def _entry_cohort_wallet_periods(
+    decisions: pd.DataFrame,
+    *,
+    frequency: str,
+    initial_wallet: float,
+    evaluation_start: pd.Timestamp,
+    evaluation_end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Attribute each accepted trade's realised PnL to its entry cohort.
+
+    The replay equity ledger is event-sampled: an exit between candidate
+    timestamps is reflected at the next portfolio event. Grouping its last
+    wallet snapshot by calendar period can therefore move PnL into a later
+    week/month. The canonical period tables are entry-cohort reports, so use
+    the accepted decision's exact realised position PnL and retain the same
+    entry-period definition as the trade-count/economics tables.
+    """
+    accepted = decisions.loc[
+        decisions.get("accepted", pd.Series(False, index=decisions.index))
+        .fillna(False).astype(bool)
+    ].copy()
+    accepted["timestamp"] = pd.to_datetime(
+        accepted.get("timestamp"), utc=True, errors="coerce",
+    )
+    accepted["position_size"] = pd.to_numeric(
+        accepted.get("position_size"), errors="coerce",
+    )
+    accepted["position_net_return"] = pd.to_numeric(
+        accepted.get("position_net_return"), errors="coerce",
+    )
+    accepted["trade_pnl"] = accepted["position_size"] * accepted["position_net_return"]
+    last_inclusive = evaluation_end - pd.Timedelta(nanoseconds=1)
+    start_naive = evaluation_start.tz_convert(None)
+    last_naive = last_inclusive.tz_convert(None)
+    if frequency == "month":
+        accepted["period"] = accepted["timestamp"].dt.strftime("%Y-%m")
+        periods = pd.period_range(start_naive, last_naive, freq="M").astype(str)
+    elif frequency == "week":
+        accepted["period"] = accepted["timestamp"].dt.to_period("W-SUN").astype(str)
+        periods = pd.period_range(start_naive, last_naive, freq="W-SUN").astype(str)
+    else:
+        raise ValueError(f"unsupported wallet frequency: {frequency}")
+    pnl = accepted.groupby("period", sort=True)["trade_pnl"].sum().reindex(
+        periods, fill_value=0.0,
+    )
+    starts = float(initial_wallet) + pnl.cumsum().shift(1, fill_value=0.0)
+    ends = starts + pnl
+    out = pd.DataFrame({
+        "period": periods,
+        "wallet_start": starts.to_numpy(float),
+        "wallet_end": ends.to_numpy(float),
+        "wallet_pnl": pnl.to_numpy(float),
+    })
+    out["wallet_return_pct"] = 100.0 * out["wallet_pnl"] / out["wallet_start"]
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -479,6 +668,18 @@ def main() -> None:
             "uses posterior expected policy net for fail-closed admission and ordering."
         ),
     )
+    parser.add_argument(
+        "--a5-oof-predictions", type=Path,
+        help=(
+            "Candidate-keyed canonical bounded-A5 chronological predictions. "
+            "They must exactly cover the evaluated population and contain the "
+            "fixed A0/top-15 admission Boolean plus the A5 auction value."
+        ),
+    )
+    parser.add_argument(
+        "--a5-integration", type=Path,
+        help="Explicit strict_r3_a5_bounded_10pct_canonical_v1 contract.",
+    )
     parser.add_argument("--evaluation-start", required=True)
     parser.add_argument("--evaluation-end", required=True, help="exclusive UTC bound")
     parser.add_argument("--out-dir", type=Path, required=True)
@@ -546,6 +747,20 @@ def main() -> None:
         parser.error("--n5-oof-predictions is defined only for current-v5")
     if args.cell_day_trust_bundle_dir is not None and args.cell_day_trust_oof_predictions is not None:
         parser.error("use a frozen R5 bundle or OOF R5 predictions, not both")
+    if args.a5_oof_predictions is not None and (
+        args.cell_day_trust_bundle_dir is not None
+        or args.cell_day_trust_oof_predictions is not None
+    ):
+        parser.error("bounded A5 already contains A0; do not also supply an R5 input")
+    a5_integration: dict[str, object] | None = None
+    if args.a5_integration is not None:
+        a5_integration = json.loads(args.a5_integration.read_text())
+        if a5_integration.get("schema") != "strict_r3_a5_bounded_10pct_canonical_v1":
+            parser.error("--a5-integration is not the canonical bounded-A5 contract")
+        if args.a5_oof_predictions is None:
+            parser.error("bounded-A5 integration requires --a5-oof-predictions")
+    elif args.a5_oof_predictions is not None:
+        parser.error("--a5-oof-predictions requires --a5-integration")
     posterior_integration: dict[str, object] | None = None
     if args.cell_day_trust_integration is not None:
         posterior_integration = json.loads(args.cell_day_trust_integration.read_text())
@@ -556,8 +771,9 @@ def main() -> None:
     if (
         args.cell_day_trust_bundle_dir is not None
         or args.cell_day_trust_oof_predictions is not None
+        or args.a5_oof_predictions is not None
     ) and args.auction_adjustment_ledger is not None:
-        parser.error("canonical R5 owns the post-admission auction adjustment")
+        parser.error("canonical trust integration owns the post-admission auction ordering")
     policy_values, policy_engine, policy_selection_period = _resolve_policy(
         args.schema, args.policy_json,
     )
@@ -625,7 +841,13 @@ def main() -> None:
                     raise ValueError(f"admission-score ledger changed non-score column: {column}")
         authoritative_cell_day = False
         if args.admission_provenance is not None:
-            provenance = pd.read_parquet(args.admission_provenance)
+            # Detect the authoritative contract from its narrow status column.
+            # The full, potentially multi-year provenance is loaded below only
+            # for the exact score-ledger date interval.
+            provenance = pd.read_parquet(
+                args.admission_provenance,
+                columns=["causal_21d_side_mapping_status"],
+            )
             authoritative_cell_day = bool(
                 "causal_21d_side_mapping_status" in provenance
                 and provenance["causal_21d_side_mapping_status"].astype(str).eq(
@@ -840,6 +1062,56 @@ def main() -> None:
                 "min_bps": float(adjustment.min()),
                 "max_bps": float(adjustment.max()),
             }
+    if args.a5_oof_predictions is not None:
+        a5 = pd.read_parquet(args.a5_oof_predictions)
+        required_a5 = {
+            "candidate_id", "trust_posterior_expected_bps",
+            "a5_bounded10_expected_bps", "a5_timestamp_top15",
+            "a5_bounded10_available", "a5_bounded10_admitted",
+        }
+        missing_a5 = sorted(required_a5.difference(a5.columns))
+        if missing_a5:
+            raise ValueError(f"bounded-A5 OOF predictions lack: {missing_a5}")
+        if a5["candidate_id"].duplicated().any():
+            raise ValueError("bounded-A5 OOF predictions contain duplicate candidate IDs")
+        if len(a5) != len(evaluation) or set(a5["candidate_id"]) != set(evaluation["candidate_id"]):
+            raise ValueError("bounded-A5 OOF predictions must exactly cover the evaluated population")
+        a5_columns = ["candidate_id", *sorted(required_a5.difference({"candidate_id"}))]
+        evaluation = evaluation.merge(
+            a5.loc[:, a5_columns], on="candidate_id", how="inner", validate="one_to_one",
+        )
+        a0 = pd.to_numeric(evaluation["trust_posterior_expected_bps"], errors="coerce")
+        bounded = pd.to_numeric(evaluation["a5_bounded10_expected_bps"], errors="coerce")
+        available = evaluation["a5_bounded10_available"].fillna(False).astype(bool)
+        base_complete = evaluation.get(
+            "frozen_base_contract_complete",
+            pd.Series(False, index=evaluation.index),
+        ).fillna(False).astype(bool)
+        top15 = evaluation["a5_timestamp_top15"].fillna(False).astype(bool)
+        declared = evaluation["a5_bounded10_admitted"].fillna(False).astype(bool)
+        reconstructed = (
+            available & base_complete & np.isfinite(a0)
+            & np.isfinite(bounded) & a0.ge(50.0) & top15
+        )
+        if not np.array_equal(declared.to_numpy(bool), reconstructed.to_numpy(bool)):
+            raise ValueError("bounded-A5 admission does not equal its fixed A0/top-15 contract")
+        trust_manifest = {
+            "enabled": True,
+            "mode": "chronological_block_oof",
+            "path": str(args.a5_oof_predictions),
+            "sha256": _sha(args.a5_oof_predictions),
+            "integration_contract": str(args.a5_integration),
+            "integration_contract_sha256": _sha(args.a5_integration),
+            "role": "A5 bounded-10 reranking inside fixed A0>=50 and timestamp-top15 admission",
+            "missing_component": "fail_closed",
+            "available_rows": int(available.sum()),
+            "admitted_rows": int(declared.sum()),
+            "a5_changes_fixed_admission": False,
+        }
+        auction_adjustment_manifest = {
+            "enabled": True,
+            "role": "A5 bounded-10 direct auction value inside fixed admission",
+        }
     if args.auction_adjustment_ledger is not None:
         adjustment = pd.read_parquet(args.auction_adjustment_ledger)
         required_adjustment = {"candidate_id", "auction_rank_adjustment_bps"}
@@ -979,8 +1251,8 @@ def main() -> None:
     summary["active_span_trades_per_day"] = float(summary.get("trades_per_day", np.nan))
     summary["evaluation_calendar_days"] = float(evaluation_days)
     summary["trades_per_day"] = float(summary["accepted_trades"] / evaluation_days)
-    monthly_wallet = _wallet_periods(
-        equity, frequency="month", initial_wallet=float(args.initial_wallet),
+    monthly_wallet = _entry_cohort_wallet_periods(
+        decisions, frequency="month", initial_wallet=float(args.initial_wallet),
         evaluation_start=start, evaluation_end=end,
     ).rename(columns={"period": "month"})
     monthly = monthly.merge(monthly_wallet, on="month", how="outer", validate="one_to_one")
@@ -988,8 +1260,8 @@ def main() -> None:
     monthly["net_sum_bps"] = monthly["net_sum_bps"].fillna(0.0)
     monthly["threshold"] = monthly["threshold"].fillna(0.0)
     weekly = _weekly(decisions)
-    weekly_wallet = _wallet_periods(
-        equity, frequency="week", initial_wallet=float(args.initial_wallet),
+    weekly_wallet = _entry_cohort_wallet_periods(
+        decisions, frequency="week", initial_wallet=float(args.initial_wallet),
         evaluation_start=start, evaluation_end=end,
     ).rename(columns={"period": "week"})
     weekly = weekly.merge(weekly_wallet, on="week", how="outer", validate="one_to_one")
@@ -1004,6 +1276,8 @@ def main() -> None:
                 "candidate_id", "__decision_ts__", "final_score",
                 "causal_21d_side_expected_net_bps", "causal_21d_side_admitted_ge_50bps",
                 "trust_posterior_expected_bps", "trust_posterior_admitted_ge_50bps",
+                "a5_bounded10_expected_bps", "a5_timestamp_top15",
+                "a5_bounded10_available", "a5_bounded10_admitted",
                 "n5_expected_bps", "n5_predictive_sd_bps", "n5_shrinkage_lambda",
                 "n5_effective_support", "n5_p_ev_positive", "n5_p_adverse_200",
                 "portfolio_size_multiplier", "n5_bundle_cutoff", "n5_schema",
@@ -1021,6 +1295,8 @@ def main() -> None:
         "schema": f"{schema_name}_admission_portfolio",
         "score": score_description,
         "admission": (
+            "A0 posterior expected policy net >= +50 bps AND timestamp-local pre-trust top 15%; A5 cannot change membership"
+            if a5_integration is not None else
             "R5 nine-month posterior expected policy net >= +50 bps; missing posterior fail-closed"
             if posterior_integration is not None else
             "same exact-producer fixed score cells; one equal-weight policy-net "
@@ -1031,6 +1307,8 @@ def main() -> None:
         ),
         "insufficient_support": "fail_closed",
         "auction_order": (
+            "A5 bounded-10 expected policy net bps, then same-producer final score"
+            if a5_integration is not None else
             "R5 posterior expected policy net bps, then same-producer final score"
             if posterior_integration is not None else
             "mapped expected net bps among currently actionable admitted candidates"

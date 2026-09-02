@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-28",
+  "scope": "Offline downstream selection of the three frozen 130-field P8u Base feature finalists against the retained 72-field Raw-bps Base. No live, canonical, exchange, or order-submission mutation.",
+  "common_contract": {
+    "router": "frozen P8u Router50 identity gate; all routed rows retained for Meta",
+    "base_target": "raw canonical rich-policy net bps, six equal-width ordinal bins, G3 gains",
+    "base_weights": "tail_linear_125 renormalised inside each timestamp and clipped [0.5,2]",
+    "meta": "strict-OOF under_atr1__timestamp; mapping/demotion context only",
+    "mc1": "2 strictly earlier months; 50-bps admission; inherited constrained portfolio",
+    "held": ["2026-06", "2026-07"],
+    "limitation": "short-warm-up diagnostic only; a normal six-month common post-Meta evaluation is unavailable because compatible source ledgers end in 2026-07"
+  },
+  "downstream_results_base_plus_under": {
+    "f72_frozen": {"entries": 1282, "admissions": 5449, "net_ev_bps_per_trade": 158.963332, "net_sum_bps": 203790.991208, "worst_month_bps": 132.706083, "worst_week_bps": 98.682259, "max_drawdown": -0.147773},
+    "f130_mda_frozen": {"entries": 1025, "admissions": 4373, "net_ev_bps_per_trade": 183.580628, "net_sum_bps": 188170.143477, "worst_month_bps": 182.152511, "worst_week_bps": 137.487156, "max_drawdown": -0.178524},
+    "f130_inclusion_frozen": {"entries": 1288, "admissions": 5660, "net_ev_bps_per_trade": 150.920831, "net_sum_bps": 194386.030507, "worst_month_bps": 128.684256, "worst_week_bps": 109.196176, "max_drawdown": -0.151600},
+    "f130_gain_frozen": {"entries": 1501, "admissions": 6077, "net_ev_bps_per_trade": 128.069398, "net_sum_bps": 192232.166181, "worst_month_bps": 97.685995, "worst_week_bps": 77.559558, "max_drawdown": -0.202172},
+    "f130_mda_hpo": {"entries": 1339, "admissions": 5489, "net_ev_bps_per_trade": 148.104120, "net_sum_bps": 198311.417031, "worst_month_bps": 111.163130, "worst_week_bps": 87.441408, "max_drawdown": -0.143199}
+  },
+  "full_hpo_f130_mda": {
+    "score_stable": 1.6656881147283478,
+    "winner": {"max_depth": 3, "learning_rate": 0.0825387841719879, "feature_fraction": 0.7718030079584929, "bagging_fraction": 0.8490059246305174, "lambda_l2": 0.145854482932637, "random_strength": 1.9085437389992363},
+    "protocol": "eight trials, two concurrent workers, MedianPruner(startup=4,warmup=2), latest-20%-query early stopping at 30, top two confirmed on five cross-year folds"
+  },
+  "decision": {
+    "selected_feature_contract": "F72 frozen Raw-bps tail-125",
+    "reason": "No 130-field contract dominates F72 across unit EV, total contribution, preserved participation, and drawdown. The strongest F130 trade-efficiency variant loses entries, total bps, and drawdown; its HPO refresh loses the unit-EV advantage.",
+    "promotion": "none; selection is research-only"
+  },
+  "correctness": {
+    "target_free_base_and_meta_panels_before_label_join": true,
+    "router50_identity_exact": true,
+    "base_meta_identity_exact": true,
+    "all_training_labels_resolved_before_held": true,
+    "mc1_shift_uses_prior_resolved_labels_only": true,
+    "no_live_exchange_or_canonical_mutation": true
+  },
+  "changed_file_sha256": {
+    "scripts/run_strict_r3_p8u_precision_preservation_weight_funnel_v1.py": "83faa3d27117a5adf32d880e1a320c206eab07fe03c7773bf65b37640631b640",
+    "scripts/run_strict_r3_router_single_base_prescreen_v1.py": "6346e031c5480a20348dd0dd0bac873e44936e855f4a82ce245f87e3635d0b77",
+    "tests/test_run_strict_r3_p8u_precision_preservation_weight_funnel_v1.py": "cc3fe394c3cb0f2344489e5a45e977f8d54e744e679fe0f05af496651068cd68"
+  },
+  "tests": "15 focused pytest checks passed: feature history, full HPO, downstream adapter, and short-warm-up MC1 diagnostic."
+}

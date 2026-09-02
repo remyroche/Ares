@@ -1,0 +1,37 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-22",
+  "scope": "Strict-R3 live execution auditability repair: persist a self-contained immutable entry/exit microstructure and PnL record at confirmed full close. Operational telemetry only; no score, admission, sizing, or policy-decision semantics changed.",
+  "artifacts": {
+    "execution_module": "extreme_price_movements/inference/strict_r3_live_execution.py",
+    "execution_module_sha256": "860518654ef1ea8d35cbf52bf08455dfa2caedb94110b10b4ab6fd3318e273a7",
+    "test_module": "extreme_price_movements/tests/test_strict_r3_live_full_vwap_hard_stop.py",
+    "test_module_sha256": "ef7694027ec72d11dac091723a1921449f4438e99830478c0f9a2f487e619371"
+  },
+  "contract": {
+    "ledger_schema": "strict_r3_trade_close_notification_ledger_v2",
+    "terminal_trade_schema": "strict_r3_live_trade_telemetry_v1",
+    "write_time": "before close-email delivery, after confirmed full-close payload construction",
+    "identity": "candidate_id + entry fill time + entry fill price",
+    "immutability": "telemetry payload is stored with a canonical SHA-256 at reservation; later status updates change notification state only",
+    "entry_evidence": [
+      "actual entry fill price, amount and notional",
+      "decision-to-fill time and bps slippage",
+      "spread, expected VWAP, impact and delay metrics",
+      "full entry ticker/order-book snapshot and protective-stop book"
+    ],
+    "exit_evidence": [
+      "actual exit fill price, amount and notional",
+      "policy/protective thresholds, execution method and fill-quality gaps",
+      "full exit ticker/order-book snapshot and detection book",
+      "VWAP/impact, replay comparison, stop path, PnL and fee verification"
+    ],
+    "scope_limit": "A Kraken-native stop's internal trigger-time book remains unavailable; the record preserves its immediate public post-close snapshot and marks the provenance."
+  },
+  "validation": {
+    "command": "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_live_full_vwap_hard_stop.py",
+    "result": "16 passed",
+    "additional": "python3 -m py_compile extreme_price_movements/inference/strict_r3_live_execution.py passed; ruff is not installed in the local runtime."
+  },
+  "deployment_note": "The running v146 services retain their loaded code. This source-only repair requires the normal sealed execution-contract successor and a fresh-minute monitor restart before it can collect new live telemetry."
+}

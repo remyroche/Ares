@@ -1,0 +1,72 @@
+{
+  "schema": "strict_r3_p8u_meta_relative_hpo_feature_overlay_trial_receipt_v1",
+  "scope": "Offline F123 additive comparison of the three frozen F120 GateProxy Top-3 variants. The feature contract appends the three fixed strict-OOF SHAP-stable fields to F120. No retuning, selection, MC1, admission, portfolio, live, or exchange authority.",
+  "parent_selection": "data_perp/artifacts/strict_r3_p8u_meta_relative_gateproxy_targetquery_bank_20260831_v1/hpo_mc1_confirmation_plan_f120_v3/selected_trial_plan.json",
+  "arm": "under_bps125__timestamp",
+  "feature_contract": "config/strict_r3_p8u_meta_feature_contract_shapstable_additive_20260829_v1.json",
+  "trials": [
+    {
+      "name": "u125ts__h0_inherited_under__f123",
+      "sigmoid": 1.0,
+      "truncation": 12,
+      "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+      "sample_weight": null,
+      "strict_oof_trial_index": 0,
+      "model": {
+        "objective": "rank_xendcg",
+        "n_estimators": 260,
+        "learning_rate": 0.045,
+        "max_depth": 4,
+        "num_leaves": 15,
+        "min_child_samples": 350,
+        "min_split_gain": 0.001,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.82,
+        "lambda_l1": 0.02,
+        "lambda_l2": 8.0
+      }
+    },
+    {
+      "name": "u125ts__h1_shallow_sparse__f123",
+      "sigmoid": 1.0,
+      "truncation": 12,
+      "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+      "sample_weight": null,
+      "strict_oof_trial_index": 1,
+      "model": {
+        "objective": "rank_xendcg",
+        "n_estimators": 360,
+        "learning_rate": 0.035,
+        "max_depth": 3,
+        "num_leaves": 7,
+        "min_child_samples": 700,
+        "min_split_gain": 0.003,
+        "feature_fraction": 0.75,
+        "bagging_fraction": 0.85,
+        "lambda_l1": 0.08,
+        "lambda_l2": 16.0
+      }
+    },
+    {
+      "name": "u125ts__h2_compact_tail__f123",
+      "sigmoid": 1.0,
+      "truncation": 8,
+      "gain": [0, 1, 2, 5, 10, 18, 28, 40],
+      "sample_weight": null,
+      "strict_oof_trial_index": 2,
+      "model": {
+        "objective": "rank_xendcg",
+        "n_estimators": 320,
+        "learning_rate": 0.04,
+        "max_depth": 4,
+        "num_leaves": 15,
+        "min_child_samples": 600,
+        "min_split_gain": 0.002,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "lambda_l1": 0.04,
+        "lambda_l2": 14.0
+      }
+    }
+  ]
+}

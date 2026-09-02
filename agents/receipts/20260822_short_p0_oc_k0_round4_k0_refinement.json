@@ -1,0 +1,44 @@
+{
+  "schema": "strict_r3_short_p0_oc_k0_round4_k0_refinement_receipt_v1",
+  "status": "complete",
+  "side": "short",
+  "scope": "Strict-prequential K0-only mapping, shrinkage, and admission study on the exact frozen C60 strict-OOS ledger; no O/C or live/canonical mutation.",
+  "frozen_upstream_parity": {
+    "candidate_ids": 16029,
+    "opportunity_raw_score_max_abs_delta": 0.0,
+    "opportunity_probability_max_abs_delta": 0.0,
+    "conversion_score_max_abs_delta": 0.0
+  },
+  "selection": {
+    "mu1": "isotonic conditional C mapping",
+    "mu0": "P0-anchor quintile map, empirical-Bayes shrinkage k=50",
+    "admission": "mapped K0 expected policy net >= +50 bps",
+    "gate": "2025/2026 net EV/trade >=90 bps and participation >=80% of strictly-prequential isotonic-map control",
+    "winner": {
+      "net_2025_bps_per_trade": 156.490123,
+      "net_2026_bps_per_trade": 148.188659,
+      "mean_net_bps_per_trade": 154.426036,
+      "total_net_bps": 227315.124891,
+      "selected": 1472,
+      "participation_vs_control": 0.936387,
+      "worst_month_bps_per_trade": 6.457756,
+      "mean_cvar10_bps": -387.665807
+    },
+    "strict_prequential_k0_control": {
+      "mean_net_bps_per_trade": 143.761826,
+      "total_net_bps": 225993.590103,
+      "selected": 1572,
+      "worst_month_bps_per_trade": -10.870680,
+      "mean_cvar10_bps": -406.386031
+    }
+  },
+  "validation": {
+    "tests": "7 passed: test_short_p0_oc_k0_round4_k0_refinement.py and test_short_p0_oc_k0_round3_c_hpo.py",
+    "causality": "Each held-month map used only earlier outer-OOS predictions with policy labels resolved before held-month start. Invalid rows remained scored target-free and never trained a map or economics metric."
+  },
+  "hashes": {
+    "runner": "dfc14ba831497c62683a01d45678d219cd5276aafb046e8578839764cad1cd85",
+    "test": "5cb2bcc435c4ac7713ebf30e36f8c40234497b8c63b781be37353212ae958e8e",
+    "manifest": "1270726bc67902f18e282b2b4d768ec2471f2fbd491a7814d8154762a9127556"
+  }
+}

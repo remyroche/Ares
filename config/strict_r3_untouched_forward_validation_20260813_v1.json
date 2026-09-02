@@ -1,0 +1,40 @@
+{
+  "schema": "strict_r3_untouched_forward_validation_v1",
+  "side": "long",
+  "status": "accruing_shadow_evidence",
+  "freeze_ts": "2026-08-13T00:00:00+00:00",
+  "first_decision_ts": "2026-08-13T07:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_untouched_forward_hourly_20260813T060000Z_v5_neutralstate_reconciliation",
+  "frozen_universe_rows": 170,
+  "reason": "August 1-12 influenced reconciliation or implementation. The August 13 01:00 through 06:00 cycles exposed and repaired stale funding, missing signal-hour order-book refresh, exact first-15m entry availability, resolved-ledger lineage, one-hour mark refresh, immutable-prefix handling, persistent portfolio-state progression, the policy ATR timestamp convention, and an undefined downside-only correlation during a fully observed causal window. The successful 06:00 v5 run is the frozen predecessor; untouched shadow evidence begins at 07:00 with no further contract changes.",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v5_a5_b10_exactpolicy_v3.json",
+    "sha256": "ec9241764a5b50b8f80d3f3edf265d8eb91a6ad79432e70ae74946e3bee7ab40"
+  },
+  "portable_ldf_selection": {
+    "path": "config/strict_r3_portable_ldf_selection_20260813.json",
+    "sha256": "11515ee326cecac944829788a5cb76cfabf5efda1a1b876e78314494411dd5fe",
+    "active": false
+  },
+  "portfolio": {
+    "initial_wallet": 1000.0,
+    "initial_open_positions": [],
+    "sizing": "unit_relative_size",
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "promotion_evidence_rules": {
+    "hourly_parity_required": true,
+    "current_features_and_scores_must_be_target_free": true,
+    "outcomes_may_be_attached_only_after_h12_resolution": true,
+    "august_1_through_august_13_06_is_reconciliation_only": true,
+    "portfolio_state_must_chain_from_exact_predecessor": true,
+    "no_model_feature_policy_admission_or_sizing_changes_during_interval": true,
+    "minimum_continuous_hours_before_review": 168,
+    "minimum_portfolio_accepted_rows_before_review": 30,
+    "minimum_realized_exit_rows_before_review": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0.0,
+    "automatic_exchange_enablement": false
+  }
+}

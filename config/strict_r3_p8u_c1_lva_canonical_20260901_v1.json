@@ -1,0 +1,82 @@
+{
+  "schema": "strict_r3_p8u_c1_lva_canonical_contract_v1",
+  "status": "CANONICAL_NO_EXCHANGE_ACTIVATION",
+  "order_submission": false,
+  "side": "long",
+  "purpose": "Canonical, hash-bound C1-LVA source plus paired BCF/current absolute-EV mapper. This configuration has no portfolio or exchange-write authority.",
+  "source_state": {
+    "implementation": "extreme_price_movements.inference.causal_sr_c1_state.CausalSRC1AppendState",
+    "contract": "append-only completed-15-minute-bar C1 S/R state; profile/value-area snapshots are reconstructed only from completed bars",
+    "unavailable_snapshot_policy": "retain candidate with sr_snapshot_available=0 and train-only median-imputed C1 fields; never filter candidate eligibility"
+  },
+  "artifacts": {
+    "source_bundle": {
+      "path": "data_perp/artifacts/causal_sr_c1_lva_inference_bundle_20260901_v1",
+      "manifest_sha256": "c3edb7cb2fed97ab9f192f64b9954fbd8eb6dd9de92385e756d8408a46f02524"
+    },
+    "mapper_selector": {
+      "path": "data_perp/artifacts/p8u_c1_full_coverage_dual_mc1_prequential_mayjul_20260901_v1/c1_mc1_selector_config.json",
+      "sha256": "96c09621c8426555db152f25d676fc3df715b8ed171215e51965d340a5c709bc",
+      "package_tree_sha256": "bc37e267e33b03bf3702dccd47e19da287bcc1507ec9bc1a0a2ab34d1f7057e4",
+      "refit_rule": "one C1-augmented package per score family and held month, fitted on six preceding complete months with policy labels resolved before the held month"
+    },
+    "runtime": {
+      "canonical_assembler": {
+        "path": "extreme_price_movements/inference/p8u_c1_lva_canonical_stack.py",
+        "sha256": "778cf544a5aa6cf08cf6845607693eb8edc3f291fd7384fa62a2d2d6cc0ccf3a"
+      },
+      "source_bundle_runtime": {
+        "path": "extreme_price_movements/inference/causal_sr_c1_lva_bundle.py",
+        "sha256": "b6c351a4dfb8c9e5952baa321f0349b8d78523b6ae2718b90fe3231fde1ae997"
+      },
+      "source_state_runtime": {
+        "path": "extreme_price_movements/inference/causal_sr_c1_state.py",
+        "sha256": "0aaf21b33f016213ba9a323c90d37ac71538d98e4878fbee73e82ac393c19152"
+      },
+      "mapper_runtime": {
+        "path": "extreme_price_movements/inference/p8u_c1_mc1_inference_package.py",
+        "sha256": "0412d62ad913124ddb70d1df577766eb156ceff6c0bf1c2fc751272dc67b40e8"
+      },
+      "selector_runtime": {
+        "path": "extreme_price_movements/inference/p8u_c1_mc1_selector.py",
+        "sha256": "514fb4d977ed67d6f5c6fe1d002ba9177d74a5fba3abcd2536b3a31b2849fca8"
+      }
+    }
+  },
+  "inputs": {
+    "score_coordinates": [
+      "final_score",
+      "base_rank42",
+      "conditional_consensus_rank",
+      "upstream",
+      "ordinary_shadow_consensus_rank",
+      "correctness_rank"
+    ],
+    "c1_snapshot_fields": [
+      "sr_long_support_hold_strength",
+      "sr_long_resistance_break_probability",
+      "sr_long_downside_break_probability",
+      "sr_long_resistance_rejection_strength",
+      "sr_long_structure_balance",
+      "sr_long_support_distance_atr",
+      "sr_long_resistance_distance_atr",
+      "sr_support_prior_strength",
+      "sr_resistance_prior_strength",
+      "sr_support_reaction_magnitude_q50",
+      "sr_resistance_reaction_magnitude_q50",
+      "sr_snapshot_available"
+    ],
+    "prohibit_outcome_columns": true
+  },
+  "admission": {
+    "dual_threshold_bps": 50.0,
+    "rule": "bcf_mc1_expected_bps >= 50 AND current_mc1_expected_bps >= 50",
+    "auction_priority": "bcf_mc1_expected_bps",
+    "candidate_expansion": false
+  },
+  "release_boundary": {
+    "canonical_scope": "source-and-admission inference contract",
+    "exchange_write_activation": "separate explicit sealed release required; this canonical configuration cannot submit orders",
+    "current_validation_package": "May-July 2026 historical packages prove parity for their declared months only. A future monthly refit must write a new immutable package index before scoring any new held month."
+  }
+}

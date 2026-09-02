@@ -1,0 +1,29 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-22T00:00:00Z",
+  "scope": "offline long-only Strict-R3 :00-only feature research; no live, canonical, exchange, admission, portfolio, or execution artifact modified",
+  "purpose": "Extend the development-only <=30-field stability selector to the predeclared target-free F4 execution-context and F5 asset-divergence families, and enforce the mandatory quarterly policy>=100 recall gate for every selected family.",
+  "contracts": {
+    "family_source": "F2/F3 and F4/F5 are materialised through their own predeclared target-free source loaders; no label, outcome, future path, or held-window rank is an input to feature construction or scoring.",
+    "selection": "Only development folds ending before 2025-10-01 may contribute gain stability; selected extras are capped at 30 and require top-30 and non-zero importance in at least half of development folds.",
+    "advancement": "A selected family must satisfy the fixed-30% recall, policy-mean, rank-IC, and no-quarterly-decline-in-policy>=100 gates before a downstream rebuild can be considered."
+  },
+  "changed_files": {
+    "scripts/run_strict_r3_base_feature_stability_selection.py": "80c9d4c2d76839f4601f50921f142774ac350853635d47a55b41f42500a2d9b5",
+    "extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py": "fba7ca567c20b6ce5f67d6107fe521a5bdb4c54bea27e189500557fc3a12103f"
+  },
+  "validation": {
+    "syntax": "python3 -m py_compile scripts/run_strict_r3_base_feature_stability_selection.py",
+    "tests": "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py extreme_price_movements/tests/test_strict_r3_rolling_context_features.py: 8 passed",
+    "diff_check": "git diff --check -- scripts/run_strict_r3_base_feature_stability_selection.py: passed"
+  },
+  "governing_contract_hashes": {
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295",
+    "agents/model_validation_protocol.md": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f",
+    "agents/experiment_discipline.md": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7",
+    "agents/backtest_protocol.md": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+  },
+  "agent_plan": {"subagents": []}
+}

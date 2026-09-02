@@ -1,0 +1,26 @@
+{
+  "task": "canonical-inference-email-and-daily-reporting",
+  "status": "passed",
+  "checked_at": "2026-08-14",
+  "bundle": "config/strict_r3_inference_bundle_long_20260801_v6_robust21_mc1_d2_adaptive_exit_v1.json",
+  "bundle_sha256": "0c0bdc48592dad71ef8ff38d5e561c49086c30192c1056f5669eb1b509899ff9",
+  "reporting_layers": [
+    "R3 base",
+    "frozen K9 geometry",
+    "conditional and ordinary consensus",
+    "trust and risk overlay",
+    "Robust-21 plus frozen MC1_d2 EV mapping",
+    "SimplePolicyOptimiser parent plus Adaptive Exit V1 activation overlay"
+  ],
+  "persistence": {
+    "hourly_decision_artifact": true,
+    "entry_model_policy_context": true,
+    "close_entry_provenance": true,
+    "daily_trade_columns": true
+  },
+  "adaptive_fallback_contract": "Unavailable, abstained, or unevaluated Adaptive Exit V1 is explicitly reported as SimplePolicyOptimiser fallback; reporting cannot change exit decisions.",
+  "focused_tests": {
+    "passed": 23,
+    "failed": 0
+  }
+}

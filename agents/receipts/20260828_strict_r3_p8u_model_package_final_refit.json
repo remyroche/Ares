@@ -1,0 +1,52 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T20:27:28Z",
+  "scope": "Create a hash-bound, model-only P8U Router50/F72-Base/Under-F120 final-refit package. No MC1, policy, portfolio, legacy live producer, exchange I/O, order submission, or live state is modified.",
+  "change": "Historical P8U OOF score ledgers did not retain fold boosters. Regenerate the selected Router, Base, and Under contracts from their causal source panels at a declared 2026-08-28 UTC cutoff, serialize their model/preprocessing/reference state, and validate reload prediction parity on a target-free held sample.",
+  "changed_paths": [
+    "extreme_price_movements/inference/p8u_model_package.py",
+    "scripts/package_strict_r3_p8u_models_v1.py",
+    "tests/test_p8u_model_package.py",
+    "data_perp/artifacts/strict_r3_p8u_inference_model_bundle_cutoff_20260828_v1/manifest.json",
+    "data_perp/artifacts/strict_r3_p8u_inference_model_bundle_cutoff_20260828_v1/parity_report.json",
+    "agents/receipts/20260828_strict_r3_p8u_model_package_final_refit.json"
+  ],
+  "source_contracts": [
+    "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v6.json",
+    "data_perp/artifacts/strict_r3_p8u_router_oof_apr25_jul26_successorlabels_20260828_v1/run_contract.json",
+    "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "data_perp/artifacts/strict_r3_p8u_precision_preservation_hpo_raw_cat_20260827_v2/run_manifest.json",
+    "data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_selection_20260828_v2/contracts/under_f120.json",
+    "config/strict_r3_p8u_meta_target_query_grid_20260828_v1.json"
+  ],
+  "training_contract": {
+    "cutoff_utc": "2026-08-28T00:00:00Z",
+    "router": "30-field P8U RankXENDCG refit on 2026-04-30 through 2026-07-31 strict-resolved full-universe rows, 28-day reserve and 120000 complete-query cap; train empirical-CDF rank reference serialized.",
+    "base": "72-field Raw-bps CatBoost QueryRMSE/tail_linear_125 refit on the same reserve window selected only by historical strict-OOF Router50 identities; train medians and selected 29-tree model serialized.",
+    "under": "120-field RankXENDCG bps100 refit on 2026-03-31 through 2026-07-31 strict-resolved labels with four-month training and 28-day reserve. It uses the strict-OOF F72 Base ledger and prequential Base-to-policy anchors, never in-sample final Base scores. Nine Base geometry coordinates plus F120 medians are serialized."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 scripts/package_strict_r3_p8u_models_v1.py --out data_perp/artifacts/strict_r3_p8u_inference_model_bundle_cutoff_20260828_v1",
+      "python3 -m pytest -q tests/test_p8u_model_package.py tests/test_p8u_production_contract.py",
+      "python3 -m py_compile extreme_price_movements/inference/p8u_model_package.py scripts/package_strict_r3_p8u_models_v1.py",
+      "git diff --check -- extreme_price_movements/inference/p8u_model_package.py scripts/package_strict_r3_p8u_models_v1.py tests/test_p8u_model_package.py"
+    ],
+    "result": "The package loaded all serialized models after individual SHA-256 verification. On a held target-free sample from 2026-07-30 to 2026-07-31, Router scored 3922 complete candidate identities, exact Router50 passed 1968 identities to Base and Under, and all raw/rank prediction deltas between in-memory and reloaded models were exactly zero. Seven focused P8U package and Router50 protection tests passed."
+  },
+  "implementation_sha256": {
+    "extreme_price_movements/inference/p8u_model_package.py": "9e1b506266d4d0d7dd6db65464d5c63e525a6f8bc6da78fa5397b4cb761b8ad3",
+    "scripts/package_strict_r3_p8u_models_v1.py": "22974a0ae4993e8215c791530f3865ba4fd731ef85b1823714974fac7d7f9145",
+    "tests/test_p8u_model_package.py": "1a3a2b88661c38edf61db46de940d7f5d4664e05e9dd3c724eda89eee47bedb1",
+    "data_perp/artifacts/strict_r3_p8u_inference_model_bundle_cutoff_20260828_v1/manifest.json": "360dc58f5b2877cbf5ee3b813e767eee357194c9c49588ee9586ebfdcd373fd5",
+    "data_perp/artifacts/strict_r3_p8u_inference_model_bundle_cutoff_20260828_v1/parity_report.json": "623f0eca5b409ad508f681b2daf23910bf65be5b70963b75bac0ac99bc4b8ebf"
+  },
+  "limitations": [
+    "The discarded historical fold boosters cannot be byte-recovered; this receipt explicitly records a transparent final refit from their frozen selected contracts.",
+    "MC1, policy, portfolio, execution, and exchange authority remain outside this package and must be separately reconciled and sealed before any live promotion."
+  ],
+  "agent_plan": {
+    "subagents": []
+  }
+}

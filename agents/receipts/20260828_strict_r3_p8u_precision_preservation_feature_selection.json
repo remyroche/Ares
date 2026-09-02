@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-28",
+  "scope": "Offline P8u Router50 Base feature selection and five-fold confirmation only; no Meta, MC1, admission, portfolio, live, or exchange mutation.",
+  "source_contract": {
+    "router": "frozen P8u Router50",
+    "target": "raw policy bps, equal-width six ordinal bins, G3 clipped-economic gains",
+    "model": "CatBoost QueryRMSE with sealed raw-CatBoost HPO winner",
+    "selection_metric": "0.30*DTP2 + 0.30*DTP5 + 0.20*DTP10 + 0.20*ResidualUR10_to30; weekly robust lower-tail ScoreStable",
+    "strict_oof": "three resolved calendar months, 28-day label reserve, 60,000 complete-query training cap; confirmation on 2025-11, 2026-01, 2026-03, 2026-05, 2026-07"
+  },
+  "feature_prescreen": {
+    "input_causal_fields": 1405,
+    "hygiene_representatives": 1069,
+    "initial_pool": 320,
+    "survivors": 160,
+    "families_retained": ["cross_asset", "funding", "liquidity", "oi_leverage", "other", "price_trend", "state", "volatility"],
+    "artifact": "data_perp/artifacts/strict_r3_p8u_precision_preservation_feature_prescreen_raw_cat_20260827_v4"
+  },
+  "group_mda_beam": {
+    "valid_artifact": "data_perp/artifacts/strict_r3_p8u_precision_preservation_group_mda_beam_raw_cat_20260827_v2",
+    "invalid_exploratory_artifact": "data_perp/artifacts/strict_r3_p8u_precision_preservation_group_mda_beam_raw_cat_20260827_v1",
+    "invalid_reason": "beam candidates used varying CatBoost seeds by width; preserved for audit and excluded from selection",
+    "repair": "all unpermuted and beam contracts use identical per-fold seeds",
+    "top_development_contracts": [
+      {"key": "n130_mda_blend", "score_stable": 1.5615833179541692},
+      {"key": "n130_inclusion_swap", "score_stable": 1.5551376132291876},
+      {"key": "n130_gain_swap", "score_stable": 1.5503213852393993}
+    ]
+  },
+  "five_fold_confirmation": {
+    "frozen_72_field_control": {"score_stable": 1.6730443163115172, "dtp2_bps": 188.3954190026153, "dtp5_bps": 130.89332398318265, "dtp10_bps": 85.69031393135626},
+    "n130_mda_blend": {"score_stable": 1.6376463715926144, "dtp2_bps": 183.06497532825378, "dtp5_bps": 131.28382265761633, "dtp10_bps": 85.62560301624407},
+    "n130_inclusion_swap": {"score_stable": 1.6403607343187505, "dtp2_bps": 182.92018137206077, "dtp5_bps": 130.17296388986512, "dtp10_bps": 85.13597421398278},
+    "n130_gain_swap": {"score_stable": 1.6517033219500987, "dtp2_bps": 185.96484049489354, "dtp5_bps": 131.57625416503782, "dtp10_bps": 85.45151946562332},
+    "decision": "REJECT_FEATURE_REPLACEMENTS: none clears the frozen 72-field control's predeclared ScoreStable and DTP2 guards; no HPO refresh or downstream consumption authorized."
+  },
+  "identity_audit": "All three confirmation contracts use the same 296,895 held Router50 candidate IDs as the 72-field control across all five months; all reports passed their correctness flags.",
+  "tests": "9 focused pytest tests passed after the final seed and receipt-schema repairs.",
+  "changed_file_sha256": {
+    "scripts/run_strict_r3_p8u_precision_preservation_feature_prescreen_v1.py": "f2e35b7ca54e19b4f534ee6e49c1f0a7ed2282941ae575881c281b7eeef8353c",
+    "scripts/run_strict_r3_p8u_precision_preservation_group_mda_beam_v1.py": "f6c25d234c5513b3636c6fe5c9a50aab7dd176b8f0045c7b4cf3821283e5d6f1",
+    "scripts/run_strict_r3_p8u_precision_preservation_feature_confirm_v1.py": "4269cf958e409475b1a12018c4106c6fa31958b5865e39c2a63ce9797ed572f9",
+    "tests/test_run_strict_r3_p8u_precision_preservation_feature_prescreen_v1.py": "c7968463261ffd33867554e4bf02699b51e21ffbc37c713da4c613c0519303e0",
+    "tests/test_run_strict_r3_p8u_precision_preservation_group_mda_beam_v1.py": "3156c5aab7835f6640f2ad438168036c540cd9ec4e311a69c4f37b4b5466d13d",
+    "tests/test_run_strict_r3_p8u_precision_preservation_feature_confirm_v1.py": "6503337054413e90d104364dbd1c1c60b70b2d0d590c87f0b9171808a07357b7"
+  }
+}

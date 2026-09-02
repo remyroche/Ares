@@ -1,0 +1,57 @@
+{
+  "schema": "strict_r3_p8u_meta_hpo_gateproxy_objective_v1",
+  "scope": "offline Meta-HPO shortlist only; no live scoring, admission, portfolio, or automatic model promotion",
+  "objective": {
+    "name": "GateProxy_P1_ElasticNet",
+    "meaning": "Predicted downstream benefit to the fixed dual-MC1 +50-bps admission gate, relative to the frozen Under-F120 control",
+    "target": "dgate_shrunk",
+    "surrogate": "P1_elastic_net",
+    "model_artifact": "data_perp/artifacts/strict_r3_p8u_meta_downstream_proxy_parent54_final_20260830_v2/models/dgate_shrunk__P1_elastic_net.joblib",
+    "model_sha256": "ccad070d07fd30c10497e6285eef13e7340c1e68b4f047d25cc808fb9512220a",
+    "descriptor_fields": [
+      "residual_ic",
+      "conditional_mi_given_base",
+      "ic_base_5_10",
+      "ic_base_10_20",
+      "ic_base_20_30",
+      "meta_top1_ev",
+      "meta_top2_ev",
+      "top1_candidate_only_minus_control_only_ev",
+      "top2_candidate_only_minus_control_only_ev",
+      "false_upgrade_ev",
+      "useful_upgrade_ev",
+      "base_meta_rank_correlation",
+      "median_abs_rank_correction",
+      "weekly_q10",
+      "probe_delta_top2_ev",
+      "probe_delta_admitted_utility"
+    ]
+  },
+  "downstream_contract": {
+    "base": "frozen P8U Under-F120 Base coordinate",
+    "mc1": "fixed Current and BCF maps; dual expected policy net >= +50 bps",
+    "priority": "fixed BCF coordinate; Meta is evaluated for gate usefulness, not direct priority authority",
+    "policy": "canonical rich policy labels",
+    "portfolio": "confirmation only; not a proxy-training target"
+  },
+  "selection_protocol": {
+    "rank_trials_by": "GateProxy_P1_ElasticNet descending",
+    "expensive_confirmation_top_k": 3,
+    "promotion_authority": "full matched strict-MC1 replay only",
+    "priority_proxy": "prohibited: failed grouped and untouched validation",
+    "direct_meta_metrics": "descriptors only; no weighted direct-metric selector",
+    "tie_breaker_after_full_mc1": "fixed full-stack promotion gates, then constrained total net policy bps"
+  },
+  "validated_scope": {
+    "feature_contract": "frozen current_frozen / Under-F120 parent only",
+    "trial_population": "54 frozen-parent strict-OOF trials",
+    "independent_holdout": "14 predeclared trials; Gate ElasticNet Spearman 0.5121; Top-3 precision 0.6667; true downstream winner contained in Top-3; Regret@3 = 0",
+    "feature_contract_holdout": "unsupported: historic prehistory for SHAP append contracts is not yet available"
+  },
+  "forbidden": [
+    "Use as a live trading feature, score, admission, or portfolio input",
+    "Automatic promotion from a proxy prediction",
+    "Use PriorityProxy for HPO authority",
+    "Claim feature-contract portability outside frozen Under-F120"
+  ]
+}

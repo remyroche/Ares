@@ -1,0 +1,61 @@
+{
+  "task": "strict-r3-economic-recall-router-ae",
+  "scope": "Adds a research-only strict-OOF long economic-recall router and expands the training-only path-label materialiser for the replacement A-E auxiliary-target contract. No live, exchange, consensus, MC1, admission, portfolio, or execution artifact is modified.",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_o3v2_path_auxiliary_labels.py",
+    "scripts/run_strict_r3_economic_recall_router.py",
+    "scripts/analyze_strict_r3_economic_recall_router_groups.py",
+    "scripts/compare_strict_r3_router_base_control.py",
+    "scripts/select_strict_r3_economic_recall_router_hpo.py",
+    "config/strict_r3_economic_recall_router_ae_20260825_v1.json"
+  ],
+  "contracts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "in_progress",
+    "commands": [
+      "/Users/remyroche/Library/Caches/pypoetry/virtualenvs/ares-u286-ObM-py3.11/bin/python -m py_compile scripts/run_strict_r3_economic_recall_router.py scripts/materialize_strict_r3_o3v2_path_auxiliary_labels.py",
+      "Focused _materialize_month test on 256 April-2025 resolved paths: all A-E fields present, invalid rows null, finite ratio invariants passed",
+      "Strict-OOF 2026-07 A-group smoke artifact strict_r3_economic_recall_router_ae_smoke_20260825_v3_groupa: 123,225 held target-free rows, zero copied policy/path/outcome/label-availability fields, 239,886 strict-resolved train rows, reserve starts 2026-06-03",
+      "Strict-OOF complete A-E 2026-07 smoke artifact strict_r3_economic_recall_router_ae_smoke_20260825_v5: 238,592 strict-resolved train rows, 123,225 target-free held rows, 17 heads, and a score-schema whitelist audit with zero undeclared columns",
+      "Timestamp-level group-gate validation strict_r3_economic_recall_router_ae_smoke_20260825_v5_groupgate_timestamp_v4: 741 decision timestamps, all ER/recall/EV selection quantities aggregated equally by timestamp; full suite did not beat primary-only, so leave-one-group-out arms were correctly not inspected",
+      "Static timestamp-contract validation: router training weights remain one total loss weight per exact timestamp; router and post-score gate now emit timestamp receipts, use timestamp means for ER/recall/EV, and label pooled trade totals disclosure-only",
+      "Base-control parity receipt strict_r3_router_p3p4_vs_b0_timestamp_20260825_v1: 2,196 exact decision timestamps and identical held candidate identities; P3/P4 exceed B0 in timestamp ER50, winner recall, and selected-policy EV at 30/40/50% routes",
+      "Bounded timestamp-only HPO selection strict_r3_economic_recall_router_ae_hpo_timestamp_selection_20260825_v1: selector uses 0.25*mean timestamp ER50@30 + 0.35*@40 + 0.40*@50; candidate/trade pooled totals are prohibited. P3 H2 tail ranks first (0.7082243) and P4 H2 tail second (0.7080030)",
+      "HPO winner group gates: P3 H2 primary-only 0.7082243 vs complete A-E 0.6872022; P4 H2 primary-only 0.7080030 vs complete A-E 0.6874750. Complete A-E loses both gates, so no group-removal arms were inspected as predeclared.",
+      "Compilation: python -m py_compile scripts/run_strict_r3_economic_recall_router.py scripts/select_strict_r3_economic_recall_router_hpo.py"
+    ],
+    "not_run_reason": "No live or exchange test is applicable: this change is research-only and explicitly excludes live pipeline mutation."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "strict_r3_p8u_kraken_live_activation_v1",
+  "authorized": true,
+  "manual_user_authorization": true,
+  "authorization_basis": "User instructions on 2026-08-30: launch live trading with session persistence; remove the artificial post-score wait; then swap the tested bounded concurrent source refresh into the live path. This successor changes no model, admission, portfolio, execution-friction, or exit-policy gate.",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "stale_signal_execution_prohibited": true,
+  "authorized_after": "2026-08-30T12:00:00Z",
+  "expires_at": "2026-08-31T23:59:59Z",
+  "bundle_sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c",
+  "no_order_adapter_sha256": "1039becdd09dfa8b2fb702d0f0cafe0cd98ebf225c87a8f52989746fa257e309",
+  "policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "gateway_contract_sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d",
+  "gateway_runtime_sha256": "b7ad90572a6a19017ad1d6a773468c9e0bb1d6b75c9c9d1ef0d058910cf843f2",
+  "session_contract_sha256": "08382ca6eae0b65a1868e49911bcf40dc9e8f77447402f6a0e312a047da1e80c",
+  "session_runtime_sha256": "1d50e7ed1a690d1968d7e1ac82250057022dfc48ffbc11da0a409cc6a307efba",
+  "source_refresh_runtime": {
+    "path": "scripts/refresh_strict_r3_p8u_live_source_overlap.py",
+    "sha256": "e6531429527d50a870b67bd933cba92a40a5232dd053c3be9cbaa2dd1df2ea3d"
+  },
+  "p8u_position_monitor_runtime": {
+    "path": "scripts/run_strict_r3_p8u_live_position_monitor.py",
+    "sha256": "c12f7e8fa35e1168b81a0e43e3d57f737c4e4ad561064d1584a9b862d93bec1d"
+  },
+  "promotion_note": "Manual promotion override is limited to this hash-bound P8U contract and ends with the August MC1 vintage. A fresh causally trained September MC1 package and activation receipt are required before any September order. The 12:00 UTC v2 attempt is terminal and not re-executable; its successful public source successor is carried into v3."
+}

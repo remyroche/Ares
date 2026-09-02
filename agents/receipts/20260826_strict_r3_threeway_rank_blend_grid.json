@@ -1,0 +1,51 @@
+{
+  "task": "strict-r3-threeway-rank-blend-grid",
+  "scope": "Adds a research-only strict-OOF B/E/T rank-blend evaluator. It accepts only identical target-free head ledgers, joins canonical policy outcomes downstream, and writes immutable selection artifacts. It does not alter inference, consensus, MC1, admission, portfolio, execution, or exchange paths.",
+  "changed_paths": [
+    "scripts/run_strict_r3_threeway_rank_blend_grid_v1.py",
+    "scripts/score_strict_r3_frozen_head_oof_v1.py",
+    "scripts/materialize_strict_r3_frozen_threeway_targetfree_v1.py",
+    "scripts/run_strict_r3_hpo_threeway_downstream_validation_v1.py"
+  ],
+  "contracts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4"
+    },
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "in_progress",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_threeway_rank_blend_grid_v1.py",
+      "python3 -m py_compile scripts/score_strict_r3_frozen_head_oof_v1.py",
+      "python3 -m py_compile scripts/materialize_strict_r3_frozen_threeway_targetfree_v1.py",
+      "python3 -m py_compile scripts/run_strict_r3_hpo_threeway_downstream_validation_v1.py",
+      "Strict cross-year HPO ledgers completed for B, E, and T; the rank-grid contract consumed their exact matching OOF counterparts.",
+      "Initial target-free frozen-head scorer startup against 2025-07 correctly failed before model fitting because its declared April-2025 feature universe cannot support the required March-2025 training source. The subsequent 2025-08 preflight also correctly failed before model fitting because the frozen router starts in July 2025. The earliest compatible held month is 2025-11; failed v1/v2 startup roots are preserved and are not evidence."
+    ],
+    "not_run_reason": "The rank grid is complete. A target-free frozen-head scoring pass and an unchanged downstream consensus/MC1 replay remain required before any promotion claim."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

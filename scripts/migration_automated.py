@@ -82,7 +82,7 @@ class AssertionMigrator:
                     r"assert\s+(\w+)\['price'\]\s*==\s*([\d.]+)",
                     r"assert\s+abs\((\w+)\['price'\]\s*-\s*([\d.]+)\)\s*<\s*([\d.]+)"
                 ],
-                'replacement': "assert_price_equals(\\1['price'], \\2)",
+                'replacement': 'assert_price_equals(\\1['price'], \\2)',
                 'import_needed': 'assert_price_equals',
                 'description': 'Assertion de comparaison de prix'
             },
@@ -93,7 +93,7 @@ class AssertionMigrator:
                     r"assert\s+(\w+)\['status'\]\s*==\s*['\"]([^'\"]+)['\"]",
                     r"assert\s+(\w+)\['status'\]\s*==\s*OrderStatus\.(\w+)"
                 ],
-                'replacement': "assert_order_status(\\1['status'], '\\2')",
+                'replacement': 'assert_order_status(\\1['status'], '\\2')',
                 'import_needed': 'assert_order_status',
                 'description': 'Assertion de statut d\'ordre'
             },
@@ -104,7 +104,7 @@ class AssertionMigrator:
                     r"assert\s+(\w+)\['status'\]\s*==\s*['\"]([^'\"]+)['\"]",
                     r"assert\s+(\w+)\['status'\]\s*==\s*ExchangeStatus\.(\w+)"
                 ],
-                'replacement': "assert_exchange_status(\\1['status'], '\\2')",
+                'replacement': 'assert_exchange_status(\\1['status'], '\\2')',
                 'import_needed': 'assert_exchange_status',
                 'description': 'Assertion de statut d\'exchange'
             },

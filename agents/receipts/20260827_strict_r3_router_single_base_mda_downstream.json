@@ -1,0 +1,66 @@
+{
+  "task": "strict-r3-router-single-base-mda-downstream",
+  "scope": "Offline-only MDA selection and downstream assessment for compact Router50 single-Base contracts. The repair makes target availability contract-specific for normalized labels, adds a bounded strict-OOF MDA selector, makes the dual-MC1 diagnostic's warm-up and held months explicit, and adds a full-ET50 compatibility replay for fair historical benchmarking. It does not alter live inference, exchange I/O, admission, portfolio, or execution contracts.",
+  "contracts": {
+    "candidate_identity": "candidate_id, UTC decision timestamp, and side; Router50 identities are selected before Base scoring and must remain exact through Base, R/U, and MC1 receipts.",
+    "causality": "Base, R/U, and MC1 training use labels resolved before each reserve cutoff; held score receipts are written target-free before policy outcomes are joined for diagnostics.",
+    "features": "MDA accepts only a sealed 1..120-field causal contract; MDA permutations act within held decision timestamps and models are fitted once per fold/seed.",
+    "hpo_replay": "The bounded HPO receipt records the effective depth-valid leaf count and fold-resolved minimum-child rule, so the full OOF producer can replay exactly the model that HPO evaluated.",
+    "component_attribution": "The dual-MC1 diagnostic can now run frozen Base-only, R-only, U-only, and R+U component arms. It changes neither the R/U models nor MC1/HPO/admission/portfolio contracts and is diagnostic-only.",
+    "final_audit": "The final audit reads target-free Base/R/U receipts before joining existing policy outcomes solely for diagnostics. It reports capture, component cohorts, residual bands/rescue, and portfolio-risk summaries without fitting or changing any score, admission, or portfolio decision.",
+    "full_et50_compatibility": "A frozen single-Base target-free receipt can be replayed through the original cap80/cap120 consensus, generic-correctness, and full dual-MC1 machinery. The compatibility adapter preserves every Router50 row, gives no E/T/R3 slot numerical authority, and never uses outcome columns while materialising its source. Its month parser normalizes either YYYY-MM or full-date CLI inputs to exact UTC calendar-month starts before validating identities.",
+    "outcomes": "Canonical policy outcomes are evaluation/training labels only, never scoring inputs; normalized targets use their declared normalized-label availability timestamp."
+  },
+  "implementation": {
+    "changed": [
+      "scripts/screen_strict_r3_router_single_base_features_v1.py",
+      "scripts/run_strict_r3_router_single_base_mda_v1.py",
+      "scripts/run_strict_r3_router_single_base_dual_mini_mc1_v1.py",
+      "scripts/materialize_strict_r3_router_et50_ru_base_adapter_v1.py",
+      "scripts/run_strict_r3_router_single_base_ru_probe_v1.py",
+      "scripts/run_strict_r3_router_single_base_local_hpo_v1.py",
+      "scripts/run_strict_r3_router_single_base_prescreen_v1.py",
+      "scripts/materialize_strict_r3_single_head_downstream_source_v1.py",
+      "scripts/run_strict_r3_single_base_full_et50_compatibility_v1.py"
+    ],
+    "outputs": "Immutable Base, R/U, and dual-MC1 research artifacts only."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_router_single_base_mda_v1.py scripts/run_strict_r3_router_single_base_dual_mini_mc1_v1.py",
+      "python3 scripts/run_strict_r3_router_single_base_mda_v1.py --help",
+      "python3 scripts/run_strict_r3_router_single_base_dual_mini_mc1_v1.py --help",
+      "python3 -m py_compile scripts/materialize_strict_r3_router_et50_ru_base_adapter_v1.py scripts/run_strict_r3_router_single_base_ru_probe_v1.py",
+      "python3 -m py_compile scripts/run_strict_r3_router_single_base_local_hpo_v1.py",
+      "python3 -m py_compile scripts/run_strict_r3_router_single_base_dual_mini_mc1_v1.py",
+      "python3 -m py_compile scripts/audit_strict_r3_router_single_base_finalists_v1.py",
+      "python3 -m py_compile scripts/materialize_strict_r3_single_head_downstream_source_v1.py scripts/run_strict_r3_single_base_full_et50_compatibility_v1.py",
+      "python3 -m pytest -q tests/test_materialize_strict_r3_single_head_downstream_source_v1.py",
+      "Materialised F1/MDA90, F2/MDA25, and F3/MDA25 all-Router50, target-free 120-field full-ET50 sources (526,912 rows each; 100% field coverage)",
+      "Completed full-ET50 compatibility replays for F1/MDA90, F2/MDA25, and F3/MDA25 plus an identical-window ET50 control for May-July 2026",
+      "Month-boundary parser check: both YYYY-MM and full-date inputs normalize to exact UTC month starts for the same nine-month range",
+      "Validated frozen-HPO receipt loading and depth-valid effective leaf parameters",
+      "ET50 average-tie timestamp-rank reconstruction check",
+      "Reviewed correctness_report.json for F1/MDA90 and F3/MDA25 Base, R/U, and dual-MC1 artifacts"
+    ],
+    "not_run_reason": "No live/exchange test is applicable: this receipt covers offline research only."
+  },
+  "changed_paths": [
+    "scripts/screen_strict_r3_router_single_base_features_v1.py",
+    "scripts/run_strict_r3_router_single_base_mda_v1.py",
+    "scripts/run_strict_r3_router_single_base_dual_mini_mc1_v1.py",
+    "scripts/materialize_strict_r3_router_et50_ru_base_adapter_v1.py",
+    "scripts/run_strict_r3_router_single_base_ru_probe_v1.py",
+    "scripts/run_strict_r3_router_single_base_local_hpo_v1.py",
+    "scripts/run_strict_r3_router_single_base_prescreen_v1.py",
+    "scripts/materialize_strict_r3_single_head_downstream_source_v1.py",
+    "scripts/run_strict_r3_single_base_full_et50_compatibility_v1.py",
+    "scripts/audit_strict_r3_router_single_base_finalists_v1.py",
+    "docs/ROUTER_SINGLE_BASE_XENDCG_DOWNSTREAM_20260827.md",
+    "agents/receipts/20260827_strict_r3_router_single_base_mda_downstream.json"
+  ],
+  "agent_plan": {
+    "subagents": []
+  }
+}

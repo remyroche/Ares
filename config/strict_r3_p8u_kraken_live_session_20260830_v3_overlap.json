@@ -1,0 +1,50 @@
+{
+  "schema": "strict_r3_p8u_live_session_v1",
+  "purpose": "Persistent fresh-hour executor for the explicitly authorised P8U Router50/F72/Under/dual-MC1 long-only live stack. v3 preserves immediate fresh-score execution and all model, admission, auction and policy contracts; only independent public-source refreshes overlap after the full 15-minute OHLCV coverage gate.",
+  "order_submission": true,
+  "post_score_execution_wait_seconds": 0,
+  "gateway_contract": {
+    "path": "config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json",
+    "sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d"
+  },
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_preproduction_bundle_20260830_v58_ffd_safe_causal_tail_research",
+    "sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c"
+  },
+  "source_manifest": {
+    "path": "data_perp/artifacts/strict_r3_p8u_august01_27_under_fullfeatures_20260828_v1/_shared/shared_202608_202608/feature_manifest.json",
+    "sha256": "cc439825b0611e2e3367c8146cf6de683e322fbd87a4ec0f204fd56076dbf072"
+  },
+  "initial_source_state": {
+    "path": "data_perp/artifacts/strict_r3_p8u_live_source_append_20260830_t10_v2/source_panel_state.joblib",
+    "sha256": "b7ea105c99aacc3a202db100e062646be7703b52c8dc49fc1efb182a6ae55e30"
+  },
+  "regular_bootstrap_root": {
+    "path": "data_perp/artifacts/strict_r3_p8u_live_canonical_state_bootstrap_20260830_t08_v2"
+  },
+  "direct_bootstrap_root": {
+    "path": "data_perp/artifacts/strict_r3_p8u_live_direct_bootstrap_20260830_t08_v2"
+  },
+  "score_root": {
+    "path": "data_perp/artifacts/strict_r3_p8u_live_stateful_score_20260830_t09_v5"
+  },
+  "source_refresh_runtime": {
+    "path": "scripts/refresh_strict_r3_p8u_live_source_overlap.py",
+    "sha256": "e6531429527d50a870b67bd933cba92a40a5232dd053c3be9cbaa2dd1df2ea3d"
+  },
+  "score_runner_runtime": {
+    "path": "scripts/run_strict_r3_p8u_stateful_single_timestamp_executor.py",
+    "sha256": "fc219509c3e75ca253141236663015ff9637ec97fd737268c51bbcbd02b9a54d"
+  },
+  "regular_state_scope": "p8u-canonical-vector171-stage-v2",
+  "regular_state_components": [
+    "raw", "causal_transform", "derived", "nested", "oi_iqr", "fixed_ffd", "spectral", "grouped", "ewma", "regime_transition"
+  ],
+  "live_state_path": "data_perp/live/strict_r3_p8u_live_state_20260830_v1.json",
+  "run_root": "data_perp/artifacts/strict_r3_p8u_live_session_20260830_v3_overlap",
+  "runtime": {
+    "path": "scripts/run_strict_r3_p8u_live_session.py",
+    "sha256": "1d50e7ed1a690d1968d7e1ac82250057022dfc48ffbc11da0a409cc6a307efba"
+  },
+  "failure_mode": "fail_closed_per_decision; no retry of an execution intent; no stale decision; no source/model/account mismatch; one OI/funding partition retry only"
+}

@@ -1,0 +1,36 @@
+{
+  "task": "p8u-archetype-recovery",
+  "scope": "Adds a Router-only, target-free structural-archetype qualification gate, training-only percentile scaling for extreme causal tails, independent adjacent-window stability and soft-overlap checks, a no-label structural-only CLI before any probe may be fitted, an in-place label attachment path that avoids duplicating the full feature panel, and supervised reuse of a previously sealed target-free structural selection. The matched constrained-GMM control retains its compact target-free final frame until its own refit completes and is separately predeclared from the sealed target-free qualification artifact, so it cannot replace the NMF primary.",
+  "changed_paths": [
+    "config/strict_r3_p8u_archetype_recovery_20260830_v1.json",
+    "extreme_price_movements/archetype_recovery.py",
+    "extreme_price_movements/tests/test_p8u_archetype_recovery.py",
+    "scripts/run_strict_r3_p8u_opportunity_probe_router_recall_v1.py",
+    "docs/P8U_ARCHETYPE_RECOVERY_ROUTER_RECALL_20260830.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "PYTHONPATH=. python3 -m pytest -q extreme_price_movements/tests/test_p8u_opportunity_probe_router_recall.py extreme_price_movements/tests/test_p8u_archetype_recovery.py",
+      "PYTHONPATH=. python3 -m py_compile scripts/run_strict_r3_p8u_opportunity_probe_router_recall_v1.py extreme_price_movements/archetype_recovery.py"
+    ],
+    "not_run_reason": "The full supervised probe/control funnel is a separate immutable research run; it is not a unit-test substitute."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

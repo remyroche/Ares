@@ -1,0 +1,35 @@
+{
+  "recipe_name": "s58_conditioned_trailing_topk_lgbm_best",
+  "source_hpo_output_dir": "data_perp/reports/ae_gmm_archetype_validation_status_20260704/s58_conditioned_labels_topk_lgbm_hpo_v1_aegmm",
+  "source_labels_path": "data_perp/artifacts/20260704_s58_side_archetype_conditioned_trailing_cost100bps_labels/labels",
+  "selected_at_utc": "2026-07-04T00:00:00Z",
+  "selection_metric": "gross_ev_weighted_clean_precision_top10_top20_top30_plus_net_ev_penalties",
+  "trial_number": 13,
+  "trial_name": "trial_013",
+  "objective": 2.1068423534948186,
+  "params": {
+    "n_estimators": 150,
+    "learning_rate": 0.030373894296713114,
+    "num_leaves": 31,
+    "max_depth": 8,
+    "min_child_samples": 73,
+    "subsample": 0.8713302894420799,
+    "colsample_bytree": 0.6920563881316644,
+    "reg_alpha": 0.0001331240656832448,
+    "reg_lambda": 3.2354381021754057,
+    "target_mode": "time_decay_policy",
+    "weight_arm": "W8_combined_conservative"
+  },
+  "metrics": {
+    "mean_top10_gross_ev_weighted_clean_precision": 0.9474731286366781,
+    "mean_top10_clean_precision": 0.7890577912330627,
+    "mean_top10_mean_first_touch_net": 0.004172068244467179,
+    "mean_top10_q10_first_touch_net": -0.02065124617268642,
+    "mean_top10_first_touch_timeout_rate": 0.016776927125950653,
+    "mean_top10_first_touch_bad_mae_to_sl_rate": 0.20792698163552434,
+    "mean_top20_gross_ev_weighted_clean_precision": 0.9141164223353068,
+    "mean_top20_mean_first_touch_net": 0.000639594771200791,
+    "mean_top30_gross_ev_weighted_clean_precision": 0.8803623716036478,
+    "mean_top30_mean_first_touch_net": -0.0011935755004136202
+  }
+}

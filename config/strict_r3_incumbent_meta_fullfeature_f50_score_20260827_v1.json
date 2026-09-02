@@ -1,0 +1,48 @@
+{
+  "schema": "strict_r3_incumbent_meta_selected_contract_score_spec_v1",
+  "scope": "offline first-pass 50-field full-causal meta scoring; contracts were selected on separate multi-era strict-OOF development folds and require MC1 confirmation",
+  "incumbent_upstream": "0.50 * efficiency_bps + 0.50 * timing_bps",
+  "arms": [
+    {
+      "name": "magnitude_sqrtatr_q5__base_band_block28__gain_high",
+      "family": "magnitude",
+      "scale": "sqrt_atr",
+      "query": "base_band_block28",
+      "classes": 5,
+      "gain_schedule": "high"
+    },
+    {
+      "name": "under_atr100__timestamp__gain_small",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small"
+    },
+    {
+      "name": "over_atr125__timestamp__gain_small",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.25,
+      "classes": 7,
+      "gain_schedule": "small"
+    },
+    {
+      "name": "state_atr_c7__timestamp__gain_medium",
+      "family": "state",
+      "scale": "atr",
+      "query": "timestamp",
+      "classes": 7,
+      "state_edges": [-1.25, -0.5, -0.15, 0.15, 0.5, 1.25],
+      "gain_schedule": "medium"
+    }
+  ],
+  "contracts": {
+    "magnitude_sqrtatr_q5__base_band_block28__gain_high": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/magnitude/magnitude_f50.json",
+    "under_atr100__timestamp__gain_small": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f50.json",
+    "over_atr125__timestamp__gain_small": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/over/over_f50.json",
+    "state_atr_c7__timestamp__gain_medium": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/state/state_f50.json"
+  }
+}

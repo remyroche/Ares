@@ -1,0 +1,52 @@
+{
+  "schema": "strict_r3_agent_evidence_receipt_v1",
+  "task": "target-free dual BCF/current-v5 MC1 candidate materialisation for exact-1m rich-policy research",
+  "scope": "offline research only; no live inference, admission, portfolio, execution, or model artifact is changed",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_exact_1m_dual_admission_candidates.py",
+    "agents/receipts/20260817_strict_r3_exact_1m_dual_admission_candidates_v1.json"
+  ],
+  "contracts": {
+    "candidate_selection": "inner matched candidate IDs; BCF MC1 expected net >=30 bps AND current-v5 MC1 expected net >=30 bps; priority equals BCF MC1 expected net",
+    "causality": "policy/outcome fields are compared only for cross-panel equivalence and never used to select or persist request candidates",
+    "execution": "uniform decision plus five minute entry under strict_r3_exact_1m_policy_hpo_v1"
+  },
+  "validation": {
+    "py_compile": "python3 -m py_compile scripts/materialize_strict_r3_exact_1m_dual_admission_candidates.py",
+    "cross_panel_equivalence": "522070 exact candidate-ID matches; UTC decision timestamp, symbol, side, and all canonical policy fields equal",
+    "target_free_invariants": "both MC1 fields >=30 bps; priority equals BCF MC1; no policy/outcome/label fields in candidates.parquet or candidate_download_request.parquet",
+    "five_minute_artifact": {
+      "path": "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_2025_2026_20260817_v1",
+      "request_sha256": "ba937a9207b0d8a233edc12c4e1312fcaeca4bcfacf8474681b6d08a222b50c7",
+      "candidate_sha256": "247f12d7a00596f0098ec6a58a32a948427d20aa42876c98a276ab415bac2a91",
+      "contract_hash": "70f7d8d99270015522595a664a13b4a5b09a8eed7183d60b7c2e24f84caa158f"
+    },
+    "decision_entry_artifact": {
+      "path": "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_decision_2025_2026_20260817_v1",
+      "request_sha256": "a660f81bb1090a9778e0e662a4821f29e5e2e94a6d4e0c6dbc0c75819e6ab920",
+      "contract_hash": "357ba876186a02ecca8c8a1047448100ed3c2678ab677347b75d3ceb36d062f9",
+      "status": "superseded_for_download_provenance_only; v1 candidate IDs/data remain byte-identical"
+    },
+    "decision_entry_v2_artifact": {
+      "path": "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_decision_2025_2026_20260817_v2",
+      "purpose": "correct zero-minute timestamp semantics without mutating v1 candidate identities/data",
+      "request_manifest_sha256": "4ea9e83ffbd4be7950103d3e02579136f5cae1723c57573a17ab46cccc893bf3",
+      "request_sha256": "a660f81bb1090a9778e0e662a4821f29e5e2e94a6d4e0c6dbc0c75819e6ab920",
+      "candidate_sha256": "f2ce5d3117365dfe0018dd023680c6352c59dfc5171c85d8557c080279d21178",
+      "contract_hash": "357ba876186a02ecca8c8a1047448100ed3c2678ab677347b75d3ceb36d062f9"
+    },
+    "five_minute_v2_artifact": {
+      "path": "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_plus5m_2025_2026_20260817_v2",
+      "purpose": "same target-free dual-admission identities with explicit 725-minute decision-window requirement",
+      "request_manifest_sha256": "f8fbac759f48022354f824af09bc48d785e711d0e67a1836f3fde337f9a67fe3",
+      "request_sha256": "ba937a9207b0d8a233edc12c4e1312fcaeca4bcfacf8474681b6d08a222b50c7",
+      "candidate_sha256": "247f12d7a00596f0098ec6a58a32a948427d20aa42876c98a276ab415bac2a91",
+      "contract_hash": "70f7d8d99270015522595a664a13b4a5b09a8eed7183d60b7c2e24f84caa158f",
+      "required_downloader_horizon_minutes": 725
+    }
+  },
+  "delegation": {
+    "terra_exception": null,
+    "subagents": []
+  }
+}

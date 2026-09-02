@@ -1,0 +1,39 @@
+{
+  "schema": "strict_r3_multiwindow_ev_map_ablation_v1",
+  "scope": "long_only_august_2026_matched_extension",
+  "windows_days": [14, 21, 28, 35, 42],
+  "trim_fraction": 0.15,
+  "score_cells": 20,
+  "admission_floor_net_bps": 50.0,
+  "ensemble_arms": [
+    "mean",
+    "median",
+    "highest",
+    "lowest",
+    "second_lowest",
+    "third_lowest",
+    "bottom2_mean",
+    "bottom3_mean"
+  ],
+  "development_period": ["2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+  "confirmation_period": ["2026-08-01T00:00:00Z", "2026-08-13T00:00:00Z"],
+  "portfolio": {
+    "initial_wallet": 1000.0,
+    "perp_leverage": 7.0,
+    "margin_slot_wallet_fraction": 0.10,
+    "concurrency": 8,
+    "new_entries_per_timestamp": 2,
+    "asset_limit": 1,
+    "margin_cap_fraction": 0.80
+  },
+  "partitions": [
+    {
+      "name": "homogeneous_prior28_strict_r3_aug1_12_2026",
+      "start": "2026-08-01T00:00:00Z",
+      "end_exclusive": "2026-08-13T00:00:00Z",
+      "reference_scores": "data_perp/artifacts/strict_r3_homogeneous28_completegate_reconciliation_hourly_20260813T100000Z_v2/cycle/score/same_model_prior42_reference_scores.parquet",
+      "held_ledger": "data_perp/artifacts/strict_r3_homogeneous28_a5_forward_long_aug1_12_append_only_complete_20260813_v1/scored_label_ledger.parquet",
+      "policy_outcomes": "data_perp/artifacts/strict_r3_lockstep_history_long_2024apr_jul2026_strictfull_prior28_optimizedpolicy_20260813_v2/walkforward_scored_label_ledger.parquet"
+    }
+  ]
+}

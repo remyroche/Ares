@@ -1,0 +1,26 @@
+{
+  "schema": "ares_governed_change_receipt_v1",
+  "status": "pass",
+  "changed_paths": [
+    "scripts/seal_strict_r3_v188_bcf_geometry_recovery_candidate.py",
+    "config/strict_r3_inference_overlay_long_v159_v188_bcf_same_lineage_geometry_recovery_candidate.json"
+  ],
+  "purpose": "Candidate-only seal combining the same-lineage BCF challenger with the no-refit embedded Geometry/K9 recovery.",
+  "validation": {
+    "compile": "python3 -m py_compile scripts/seal_strict_r3_v188_bcf_geometry_recovery_candidate.py",
+    "bundle_validation": "StrictR3InferenceBundle.load(...).validate(decision_ts=2026-08-23T19:00:00Z)",
+    "result": "pass"
+  },
+  "hashes": {
+    "script": "299f3fe972144ef2df7ebb8f62ad33edb62fb4bd3d8cb7fda4da5e6e3a6cf584",
+    "inference_overlay": "8762f4d532d2b592ae1524a03c3668cdb8454af7657cbd7508ee06ce5daeea73",
+    "candidate_manifest": "93040285ba6f772e9d7ba7ca75735c1dfa8a06e265d960f8299172eeeef0c6a0"
+  },
+  "safety": {
+    "geometry_refit": false,
+    "economic_contract_changed": false,
+    "exchange_calls": 0,
+    "order_submission": false,
+    "live_authority": "blocked_pending_fresh_no_order_state_recovery_and_independent_parity"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_router_conditioned_head_retrain_20260830_v2.json",
+    "sha256": "6c915d5dc87708a34b84e7bec19c93102feb8f8bb6e2c42d85428541479a1bda"
+  },
+  "schema_version": "strict_r3_p8u_router_conditioned_head_retrain_v1",
+  "router_conditioning": {
+    "router_top_fraction": 0.50,
+    "training_population": "strictly prior-resolved rows selected by the timestamp-local Router top-50% rule",
+    "scoring_population": "held rows selected by the same timestamp-local Router top-50% rule",
+    "structural_geometry": "reuse the existing frozen target-free NMF geometry; do not refit archetype semantics conditionally on Router outcomes",
+    "evaluation": "select fixed absolute candidate budgets from the full held universe; specialist scores are unavailable outside the Router top-50% gate"
+  },
+  "supersedes_for_question": "The v2 30%-gate diagnostic did not match the actual Router routing rule. v3 is the sole valid answer to the Router-conditioned-head question."
+}

@@ -1,0 +1,96 @@
+{
+  "schema": "strict_r3_p8u_e2_h4_live_parity_release_candidate_v1",
+  "status": "SEALED_NO_ORDER_CANDIDATE_NOT_CONNECTED_TO_EXCHANGE",
+  "order_submission": false,
+  "side": "long",
+  "purpose": "Hash-bound no-order successor candidate for the research-canonical P8U E2 q50 agreement replacement and H4 Giveback-20 continuation overlay. It intentionally cannot alter the active exchange-writing v3 gateway.",
+  "research_contract": {
+    "path": "config/strict_r3_p8u_e2_h4_giveback20_research_canonical_20260830_v1.json",
+    "sha256": "9c6ffe5e62b6acfb02818a61c4e1c5b6d2dbb75a486abecf871f9eb19c653f11"
+  },
+  "current_refit_bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1",
+    "manifest_sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd",
+    "cutoff": "2026-08-29T00:00:00Z",
+    "training": "four trailing months; labels resolved strictly before cutoff"
+  },
+  "entry": {
+    "population": "target-free routed score rows with dual-MC1 >=20 bps and strict current 15-minute feature coverage",
+    "ordinary_selection": "BCF-priority dual-MC1 >=30 bps top two per timestamp",
+    "E2": "H0 q50 >=50 AND H3 q50 >=50 may replace one marginal ordinary candidate; never expand two-slot timestamp capacity",
+    "after_E2": "the hash-bound successor no-order auction consumes e2_entry_selected rows only; BCF MC1 expected bps remains the priority and the ordinary fixed-slot constraints remain unchanged"
+  },
+  "continuation": {
+    "state_frequency": "completed 15-minute bars only",
+    "action": "when H4 L1 prediction >=0, apply 50% earlier trailing activation and 20% tighter giveback only to the following 15-minute interval",
+    "prohibitions": [
+      "No same-state action can affect that state bar",
+      "No change to hard stop, smooth capital protection, sizing, or timeout",
+      "Unavailable state or reference coverage means unchanged rich parent policy"
+    ]
+  },
+  "runtime": {
+    "e2_authority": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_parity.py",
+      "sha256": "a139939704cbacd09b19addf91e76d0a645d45f1a0391d6ef14d721be1e446ef"
+    },
+    "e2_feature_materializer": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_features.py",
+      "sha256": "dc75ae3cc49aef72dc4148500533d30d1c42a2743d3c6e269201f0a170a34f70"
+    },
+    "h4_state_builder": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_continuation.py",
+      "sha256": "3e4c149504e790a65e3c6dd617eb0fa13fc4be86a0dd89cc7b97055a2824c97b"
+    },
+    "h4_minute_policy_wrapper": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_rich_policy.py",
+      "sha256": "213be69e687d787d054bc0f68accb8c6f0214864f4f8aed8f310f809ceb7bf20"
+    },
+    "e2_before_auction": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_auction.py",
+      "sha256": "b3d14123f8adcc5ae33bb0f8c5c897b91fe98b5645c9a75c473aa0e2597ec239"
+    },
+    "bundle_refit": {
+      "path": "scripts/refit_strict_r3_p8u_e2_h4_live_parity_bundle.py",
+      "sha256": "a21637f2010fba30e4e23a7249985165f0d7d889f9cc2e81f88e0971089a879a"
+    },
+    "noorder_selection": {
+      "path": "scripts/score_strict_r3_p8u_e2_live_parity_noorder.py",
+      "sha256": "c9b5b5546fdda88be9fe4b6a31cbbc96877ed6e08d6cbc14582c3cc8ab897e91"
+    },
+    "noorder_auction": {
+      "path": "scripts/prepare_strict_r3_p8u_e2_h4_noorder_auction.py",
+      "sha256": "ac5e2b676042da0aefeaa06e65633b6020f1daf5bd96515edd0cb8f2ce2025d3"
+    },
+    "noorder_successor_monitor": {
+      "path": "scripts/run_strict_r3_p8u_e2_h4_noorder_position_monitor.py",
+      "sha256": "a86df075982a199d09a1796fc619ccc11e547004fcd68919f0d7ea74fd5e3d04"
+    },
+    "inference_replay_parity_audit": {
+      "path": "scripts/audit_strict_r3_p8u_e2_h4_inference_replay_parity.py",
+      "sha256": "643929c01af3d19776979261789b15bdcc51ad03551dc268096b51ccfec38b35"
+    },
+    "release_hash_audit": {
+      "path": "scripts/audit_strict_r3_p8u_e2_h4_live_parity_release.py",
+      "sha256": "fc0955ecb71c7dfd1ec450dbc927a9f571554d3b6920c818f17d66326fdc4a4f"
+    }
+  },
+  "parity_receipt": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_inference_replay_parity_20260830_v1/receipt.json",
+    "sha256": "da82cc52fc0438e68a8f49e1111bff4f55e5735a07c2492aad8598024cb3820a",
+    "result": "exact E2 pair predictions and H4 outputs on target-free source fields; 0.0 max absolute delta"
+  },
+  "active_gateway_boundary": {
+    "path": "config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json",
+    "sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d",
+    "statement": "This active exchange-writing gateway has not been modified and cannot consume this candidate."
+  },
+  "promotion_prerequisites": [
+    "Materialise strict target-free 15-minute feature rows for the live decision and compare them with offline feature values on identical historical decisions.",
+    "Attach the sealed E2 selection plus no-order auction components to a distinct successor gateway and prove current-decision feature identity parity before enabling its exchange authority.",
+    "Attach the sealed H4 persisted-state transition and minute wrapper to a distinct successor monitor, then prove parent/H4 exit parity over completed one-minute bars before enabling its exchange authority.",
+    "Retain the passed offline score/admission parity receipt and add the successor monitor's exact completed-bar exit parity receipt with <=0.01% numerical tolerance.",
+    "Obtain explicit activation authorization for the new gateway, adapter, and monitor; do not reuse the current v3 authorization."
+  ],
+  "failure_mode": "fail_closed_no_order; any hash, source, feature-order, state, or parity failure prevents successor scoring and cannot affect the active gateway"
+}

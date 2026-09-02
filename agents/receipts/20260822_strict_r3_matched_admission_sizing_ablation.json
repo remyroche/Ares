@@ -1,0 +1,33 @@
+{
+  "schema": "ares_agent_receipt_v1",
+  "date_utc": "2026-08-22",
+  "scope": "offline strict-R3 matched-admission sizing ablation",
+  "live_stack_changed": false,
+  "source": {
+    "runner": {
+      "path": "scripts/run_strict_r3_matched_admission_sizing_ablations.py",
+      "sha256": "4f42517f82a5996290d1992c02f6aaed4a79a4dddf7862ab04ce530db8457af3"
+    },
+    "tests": {
+      "path": "extreme_price_movements/tests/test_strict_r3_matched_admission_sizing.py",
+      "sha256": "9d9bdc9aa3eb56d1c52e696b634a9138ed842720a6cc8a6ce0cc123984126d6a"
+    }
+  },
+  "validation": {
+    "command": "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_matched_admission_sizing.py",
+    "result": "4 passed",
+    "invariants": [
+      "all 21 arms use BCF MC1 >= 30 bps AND current-v5 MC1 >= 30 bps",
+      "BCF priority is fixed across all arms",
+      "B0's 3,791 2026 candidate identities and actual weights exactly match A0_fixed_dual30",
+      "zero-sum weights are timestamp-centred at 10% before capacity constraints",
+      "selected-trade weighted EV excludes inherited-position exits; portfolio NAV change is retained separately"
+    ]
+  },
+  "outputs": {
+    "root": "data_perp/artifacts/strict_r3_matched_admission_sizing_2025dev_2026val_20260822_v3",
+    "manifest_sha256": "9ab63f87214ec96baaca078e4f55c41f44dc4d146411efcaea5c96f892c9a39b",
+    "portfolio_metrics_sha256": "85e04b8f2dcd986d824919f8206b4bd5afab8587cb4986052083029f1102b975"
+  },
+  "scope_limit": "B6/B7 execution-EV variants were not run because the frozen matched score/outcome ledger has no causal per-decision spread, impact, or delay fields; none were fabricated or joined post hoc."
+}

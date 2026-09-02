@@ -42,19 +42,29 @@ def _utc(value: str) -> pd.Timestamp:
     return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
 
 
-def _read(path: Path, *, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+def _read(
+    path: Path, *, start: pd.Timestamp, end: pd.Timestamp, side: str,
+) -> pd.DataFrame:
     available = set(pq.ParquetFile(path).schema.names)
     columns = [column for column in [*IDENTITY, *POLICY] if column in available]
     frame = pd.read_parquet(
         path,
         columns=columns,
-        filters=[("__decision_ts__", ">=", start), ("__decision_ts__", "<", end)],
+        filters=[
+            ("__decision_ts__", ">=", start),
+            ("__decision_ts__", "<", end),
+            ("side_name", "==", side),
+        ],
     )
     for column in ("__ts__", "__decision_ts__", "policy_label_available_ts"):
         if column in frame:
             frame[column] = pd.to_datetime(frame[column], utc=True, errors="raise")
     if frame["candidate_id"].duplicated().any():
         raise ValueError(f"duplicate candidate IDs in {path}")
+    observed = frame["side_name"].astype(str).str.strip().str.lower()
+    if frame.empty or not observed.eq(side).all():
+        raise ValueError(f"{path} is not an explicit {side}-side label source")
+    frame["side_name"] = side
     return frame
 
 
@@ -101,6 +111,7 @@ def main() -> None:
     parser.add_argument("--early-policy-labels", type=Path, required=True)
     parser.add_argument("--later-policy-outcomes", type=Path, required=True)
     parser.add_argument("--early-end", default="2025-01-01")
+    parser.add_argument("--side", choices=("long", "short"), default="long")
     parser.add_argument("--start", default="2024-01-01")
     parser.add_argument("--end", default="2026-08-01")
     parser.add_argument("--out-dir", type=Path, required=True)
@@ -115,21 +126,27 @@ def main() -> None:
     source = pd.read_parquet(
         args.source_panel,
         columns=source_columns,
-        filters=[("__decision_ts__", ">=", start), ("__decision_ts__", "<", end)],
+        filters=[
+            ("__decision_ts__", ">=", start),
+            ("__decision_ts__", "<", end),
+            ("side_name", "==", args.side),
+        ],
     )
     for column in ("__ts__", "__decision_ts__"):
         source[column] = pd.to_datetime(source[column], utc=True, errors="raise")
     if source.empty or source["candidate_id"].duplicated().any():
         raise ValueError("source panel is empty or has duplicate candidate IDs")
-    if not source["side_name"].astype(str).str.lower().eq("long").all():
-        raise ValueError("this strict assembler is long-only")
+    source_side = source["side_name"].astype(str).str.strip().str.lower()
+    if not source_side.eq(args.side).all():
+        raise ValueError("source panel is not side-local after filtering")
+    source["side_name"] = args.side
 
     early = _normalise_labels(
-        _read(args.early_policy_labels, start=start, end=early_end),
+        _read(args.early_policy_labels, start=start, end=early_end, side=args.side),
         label_source="frozen_15m_2024",
     )
     later = _normalise_labels(
-        _read(args.later_policy_outcomes, start=early_end, end=end),
+        _read(args.later_policy_outcomes, start=early_end, end=end, side=args.side),
         label_source="existing_policy_outcomes",
     )
     labels = pd.concat([early, later], ignore_index=True)
@@ -177,7 +194,7 @@ def main() -> None:
     coverage.to_parquet(args.out_dir / "policy_coverage_by_month_source.parquet", index=False)
     manifest = {
         "schema": "strict_r3_source_aligned_policy_outcome_ledger_v1",
-        "side": "long",
+        "side": args.side,
         "source_panel": str(args.source_panel), "source_panel_sha256": _sha(args.source_panel),
         "early_policy_labels": str(args.early_policy_labels), "early_policy_labels_sha256": _sha(args.early_policy_labels),
         "later_policy_outcomes": str(args.later_policy_outcomes), "later_policy_outcomes_sha256": _sha(args.later_policy_outcomes),

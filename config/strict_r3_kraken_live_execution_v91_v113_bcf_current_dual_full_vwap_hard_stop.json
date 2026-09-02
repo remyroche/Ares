@@ -1,0 +1,50 @@
+{
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "version_note": "v113: user-directed live hard-stop replacement. On every completed post-fill minute, test the full remaining long size against fresh bid-side executable VWAP before any policy-bar update; if VWAP is at or below the immutable initial loss threshold, cancel the native stop and submit a reduce-only market exit. Native Kraken stop remains an emergency backstop. No entry, admission, score, trailing, smooth-protection, fast-adverse, timeout, or policy parameter changes.",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v92_bcf_current_dual_execution_adjusted30_full_market_snapshot.json",
+  "inference_bundle_sha256": "1648f445300d536edf30ec938ec68fd6bcde49c5455cc7eabc644535fab3bd35",
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "exchange_id": "krakenfutures",
+  "side": "long",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "order_submission_authorized": true,
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260818_v20_bcf_current_dual_execution_adjusted30_full_market_snapshot.json",
+  "activation_authorization_sha256": "04f211babe5cec6afe02474172cf675d5387c0bde2c512888d17d3e3503abba9",
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "baseline_policy_cost_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 30.0,
+  "maximum_live_spread_bps": 100.0,
+  "execution_microstructure_buffer_bps": 10.0,
+  "execution_book_telemetry_only": true,
+  "execution_adjusted_ev_veto_enabled": true,
+  "execution_entry_authority": "sealed_dual_mc1_admission_then_common_portfolio_auction_then_execution_adjusted_ev_ge_30bps",
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - (1.2 * live_full_spread_bps + 2 * entry_vwap_impact_bps + 10 bps); resulting executable EV must be >= +30 bps after frozen dual MC1 admission and the common portfolio auction; final veto only, never reranking.",
+  "failure_policy": "fail_closed",
+  "protective_stop_exit_vwap_adjustment": true,
+  "protective_stop_book_levels": 10,
+  "protective_stop": "native exchange reduce-only stop-market; trigger targets full-position bid-side VWAP at entry and remains the emergency backstop behind the completed-minute full-VWAP initial hard-stop monitor.",
+  "full_vwap_hard_stop_monitor_enabled": true,
+  "position_monitor": "persistent one-minute controller: fresh full remaining-size bid-VWAP initial hard stop -> prior smooth lock -> trailing -> fast adverse -> next-bar MFE/arm. Initial hard stop uses immutable entry-time signal ATR and is evaluated before completed-bar state updates. Adaptive Exit V1 only modulates parent trailing activation.",
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "242836c1354e3a606daf844363fd09745b18fcd7bac4768709e981adbedffd30",
+    "extreme_price_movements/inference/trade_executor.py": "000017a0dbf063083a271fe9fae5d08f40d09b5fd175d7949789b7389af326bd",
+    "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "516dd1a3ac3f53a2a67fff6497bee459aac8bcbce21eef6aa915de7a2e4a70af"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "predecessor_execution_bundle": "config/strict_r3_kraken_live_execution_v90_v112_bcf_current_dual_execution_adjusted30_full_market_snapshot.json",
+      "allowed_runtime_code_paths": ["extreme_price_movements/inference/strict_r3_live_execution.py"],
+      "behavior_change": "completed-minute full remaining-size directional VWAP is the sole live hard-stop authority; the prior candle-low hard-stop proxy is disabled only in the live rich-policy call."
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ares.kraken-perps-monitor.s59-v9-evaware</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/remyroche/Documents/Ares/scripts/run_live_parity_monitor_loop.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/remyroche/Documents/Ares</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RUN_ID</key>
+		<string>s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2</string>
+    <key>EPM_MODEL_ARTIFACT_RUN_ID</key>
+		<string>s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2</string>
+    <key>EPM_POLICY_ARTIFACT_RUN_ID</key>
+		<string>s59_s52_base66_residualstate_meta_v9tail95_mlp_hierev_ev70_geometry_20260717_v2</string>
+    <key>EPM_PARITY_MONITOR_INTERVAL_SECONDS</key>
+    <string>10800</string>
+    <key>EPM_PARITY_MONITOR_MAX_ROWS</key>
+    <string>500</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/kraken_perps_monitor_launchd_s59_v9_evaware.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/kraken_perps_monitor_launchd_s59_v9_evaware.stderr.log</string>
+</dict>
+</plist>

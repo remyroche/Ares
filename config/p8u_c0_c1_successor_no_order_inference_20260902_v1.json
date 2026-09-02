@@ -1,0 +1,75 @@
+{
+  "schema": "p8u_c0_c1_successor_no_order_inference_contract_v1",
+  "status": "NO_ORDER_PARITY_ONLY_PENDING_DOWNSTREAM_AUCTION_AND_FORWARD_EVIDENCE",
+  "order_submission": false,
+  "side": "long",
+  "router_fraction": 0.5,
+  "mapper_month": "2026-09",
+  "admission_floor_bps": 50.0,
+  "tier_order": ["both_admitted", "c0_only", "c1_only"],
+  "scope": "Hash-bound target-free Router50 -> Base -> Under telemetry -> C0/C1-LVA -> C0-first selection. This config intentionally has no portfolio, execution, network, account, or exchange-write authority.",
+  "artifacts": {
+    "upstream_manifest": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_upstream_walkforward_20260902_v7_octaug_under_telemetry/model_bundle/manifest.json",
+      "sha256": "4c241c6d607b0061877ef870b018079924be62d3ec6f4c3263fb9fa754f296b4"
+    },
+    "mapper_manifest": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_mapper_forward_sep01_2026_v3_resolved00_16_fullproductledger/run_manifest.json",
+      "sha256": "5fb624587ae6ad1857e6027f646c915db66d027ee82c3bdd98fa5765a1a3fcb1"
+    },
+    "c1_snapshots": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_c1_snapshots_sep01_2026_v3_targettimecoverage/entry_sr_oof_features.parquet",
+      "sha256": "279e163202d4895bb2acf61cfede2e0eaa9e56d5941f63223f0d19bfbade5a74"
+    },
+    "feature_plan": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_feature_plan_20260901_v1/required_feature_plan.json",
+      "sha256": "a43a1e3e6b7421b34ec2a6fb3ae76893f6642a20580abe476c08cb8913d0a19c"
+    },
+    "source_manifest": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_source_manifest_20260901_v1/frozen_source_manifest.json",
+      "sha256": "50768307ed0598987e71f2f4748e5671cf16d012d966f719da8e4fd2675f9b0e"
+    },
+    "rich_policy": {
+      "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+      "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+    },
+    "no_order_stack": {
+      "path": "extreme_price_movements/inference/p8u_successor_no_order_stack.py",
+      "sha256": "b9ff425d63204c406d28648a8eeb89fcf6c41bd9545747736a36d95235058310"
+    },
+    "mapper_adapter": {
+      "path": "extreme_price_movements/inference/p8u_successor_c0_c1_mapper.py",
+      "sha256": "c872994d3c9c583b7426ecfe71b5cf4b9e43d85479feeab8a48d3b30c7132a77"
+    },
+    "portfolio_adapter": {
+      "path": "extreme_price_movements/inference/p8u_successor_portfolio_adapter.py",
+      "sha256": "d90b2c38d7e4e8b4f37d43dca3c88e9981ae84d61f8cdb3fb2d0e928d5ffc02a"
+    },
+    "decision_runner": {
+      "path": "scripts/run_p8u_successor_no_order_decision.py",
+      "sha256": "e44b62c44ffe73022214cb244230b6059f1b9623eb134077896dc59efe0d61e8"
+    },
+    "parity_receipt": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_no_order_full_parity_sep01_2026_v1/parity_receipt.json",
+      "sha256": "c2b63bff4e887186eff2a6cc80323cf4651a07d1b9b879a57d5d2bd3704daf0b"
+    }
+  },
+  "runtime_validator": {
+    "path": "extreme_price_movements/inference/p8u_successor_inference_contract.py",
+    "sha256": "5128c1d6c5210380e0a7cf31a5d416b3d7f760695b3aaa59bd6210024d2b5c20"
+  },
+  "prohibitions": [
+    "no_exchange_or_account_io",
+    "no_order_submission",
+    "no_outcome_or_policy_input_to_scoring",
+    "no_base_under_c0_or_c1_scoring_outside_router50",
+    "no_current_or_future_package substitution"
+  ],
+  "promotion_requirements": [
+    "current rolling C1 snapshot state rather than a static historical panel",
+    "hash-bound feature materialisation and full point-in-time score commit",
+    "auction plus executable-book/preflight plus rich-parent-policy parity",
+    "sufficient untouched forward exact-one-minute evidence",
+    "separate exchange-writing activation authorization"
+  ]
+}

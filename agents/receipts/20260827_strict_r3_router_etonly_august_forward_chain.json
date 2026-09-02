@@ -1,0 +1,26 @@
+{
+  "task": "strict-r3-router-etonly-august-forward-chain",
+  "scope": "Offline long-only research only. Extends the frozen primary router and routed 50/50 E/T upstream to a target-free August panel, then permits the frozen U contract to train strictly before its reserve from immutable historical E/T panels. It does not change live inference, MC1 thresholds, admission, portfolio state, exchange state, or execution.",
+  "contracts": {
+    "router": "The primary router selects the exact timestamp-local top 50 percent. Its numeric score has no base, U, MC1, or portfolio feature authority.",
+    "upstream": "enhanced_base_bps = 0.50 * efficiency_bps + 0.50 * timing_bps, with no direct R3 ranking authority.",
+    "target_free": "Forward candidate identities and causal features are materialised before scoring; held policy/path labels are not opened by the E/T scorer.",
+    "multi_source": "Historical and forward immutable source roots may be joined only by a single exact monthly owner and stable candidate identity. A full-universe causal feature panel may cover, but never replace, a router-selected source population.",
+    "causality": "E/T and U training rows must be routed and label-resolved before each 28-day reserve. U held scores persist before outcome diagnostics."
+  },
+  "changed_paths": [
+    "scripts/materialize_strict_r3_router_forward_features_v1.py",
+    "scripts/score_strict_r3_router_etonly_forward_base_v1.py",
+    "scripts/run_strict_r3_incumbent_meta_target_query_grid_v1.py",
+    "scripts/score_strict_r3_incumbent_meta_selected_contracts_v1.py",
+    "agents/receipts/20260827_strict_r3_router_etonly_august_forward_chain.json"
+  ],
+  "validation_plan": [
+    "python3 -m py_compile of all changed Python files",
+    "CLI help and git diff --check",
+    "target-free identity/coverage audit for the August router and E/T base panels",
+    "one strict July full-causal superset-to-routed-subset U fold preparation check",
+    "strict August U scoring, dual-MC1, admission, and constrained-portfolio audit after materialisation completes"
+  ],
+  "agent_plan": {"subagents": []}
+}

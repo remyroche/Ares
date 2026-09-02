@@ -1,0 +1,114 @@
+{
+  "schema": "strict_r3_p8u_meta_challenger_relative_gateproxy_protocol_v1",
+  "scope": "offline Meta-HPO challenger shortlist only; no score, MC1, admission, portfolio, live, or exchange authority",
+  "status": "predeclared_successor_protocol_not_fitted",
+  "supersedes_for_future_independent_banks_only": "GateProxy_P0_Ridge may remain the frozen transition shortlist for the already-defined work; it is not refitted or retroactively re-ranked by this protocol.",
+  "decision": {
+    "incumbent": "external anchor; it always receives full strict MC1 plus constrained-portfolio confirmation and is never proxy-ranked against challengers",
+    "candidate_question": "Does this new challenger beat the fixed incumbent after the identical strict MC1, dual-admission, and constrained chronological portfolio replay?",
+    "primary_target": "P(BeatIncumbent = 1 | cheap challenger and incumbent-relative diagnostics)",
+    "secondary_target": "E[MarginOfVictory | BeatIncumbent = 1]",
+    "shortlist_score": "P(BeatIncumbent) * max(0, E[MarginOfVictory | BeatIncumbent])",
+    "prohibition": "The proxy may select confirmation candidates only. It may never promote a Meta trial, alter an incumbent, or influence live inference."
+  },
+  "beat_incumbent_label": {
+    "same_evaluation_contract_required": [
+      "identical target-free candidate identities and base route",
+      "identical policy-label source and resolved-label availability",
+      "identical Current and BCF MC1 maps and dual-admission threshold",
+      "one common chronological portfolio state and identical execution policy"
+    ],
+    "all_conditions": {
+      "net_ev_per_trade_delta_bps_min": 2.0,
+      "total_net_bps_ratio_to_incumbent_min": 0.98,
+      "worst_week_delta_bps_min": -5.0,
+      "max_drawdown_delta_percentage_points_min": -2.0,
+      "constrained_entries_ratio_to_incumbent_min": 0.85
+    },
+    "material_efficiency_exception": {
+      "when_net_ev_per_trade_delta_bps_at_least": 10.0,
+      "constrained_entries_ratio_to_incumbent_min": 0.70,
+      "total_net_bps_ratio_to_incumbent_min": 1.00
+    },
+    "note": "These are predeclared conservative selection tolerances, not a live objective and not fitted on the successor bank."
+  },
+  "margin_of_victory": {
+    "construction": "robustly standardize candidate-minus-incumbent deltas using only prior completed independent banks, then sum the declared components",
+    "components": [
+      "positive net EV per trade delta",
+      "positive total net bps delta",
+      "positive constrained-entry delta",
+      "positive weekly Q10 delta",
+      "positive worst-week delta",
+      "positive max-drawdown delta"
+    ],
+    "downside_rule": "Any hard breach of the BeatIncumbent downside or volume floor forces BeatIncumbent = 0 regardless of MarginOfVictory."
+  },
+  "features": {
+    "challenger_absolute": [
+      "residual_ic",
+      "conditional_mi_given_base",
+      "base_band_ic_5_10",
+      "base_band_ic_10_20",
+      "base_band_ic_20_30",
+      "meta_top1_ev",
+      "meta_top2_ev",
+      "candidate_only_vs_control_only_ev",
+      "false_upgrade_ev",
+      "useful_upgrade_ev",
+      "base_meta_rank_correlation",
+      "median_abs_rank_correction",
+      "weekly_q10",
+      "cheap_mc1_probe_top1_delta",
+      "cheap_mc1_probe_top2_delta",
+      "cheap_mc1_probe_admitted_utility"
+    ],
+    "incumbent_relative": [
+      "each compatible absolute diagnostic as challenger_minus_incumbent",
+      "each compatible absolute diagnostic as (challenger_minus_incumbent)/(abs(incumbent)+epsilon)",
+      "candidate-only versus incumbent-only substitution economics",
+      "correction-magnitude distribution deltas",
+      "rank-correlation and score-dispersion deltas",
+      "weekly Q10 and cheap-MC1-probe deltas"
+    ],
+    "structural_trial_descriptors": [
+      "target semantic family",
+      "loss family",
+      "query family",
+      "feature-contract family and feature count",
+      "sample-weight family",
+      "model family and capacity descriptors",
+      "gain and truncation geometry"
+    ],
+    "forbidden": [
+      "full downstream MC1 or portfolio outcomes from the new bank",
+      "future target or policy outcome fields",
+      "a proxy score as an inference feature"
+    ]
+  },
+  "fit_and_validation": {
+    "unit_of_independence": "HPO bank, not trial. Nearby configurations from one bank must never split across train and validation.",
+    "validation": "leave-one-independent-HPO-bank-out; time-respecting when banks are chronological",
+    "minimum_evidence_before_fit": "three completed independent banks containing a fixed-incumbent comparison; otherwise retain P0 only as a transition shortlist and collect labels",
+    "success_metrics": [
+      "Recall@3 of the best confirmed challenger",
+      "Regret@3",
+      "winner-in-Top1",
+      "any-incumbent-beater-in-Top3",
+      "false-confidence rate",
+      "bank-wise Recall@3"
+    ],
+    "secondary_diagnostics_only": [
+      "Spearman",
+      "calibration of predicted BeatIncumbent probability",
+      "descriptor attribution"
+    ],
+    "no_same_bank_retuning": "Proxy coefficients, outcome tolerances, and feature transformations are frozen before the successor bank is scored."
+  },
+  "confirmation_funnel": {
+    "always_confirm": "incumbent",
+    "challengers": "proxy Top-3 by shortlist_score",
+    "compute_permitting_control": "one high-uncertainty or descriptor-diverse challenger, selected without access to the new bank's downstream results",
+    "advancement": "only a fully matched strict MC1 plus constrained-portfolio result can beat the incumbent"
+  }
+}

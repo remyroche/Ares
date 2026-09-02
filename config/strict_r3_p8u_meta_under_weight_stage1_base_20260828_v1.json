@@ -1,0 +1,49 @@
+[
+  {
+    "name": "unweighted_control",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  },
+  {
+    "name": "equal_timestamp",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": []},
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  },
+  {
+    "name": "base_p05_s025",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": [{"name": "base_score", "power": 0.5, "strength": 0.25}]},
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  },
+  {
+    "name": "base_p10_s050",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": [{"name": "base_score", "power": 1.0, "strength": 0.5}]},
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  },
+  {
+    "name": "base_p15_s075",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": [{"name": "base_score", "power": 1.5, "strength": 0.75}]},
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  },
+  {
+    "name": "base_p20_s100",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 12,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": [{"name": "base_score", "power": 2.0, "strength": 1.0}]},
+    "model": {"objective": "rank_xendcg", "n_estimators": 260, "learning_rate": 0.045, "max_depth": 4, "num_leaves": 15, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.82, "lambda_l1": 0.02, "lambda_l2": 8.0}
+  }
+]

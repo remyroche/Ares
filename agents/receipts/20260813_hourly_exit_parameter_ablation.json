@@ -1,0 +1,40 @@
+{
+  "task": "hourly-exit-parameter-ablation-long-v2",
+  "scope": "Implement and validate a strict-OOF once-hourly adaptive-exit funnel downstream of the frozen long-only SimplePolicyOptimiser policy: correct completed-15m path-state accumulation, add causal short-horizon path-since-entry features, materialize next-hour and remaining-H12 favorable/adverse ATR targets, compare compact feature/population contracts and direct action targets, combine forecast and state-action models, and sweep bounded/shrunk stop-versus-activation authority without automatic promotion.",
+  "changed_paths": [
+    "extreme_price_movements/path_based_exit_optimisation.py",
+    "extreme_price_movements/continuation_value/contracts.py",
+    "extreme_price_movements/continuation_value/features.py",
+    "extreme_price_movements/continuation_value/targets.py",
+    "scripts/run_continuation_value_challenger.py",
+    "scripts/run_hourly_exit_parameter_ablation.py",
+    "tests/test_continuation_value.py",
+    "docs/HOURLY_EXIT_PARAMETER_ABLATION_20260813.md"
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/path_based_exit_optimisation.py extreme_price_movements/continuation_value/contracts.py extreme_price_movements/continuation_value/features.py extreme_price_movements/continuation_value/targets.py scripts/run_hourly_exit_parameter_ablation.py tests/test_continuation_value.py",
+      "python3 -m pytest -q tests/test_continuation_value.py tests/test_path_based_exit_optimisation.py (30 passed)",
+      "python3 scripts/run_hourly_exit_parameter_ablation.py --out-dir data_perp/artifacts/hourly_exit_parameter_ablation_long_2025_2026_20260813_v2_effective_atr --max-train-states 25000 (completed)",
+      "python3 -m pytest -q tests/test_continuation_value.py (13 passed after deterministic sampler repair)",
+      "python3 scripts/run_continuation_value_challenger.py --out-dir data_perp/artifacts/continuation_value_challenger_long_hourly_canonicalpolicy_local15m_20260813_v7_hashsample --max-trades 12000 --parity-only (completed; 169 symbols)"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {"subagents": []},
+  "artifacts": [
+    "data_perp/artifacts/hourly_exit_parameter_ablation_long_2025_2026_20260813_v2_effective_atr",
+    "data_perp/artifacts/continuation_value_challenger_long_hourly_canonicalpolicy_local15m_20260813_v7_hashsample",
+    "docs/HOURLY_EXIT_PARAMETER_ABLATION_20260813.md"
+  ],
+  "promotion": "Not promoted. Post-run reconciliation found that the inherited 12,000-row cap used lexicographic candidate-ID heads, concentrating v2 in 28 alphabetically early symbols, and that local 15-minute path completeness was outcome-selective. The complete 2026 canonical score>=0.90 ledger is +9.06 bps/trade and causal EV admission is +86.99, whereas the v2 covered subset is -12.12. The deterministic month-stratified hash sampler now covers 169 symbols, but its local-path-covered 2026 subset remains -19.98 versus +3.97 on all sampled rows and +79.43 on missing-path rows. Reported adaptive uplifts are conditional diagnostics only until complete historical 15-minute paths are materialized and the funnel is rerun."
+}

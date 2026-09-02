@@ -1,0 +1,32 @@
+{
+  "schema": "strict_r3_live_fixed_5x_fallback_receipt_v2",
+  "observed_at_utc": "2026-08-21T18:38:53.732345Z",
+  "change": "When maintenance margin or a validated retail contract tier is unavailable, request exactly 5x leverage. Do not derive leverage from cached or guessed headroom data.",
+  "normal_mode": "min(10x, 66 / policy_stop_absolute_pct, liquidation_safe_leverage, market_initial_margin_max_leverage)",
+  "fallback_mode": "fixed 5x requested leverage",
+  "fallback_preconditions": [
+    "maintenance margin unavailable or retailMarginLevels tier unavailable",
+    "fresh executable preflight price, quantity, market metadata and positive slot margin"
+  ],
+  "capacity_rule": "A cached Flex snapshot may support portfolio-capacity accounting during a brief account-endpoint outage, but never changes the fixed 5x leverage request.",
+  "existing_positions": "Preserved with their Kraken-confirmed fill leverage",
+  "runtime_hashes": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "b06502c4a4bc1f1cc8729125d081421f92825c7f867a6fdfd3b72df2defda50a",
+    "tests/test_strict_r3_rich_live_policy.py": "d63908131b2c0bba375508564e8101a17da49fdfa735c7ef14ce8c141a6bac4e",
+    "scripts/seal_strict_r3_headroom_fallback_successor.py": "96343145964c886230fd39cdd30d694c8dacd6e1248c2bfe547a8fbe038da688"
+  },
+  "sealed_artifacts": {
+    "inference": "config/strict_r3_inference_overlay_long_20260801_v120_bcf_current_dual_liquidation_headroom_fixed5x_fallback.json",
+    "inference_sha256": "7267f2f28ef58fccd805cfd4474f78e0d69d16d2f020133761f449148204a596",
+    "activation": "config/strict_r3_kraken_live_activation_authorization_20260821_v48_v120_liquidation_headroom_fixed5x_fallback.json",
+    "activation_sha256": "4c4214afb091e6a73e0ceb15ba8231c86f37ec1c48d1563a16d313d545d30615",
+    "execution": "config/strict_r3_kraken_live_execution_v122_v146_liquidation_headroom_fixed5x_fallback.json",
+    "execution_sha256": "e3980f9b94bf125c7c62ce6f0d9116aefd33b8e657c7efff230482cf8cbb9eef",
+    "live_state": "data_perp/live/strict_r3_kraken_live_state_v81_v146_liquidation_headroom_fixed5x_fallback.json",
+    "live_state_sha256_after_migration": "ee4522e5dfc1148e4efbc82801e5a1cb284b4b2391fe01d451825f5da07f9061"
+  },
+  "validation": {
+    "focused_tests": "33 passed",
+    "monitor_first_receipt": "success; no exchange writes; CRCLX/RIVER policy state advanced"
+  }
+}

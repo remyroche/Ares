@@ -1,0 +1,66 @@
+{
+  "schema": "p8u-c0-c1-daily-calibration-cycle-config-v1",
+  "status": "NO_ORDER_SCHEDULE_READY_NOT_ENABLED",
+  "side": "long",
+  "order_submission": false,
+  "purpose": "Append target-free Router50 score deltas, materialise only H12-resolved exact rich-policy outcomes, and publish the next causal 21-day C0/C1 state.",
+  "schedule_contract": {
+    "cadence": "once per UTC day before the first decision that consumes the new day state",
+    "score_input": "All immutable no-order Router50 score outputs for the declared cycle window.",
+    "label_cutoff": "policy_label_available_ts < decision_day",
+    "state_requirement": "Mapper refuses a missing or non-current latest.json receipt.",
+    "recovery": "Fail closed. Do not skip a day, overwrite a cycle, or synthesize a policy label; repair the local source/score issue, then issue a new monotonic revision."
+  },
+  "artifacts": {
+    "cycle_runner": {
+      "path": "scripts/run_p8u_c0_c1_daily_calibration_cycle.py",
+      "sha256": "44b462c09654ff2d055e6449a9092b44ed505a99825817a2c0f97b571409ae61"
+    },
+    "ledger_publisher": {
+      "path": "scripts/append_p8u_c0_c1_calibration_policy_ledger.py",
+      "sha256": "c901c394077c2de4ede092cd64183844b97dc22d2aebc3f09c0052bfb5fa2e69"
+    },
+    "candidate_builder": {
+      "path": "scripts/prepare_p8u_c0_c1_calibration_exact1m_candidates.py",
+      "sha256": "183e31341ec8510f8baf9f898ccca5e80accdb497d9f79276448d6a91dea1aa1"
+    },
+    "exact_policy_materializer": {
+      "path": "scripts/materialize_strict_r3_p8u_exact_1m_rich_policy.py",
+      "sha256": "965c691c7c72e13ee75310f04e075e97b8c1df5011f77b5c71a19373c48dfb33"
+    },
+    "effective_ledger": {
+      "root": "data_perp/artifacts/p8u_c0_c1_effective_policy_ledger_20260902_v1",
+      "ledger_manifest_sha256": "8cac812f8d99d98a020985eddaefe66e5718d47a761da7d4e7c83df1ac04f67b"
+    },
+    "daily_state": {
+      "root": "data_perp/artifacts/p8u_c0_c1_daily_calibration_state_20260902_v1",
+      "state_manifest_sha256": "b11bf306fb211cacf3e1038260e1c442deb80fa1cbd78ca2d1be35b52fcaf2b7"
+    },
+    "c0_package": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_mapper_forward_sep01_2026_v3_resolved00_16_fullproductledger/packages/c0_base_geometry/2026-09",
+      "package_manifest_sha256": "887043c48642a598df92ea1445020a7d7fc3845ad054f6297290da0dc11e2e30"
+    },
+    "c1_package": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_mapper_forward_sep01_2026_v3_resolved00_16_fullproductledger/packages/c1_lva_geometry/2026-09",
+      "package_manifest_sha256": "81eb698d3c8332d93ab722377ed8d3324dc3df928a6474e0840c69481aa42c8c"
+    },
+    "frozen_source_manifest": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_source_manifest_20260901_v1/frozen_source_manifest.json",
+      "sha256": "50768307ed0598987e71f2f4748e5671cf16d012d966f719da8e4fd2675f9b0e"
+    },
+    "frozen_kraken_product_ledger": {
+      "path": "data_perp/artifacts/p8u_c0_c1_successor_kraken_product_ledger_20260902_v1_market_snapshot/kraken_product_ledger.parquet",
+      "sha256": "7db5aa16975863a01944401eb9da31eaa224803c1e07006be12c5bb73f59aea8"
+    },
+    "frozen_rich_policy": {
+      "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+      "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+    }
+  },
+  "prohibitions": [
+    "no feature/model/mapper refit",
+    "no current or future policy outcome used before its H12 resolution",
+    "no portfolio, account, exchange, or order authority",
+    "no skipped UTC day, overwrite, or unverified artifact substitution"
+  ]
+}

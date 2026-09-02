@@ -1,0 +1,32 @@
+{
+  "schema": "strict_r3_kraken_live_activation_authorization_v2_manual_override",
+  "authorized": true,
+  "authorization_source": "Explicit user approval on 2026-08-17 to promote the sealed BCF/current dual-MC1 admission and BCF-EV common-auction priority into Kraken Futures long-only live execution, including manual override of the listed incomplete promotion-count gates. The frozen rich SimplePolicyOptimiser exit policy and all execution gates remain unchanged.",
+  "authorized_after": "2026-08-17T00:00:00+00:00",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v60_bcf_current_dual_mc1.json",
+  "inference_bundle_sha256": "393e54495b8021f589527336d945e94b0dffddd132096f8ee9fc4e94e1d79772",
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_hpo_long_20260817_v1/frozen_challenger.json",
+  "exit_policy_sha256": "e72db968478889ef1e87d1b737a0d4995e23af2f0a29ddf594139e7fdda66d4a",
+  "manual_promotion_override": true,
+  "manual_override_authorized_by_user": true,
+  "overridden_failed_promotion_checks": ["continuous_hours", "portfolio_accepted_rows", "realized_exit_rows"],
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "stale_signal_execution_prohibited": true,
+  "bounded_entry_window": "current decision hour only (0 to 3,600 seconds); no prior-hour signal may be submitted",
+  "preserved_gates": [
+    "feature_completeness",
+    "append_only_primary_receipt",
+    "sealed_runtime_checkpoint",
+    "target_free_BCF_same_model_reserve",
+    "dual_BCF_and_current_MC1_expected_EV_at_least_30bps",
+    "live_orderbook_preflight_for_every_dual_admitted_base_routed_candidate",
+    "execution_adjusted_ev_at_least_50bps",
+    "absolute_100bps_decision_price_move_limit",
+    "max_two_new_entries_per_bar",
+    "max_eight_concurrent_positions",
+    "80_percent_margin_cap",
+    "rich_policy_params_hash_bound"
+  ],
+  "promotion_audit": "data_perp/artifacts/strict_r3_schema_v39_promotion_chain_audit_20260815T070000Z_v2_reconciled/run_manifest.json",
+  "promotion_audit_sha256": "9f140959228ca2a5266bb670b0140e216804ebb758472c25fff75ac4515cc635"
+}

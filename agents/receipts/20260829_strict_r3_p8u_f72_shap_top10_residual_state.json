@@ -1,0 +1,24 @@
+{
+  "schema": "strict_r3_p8u_f72_shap_top10_residual_state_receipt_v1",
+  "scope": "offline long-only research only; no canonical, live, admission-production, portfolio-production, or exchange mutation",
+  "changed_sources": [
+    "scripts/materialize_strict_r3_p8u_f72_shap_top10_residual_state_v1.py",
+    "scripts/audit_strict_r3_p8u_f72_shap_top10_residual_state_v1.py",
+    "config/strict_r3_p8u_f72_shap_top10_residual_state_source_20260829_v1.json"
+  ],
+  "causality": {
+    "strict_oof_shap_score_reconstruction_checked": true,
+    "candidate_top10_contributors_are_target_free": true,
+    "state_uses_same_20_bin_base_rank_band": true,
+    "residual_events_activate_after_label_availability_only": true,
+    "residual_anchor_is_strict_prequential": true,
+    "held_meta_scores_persist_before_held_outcome_metrics": true,
+    "downstream_mc1_is_strict_prequential": true
+  },
+  "decision": {
+    "entropy_only": "rejected",
+    "top10_residual_state": "rejected",
+    "top10_residual_state_plus_entropy": "rejected_before_downstream",
+    "canonical_change": false
+  }
+}

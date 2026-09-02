@@ -1,0 +1,39 @@
+{
+  "schema": "strict_r3_kraken_live_activation_authorization_v2_manual_override",
+  "authorized": true,
+  "manual_promotion_override": true,
+  "manual_override_authorized_by_user": true,
+  "authorization_source": "explicit user approval on 2026-08-15 to attempt the invalidated 15:00 UTC decision after the validated stale-entry-price repair, bypassing the ordinary 15-minute freshness limit once; all execution-adjusted-EV, source, portfolio, price-move and protective-stop gates remain mandatory",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "additional_authorized_service": "unattended_existing_position_monitor_no_entry_authority",
+  "stale_signal_execution_prohibited": true,
+  "authorized_after": "2026-08-15T15:20:00+00:00",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v44_validated_entryopen_reseal.json",
+  "inference_bundle_sha256": "8fd1571d2c920572ab37381d8c08477a4afe126d517bf524fef3f43399b666a5",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "promotion_audit": "data_perp/artifacts/strict_r3_schema_v39_promotion_chain_audit_20260815T070000Z_v2_reconciled/run_manifest.json",
+  "promotion_audit_sha256": "9f140959228ca2a5266bb670b0140e216804ebb758472c25fff75ac4515cc635",
+  "overridden_failed_promotion_checks": [
+    "continuous_hours",
+    "portfolio_accepted_rows",
+    "realized_exit_rows"
+  ],
+  "late_entry_exception": {
+    "decision_ts": "2026-08-15T15:00:00+00:00",
+    "expires_at": "2026-08-15T15:45:00+00:00",
+    "reason": "one-time validation of repaired target-free entry-price source contract"
+  },
+  "preserved_gates": [
+    "feature_completeness",
+    "append_only_primary_receipt",
+    "sealed_runtime_checkpoint",
+    "positive_volume_and_contemporaneous_book_validation_for_hourly_entry_fallback",
+    "live_orderbook_preflight_for_every_mc1_admitted_base_routed_candidate",
+    "execution_adjusted_ev_at_least_50bps",
+    "absolute_100bps_decision_price_move_limit",
+    "max_two_new_entries_per_bar",
+    "max_eight_concurrent_positions",
+    "80_percent_margin_cap"
+  ]
+}

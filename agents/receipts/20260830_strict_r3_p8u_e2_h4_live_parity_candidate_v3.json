@@ -1,0 +1,40 @@
+{
+  "task": "strict-r3-p8u-e2-h4-live-parity-candidate-v3",
+  "status": "SEALED_NO_ORDER_SUCCESSOR_NOT_CONNECTED_TO_EXCHANGE",
+  "supersedes_for_release_binding": "agents/receipts/20260830_strict_r3_p8u_e2_h4_live_parity_candidate_v2.json",
+  "reason": "Adds the separately named no-order position-monitor core to the hash-bound release configuration; all model, feature, selection, auction, and target-free parity evidence remains as recorded in v2.",
+  "release_candidate": {
+    "path": "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260830_v1.json",
+    "sha256": "2f3286a0074c524d196bf1fe21ed77946378184460b07bda9ea63744596300c9"
+  },
+  "documentation": {
+    "path": "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md",
+    "note": "The runtime release configuration and all executable components are hash-bound; this human handover points to the v3 receipt to avoid a documentation/receipt hash cycle."
+  },
+  "new_sealed_component": {
+    "role": "separate no-order successor monitor",
+    "path": "scripts/run_strict_r3_p8u_e2_h4_noorder_position_monitor.py",
+    "sha256": "a86df075982a199d09a1796fc619ccc11e547004fcd68919f0d7ea74fd5e3d04",
+    "authority": "Loads a position snapshot, atomically persists H4's hash-bound next-interval action, then optionally advances only completed one-minute bars using the H4-aware parent-policy wrapper. It writes a new immutable state snapshot and cannot use exchange I/O or order submission.",
+    "same_bar_guard": "A one-minute bar ending exactly at the H4 completed-state boundary is excluded before advancement."
+  },
+  "carried_forward_parity": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_inference_replay_parity_20260830_v1/receipt.json",
+    "sha256": "da82cc52fc0438e68a8f49e1111bff4f55e5735a07c2492aad8598024cb3820a",
+    "result": "0.0 maximum absolute delta for independently replayed H0/H3 reserve-pair predictions and H4 predictions on target-free source inputs; no outcomes or exchange calls."
+  },
+  "validation": {
+    "focused_tests": "8 passed: tests/test_p8u_e2_h4_giveback20_contract.py and tests/test_p8u_e2_h4_live_parity.py",
+    "static_validation": "JSON validation and Python compilation passed for release configuration, E2/H4 successor components, audit, auction runner, and monitor core."
+  },
+  "active_exchange_boundary": {
+    "gateway": "config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json",
+    "sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d",
+    "statement": "Unchanged. The active gateway/monitor does not import any E2/H4 successor component. This v3 receipt grants no exchange authority."
+  },
+  "remaining_activation_work": [
+    "Run the new no-order monitor core against a source-valid open-position snapshot and complete one-minute bars, then seal its exact parent/H4 exit parity receipt.",
+    "Create separately named exchange-writing successor gateway/monitor processes only after current-decision feature/selection/auction and completed-minute exit parity have passed.",
+    "Obtain explicit distinct activation authorization; do not reuse the currently active v3 gateway authorization."
+  ]
+}

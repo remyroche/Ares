@@ -1,0 +1,66 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline strict-OOF P8U market-state Meta head evaluation; does not alter Base, MC1, admission, portfolio, live, or exchange paths",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "meta_feature_count": 9,
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_market_state_meta_overlay_dec24_jul26_20260829_v1/target_free_scores",
+    "full_feature_roots": ["data_perp/artifacts/strict_r3_p8u_market_state_meta_overlay_dec24_jul26_20260829_v1/features"],
+    "base_f72_contract": "config/strict_r3_p8u_market_state_meta9_contract_20260829_v1.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 60000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM LambdaRank common compact-state screen",
+    "objective": "lambdarank",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.75,
+    "meta_rank_weight": 0.25,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "magnitude": {
+      "definition": "strict-prequential rich-policy-net residual against a train-only Base-rank-to-policy-EV anchor; seven train-only ordinal grades",
+      "arms": [{"name": "magnitude_bps__base_band_block28", "scale": "bps", "query": "base_band_block28"}]
+    },
+    "state": {
+      "definition": "signed strict-prequential Base calibration state, from overconfident negative residual through approximately accurate to underconfident positive residual",
+      "arms": [{"name": "state_bps__base_band_block28", "scale": "bps", "query": "base_band_block28", "edges": [-150, -50, -10, 10, 50, 150]}]
+    }
+  },
+  "selection": {
+    "primary": "SStableMeta and timestamp top-2 substitution utility",
+    "secondary": ["conditional_mi_meta_policy_given_base", "worst_week_smeta"],
+    "advancement": "Only a later matched MC1/admission/portfolio test may advance a head."
+  },
+  "causality": {
+    "feature_inputs": "immutable target-free Base scores and state/interaction overlay only",
+    "labels": "policy/path data join only after held target-free score receipt is written; fit labels must resolve before the fold reserve",
+    "held_outcomes": "metrics only, never Meta inference inputs",
+    "state_selection": "frozen from 2025 before 2026 target-head screen"
+  }
+}

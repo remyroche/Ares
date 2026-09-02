@@ -1,0 +1,35 @@
+{
+  "schema": "strict_r3_p8u_meta_model_family_short_hpo_union_v1",
+  "scope": "Research-only union of three predeclared short model-family HPO banks. It changes no target, query, feature, weight, label, GateProxy, MC1, portfolio, live, or exchange contract. A weighted screen must exclude catboost_yetirank because CatBoost pairwise ranking ignores object weights.",
+  "source_banks": [
+    "config/strict_r3_p8u_meta_lgbm_xendcg_hpo_bank_20260830_v1.json",
+    "config/strict_r3_p8u_meta_catboost_queryrmse_hpo_bank_20260830_v1.json",
+    "config/strict_r3_p8u_meta_catboost_yetirank_hpo_bank_20260830_v1.json"
+  ],
+  "candidates": [
+    {"name":"lgbm_hpo_00_common_budget","model_family":"lgbm_xendcg","params":{}},
+    {"name":"lgbm_hpo_01_shallow_conservative","model_family":"lgbm_xendcg","params":{"n_estimators":360,"learning_rate":0.035,"max_depth":3,"num_leaves":7,"min_child_samples":700,"min_split_gain":0.003,"colsample_bytree":0.75,"subsample":0.85,"reg_alpha":0.08,"reg_lambda":16.0}},
+    {"name":"lgbm_hpo_02_shallow_smooth","model_family":"lgbm_xendcg","params":{"n_estimators":520,"learning_rate":0.022,"max_depth":3,"num_leaves":15,"min_child_samples":600,"min_split_gain":0.001,"colsample_bytree":0.82,"subsample":0.82,"reg_alpha":0.03,"reg_lambda":12.0}},
+    {"name":"lgbm_hpo_03_balanced_regular","model_family":"lgbm_xendcg","params":{"n_estimators":420,"learning_rate":0.03,"max_depth":4,"num_leaves":15,"min_child_samples":520,"min_split_gain":0.002,"colsample_bytree":0.8,"subsample":0.82,"reg_alpha":0.04,"reg_lambda":12.0}},
+    {"name":"lgbm_hpo_04_balanced_capacity","model_family":"lgbm_xendcg","params":{"n_estimators":320,"learning_rate":0.05,"max_depth":4,"num_leaves":31,"min_child_samples":380,"min_split_gain":0.001,"colsample_bytree":0.84,"subsample":0.78,"reg_alpha":0.02,"reg_lambda":8.0}},
+    {"name":"lgbm_hpo_05_depth4_sparse","model_family":"lgbm_xendcg","params":{"n_estimators":460,"learning_rate":0.028,"max_depth":4,"num_leaves":15,"min_child_samples":760,"min_split_gain":0.004,"colsample_bytree":0.72,"subsample":0.88,"reg_alpha":0.15,"reg_lambda":20.0}},
+    {"name":"lgbm_hpo_06_depth5_regular","model_family":"lgbm_xendcg","params":{"n_estimators":360,"learning_rate":0.04,"max_depth":5,"num_leaves":31,"min_child_samples":620,"min_split_gain":0.003,"colsample_bytree":0.78,"subsample":0.8,"reg_alpha":0.08,"reg_lambda":18.0}},
+    {"name":"lgbm_hpo_07_depth5_capacity","model_family":"lgbm_xendcg","params":{"n_estimators":280,"learning_rate":0.06,"max_depth":5,"num_leaves":47,"min_child_samples":450,"min_split_gain":0.001,"colsample_bytree":0.86,"subsample":0.76,"reg_alpha":0.01,"reg_lambda":6.0}},
+    {"name":"query_hpo_00_common_budget","model_family":"catboost_queryrmse","params":{}},
+    {"name":"query_hpo_01_shallow_conservative","model_family":"catboost_queryrmse","params":{"iterations":360,"learning_rate":0.035,"depth":3,"l2_leaf_reg":16.0,"random_strength":0.1,"rsm":0.75}},
+    {"name":"query_hpo_02_shallow_smooth","model_family":"catboost_queryrmse","params":{"iterations":520,"learning_rate":0.022,"depth":3,"l2_leaf_reg":12.0,"random_strength":0.2,"rsm":0.82}},
+    {"name":"query_hpo_03_balanced_regular","model_family":"catboost_queryrmse","params":{"iterations":420,"learning_rate":0.03,"depth":4,"l2_leaf_reg":12.0,"random_strength":0.3,"rsm":0.8}},
+    {"name":"query_hpo_04_balanced_capacity","model_family":"catboost_queryrmse","params":{"iterations":320,"learning_rate":0.05,"depth":4,"l2_leaf_reg":8.0,"random_strength":0.6,"rsm":0.84}},
+    {"name":"query_hpo_05_depth5_regular","model_family":"catboost_queryrmse","params":{"iterations":360,"learning_rate":0.04,"depth":5,"l2_leaf_reg":18.0,"random_strength":0.3,"rsm":0.78}},
+    {"name":"query_hpo_06_depth5_capacity","model_family":"catboost_queryrmse","params":{"iterations":280,"learning_rate":0.06,"depth":5,"l2_leaf_reg":6.0,"random_strength":0.8,"rsm":0.86}},
+    {"name":"query_hpo_07_depth6_regular","model_family":"catboost_queryrmse","params":{"iterations":260,"learning_rate":0.05,"depth":6,"l2_leaf_reg":24.0,"random_strength":0.2,"rsm":0.75}},
+    {"name":"yeti_hpo_00_common_budget","model_family":"catboost_yetirank","params":{}},
+    {"name":"yeti_hpo_01_shallow_conservative","model_family":"catboost_yetirank","params":{"iterations":360,"learning_rate":0.035,"depth":3,"l2_leaf_reg":16.0,"random_strength":0.1,"rsm":0.75}},
+    {"name":"yeti_hpo_02_shallow_smooth","model_family":"catboost_yetirank","params":{"iterations":520,"learning_rate":0.022,"depth":3,"l2_leaf_reg":12.0,"random_strength":0.2,"rsm":0.82}},
+    {"name":"yeti_hpo_03_balanced_regular","model_family":"catboost_yetirank","params":{"iterations":420,"learning_rate":0.03,"depth":4,"l2_leaf_reg":12.0,"random_strength":0.3,"rsm":0.8}},
+    {"name":"yeti_hpo_04_balanced_capacity","model_family":"catboost_yetirank","params":{"iterations":320,"learning_rate":0.05,"depth":4,"l2_leaf_reg":8.0,"random_strength":0.6,"rsm":0.84}},
+    {"name":"yeti_hpo_05_depth5_regular","model_family":"catboost_yetirank","params":{"iterations":360,"learning_rate":0.04,"depth":5,"l2_leaf_reg":18.0,"random_strength":0.3,"rsm":0.78}},
+    {"name":"yeti_hpo_06_depth5_capacity","model_family":"catboost_yetirank","params":{"iterations":280,"learning_rate":0.06,"depth":5,"l2_leaf_reg":6.0,"random_strength":0.8,"rsm":0.86}},
+    {"name":"yeti_hpo_07_depth6_regular","model_family":"catboost_yetirank","params":{"iterations":260,"learning_rate":0.05,"depth":6,"l2_leaf_reg":24.0,"random_strength":0.2,"rsm":0.75}}
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_archetype_recovery_20260830_v1.json",
+    "sha256": "6e83b4b1caff0525d0591ff2c88ce2ac6173010f55cca0c6b0bb78b9c8fa872a"
+  },
+  "schema_version": "strict_r3_p8u_archetype_recovery_v1",
+  "probe": {
+    "feature_selection": {
+      "per_head_budgets": {
+        "P0": [20, 32, 48],
+        "P1": [32, 56, 80]
+      }
+    },
+    "per_head_hpo": {
+      "top_feature_model_forms": 2,
+      "trials": [
+        {"id": "baseline", "overrides": {}},
+        {
+          "id": "compact_regularized",
+          "overrides": {
+            "learning_rate": 0.05,
+            "num_leaves": 7,
+            "max_depth": 3,
+            "min_child_samples": 450,
+            "feature_fraction": 0.72,
+            "bagging_fraction": 0.80,
+            "reg_lambda": 8.0
+          }
+        },
+        {
+          "id": "shallow_stable",
+          "overrides": {
+            "learning_rate": 0.04,
+            "num_leaves": 7,
+            "max_depth": 2,
+            "min_child_samples": 350,
+            "feature_fraction": 0.80,
+            "bagging_fraction": 0.85,
+            "reg_lambda": 6.0
+          }
+        },
+        {
+          "id": "moderate_capacity",
+          "overrides": {
+            "learning_rate": 0.03,
+            "num_leaves": 23,
+            "max_depth": 4,
+            "min_child_samples": 400,
+            "feature_fraction": 0.75,
+            "bagging_fraction": 0.75,
+            "reg_lambda": 10.0
+          }
+        }
+      ]
+    },
+    "per_head_activation_floors": [0.0, 0.10, 0.20, 0.35]
+  },
+  "controls": {
+    "run_constrained_gmm": false
+  }
+}

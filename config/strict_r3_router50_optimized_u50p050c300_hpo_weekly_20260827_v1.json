@@ -1,0 +1,57 @@
+{
+  "schema": "strict_r3_router50_optimized_u50p050c300_hpo_weekly_v1",
+  "status": "offline_research_champion_not_live",
+  "scope": "Long-only Router50 research. This file freezes only the corrected U50 router; Base, Meta, MC1, admission and portfolio contracts are not redesigned.",
+  "selection": {
+    "hpo_artifacts": "data_perp/artifacts/strict_r3_router30_hpo_optimized_u50_weekly_shard_{1729..1740}_20260827_v1",
+    "candidate_seed": 1732,
+    "selection_metric": "weekly robust mean (Q20--Q80) + 0.5 * mean(weekly Q15, Q10, Q5) of S_router",
+    "tie_break": "within 0.5% relative of the highest S_stable, prefer the lower-complexity effective tree",
+    "frozen_weekly_eras": ["2025-11", "2026-03", "2026-07"],
+    "comparison_anchor": "Baseline P8u under the same corrected weekly utility surface"
+  },
+  "router": {
+    "target": "U50_p050_c300",
+    "target_utility": "max(policy_net_bps - 50, 0), clipped at 300 bps and raised to 0.5",
+    "row_weight_scheme": "positive_125; renormalized within each exact decision timestamp",
+    "query": "exact decision timestamp",
+    "route": "retain exact timestamp-local top 50 percent",
+    "feature_contract_sha256": "c787eb4c432dee34b200aa4a861e695a9597e16adb24376510dedb47d550d284",
+    "feature_contract": [
+      "liq_stop_safety_short_atr", "mark_perp_dislocation", "rv_rel_universe", "range_24h_pct", "ffd_rv_24h_04",
+      "upside_semivariance_24", "ffd_rv_6h_06", "t_be_proxy", "dist_prior_day_high", "upside_semivariance_8",
+      "dist_rolling_7d_high", "asset_atr_level", "vov_mad_60", "vov_iqr_20", "seasonality_strength",
+      "realized_volatility_24h", "cvar_5pct", "dist_prior_day_low", "liquidity_ratio_peer_resid", "mark_trigger_risk_10h",
+      "t_pl_proxy", "price_rv_7d_robust_z", "range_volatility", "rvol_hod_base", "range_per_volume",
+      "price_rv_15d_robust_z", "ob_depth_l20_to_qv_24h", "beta_eth_24h", "beta_btc_24h", "rv_48h"
+    ],
+    "ranker": {
+      "objective": "rank_xendcg",
+      "label_gains": [0, 1, 2, 4, 7, 11],
+      "n_estimators": 2000,
+      "learning_rate": 0.06256328910589315,
+      "max_depth": 4,
+      "num_leaves": 15,
+      "min_child_fraction": 0.0048458679888716705,
+      "min_child_floor": 800,
+      "min_split_gain": 0.012723525179157308,
+      "feature_fraction": 0.744729612215946,
+      "subsample": 0.7631501905622794,
+      "l1": 0.004982958006932237,
+      "l2": 21.84835593602585,
+      "max_bin": 127,
+      "truncation": 12,
+      "early_stopping_rounds": 30,
+      "inner_validation_fraction": 0.2,
+      "train_months": 6,
+      "prequential_reserve_days": 28,
+      "train_cap": 120000
+    }
+  },
+  "causality": {
+    "score_panel": "target-free; policy labels are joined only after held scores are persisted",
+    "train_labels": "resolved before the reserve preceding each held month",
+    "numeric_router_output_to_downstream": false
+  },
+  "promotion": "research champion only, pending the required feature-selection and matched downstream Base -> Meta -> Current/BCF MC1 -> portfolio replay."
+}

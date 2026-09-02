@@ -1,0 +1,18 @@
+{
+  "schema": "strict_r3_p8u_magnitude_broad_duration_selection_v1",
+  "scope": "offline strict-OOF Meta objective selection; not an MC1 or live promotion",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "feature_contract": "data_perp/artifacts/strict_r3_p8u_magnitude_broad_market_contract_20260828_v5_market_only/feature_contract.json",
+  "target": "strict-prequential rich-policy-net residual in bps, ordinalized with train-only quantile grades",
+  "query": "Base-score band × fixed 35-day calendar block",
+  "selected_duration_days": 35,
+  "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+  "selection_rule": "Maximize SStableMeta subject to conditional MI remaining within a practical range of the best duration; do not select on standalone portfolio EV.",
+  "duration_metrics": {
+    "21": {"sstable_meta": -0.13980, "conditional_mi": 0.12235, "mean_top2_substitution_ev_bps": -41.81015},
+    "28": {"sstable_meta": -0.13591, "conditional_mi": 0.11953, "mean_top2_substitution_ev_bps": -40.81416},
+    "35": {"sstable_meta": -0.05228, "conditional_mi": 0.11509, "mean_top2_substitution_ev_bps": -29.95130},
+    "42": {"sstable_meta": -0.20032, "conditional_mi": 0.09203, "mean_top2_substitution_ev_bps": -51.65888}
+  },
+  "boundary": "F72 plus causal market-wide mkt/IQR/eigen/spectral/cross-sectional distribution fields. No new funding, order-book, liquidity or asset-level context fields. Declared continuous-regime and soft-transition fields are excluded from this comparable run because their historical sidecars are incomplete; no values are imputed."
+}

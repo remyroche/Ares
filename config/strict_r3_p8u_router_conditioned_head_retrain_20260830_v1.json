@@ -1,0 +1,27 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_archetype_recovery_20260830_v3_headhpo_q4recovery.json",
+    "sha256": "5446a14ab9882706c7c0faecb5b4e7e54c4a4a6e527546306cd84fccba1be249"
+  },
+  "schema_version": "strict_r3_p8u_router_conditioned_head_retrain_v1",
+  "router_conditioning": {
+    "router_top_fraction": 0.30,
+    "training_population": "strictly prior resolved rows selected by the timestamp-local Router top-30% rule",
+    "scoring_population": "held rows selected by the same timestamp-local Router top-30% rule",
+    "structural_geometry": "reuse the existing frozen target-free NMF geometry; do not refit archetype semantics conditionally on Router outcomes",
+    "evaluation": "select fixed absolute candidate budgets from the full held universe; specialist scores are unavailable outside the Router gate"
+  },
+  "source_head_bundles": {
+    "2025_q2": "data_perp/artifacts/strict_r3_p8u_archetype_recovery_headhpo_q2_20260830_v1/bundles/2025_q2.joblib",
+    "2025_q3": "data_perp/artifacts/strict_r3_p8u_archetype_recovery_headhpo_q3_20260830_v1/bundles/2025_q3.joblib",
+    "2025_q4": "data_perp/artifacts/strict_r3_p8u_archetype_recovery_headhpo_q4recovery_20260830_v5_memoryprofile/bundles/2025_q4.joblib"
+  },
+  "evaluation": {
+    "budget_fractions": [0.02, 0.05, 0.10],
+    "rescue_router_shares": [0.50],
+    "selection_primary_budget": 0.10
+  },
+  "controls": {
+    "run_constrained_gmm": false
+  }
+}

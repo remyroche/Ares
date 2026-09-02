@@ -105,7 +105,16 @@ def main() -> None:
                     "source_last_ts": source_idx.max().isoformat() if len(source_idx) else None,
                 })
 
-    table = pd.DataFrame(rows)
+    table_columns = [
+        "feature_symbol", "product_id", "sidecar_key", "family", "column", "month",
+        "feature_rows", "observed_rows", "overlap_rows", "coverage_full",
+        "post_source_expected_rows", "post_source_overlap_rows", "coverage_post_source",
+        "feature_first_ts", "feature_last_ts", "source_first_ts", "source_last_ts",
+    ]
+    # A source-only bootstrap may intentionally have no materialised feature
+    # files yet.  Preserve a valid, explicit empty audit rather than failing
+    # while grouping a dataframe with no declared columns.
+    table = pd.DataFrame(rows, columns=table_columns)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     parquet_path = args.out_dir / "oi_funding_source_coverage_by_asset_month.parquet"
     table.to_parquet(parquet_path, index=False, compression="zstd")
@@ -124,7 +133,11 @@ def main() -> None:
             "assets_ge_50pct_full": int((valid.coverage_full >= .50).sum()),
             "weighted_coverage_post_source": float(valid.post_source_overlap_rows.sum() / valid.post_source_expected_rows.sum()) if valid.post_source_expected_rows.sum() else None,
         })
-    summary = pd.DataFrame(summary_rows)
+    summary = pd.DataFrame(summary_rows, columns=[
+        "family", "month", "assets", "feature_rows", "overlap_rows",
+        "weighted_coverage_full", "assets_ge_90pct_full",
+        "assets_ge_50pct_full", "weighted_coverage_post_source",
+    ])
     summary.to_csv(args.out_dir / "oi_funding_source_coverage_monthly_summary.csv", index=False)
 
     manifest = {

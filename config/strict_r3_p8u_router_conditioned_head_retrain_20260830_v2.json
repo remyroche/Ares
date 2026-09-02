@@ -1,0 +1,11 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_router_conditioned_head_retrain_20260830_v1.json",
+    "sha256": "eae4ecd5c3937295367ec9dd038bb26e43be092ab87d2bddfd050e103944aa88"
+  },
+  "schema_version": "strict_r3_p8u_router_conditioned_head_retrain_v1",
+  "runtime_reporting": {
+    "version": "v2_fast_core_metrics",
+    "reason": "The Router-conditioned experiment reports the predeclared realised-EV, hit, recall, and CVaR metrics only. It removes repeated hindsight within-timestamp oracle diagnostics that are neither score inputs nor a selection criterion."
+  }
+}

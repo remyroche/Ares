@@ -1,0 +1,206 @@
+{
+  "schema": "strict_r3_live_readiness_receipt_v6_homogeneous28_a5_bounded10",
+  "status": "canonical_executable_research_shadow_only_accruing_untouched_forward_validation",
+  "side": "long",
+  "canonical_inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v5_homogeneous28_a5_b10_exactpolicy_v2.json",
+    "sha256": "d496dee40bf06d600b6f920c231e52151303b81288cfcde0b045fa6daf8b4d7d",
+    "activation_ts": "2026-08-01T00:00:00+00:00",
+    "end_exclusive_ts": "2026-08-29T00:00:00+00:00",
+    "artifact_hashes_verified": 23,
+    "runtime_code_hashes_verified": 28,
+    "validation": "data_perp/artifacts/strict_r3_inference_bundle_validation_homogeneous28_completegate_20260813T100000Z_v4.json",
+    "validation_sha256": "44c804be1065a59c01920964501dc7dbb661c55828d9ad2503710b676ffff27c"
+  },
+  "causal_wiring": {
+    "audit": "data_perp/artifacts/strict_r3_lockstep_wiring_audit_homogeneous28_long_aug2026_20260813_v3.json",
+    "audit_sha256": "14c22070a779867c7d9fcf6b66b11f6e22aca5c11bbe86c71b441ba0aee3162b",
+    "passed": true,
+    "reference_window_days": 28,
+    "prequential_ledger_rows": 2820951,
+    "ordered_base_fields": 120,
+    "policy_residual_heads": 10,
+    "held_percentile_operations": 0,
+    "cost_bps_applied_once": 100.0,
+    "outcomes_consumed_during_scoring": []
+  },
+  "geometry": {
+    "definition_start": "2024-10-01T00:00:00+00:00",
+    "definition_end_exclusive": "2025-01-01T00:00:00+00:00",
+    "parent_bundle_sha256": "ad7eae631da909feddee7349d07fd8ef377db173067d971bee33d24d82f20eb4",
+    "effective_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+    "refit_cadence": "never"
+  },
+  "numerical_train_replay_inference_parity": {
+    "path": "data_perp/artifacts/strict_r3_lockstep_successor28_homogeneous28_parity_long_aug1_7_20260813_v1",
+    "manifest_sha256": "05ae934fe61b61ee54cf7e4444970ebb4e1654134f4a8882379ff1beea4f06d8",
+    "reference_rows": 111710,
+    "held_rows": 8542,
+    "stored_and_rescored_rows": 120252,
+    "components_checked": 9,
+    "maximum_absolute_delta": 0.0,
+    "tolerance": 1e-12,
+    "outcomes_consumed": [],
+    "held_percentile_operations": 0,
+    "pass": true
+  },
+  "history_contract": {
+    "a0_a4_training_window_months": 9,
+    "first_training_start": "2024-04-01T00:00:00+00:00",
+    "earliest_executable_evaluation_cutoff": "2025-01-01T00:00:00+00:00",
+    "first_a5_calibration": "cutoff_local_month_block_oof",
+    "first_a5_calibration_seed_rows": 120006,
+    "first_a5_calibration_rows_after_equal_month_cap": 119997,
+    "walkforward_folds_fit": 21,
+    "walkforward_folds_failed": 0,
+    "identity_cold_start_folds": 0,
+    "a5_oof_predictions": "data_perp/artifacts/strict_r3_a5_walkforward_long_2025_jul2026_2024_oofcal_20260813_v2/a5_bounded10_oof_predictions.parquet",
+    "a5_oof_predictions_sha256": "3d45006f75f6169fbb4e678df15cbb9be2e5ac1a3799a10faf4b618e8229bb5c"
+  },
+  "trust_and_admission": {
+    "cell_day_map": "same-producer prior-28-day 20-cell equal-day map with symmetric 15% day trimming",
+    "anchor": "A0 = R5 nine-month posterior expected policy net, fitted to the residual around the cell-day map",
+    "overlay": "A5 bounded-10 = A0 + 0.10 * (causally calibrated A4 - A0)",
+    "fixed_membership": "A0 >= +50 bps and timestamp-local top 15% by pre-trust final_score",
+    "overlay_can_change_admission": false,
+    "admission_order": "finite complete contract -> A0 >= +50 bps -> timestamp-local pre-trust top 15% -> A5 reranking -> portfolio auction",
+    "missing_component": "fail_closed"
+  },
+  "execution_policy": {
+    "selected_by": "extreme_price_movements.simple_policy_optimiser.simulate_and_score on pre-2025 strict-prequential development data",
+    "development_period": "2024-01-01 <= signal timestamp < 2025-01-01",
+    "selection_population": "pooled-global upstream top 5%; deterministic equal-month cap 3500",
+    "trials": 40,
+    "winner_trial": 37,
+    "objective": "median monthly net bps per trade - 0.5 * monthly net MAD",
+    "winner_objective_bps": 122.328969,
+    "control_objective_bps": 54.581585,
+    "entry": "first 15-minute open at signal close plus one hour",
+    "stop_loss_atr": 4.15200064332387,
+    "trailing_activation_atr": 2.326224919759605,
+    "trailing_giveback_atr": 0.10237198997143725,
+    "timeout_hours": 12,
+    "cost_bps_once": 100.0
+  },
+  "historical_constrained_oos": {
+    "evaluation_start": "2025-01-01T00:00:00+00:00",
+    "evaluation_end_exclusive": "2026-08-01T00:00:00+00:00",
+    "accepted_trades": 8453,
+    "trades_per_calendar_day": 14.649913,
+    "net_bps_per_trade": 163.086268,
+    "positive_months": 19,
+    "months": 19,
+    "positive_weeks": 77,
+    "negative_weeks": 4,
+    "zero_trade_weeks": 2,
+    "portfolio_artifact": "data_perp/artifacts/strict_r3_a5_oofcal_portfolio_long_2025_jul2026_20260813_v2",
+    "waterfall_artifact": "data_perp/artifacts/strict_r3_a5_oofcal_waterfall_long_2025_jul2026_20260813_v2",
+    "warning": "compounded wallet figures are sizing-path diagnostics and must not replace per-trade, drawdown, utilization, and untouched-forward evidence"
+  },
+  "historical_layer_waterfall": {
+    "evaluation_start": "2025-01-01T00:00:00+00:00",
+    "evaluation_end_exclusive": "2026-08-01T00:00:00+00:00",
+    "oos_rows": 2125988,
+    "outcome": "optimized_trailing_policy_net_after_100bps_cost",
+    "executable_all_admitted": {
+      "cell_day": {"rows": 105226, "net_bps_per_trade": 67.954978},
+      "a0_r5": {"rows": 59406, "net_bps_per_trade": 107.633560},
+      "a5_bounded10": {"rows": 53282, "net_bps_per_trade": 127.496856},
+      "portfolio": {"rows": 8453, "net_bps_per_trade": 163.086268}
+    },
+    "artifact": "data_perp/artifacts/strict_r3_a5_oofcal_waterfall_long_2025_jul2026_20260813_v2/layer_waterfall_metrics.parquet",
+    "tail_warning": "retrospective global tails are diagnostics only; they are not live admissions"
+  },
+  "successor_refit_readiness": {
+    "audit": "data_perp/artifacts/strict_r3_successor_bundle_readiness_homogeneous28_exact170_20260813_v6.json",
+    "audit_sha256": "b850b978fba3da7fc26643715eeefebbad4112d031a668c5ed31e8d0d0e9ce9b",
+    "ready": true,
+    "source_calendar_coverage": 0.9985119047619048,
+    "resolved_policy_calendar_coverage": 0.9984848484848485,
+    "every_reserve_day_present": true
+  },
+  "august_forward_daily": {
+    "evaluation_start": "2026-08-01T00:00:00+00:00",
+    "evaluation_end_exclusive": "2026-08-13T00:00:00+00:00",
+    "bundle_refit_due": "2026-08-29T00:00:00+00:00",
+    "scored_rows": 29956,
+    "valid_exact_policy_rows": 29599,
+    "append_only_prefix_rows": 28000,
+    "new_suffix_rows": 1956,
+    "new_suffix_valid_rows": 1599,
+    "valid_to_invalid_downgrades_prevented": 3306,
+    "all_days_have_24_decision_hours_except_activation_day": true,
+    "diagnostic_tail_net_bps_per_trade": {
+      "top_1pct": 53.600921,
+      "top_2pct": 17.359030,
+      "top_3pct": -1.614862
+    },
+    "positive_days": {
+      "top_1pct": 8,
+      "top_2pct": 6,
+      "top_3pct": 7,
+      "days": 12
+    },
+    "august_12": {
+      "outcome_coverage": 0.911402,
+      "top_1pct_net_bps_per_trade": 47.863953,
+      "top_2pct_net_bps_per_trade": 25.741795,
+      "top_3pct_net_bps_per_trade": 32.556465
+    },
+    "a5_admitted_rows": 0,
+    "portfolio_accepted_rows": 0,
+    "a0_postscore_diagnostic": {
+      "resolved_rows": 29599,
+      "spearman_to_realised_policy_net": 0.046008,
+      "positive_ordering_days": 9,
+      "days": 12,
+      "a0_ranked_top_5pct_net_bps_per_trade": 3.493094,
+      "a0_ranked_top_2pct_net_bps_per_trade": 25.237027,
+      "a0_ranked_top_1pct_net_bps_per_trade": 65.658994,
+      "interpretation": "conservative level/calibration shift with partially preserved ordering; retrospective diagnostic only; no threshold change authorized"
+    },
+    "reason": "All candidates are mapped, but the maximum causal A0 estimate remains below the frozen +50-bps admission floor; diagnostic global daily tails are not executable admission evidence.",
+    "append_only_label_artifact": "data_perp/artifacts/strict_r3_exact_policy_labels_long_aug1_12_append_only_20260813_v2",
+    "daily_report": "data_perp/artifacts/strict_r3_homogeneous28_daily_metrics_long_aug1_12_append_only_complete_20260813_v1/DAILY_FORWARD_METRICS.md",
+    "portfolio_artifact": "data_perp/artifacts/strict_r3_homogeneous28_a5_portfolio_long_aug1_12_append_only_complete_20260813_v1"
+  },
+  "untouched_shadow": {
+    "first_decision_ts": "2026-08-13T12:00:00+00:00",
+    "latest_decision_ts": "2026-08-13T13:00:00+00:00",
+    "reconciliation_predecessor": "data_perp/artifacts/strict_r3_homogeneous28_completegate_reconciliation_hourly_20260813T110000Z_v1",
+    "validation_config": "config/strict_r3_untouched_forward_validation_homogeneous28_completegate_20260813_v4.json",
+    "validation_config_sha256": "eabf58b1201ba63d8b353c1d6647998ee523eca0608f50b397599ec062a12b2d",
+    "checkpoint": "data_perp/artifacts/strict_r3_untouched_homogeneous28_completegate_hourly_20260813T130000Z_v1",
+    "audit": "data_perp/artifacts/strict_r3_untouched_homogeneous28_completegate_shadow_chain_audit_20260813T130000Z_v1",
+    "continuous_hours": 2,
+    "actionable_rows": 201,
+    "complete_base_contract_rows": 198,
+    "mapped_rows": 201,
+    "admitted_rows": 0,
+    "portfolio_accepted_rows": 0,
+    "realized_exit_rows": 0,
+    "minimum_all120_complete_fraction": 0.9693877551020408,
+    "maximum_append_only_numeric_delta": 0.0,
+    "exchange_calls": 0,
+    "order_submission_enabled": false
+  },
+  "untouched_chain_auditor": {
+    "path": "scripts/audit_strict_r3_untouched_shadow_chain.py",
+    "complete_base_rows_require_a5_available": true,
+    "incomplete_base_rows_require_a5_unavailable": true,
+    "incomplete_base_rows_require_admission_and_auction_rejection": true,
+    "evidence_only_outside_inference_runtime_seal": true,
+    "focused_tests_passed": 19
+  },
+  "promotion_review_thresholds": {
+    "minimum_continuous_hours": 168,
+    "minimum_portfolio_accepted_rows": 30,
+    "minimum_realized_exit_rows": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0.0,
+    "automatic_exchange_enablement": false
+  },
+  "production_authorized": false,
+  "eligible_for_promotion_review": false,
+  "remaining_gate": "Accumulate at least 168 continuous untouched hours, 30 portfolio-accepted entries, and 20 resolved exits under this exact sealed bundle; then perform explicit promotion review. Current causal EV admission correctly admits nothing while mapped expected net remains below +50 bps."
+}

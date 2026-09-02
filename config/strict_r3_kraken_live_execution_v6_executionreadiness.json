@@ -1,0 +1,29 @@
+{
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "exchange_id": "krakenfutures",
+  "side": "long",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v11_executionreadiness_robust21_mc1_d2_adaptive_exit_v1.json",
+  "inference_bundle_sha256": "bed2eb8a5b1b989b92de71b21f1e018fa4de0b34350117f79e6148aec3f36fbf",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 900,
+  "scheduled_validation_minute": 5,
+  "require_orchestration_completion_inside_decision_window": true,
+  "late_source_policy": "no_new_entries_for_the_hour; preserve_and_advance_existing_exit_state; never_score_after_900_seconds",
+  "maximum_exit_slippage_bps": 50.0,
+  "order_submission_authorized": false,
+  "activation_authorization": null,
+  "activation_authorization_sha256": null,
+  "activation_rule": "requires_explicit_post-promotion contract reseal and initialized flat live state",
+  "entry_order": "market_inside_canonical_decision_window; candidate executability and accepted-entry state consume the same timestamp-exact decision_open plus signal-time Wilder14 ATR lineage; 15m open primary and official Kraken 1h missing-cell fallback; ATR strictly frozen 15m",
+  "protective_stop": "exchange_side_reduce_only_before_entry_acceptance",
+  "trailing_contract": "fixed_atr_gap_from_frozen_simple_policy_optimiser",
+  "adaptive_exit_role": "activation_only_next_completed_15m_bar",
+  "failure_policy": "fail_closed",
+  "runtime_code_sha256": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "f2390d4b0469d149d677e6ea0de7adb5c9dfb3792f73c65156f04a0c80c6a014",
+    "scripts/execute_strict_r3_kraken_live.py": "e8708370f93d52fa109c5f8246cb0534fcab3fdd1702d095b4f6a469b32747a7",
+    "scripts/initialize_strict_r3_kraken_live_state.py": "9b4c26b91b2a13509f4a49a9acb79d0f405864aa84bd08c802b61b9085cd8ee8"
+  }
+}

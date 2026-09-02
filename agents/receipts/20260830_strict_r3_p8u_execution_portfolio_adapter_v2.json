@@ -1,0 +1,36 @@
+{
+  "task": "strict-r3-p8u-preproduction-execution-adapter-v2",
+  "scope": "Rebound the deterministic P8U no-order portfolio-intent adapter to the current v37 immutable preproduction bundle. This receipt does not authorize exchange access or order submission.",
+  "changed_paths": [
+    "config/strict_r3_p8u_execution_portfolio_adapter_preproduction_20260830_v2.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "causality": {
+    "order_submission": false,
+    "exchange_io": false,
+    "input": "hash-verified target-free staged score commit",
+    "admission": "independent BCF and Current MC1 expected bps each at least 50",
+    "priority": "BCF MC1 expected bps",
+    "state": "persisted confirmed positions and pending intents only"
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest tests/test_p8u_execution_portfolio_adapter.py -q",
+      "P8UExecutionContract.load(config/strict_r3_p8u_execution_portfolio_adapter_preproduction_20260830_v2.json)",
+      "_verify_bundle(v2): verified 46 v37 artifact hashes; order_submission=false"
+    ]
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

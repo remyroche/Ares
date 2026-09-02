@@ -1,0 +1,26 @@
+{
+  "task": "strict-r3-p8u-september-mc1-rollover-coverage-guard",
+  "scope": "Strengthens the six-month prequential dual-MC1 package builder so a partial final training month cannot be treated as a complete calendar month. This is offline package construction only; it has no exchange, order, policy-execution, or portfolio side effect.",
+  "changed_paths": [
+    "scripts/run_strict_r3_p8u_dual_mc1_prequential_v2.py",
+    "tests/test_run_strict_r3_p8u_dual_mc1_prequential_v2.py"
+  ],
+  "contract": {
+    "training_window": "six calendar months before the held package month",
+    "minimum_month_hourly_coverage": 0.995,
+    "terminal_calendar_day_required": true,
+    "isolated_source_gaps": "preserved as missing target-free rows; no later-value reconstruction"
+  },
+  "current_preflight": {
+    "held_month": "2026-09",
+    "training_months": ["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"],
+    "base": "blocked: 2026-08 coverage=87.0968%, terminal_day_present=false",
+    "under": "blocked: 2026-08 coverage=87.0968%, terminal_day_present=false",
+    "verdict": "fail_closed; do not fit or seal a September package until the score and resolved-label ledgers are complete"
+  },
+  "validation": {
+    "command": "python3 -m pytest -q tests/test_run_strict_r3_p8u_dual_mc1_prequential_v2.py tests/test_p8u_mc1_selector.py",
+    "result": "6 passed"
+  },
+  "live_authority": false
+}

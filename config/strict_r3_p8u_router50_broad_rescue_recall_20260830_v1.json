@@ -1,0 +1,29 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_router_conditioned_head_retrain_20260830_v3_router50.json",
+    "sha256": "5429da597f76423c8a5f4756f73764cb86d9c29bc78f90cbd26fc288193c4747"
+  },
+  "schema_version": "strict_r3_p8u_router50_broad_rescue_recall_v1",
+  "scope": "offline-only strict-OOF Router Recall@50 rescue and Router/P8U blend ablation; no canonical, admission, portfolio, execution, or live change",
+  "router": {
+    "retained_fraction": 0.5,
+    "definition": "timestamp-local top-50% of the full target-free candidate universe, with deterministic candidate-id tie-breaking"
+  },
+  "p8u": {
+    "training_population": "all strictly prior-resolved label-valid rows; P8U is trained broadly so it can score and rescue candidates outside the Router top-50%",
+    "geometry": "reuse each outer fold's immutable source NMF bundle exactly; no geometry fit, alignment, or head-HPO is rerun",
+    "score_normalization": "within-timestamp deterministic percentile rank, computed target-free independently for Router and P8U before blending"
+  },
+  "evaluation": {
+    "retained_fraction": 0.5,
+    "rescue_router_shares": [1.0, 0.95, 0.9, 0.8],
+    "blend_p8u_weights": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 0.95, 1.0],
+    "primary_metrics": ["recall_gt_50", "recall_gt_100", "recall_gt_200"],
+    "secondary_economics": ["selected_mean_net_bps", "selected_cvar10_net_bps", "selected_hit_gt_50", "positive_economic_mass_recall"],
+    "selection_rule": "all arms retain exactly the same timestamp-local 50% capacity; rescue P8U choices are taken only from the non-Router-selected remainder"
+  },
+  "controls": {
+    "matched_generic_broad_probe": true,
+    "selection": "no arm is promoted or selected on held results; pooled and per-quarter metrics are reported for falsification only"
+  }
+}

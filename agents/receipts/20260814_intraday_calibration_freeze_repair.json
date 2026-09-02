@@ -1,0 +1,46 @@
+{
+  "task": "strict-r3-intraday-calibration-freeze-repair",
+  "status": "passed_and_restarted_immutable_chain",
+  "detected_at": "2026-08-14T01:00:00Z",
+  "finding": {
+    "failed_checkpoint": "data_perp/artifacts/strict_r3_schema_v6_live_chain_reconciliation_v5_20260814T010000Z",
+    "failed_check": "daily_calibration_update_cadence",
+    "cause": "an intraday source refresh made 144 already-resolved AR rows newly labelable; the runtime ledger was rebuilt from mutable sources every hour",
+    "causality": "labels remained strictly prior to the UTC day, but the stronger one-calibration-vintage-per-day invariant was violated"
+  },
+  "repair": {
+    "policy": "rebuild the resolved calibration ledger only at 00:00 UTC; copy it byte-for-byte on every later hour of the same day",
+    "changed_files": [
+      "scripts/assemble_strict_r3_runtime_resolved_ledger.py",
+      "scripts/run_strict_r3_shadow_cycle.py",
+      "scripts/run_strict_r3_hourly_shadow.py",
+      "tests/test_assemble_strict_r3_runtime_resolved_ledger.py",
+      "tests/test_run_strict_r3_shadow_cycle.py",
+      "tests/test_run_strict_r3_hourly_shadow.py",
+      "config/strict_r3_inference_bundle_long_20260801_v6_robust21_mc1_d2_adaptive_exit_v1.json",
+      "config/strict_r3_kraken_live_execution_v1.json",
+      "config/strict_r3_schema_v6_live_promotion_20260814_v1.json",
+      "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+    ],
+    "resealed_bundle_sha256": "85739214ca748ae1d1fe040b67f35d434c382e1a2941ea5c46fe3832dd1ae509"
+  },
+  "verification": {
+    "tests": "36 passed",
+    "repaired_checkpoint": "data_perp/artifacts/strict_r3_schema_v6_live_chain_reconciliation_v6_20260814T010000Z",
+    "live_hour_audit": "data_perp/artifacts/strict_r3_schema_v6_live_hour_audit_20260814T010000Z_v2",
+    "exit_replay_audit": "data_perp/artifacts/strict_r3_schema_v6_exit_replay_audit_20260814T010000Z_v2",
+    "promotion_audit": "data_perp/artifacts/strict_r3_schema_v6_live_promotion_chain_20260814T010000Z_v2",
+    "runtime_ledger_sha256_previous": "ca5011667d080c3128ff18b5616770aa98380cd8b4ce1b8bddc546549495218a",
+    "runtime_ledger_sha256_repaired": "ca5011667d080c3128ff18b5616770aa98380cd8b4ce1b8bddc546549495218a",
+    "maximum_historical_numeric_delta": 0.0,
+    "feature_completeness": 1.0,
+    "exchange_calls": 0
+  },
+  "promotion_state": {
+    "continuous_hours": 1,
+    "portfolio_accepted_rows": 1,
+    "independently_replayed_exits": 0,
+    "eligible_for_review": false,
+    "production_authorized": false
+  }
+}

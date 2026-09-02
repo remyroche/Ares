@@ -1,0 +1,54 @@
+{
+  "schema": "ares_governed_change_receipt_v1",
+  "timestamp_utc": "2026-08-21T18:22:00Z",
+  "objective": "Allow a bounded 5x new-entry leverage fallback during a brief Kraken Flex-margin or retail-tier data outage without relaxing executable-entry integrity requirements.",
+  "primary_rule": "min(10, 66 / policy_stop_absolute_pct, liquidation_safe_leverage, market_initial_margin_max_leverage)",
+  "fallback_rule": {
+    "maximum_leverage": 5.0,
+    "cached_flex_snapshot_max_age_seconds": 300.0,
+    "equity_haircut": 0.75,
+    "maintenance_uplift": 1.25,
+    "fallback_initial_margin_rate": 0.2,
+    "fallback_maintenance_margin_rate": 0.1,
+    "only_when": [
+      "fresh Kraken Flex margin is unavailable but a valid cached snapshot exists",
+      "or retailMarginLevels is unavailable after a fresh executable preflight"
+    ],
+    "still_fail_closed_when": [
+      "no valid <=300-second Flex snapshot exists",
+      "executable price, quantity, market metadata, or slot margin is missing",
+      "the parent-stop stress projection violates the 1.5x maintenance reserve",
+      "Kraken cannot confirm the requested leverage"
+    ]
+  },
+  "changed_paths": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "ec338d4cd7a4ffe04e4b867d9fa9f4ae657daa254cb7ba387a7f875d62b8646b",
+    "tests/test_strict_r3_rich_live_policy.py": "a020e3a7d6b4789930b5fad9b3440ee361dfe79f52c46287a803ad6bde2887fb",
+    "tests/test_strict_r3_live_asset_limit.py": "d447645b244e7bc5111f1499179ee6225164b66b3162ee4a5abc384cc4704622",
+    "scripts/seal_strict_r3_headroom_fallback_successor.py": "ece3911cd29cf0095932ef115ccd05bfe02ad892d98db5c2c471398f7cc7ec13"
+  },
+  "sealed_artifacts": {
+    "inference_overlay": "config/strict_r3_inference_overlay_long_20260801_v119_bcf_current_dual_liquidation_headroom_5x_fallback.json",
+    "inference_overlay_sha256": "e8cfcc697b1623cf84d7d3a754544740fd5c48a3b6c5954dd39021cb36eba08e",
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260821_v47_v119_liquidation_headroom_5x_fallback.json",
+    "activation_authorization_sha256": "ff7a4b972d5716bb91c6720ae414b1b7059f6da6d76c1bb9d5ab34fc41149a78",
+    "execution_contract": "config/strict_r3_kraken_live_execution_v121_v145_liquidation_headroom_5x_fallback.json",
+    "execution_contract_sha256": "29a02fdaadc642ac23a0f75a82688ccbf9a0550dc8c5265ec2cfc4c6c2fcf1fb",
+    "live_state": "data_perp/live/strict_r3_kraken_live_state_v80_v145_liquidation_headroom_5x_fallback.json"
+  },
+  "validation": {
+    "result": "32 passed in 3.25s",
+    "covers": [
+      "primary stressed maintenance cap",
+      "missing fresh headroom inputs fail closed without fallback",
+      "fallback caps at 5x with a missing retail tier",
+      "cached snapshot is haircut, maintenance-uplifted, and expires after 300 seconds",
+      "existing rich-exit and full-VWAP hard-stop behavior"
+    ],
+    "cache_seed": {
+      "source": "fresh read-only Kraken Flex response",
+      "captured_at": "2026-08-21T18:21:31.973426+00:00",
+      "exchange_write_calls": 0
+    }
+  }
+}

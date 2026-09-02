@@ -1,0 +1,170 @@
+{
+  "schema": "strict_r3_p8u_routed_f72_underf120_research_canonical_v1",
+  "status": "CANONICAL_RESEARCH_STACK_NOT_LIVE",
+  "created_at": "2026-08-28",
+  "side": "long",
+  "scope": "Offline P8U research canonical only. This configuration does not authorize inference, live-stack replacement, execution, exchange I/O, or any deployed-bundle change.",
+  "decision": {
+    "name": "P8U_ROUTER50_F72_UNDERF120_DUAL_MC1",
+    "selection": "CANONICAL_RESEARCH_WINNER",
+    "reason": "Under F120 is the sole downstream coordinate that keeps total contribution effectively flat versus Base-only while improving unit EV, worst-period EV, and maximum drawdown on the matched strict-prequential Apr-Jul 2026 replay.",
+    "replaces_for_future_research": [
+      "F72 Under XENDCG control",
+      "Magnitude coordinate",
+      "Over-confidence coordinate",
+      "Signed-state coordinate",
+      "all multi-Meta blends",
+      "bounded BCF-MC1 interaction demoters",
+      "banded CatBoost EV mapper"
+    ],
+    "does_not_authorize": [
+      "live stack replacement",
+      "exchange execution",
+      "admission threshold retuning",
+      "auction-priority modification"
+    ]
+  },
+  "candidate_and_router": {
+    "router": "P8U",
+    "rule": "exact timestamp-local top 50 percent identity gate",
+    "router_numeric_input_to_base": false,
+    "post_router_base_cutoff": false,
+    "tie_break": "candidate_id ascending",
+    "candidate_contract": "point-in-time, target-free Router50 population"
+  },
+  "base": {
+    "contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+    "model": "CatBoostRanker QueryRMSE",
+    "query": "exact decision timestamp x long side",
+    "target": "canonical rich-policy net bps, clipped then ordinalised into six equal-width classes",
+    "features": {
+      "count": 72,
+      "contract": "frozen P8U causal F72",
+      "selection_receipt": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json"
+    },
+    "weights": "tail_linear_125, renormalised within each timestamp query and clipped to [0.5, 2.0]",
+    "parameters": {
+      "iterations": 2000,
+      "early_stopping_rounds": 30,
+      "max_depth": 5,
+      "learning_rate": 0.06509939203594448,
+      "feature_fraction": 0.80065065628642,
+      "bagging_fraction": 0.7096047498424234,
+      "lambda_l2": 2.2357264515179467,
+      "random_strength": 0.9428901899180999,
+      "random_seed": 1729
+    },
+    "fit": {
+      "train_months": 3,
+      "resolved_label_reserve_days": 28,
+      "complete_query_train_cap": 60000
+    }
+  },
+  "under_meta": {
+    "role": "single conservative Current-family confirmation coordinate; it has no direct auction authority",
+    "name": "xendcg_selected_under_bps100",
+    "target": "unexpected under-confidence relative to the Base-to-EV anchor, thresholded at 100 bps",
+    "model": "LightGBM rank_xendcg",
+    "query": "exact timestamp",
+    "features": {
+      "count": 120,
+      "contract": "data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_selection_20260828_v2/contracts/under_f120.json",
+      "contract_sha256": "bf662742bc72c8a2ccd0fdee21a1f6a354be23e40c64a83b807c2abb9921a900"
+    },
+    "parameters": {
+      "n_estimators": 260,
+      "learning_rate": 0.045,
+      "max_depth": 4,
+      "num_leaves": 15,
+      "min_child_samples": 350,
+      "min_split_gain": 0.001,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.82,
+      "lambda_l1": 0.02,
+      "lambda_l2": 8.0,
+      "lambdarank_truncation": 12,
+      "sigmoid": 1.0,
+      "label_gain": [0, 1, 2, 4, 7, 11, 16, 24]
+    }
+  },
+  "score_families": {
+    "bcf": "Base rank only",
+    "current": "0.75*Base rank + 0.25*weighted Meta rank",
+    "meta_arms": [
+      {
+        "arm": "xendcg_selected_under_bps100",
+        "root": "/Users/remyroche/Documents/Ares/data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_xendcg_f120_20260828_v1",
+        "weight": 1.0
+      }
+    ],
+    "identity": "Base and Under rows must exactly match the frozen Router50 target-free candidate IDs"
+  },
+  "mc1_and_admission": {
+    "maps": "independent strict-prequential Current and BCF MC1 maps, each fitted on three earlier resolved calendar months",
+    "features": [
+      "final_score",
+      "base_rank42",
+      "conditional_consensus_rank",
+      "upstream",
+      "ordinary_shadow_consensus_rank",
+      "correctness_rank"
+    ],
+    "admission": "BCF MC1 expected net >= +50 bps AND Current MC1 expected net >= +50 bps",
+    "auction_priority": "bcf_mc1_expected_bps",
+    "portfolio": "one global chronological constrained auction using the canonical reconciled rich-policy outcome contract"
+  },
+  "causality": {
+    "target_free_score_receipts_required": true,
+    "policy_label_join_after_scores": true,
+    "held_outcomes_never_model_inputs": true,
+    "mc1_labels_resolved_before_held_month": true,
+    "no_pooled_future_rank": true
+  },
+  "sources": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_tail125_base_history_aug25_jul26_successorlabels_20260828_v1/scheme=tail_linear_125/target_free_scores",
+    "under_target_free_root": "data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_xendcg_f120_20260828_v1",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "matched_mc1_replay": "data_perp/artifacts/strict_r3_p8u_meta_fullfeatures_mc1_f120_janjul2026_20260828_v2",
+    "source_sha256": "91ac3d37f060c872897eb6cab2323b6baf38eeeb7ece6cd74e4dd9a56a9fd671"
+  },
+  "matched_evidence": {
+    "period": "2026-04 through 2026-07",
+    "outcome": "canonical reconciled rich-policy net bps",
+    "base_only": {
+      "entries": 3763,
+      "mc1_admitted_rows": 17422,
+      "net_ev_bps_per_trade": 115.16,
+      "total_net_bps": 433350,
+      "worst_month_bps": 65.95,
+      "worst_week_bps": 47.39,
+      "max_drawdown": -0.2832
+    },
+    "under_f120_only": {
+      "entries": 3634,
+      "mc1_admitted_rows": 14074,
+      "net_ev_bps_per_trade": 119.21,
+      "total_net_bps": 433201,
+      "worst_month_bps": 68.28,
+      "worst_week_bps": 50.44,
+      "max_drawdown": -0.2196,
+      "trade_level_sortino_proxy": 0.643
+    },
+    "delta_under_f120_minus_base_only": {
+      "entries": -129,
+      "net_ev_bps_per_trade": 4.05,
+      "total_net_bps": -149,
+      "worst_month_bps": 2.33,
+      "worst_week_bps": 3.05,
+      "max_drawdown_percentage_points": 6.36
+    }
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_live_promotion": [
+      "six or more common post-Meta months under this exact contract",
+      "later untouched forward validation",
+      "inference-parity and execution review",
+      "separate explicit authorization"
+    ]
+  }
+}

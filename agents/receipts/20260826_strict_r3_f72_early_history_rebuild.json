@@ -1,0 +1,23 @@
+{
+  "date": "2026-08-26",
+  "scope": "offline long-only research only; no live inference, exchange, admission, portfolio, or execution mutation",
+  "purpose": "Extend the frozen F72/router causal input history so the requested four-month meta and six-month MC1 evaluation can be run without substituting in-sample or post-date scores.",
+  "producer": {
+    "path": "scripts/materialize_strict_r3_f72_early_router_features_v1.py",
+    "sha256": "c2baeebac8cb8f66b911eb3b336e7a8484990e0f0cb9d72f8f444921e3210bc2"
+  },
+  "contract": {
+    "months": ["2025-01", "2025-02", "2025-03"],
+    "candidate_source": "strict_r3_b0_replacement_target_labels_20260826_v3 identity columns only",
+    "candidate_source_rule": "the two adjacent signal-month identity ledgers are sliced by exact decision timestamp so first-hour boundary candidates are retained; all identity rows are retained, including invalid and unresolved labels; no target, path, policy, or outcome column enters the generated output",
+    "features": "ordered union of immutable F72 B 72-field and immutable full-universe router 30-field contracts, plus causal generation dependencies",
+    "feature_generation": "canonical hourly causal engine over a 90-day trailing context; no minute fallback",
+    "downstream": "router and F72 scoring retain independent strict label-availability, reserve, and OOF gates"
+  },
+  "validation": {
+    "python_compile": "passed",
+    "cli_help": "passed",
+    "output_identity_requirement": "candidate identity set must equal the input identity ledger per month",
+    "output_target_fields": "prohibited"
+  }
+}

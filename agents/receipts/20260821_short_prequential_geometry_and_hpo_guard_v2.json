@@ -1,0 +1,37 @@
+{
+  "receipt_schema": "ares_change_receipt_v1",
+  "timestamp_utc": "2026-08-21T00:00:00Z",
+  "scope": "short P0/F90 strict-prequential base ledger, frozen Geometry/K9, and bounded HPO funnels",
+  "changes": {
+    "target_free_feature_gate": {
+      "rule": "entry-executable candidate requires >= 0.90 finite fraction of frozen F90 fields",
+      "effect": "feature-incomplete rows remain target-free ledger rows with an explicit rejection reason; they are never fit, scored, used as 42-day rank reference, or used as policy-map support",
+      "script_sha256": "0d0411a502a3f7f6164f997624cf414e2ed15e1e6cc25dff98af99e7506884ee"
+    },
+    "geometry": {
+      "definition_window": "2024-10-01T00:00:00Z through 2025-01-01T00:00:00Z",
+      "bundle": "data_perp/artifacts/strict_r3_short_p0_f90_geometry_k9_octdec2024_20260821_v3",
+      "bundle_sha256": "2c93f1690ef36a780f2aa7b5c32b125937827f2e760913ddc3d68b65e24c9262",
+      "monthly_refit": false,
+      "warmup_script_sha256": "5a8f9249c934e1e5fab9411081fe659f49dc4da069e38fcfa38e13476f5e3e96",
+      "fit_script_sha256": "7b7c36b57c406f2b6b9fba1d030ae1491ced2907674a2f688a636600d31934a8"
+    },
+    "hpo_stagnation_stop": {
+      "rule": "stop after 20 completed or pruned trials without a strict objective improvement; failures do not consume the budget and ties do not reset it",
+      "shared_helper_sha256": "03f02657e3ba0f90511c874e2dc6d209650e4b33d67c5d50f4a4a21d7e1d3291",
+      "specialist_hpo_sha256": "69b6ce6c84d9d903a08d51669f3a5d96f7d2c0065e6311558e9495271966ad37",
+      "residual_hpo_sha256": "988a17489e83dff2ccd0de01fce2b95da65563ec4151edc835ce60e842a4ecd1"
+    }
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_short_p0_ledger_feature_gate.py extreme_price_movements/tests/test_residual_lambdarank_hpo_stagnation.py extreme_price_movements/tests/test_short_policy_conversion_hpo_stop.py",
+      "python3 -m py_compile scripts/build_strict_r3_short_p0_prequential_ledger.py scripts/materialize_strict_r3_short_geometry_warmup.py scripts/fit_strict_r3_geometry_k9_v2.py"
+    ],
+    "result": "5 passed; py_compile passed"
+  },
+  "supersedes": [
+    "strict_r3_short_p0_f90_prequential_ledger_2024_geometry_20260821_v4",
+    "strict_r3_short_p0_f90_geometry_k9_octdec2024_20260821_v2"
+  ]
+}

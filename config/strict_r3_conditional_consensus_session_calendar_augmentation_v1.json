@@ -1,0 +1,28 @@
+{
+  "schema": "strict_r3_conditional_consensus_session_calendar_augmentation_v1",
+  "status": "requires_new_feature_selection_and_retrain",
+  "side": "long",
+  "base_candidate_key": "SESSION_CALENDAR_BASE_CANDIDATE_FEATURE_KEYS",
+  "meta_candidate_key": "SESSION_CALENDAR_META_CANDIDATE_FEATURE_KEYS",
+  "causality": {
+    "inputs": ["decision_timestamp"],
+    "cross_sectional_dependency": false,
+    "future_path_dependency": false,
+    "timezone_contract": {
+      "asia": "Asia/Tokyo 09:00 local; all calendar days",
+      "europe": "Europe/Paris 09:00 local; neutral on local weekends",
+      "us": "America/New_York 09:30 local; neutral on local weekends"
+    }
+  },
+  "head_field_augmentations": {
+    "cap60_ordinary": ["day_of_week_sin", "day_of_week_cos", "is_weekend_binary"],
+    "cap60_equal_month": ["day_of_week_sin", "day_of_week_cos", "is_weekend_binary"],
+    "cap80_ordinary": ["hours_from_asia_open_signed_log", "hours_from_europe_open_signed_log", "hours_from_us_open_signed_log", "asia_open_proximity_hours_log", "europe_open_proximity_hours_log", "us_open_proximity_hours_log", "is_weekend_binary", "is_asia_active", "is_europe_active", "is_us_active", "is_europe_us_overlap", "hours_from_us_close_signed_log", "us_close_proximity_hours_log", "market_ret_since_asia_open", "market_ret_since_europe_open", "market_ret_since_us_open", "market_rv_since_current_session_open", "market_open_return_z", "market_open_vol_z"],
+    "cap80_equal_month": ["hours_from_asia_open_signed_log", "hours_from_europe_open_signed_log", "hours_from_us_open_signed_log", "asia_open_proximity_hours_log", "europe_open_proximity_hours_log", "us_open_proximity_hours_log", "is_weekend_binary", "is_asia_active", "is_europe_active", "is_us_active", "is_europe_us_overlap", "hours_from_us_close_signed_log", "us_close_proximity_hours_log", "market_ret_since_asia_open", "market_ret_since_europe_open", "market_ret_since_us_open", "market_rv_since_current_session_open", "market_open_return_z", "market_open_vol_z"]
+  },
+  "activation_contract": {
+    "must_retain": "strict_r3_conditional_consensus_v1.json",
+    "requires": ["feature panel materialisation with all eleven session fields", "new base-feature selection that explicitly considers the registered candidate pools", "new base-contract hash", "retraining every affected conditional consensus head", "a versioned successor consensus bundle"],
+    "does_not_modify": "the sealed live v1 base/consensus bundles"
+  }
+}

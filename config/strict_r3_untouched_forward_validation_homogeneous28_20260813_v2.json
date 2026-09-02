@@ -1,0 +1,40 @@
+{
+  "schema": "strict_r3_untouched_forward_validation_v1",
+  "side": "long",
+  "status": "accruing_shadow_evidence",
+  "freeze_ts": "2026-08-13T08:22:00+00:00",
+  "first_decision_ts": "2026-08-13T09:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_homogeneous28_exact170_reconciliation_hourly_20260813T080000Z_v3",
+  "frozen_universe_rows": 170,
+  "reason": "The prior 07:00 checkpoint used a mixed 42-day historical teacher and 28-day live reserve and is superseded diagnostic evidence. The repaired producer uses one homogeneous physical-28-day prequential teacher/reserve contract. Its exact-170 resolved ledger was regenerated after detecting that an intermediate August batch feature artifact omitted six frozen-universe symbols. The 08:00 v3 reconciliation passes the full shadow contract; untouched evidence restarts at 09:00 UTC.",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v5_homogeneous28_a5_b10_exactpolicy_v1.json",
+    "sha256": "71abbff697728f3fb8192654b6ffeb013fada0a42002dcec1712107f84a1e624"
+  },
+  "portable_ldf_selection": {
+    "path": "config/strict_r3_portable_ldf_selection_20260813.json",
+    "sha256": "11515ee326cecac944829788a5cb76cfabf5efda1a1b876e78314494411dd5fe",
+    "active": false
+  },
+  "portfolio": {
+    "initial_wallet": 1000.0,
+    "initial_open_positions": [],
+    "sizing": "unit_relative_size",
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "promotion_evidence_rules": {
+    "hourly_parity_required": true,
+    "current_features_and_scores_must_be_target_free": true,
+    "outcomes_may_be_attached_only_after_h12_resolution": true,
+    "all_prior_checkpoints_are_reconciliation_only": true,
+    "portfolio_state_must_chain_from_exact_predecessor": true,
+    "no_model_feature_policy_admission_or_sizing_changes_during_interval": true,
+    "minimum_continuous_hours_before_review": 168,
+    "minimum_portfolio_accepted_rows_before_review": 30,
+    "minimum_realized_exit_rows_before_review": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0.0,
+    "automatic_exchange_enablement": false
+  }
+}

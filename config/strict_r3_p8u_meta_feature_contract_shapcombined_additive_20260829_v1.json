@@ -1,0 +1,16 @@
+{
+  "schema": "strict_r3_p8u_meta_additive_feature_contract_v1",
+  "parent_feature_contract": "/Users/remyroche/Documents/Ares/data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1/contracts/m0_parent.json",
+  "additive_state_reliability_fields": [
+    "shap_f72_signed_balance",
+    "shap_f72_positive_total",
+    "shap_f72_contrib__mark_perp_dislocation",
+    "shap_f72_top1_share",
+    "shap_f72_top3_share",
+    "shap_f72_entropy",
+    "shap_f72_abs_total",
+    "shap_f72_negative_abs_total"
+  ],
+  "feature_rule": "append-only combined overlay; the complete frozen 120-field current Meta contract remains present",
+  "provenance": "target-free strict-OOF F72 SHAP panel; stable directional, conditional dislocation, concentration, and contribution-magnitude descriptors only"
+}

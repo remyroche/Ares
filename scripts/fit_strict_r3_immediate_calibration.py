@@ -99,16 +99,31 @@ def main() -> None:
     reference["calibration_activation_ts"] = pd.to_datetime(
         reference["calibration_activation_ts"], utc=True, errors="raise",
     )
+    # Reference-score ledgers retain their own diagnostic label timestamp.
+    # Rename the outcome-side value before the join: calibration validity must
+    # be judged from the canonical policy outcome that supplies ``policy_net``
+    # rather than an ambiguous Pandas ``_x/_y`` collision.
+    outcome_for_join = outcome.loc[:, [
+        "candidate_id", "policy_path_valid", "policy_net_bps",
+        "policy_label_available_ts",
+    ]].rename(columns={
+        "policy_path_valid": "policy_outcome_path_valid",
+        "policy_net_bps": "policy_outcome_net_bps",
+        "policy_label_available_ts": "policy_outcome_label_available_ts",
+    })
     joined = reference.merge(
-        outcome.loc[:, [
-            "candidate_id", "policy_path_valid", "policy_net_bps",
-            "policy_label_available_ts",
-        ]],
+        outcome_for_join,
         on="candidate_id", how="left", validate="many_to_one",
     )
-    joined["policy_label_available_ts"] = pd.to_datetime(
-        joined["policy_label_available_ts"], utc=True, errors="coerce",
+    joined["policy_outcome_label_available_ts"] = pd.to_datetime(
+        joined["policy_outcome_label_available_ts"], utc=True, errors="coerce",
     )
+    # The outcome materialisation is the single supervised substrate.  The
+    # reference ledger can carry prior diagnostic copies of similarly named
+    # fields, but they must never determine calibration validity or targets.
+    joined["policy_path_valid"] = joined["policy_outcome_path_valid"]
+    joined["policy_net_bps"] = joined["policy_outcome_net_bps"]
+    joined["policy_label_available_ts"] = joined["policy_outcome_label_available_ts"]
     reserve_start = joined["calibration_activation_ts"] - pd.to_timedelta(
         args.reserve_days, unit="D",
     )
@@ -117,7 +132,7 @@ def main() -> None:
         & joined["__decision_ts__"].ge(reserve_start)
         & joined["__decision_ts__"].lt(joined["calibration_activation_ts"])
         & joined["policy_path_valid"].fillna(False).astype(bool)
-        & joined["policy_label_available_ts"].lt(joined["calibration_activation_ts"])
+        & joined["policy_outcome_label_available_ts"].lt(joined["calibration_activation_ts"])
     )
     joined = joined.loc[valid].copy()
     joined["stack_is_prequential"] = True
@@ -159,7 +174,7 @@ def main() -> None:
             "reference_rows": int(len(group)),
             "reference_min_decision_ts": group["__decision_ts__"].min(),
             "reference_max_decision_ts": group["__decision_ts__"].max(),
-            "reference_max_label_available_ts": group["policy_label_available_ts"].max(),
+            "reference_max_label_available_ts": group["policy_outcome_label_available_ts"].max(),
             "status": status,
             "error": error,
             "ev_bridge_bundle": None if not manifest else str(directory),

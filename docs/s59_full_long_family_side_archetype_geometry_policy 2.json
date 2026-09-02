@@ -1,0 +1,127 @@
+{
+  "version": "s59_full_long_family_side_archetype_trailing_v1",
+  "created_from": [
+    "s55_short_breakout_pathquality_refine_v1",
+    "s55_short_mixed_pathquality_refine_v1",
+    "s57_long_wide_slow_geometry_ablation_v1"
+  ],
+  "intent": "Promote full long side x regime-family trailing geometry candidates, then evaluate with locked S58 LGBM params without rerunning HPO.",
+  "default": {
+    "short": {
+      "policy_key": "short_default_clean_path",
+      "semantic_role": "short_clean_path_fallback",
+      "confidence": "fallback",
+      "tp_r": 0.7,
+      "sl_r": 1.0,
+      "trail_r": 0.25,
+      "max_bars_to_mfe": 16.0,
+      "max_barrier": 0.05
+    },
+    "long": {
+      "policy_key": "long_default_wideslow_pathquality",
+      "semantic_role": "long_wideslow_path_quality_fallback",
+      "confidence": "fallback",
+      "tp_r": 0.4,
+      "sl_r": 1.0,
+      "trail_r": 0.25,
+      "max_bars_to_mfe": 24.0,
+      "max_barrier": 0.05
+    }
+  },
+  "overrides": [
+    {
+      "side": "short",
+      "archetype": "breakout_impulse",
+      "policy_key": "short_breakout_precision",
+      "semantic_role": "short_breakout_precision_opportunity",
+      "confidence": "promoted",
+      "tp_r": 0.5,
+      "sl_r": 0.75,
+      "trail_r": 0.3,
+      "max_bars_to_mfe": 16.0,
+      "max_barrier": 0.05
+    },
+    {
+      "side": "short",
+      "archetype": "mixed",
+      "policy_key": "short_mixed_clean_path",
+      "semantic_role": "short_mixed_clean_path",
+      "confidence": "promoted",
+      "tp_r": 0.7,
+      "sl_r": 1.0,
+      "trail_r": 0.25,
+      "max_bars_to_mfe": 16.0,
+      "max_barrier": 0.05
+    },
+    {
+      "side": "long",
+      "archetype": "vol_compression",
+      "policy_key": "long_volcompression_wideslow_candidate",
+      "semantic_role": "long_vol_compression_promotable_candidate",
+      "confidence": "promotable_candidate",
+      "source_holdout_ev_weighted_precision": 0.648654,
+      "source_holdout_precision": 0.363636,
+      "source_holdout_mean_net": -0.003808,
+      "tp_r": 0.5,
+      "sl_r": 1.0,
+      "trail_r": 0.2,
+      "max_bars_to_mfe": 24.0,
+      "max_barrier": 0.05
+    },
+    {
+      "side": "long",
+      "archetype": "mixed",
+      "policy_key": "long_mixed_wideslow_tentative",
+      "semantic_role": "long_mixed_tentative_candidate",
+      "confidence": "tentative_candidate",
+      "source_holdout_ev_weighted_precision": 0.656161,
+      "source_holdout_precision": 0.321244,
+      "source_holdout_mean_net": 0.01193,
+      "tp_r": 0.4,
+      "sl_r": 1.5,
+      "trail_r": 0.2,
+      "max_bars_to_mfe": 24.0,
+      "max_barrier": 0.05
+    },
+    {
+      "side": "long",
+      "archetype": "breakout_impulse",
+      "policy_key": "long_breakout_diagnostic_candidate",
+      "semantic_role": "long_breakout_diagnostic_candidate",
+      "confidence": "diagnostic_candidate",
+      "source_holdout_ev_weighted_precision": 0.567733,
+      "source_holdout_precision": 0.472222,
+      "source_holdout_mean_net": 0.00362,
+      "tp_r": 0.6,
+      "sl_r": 1.25,
+      "trail_r": 0.15,
+      "max_bars_to_mfe": 24.0,
+      "max_barrier": 0.05
+    },
+    {
+      "side": "long",
+      "archetype": "dirty_avoid",
+      "policy_key": "long_dirtyavoid_sparse_questionable",
+      "semantic_role": "long_dirty_avoid_questionable_opportunity",
+      "confidence": "questionable_sparse_candidate",
+      "source_holdout_ev_weighted_precision": 0.934423,
+      "source_holdout_precision": 0.6,
+      "source_holdout_mean_net": 0.020142,
+      "tp_r": 0.4,
+      "sl_r": 1.0,
+      "trail_r": 0.25,
+      "max_bars_to_mfe": 24.0,
+      "max_barrier": 0.05
+    }
+  ],
+  "unpromoted": [
+    {
+      "side": "long",
+      "archetype": "mean_reversion",
+      "policy_key": "long_mean_reversion_unpromoted",
+      "semantic_role": "insufficient_evidence",
+      "confidence": "insufficient_evidence",
+      "fallback_policy_key": "long_default_wideslow_pathquality"
+    }
+  ]
+}

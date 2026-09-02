@@ -1,0 +1,66 @@
+{
+  "schema": "strict_r3_economic_recall_router_ae_config_v1",
+  "scope": "research-only strict-OOF base-router ablation; does not update live inference, consensus, MC1, admission, portfolio, or execution",
+  "side": "long",
+  "feature_contract": {
+    "source": "strict_r3_enhanced_base_threeway_targetfree_20260824_v1",
+    "field_count": 120,
+    "sha256": "b2c2725813d30c02ee298f82292d848d0e1133eb01be3f1398003163523ec2a1",
+    "rule": "only frozen causal base fields; no score, policy, outcome, path, MFE, MAE, or label-availability field may enter model inputs"
+  },
+  "supervision": {
+    "policy": "canonical reconciled rich-policy net/gross labels",
+    "path": "strict_r3_o3v2_recall_router_aux_labels_20240201_20260731_20260825_v3",
+    "validity": "both policy_path_valid and aux_path_valid; invalid rows are excluded",
+    "availability": "both label timestamps must be strictly earlier than the pre-held reserve start",
+    "horizon": "12 hours"
+  },
+  "main_target_candidates": {
+    "P1": [0, 50, 100, 150, 300],
+    "P2": [25, 50, 100, 200, 400],
+    "P3": [50, 75, 125, 200, 350],
+    "P4": [0, 100, 200, 300, 500],
+    "P7": [-200, 0, 50, 100, 200]
+  },
+  "replacement_auxiliary_groups": {
+    "rule": "A-E replaces all previous auxiliary target families for this ablation; former B0/efficiency/timing targets are excluded",
+    "A": ["reach_2atr_before_adverse", "reach_3atr_before_adverse", "reach_4atr_before_adverse", "reach_6atr_before_adverse"],
+    "B": ["time_to_first_2atr_mfe_quantile20", "time_to_first_3atr_mfe_quantile20", "time_to_first_50bps_quantile20", "time_to_first_100bps_quantile20"],
+    "C": ["clipped_mfe_atr_cap6", "clipped_mfe_bps_cap400", "clipped_positive_policy_gross_cap400"],
+    "D": ["mfe_over_path_length", "mfe_over_abs_mae"],
+    "E": ["adverse3_before_2atr", "adverse4_before_3atr", "severe_policy_loss_before_2atr_mfe"],
+    "authority": "primary 50%; retained auxiliary groups share the remaining 50% equally; E ranks are inverted because they model adverse probability"
+  },
+  "fit": {
+    "objective": "lambdarank",
+    "query": "exact decision timestamp",
+    "query_weighting": "each timestamp has total loss weight one",
+    "train_months": 6,
+    "reserve_days": 28,
+    "train_query_cap": 240000,
+    "n_jobs": 4,
+    "ranker": {
+      "n_estimators": 260,
+      "learning_rate": 0.045,
+      "max_depth": 4,
+      "num_leaves": 15,
+      "lambdarank_truncation_level": 20,
+      "subsample": 0.82,
+      "feature_fraction": 0.82,
+      "l1": 0.05,
+      "l2": 6.0,
+      "seed": 1729,
+      "deterministic": true
+    }
+  },
+  "evaluation": {
+    "aggregation": "equal decision-timestamp average: each timestamp is one evaluation unit regardless of candidate count, selected count, or opportunity mass; trade-weighted aggregates are disclosure-only",
+    "route_fractions": [0.3, 0.4, 0.5],
+    "primary_metric": "0.25*ER50@30 + 0.35*ER50@40 + 0.40*ER50@50, each component averaged equally over decision timestamps",
+    "secondary": ["timestamp_mean_winner_recall_50bps", "timestamp_mean_winner_recall_100bps", "timestamp_mean_net_ev_bps_per_trade", "worst_timestamp_aggregated_fold"],
+    "disclosure_only": ["selected_rows", "net_sum_bps", "trade_weighted_net_ev_bps_per_trade"],
+    "hpo_selection_rule": "any future target, gain, objective, truncation, history, weighting, or parameter comparison must optimize the primary metric and timestamp-averaged secondary metrics; pooled candidate/trade totals cannot choose a winner",
+    "full_contract_gate": "run A/B/C/D/E leave-one-group-out only if the full suite beats primary-only on the predeclared primary metric; a removed group is retained when performance decreases and dropped when it improves or is stable"
+  },
+  "promotion": "development selection only; requires later frozen score, consensus, MC1, dual-admission, and constrained-portfolio validation before any challenger can be promoted"
+}

@@ -1,0 +1,52 @@
+{
+  "task": "strict-r3-validated-hourly-entry-open-repair",
+  "status": "passed",
+  "scope": "long-only live candidate actionability; no model, target, score, admission, portfolio or exit-policy change",
+  "finding": "The official one-hour fallback accepted zero-volume OHLC placeholders as decision-open prices, causing false >1% live price-move rejections.",
+  "repair": {
+    "15m_primary": "unchanged",
+    "hourly_fallback": "only a timestamp-exact positive-volume official trade candle may fill a missing 15m entry open",
+    "book_guard": "hourly fallback also requires timestamp-exact official bid/ask and no more than 100 bps deviation from its midpoint",
+    "failure_mode": "row-local fail closed",
+    "lineage_fields": [
+      "decision_open_source",
+      "decision_open_hourly_volume",
+      "decision_book_bid",
+      "decision_book_ask",
+      "decision_open_book_deviation_bps",
+      "decision_open_fallback_valid"
+    ]
+  },
+  "affected_2026_08_15T1400Z_candidates": [
+    "BERA/USD:USD",
+    "DEEP/USD:USD",
+    "LQTY/USD:USD",
+    "ONE/USD:USD",
+    "ORCA/USD:USD"
+  ],
+  "affected_hour_result": "All five are now explicitly rejected as entry_hourly_fallback_zero_volume before scoring and live preflight.",
+  "tests": {
+    "command": "python3 -m pytest -q tests/test_strict_r3_feature_source_contract.py tests/test_materialize_strict_r3_target_free_hourly_grid_v2.py tests/test_strict_r3_live_execution.py tests/test_backfill_kraken_historical_funding_rates_api.py",
+    "result": "49 passed",
+    "coverage": [
+      "zero-volume official fallback remains unavailable",
+      "raw 15m still takes precedence",
+      "decision book is timestamp exact",
+      "stale fallback rejection has an explicit audit reason",
+      "live execution and concurrent funding-refresh regressions pass"
+    ]
+  },
+  "runtime_hashes": {
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "ba75eefe74a3543782eb88a478c7e1c53a9f56b4f57c30852fc0189dfc03633d",
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "2b122be6b156ffdbf88cf70590d49a90312b3b11d4d524fb73b680515e6f1d1b"
+  },
+  "sealed_live_contract": {
+    "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v44_validated_entryopen_reseal.json",
+    "inference_bundle_sha256": "8fd1571d2c920572ab37381d8c08477a4afe126d517bf524fef3f43399b666a5",
+    "execution_contract": "config/strict_r3_kraken_live_execution_v22_v44_validated_entryopen.json",
+    "execution_contract_sha256": "3eaf2b71452727fb4af851113ab29253245c529d75e35eb6dc37d4814c8f5cb9",
+    "authorization": "config/strict_r3_kraken_live_activation_authorization_20260815_v9_v44_validated_entryopen.json",
+    "authorization_sha256": "1912f4d21b669bb07214b3e46ad7ecc8f0a79a996d6b4eaa81d45d9de5426518"
+  },
+  "causality": "No future bars, labels, or outcomes are read. The fallback is validated at the decision timestamp using only contemporaneous trade and official-book fields."
+}

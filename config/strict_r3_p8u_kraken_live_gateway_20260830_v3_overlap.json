@@ -1,0 +1,43 @@
+{
+  "schema": "strict_r3_p8u_kraken_live_gateway_v1",
+  "purpose": "Explicit, hash-bound live gateway for the frozen P8U Router50/F72/Under/dual-MC1 long-only stack. v3 retains the v2 immediate entry and all executable risk gates; its paired session overlaps independent public-source refreshes after full 15-minute coverage succeeds.",
+  "side": "long",
+  "exchange_id": "krakenfutures",
+  "order_submission": true,
+  "maximum_decision_age_seconds": 900,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 100.0,
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_preproduction_bundle_20260830_v58_ffd_safe_causal_tail_research",
+    "sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c"
+  },
+  "no_order_adapter": {
+    "path": "config/strict_r3_p8u_execution_portfolio_adapter_preproduction_20260830_v4_v58_coverage.json",
+    "sha256": "1039becdd09dfa8b2fb702d0f0cafe0cd98ebf225c87a8f52989746fa257e309"
+  },
+  "policy": {
+    "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+    "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+  },
+  "activation_path": "config/strict_r3_p8u_kraken_live_activation_20260830_v3_overlap.json",
+  "gateway_runtime": {
+    "path": "scripts/run_strict_r3_p8u_live_gateway.py",
+    "sha256": "b7ad90572a6a19017ad1d6a773468c9e0bb1d6b75c9c9d1ef0d058910cf843f2"
+  },
+  "execution": {
+    "entry_delay_minutes": 0,
+    "minimum_execution_adjusted_ev_bps": 50.0,
+    "execution_adjusted_ev_formula": "bcf_mc1_expected_net_bps - adverse_delay_gap - max(80bps, 1.2*full_live_spread_bps + 2*entry_impact_bps) - 10bps buffer",
+    "price_gap_guard_bps": 100.0,
+    "protective_stop": "immediate reduce-only stop adjusted to current full-size exit VWAP; rich policy then advances on completed 1-minute bars"
+  },
+  "portfolio": {
+    "max_concurrent_positions": 8,
+    "max_new_entries_per_decision": 2,
+    "margin_budget_fraction": 0.8,
+    "margin_slot_fraction": 0.1,
+    "leverage": 7.0,
+    "auction_priority": "bcf_mc1_expected_bps after both BCF and current MC1 >= 50bps"
+  },
+  "failure_mode": "fail_closed; no stale execution, no artifact mismatch, no unknown exchange position, no missing exact decision-open/ATR lineage"
+}

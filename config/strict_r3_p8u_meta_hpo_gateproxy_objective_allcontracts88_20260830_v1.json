@@ -1,0 +1,68 @@
+{
+  "schema": "strict_r3_p8u_meta_hpo_gateproxy_objective_v2",
+  "scope": "offline Meta-HPO and Meta-feature-selection shortlist only; no score, admission, portfolio, live, or exchange authority",
+  "objective": {
+    "name": "GateProxy_P0_Ridge",
+    "meaning": "Relative predicted downstream benefit of a Meta trial to the frozen dual-MC1 +50-bps gate, trained on matched strict-OOF six-month MC1 replays",
+    "target": "dgate_shrunk",
+    "surrogate": "P0_ridge",
+    "model_artifact": "data_perp/artifacts/strict_r3_p8u_meta_downstream_proxy_allcontracts88_20260830_v1/models/dgate_shrunk__P0_ridge.joblib",
+    "model_sha256": "3d8d07385d72ac6002e5b0c7e5f3800b6a6cef363dfbfd7251bfedbfcb03adb3",
+    "score_interpretation": "relative shortlist rank only; it is not a bps estimate, live feature, admission threshold, or promotion decision",
+    "descriptor_fields": [
+      "residual_ic",
+      "conditional_mi_given_base",
+      "ic_base_5_10",
+      "ic_base_10_20",
+      "ic_base_20_30",
+      "meta_top1_ev",
+      "meta_top2_ev",
+      "top1_candidate_only_minus_control_only_ev",
+      "top2_candidate_only_minus_control_only_ev",
+      "false_upgrade_ev",
+      "useful_upgrade_ev",
+      "base_meta_rank_correlation",
+      "median_abs_rank_correction",
+      "weekly_q10",
+      "probe_delta_top2_ev",
+      "probe_delta_admitted_utility"
+    ]
+  },
+  "ground_truth_contract": {
+    "trials": 88,
+    "trial_feature_contracts": {
+      "frozen_under_f120": 54,
+      "shapstable_f123": 19,
+      "shapcontext_f125": 9,
+      "shapcombined_f128": 6
+    },
+    "mc1": "separate six-complete-month Current and BCF maps; prior-21-day resolved shift; policy labels joined only after target-free scores",
+    "gate": "real dual Current MC1 >= +50 bps and BCF MC1 >= +50 bps",
+    "priority": "fixed BCF MC1 coordinate; Meta changes only the Current/gate coordinate",
+    "label": "reliability-shrunk weekly-block-bootstrap downstream gate benefit; portfolio metrics are confirmation only"
+  },
+  "selection_protocol": {
+    "rank_trials_by": "GateProxy_P0_Ridge descending",
+    "support_aware_model_choice": "maximum minimum grouped-holdout Spearman, then mean across target family, loss, feature contract, and era",
+    "minimum_trials_per_individual_holdout_group": 6,
+    "selection_proposal": "top 3 predicted GateProxy trials, plus one high-surrogate-disagreement exploration and one diverse descriptor control when a new MC1 batch is budgeted",
+    "expensive_confirmation": "every proposed trial must receive a fresh strict matched six-month MC1 replay before any advancement",
+    "feature_selection": "rank feature additions/removals/swaps by Delta GateProxy_P0, but confirm the top alternatives through fresh MC1",
+    "priority_proxy": "diagnostic only; it has no HPO authority"
+  },
+  "portability_evidence": {
+    "target_family_mean_spearman": 0.7341158361228821,
+    "loss_mean_spearman": 0.5198204442078833,
+    "feature_contract_mean_spearman_supported": 0.648843449389626,
+    "era_mean_spearman": 0.5253836309628639,
+    "minimum_supported_validation_mean_spearman": 0.5198204442078833,
+    "selection_note": "P0 Ridge wins maximin support-qualified Spearman (0.519820) over P3 Pairwise (0.462362). P3 has the higher mean (0.632907 versus 0.607041), but is not selected under the frozen maximin rule.",
+    "f128_status": "F128 has six independently MC1-labelled trials and therefore participates in feature-contract portability selection. Six trials is the predeclared minimum support, not proof of universal F128 superiority."
+  },
+  "forbidden": [
+    "Automatic Meta-trial promotion from a GateProxy score",
+    "Use of any proxy output as a live trading, admission, portfolio, or execution input",
+    "Use of portfolio PnL alone as a proxy training target",
+    "Use of PriorityProxy for HPO authority"
+  ]
+}

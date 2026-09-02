@@ -1,0 +1,39 @@
+{
+  "schema": "strict_r3_kraken_live_activation_authorization_v2_manual_override",
+  "authorized": true,
+  "manual_promotion_override": true,
+  "manual_override_authorized_by_user": true,
+  "authorization_source": "explicit user authorization in the active Codex objective to move to live Kraken perps, long side only, after exact parity verification",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "stale_signal_execution_prohibited": true,
+  "authorized_after": "2026-08-15T07:00:00+00:00",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v39_top30_observed_entry_cell.json",
+  "inference_bundle_sha256": "4cc5f422991e209b0520541e5934f5ee715af4a75e16c0981365b80c732d7baf",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "promotion_audit": "data_perp/artifacts/strict_r3_schema_v39_promotion_chain_audit_20260815T070000Z_v2_reconciled/run_manifest.json",
+  "promotion_audit_sha256": "9f140959228ca2a5266bb670b0140e216804ebb758472c25fff75ac4515cc635",
+  "overridden_failed_promotion_checks": [
+    "continuous_hours",
+    "portfolio_accepted_rows",
+    "realized_exit_rows"
+  ],
+  "preserved_gates": [
+    "feature_completeness",
+    "append_only_parity",
+    "exchange_calls_zero",
+    "all_exits_independently_replayed",
+    "all_hours_independently_replayed",
+    "current_replay_within_0_01pct",
+    "all_current_replay_input_lineage_exact"
+  ],
+  "risk_acknowledgements": [
+    "forward-duration, accepted-entry-count, and resolved-exit-count promotion gates are knowingly overridden",
+    "only fresh decisions inside the frozen 900-second window may be submitted",
+    "Kraken Futures long side only",
+    "7x leverage, 80-percent margin cap, SimplePolicyOptimiser parent, Adaptive Exit V1, top-30 base routing, Robust-21 telemetry, MC1_d2 +50-bps admission, and portfolio auction remain unchanged",
+    "every live hour requires exact current replay, live-hour audit, runtime checkpoint, and independent exit replay when exits exist",
+    "missing timestamp-by-symbol inputs fail closed for that row",
+    "the non-flat BB state is preserved exactly through the reviewed runtime-successor migration"
+  ]
+}

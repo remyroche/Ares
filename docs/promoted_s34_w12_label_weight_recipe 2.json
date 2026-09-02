@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "s34_exec_guard_broad_policy_w12_timestamp_balanced_stage3_v1",
+  "stage": "base",
+  "label": {
+    "label_modifier_strength": 0.0
+  },
+  "weight": {
+    "base_weight_power": 0.0,
+    "weight_modifier_strength": 0.0,
+    "class_rebalance_strength": 0.0,
+    "recency_half_life_days": 0.0,
+    "concurrency_penalty": 0.0,
+    "utility_tail_rank_strength": 1.0,
+    "utility_tail_rank_power": 4.0,
+    "utility_tail_rank_base": 0.5,
+    "utility_tail_rank_scale": 4.0,
+    "timestamp_balance_strength": 1.0
+  },
+  "generator": {
+    "policy_net_label_center": 0.0,
+    "policy_net_label_temperature": 0.012,
+    "policy_net_label_min_std": 1e-8,
+    "policy_net_label_min_finite_frac": 0.98,
+    "policy_net_capped_label_cost": 0.003
+  },
+  "provenance": {
+    "source": "label_feature_store_model_smoke_first_touch_timeout_capped_ranking_stage3_v1",
+    "report": "data_perp/reports/label_feature_store_model_smoke_first_touch_timeout_capped_ranking_stage3_v1/label_feature_store_model_smoke.md",
+    "candidate": "S34_exec_guard_broad_policy::W12_tail_timestamp_balanced",
+    "required_label_ablation_mode": "s34",
+    "promoted_weight_arm": "W12_tail_timestamp_balanced",
+    "proxy_oos_periods": [
+      "2026-04",
+      "2026-05",
+      "2026-06"
+    ],
+    "note": "Incumbent comparator for the capped-label walk-forward gate."
+  }
+}

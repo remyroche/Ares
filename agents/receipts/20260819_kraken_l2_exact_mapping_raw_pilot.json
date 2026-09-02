@@ -1,0 +1,72 @@
+{
+  "task": "kraken-l2-exact-mapping-and-raw-pilot-acquisition",
+  "scope": "Build an exact frozen-universe Kraken-perpetual to Tardis Kraken-Spot mapping and download a bounded immutable raw pilot. No live-trading, canonical exit-policy, model, admission, or execution configuration was read for mutation or changed.",
+  "source_universe": {
+    "path": "data_perp/artifacts/strict_r3_schema_v2_target_free_long_aug1_7_current_spread_20260812_v2/target_free_candidate_population.parquet",
+    "sha256": "74303ff25fbc15b80a392f630345f04200ebdc942f8d3b49e029f3ce42bc56fa",
+    "symbols": 170
+  },
+  "mapping": {
+    "rule": "only exact BASE/USD:USD perpetual -> BASE/USD spot, followed by exact membership in official Tardis Kraken Spot metadata; no aliases, quote conversions, or fuzzy matches",
+    "mapped_symbols": 136,
+    "unmapped_symbols": 34,
+    "mapping_path": "data/execution/tardis/manifests/kraken_spot_exact_mapping_20260819.csv",
+    "mapping_sha256": "e82864e6836a7293317babed46bb11816df09d9116cf98b7688cbe93366ec476",
+    "audit_path": "data/execution/tardis/manifests/kraken_spot_exact_mapping_20260819_audit.parquet"
+  },
+  "official_metadata": {
+    "url": "https://api.tardis.dev/v1/exchanges/kraken",
+    "immutable_path": "data/execution/tardis/manifests/tardis_kraken_metadata_20260819.json",
+    "sha256": "56fc1a47e147aa756cae7ed80c4493ca256a0bb8d07a5b617fb36fa30753e5d1"
+  },
+  "raw_pilot": {
+    "sample_date": "2025-01-01",
+    "symbols": ["ETH/USD", "SOL/USD", "XRP/USD"],
+    "transport": "bounded direct Tardis dataset URL with 120-second request limit, gzip validation, SHA-256 receipt, and atomic promotion",
+    "downloaded": {
+      "incremental_book_L2": 3,
+      "trades": 3,
+      "book_snapshot_5": 3
+    },
+    "integrity": "all nine promoted .csv.gz files passed gzip -t",
+    "l2_and_trade_status_manifest": "data/execution/tardis/manifests/kraken_free_pilot_20250101_download_status.parquet",
+    "l2_and_trade_status_sha256": "5cc8158919250d1180c260d30d63414095ac16a621d64b0edf851eaadcd1c49c",
+    "snapshot_status_manifest": "data/execution/tardis/manifests/kraken_book_snapshot5_pilot_20250101_download_status.parquet",
+    "snapshot_status_sha256": "ce6d14402ca17199fe4484aa57c97fb9fe5ea778ff461d0c9f52f2f4218a63ed",
+    "superseded_failures": "Three initial optional snapshot_5 requests failed because the official datatype is book_snapshot_5. The manifest now guards per-symbol official datatypes and the replacement book_snapshot_5 manifest downloaded all three files."
+  },
+  "correctness_repairs": [
+    "Tardis integer timestamps are parsed as microseconds rather than Pandas default nanoseconds.",
+    "Compact state materialisation retains the final complete state per minute; it avoids per-tick depth/VWAP projections.",
+    "The complete book remains source-ordered, snapshot-reset, atomic by local timestamp, and unavailable before a valid snapshot."
+  ],
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q tests/execution",
+      "python3 -m py_compile src/execution/*.py scripts/execution/*.py",
+      "gzip -t on each nine raw pilot files"
+    ],
+    "result": "10 focused tests passed; compile and all gzip integrity checks passed"
+  },
+  "changed_paths": [
+    "src/execution/tardis_book.py",
+    "scripts/execution/build_tardis_free_manifest.py",
+    "scripts/execution/build_tardis_kraken_spot_mapping.py",
+    "scripts/execution/download_tardis_kraken_free.py",
+    "scripts/execution/build_kraken_execution_states.py",
+    "scripts/execution/normalize_tardis_book_snapshot5.py",
+    "docs/KRAKEN_L2_EXECUTION_RISK_RESEARCH.md",
+    "tests/execution/test_tardis_book.py"
+  ],
+  "file_hashes": {
+    "src/execution/tardis_book.py": "1697c511be18e6be984299ec2c34d5472751a4d3adf889011453dce192adb137",
+    "scripts/execution/build_tardis_free_manifest.py": "4c426d16c6ce653fac102440bb6fa0be72931d8fc15876dd9c901ce9bce6b096",
+    "scripts/execution/build_tardis_kraken_spot_mapping.py": "1a5d6419f17d81072627c6cf83c32b3c0912258a13d01b4edace588d7c9c73ac",
+    "scripts/execution/download_tardis_kraken_free.py": "1c81903431ee0049914925b9cb8281746d44d2b73dcd2a3ddd8ab6c655f57238",
+    "scripts/execution/build_kraken_execution_states.py": "4a5d436bc06dc1ff249645861d69804d94c50aa98b09d6c6382e4b42ad63bbfc",
+    "scripts/execution/normalize_tardis_book_snapshot5.py": "2a99ad75c54c6a9b1b1897ae2c36ba8f5ccf54cc0d12fb1a9be49d010855f3bf"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

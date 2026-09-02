@@ -1,0 +1,117 @@
+{
+  "schema": "strict_r3_p8u_e2_h4_giveback20_research_canonical_v1",
+  "status": "CANONICAL_RESEARCH_NOT_LIVE",
+  "side": "long",
+  "live_promotion_authorized": false,
+  "purpose": "Hash-bound canonical entry-replacement and continuation overlay for the P8U long-only research stack. This contract has no exchange or order-submission authority.",
+  "upstream": {
+    "candidate_universe": "target-free BCF/current dual-MC1 candidate universe",
+    "ordinary_selection": "ordinary BCF-priority top-two incumbents",
+    "portfolio": "unchanged normal constrained chronological auction",
+    "parent_policy": {
+      "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+      "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+    }
+  },
+  "entry_authority": {
+    "name": "E2_q50_agreement",
+    "kind": "deterministic_intersection",
+    "replacement_only": true,
+    "can_expand_entry_capacity": false,
+    "candidate_pair": "20-30 bps dual-MC1 reserve candidate versus marginal ordinary BCF-priority 30-bps incumbent",
+    "target": "pair_advantage_bps = rich_policy_net_bps(reserve) - rich_policy_net_bps(incumbent)",
+    "threshold_bps": 50.0,
+    "selection_rule": "replace only when both H0 and H3 independently predict q50 pair_advantage_bps >= 50",
+    "feature_contract": {
+      "path": "data_perp/artifacts/strict_r3_p8u_15m_entry_feature_contract_20260830_v2/stable_selected_features.parquet",
+      "sha256": "60423f6c83043565de3fd0b5d06d8e9ea391c9d945f589cd5800f9da3ef7c580",
+      "variant": "E3_vwap_fs",
+      "field_count": 30,
+      "ordering": "held-fold position order only"
+    },
+    "refit": {
+      "window": "up to four preceding complete calendar months with resolved labels only",
+      "sample_weight": "1 + clip((reserve_dual_mc1_min_bps - 20) / 10, 0, 1)",
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "heads": {
+        "H0": {
+          "loss": "LightGBM quantile q50 on pair_advantage_bps",
+          "max_depth": 3,
+          "num_leaves": 7,
+          "min_child_fraction": 0.03,
+          "reg_lambda": 8.0,
+          "learning_rate": 0.03,
+          "n_estimators": 350,
+          "seed": 1729
+        },
+        "H3": {
+          "loss": "LightGBM quantile q50 on pair_advantage_bps",
+          "max_depth": 2,
+          "num_leaves": 3,
+          "min_child_fraction": 0.04,
+          "reg_lambda": 12.0,
+          "learning_rate": 0.03,
+          "n_estimators": 350,
+          "seed": 1729
+        }
+      }
+    },
+    "evidence": {
+      "path": "data_perp/artifacts/strict_r3_p8u_15m_entry_e2_demotion_residual_20260830_v1/E2_q50_agreement_selection_target_free.parquet",
+      "sha256": "c25fcfeb23952d80437d2009afc6c754711829d13d9125ee2720a20acfe038ec"
+    }
+  },
+  "continuation_authority": {
+    "name": "H4_giveback20",
+    "evaluation_frequency": "every completed 15-minute state bar",
+    "effective_interval": "next 15-minute interval only",
+    "target": "activation50_advantage_bps = U(continue with 50%-earlier activation) - U(unchanged rich parent policy)",
+    "feature_contract": {
+      "path": "data_perp/artifacts/strict_r3_p8u_15m_continuation_feature_contract_20260830_v2/stable_selected_features.parquet",
+      "sha256": "5d0fdb50855070a60cbfd785153dc2f7b905820a01bb5ab6f8d6375cc9ccbf8e",
+      "arm": "C4_normalized_vwap_fs",
+      "field_count": 45,
+      "ordering": "held-fold position order only"
+    },
+    "refit": {
+      "window": "up to four preceding complete calendar months with resolved labels only",
+      "loss": "LightGBM L1 mean on activation50_advantage_bps",
+      "max_depth": 4,
+      "num_leaves": 15,
+      "min_child_fraction": 0.05,
+      "reg_lambda": 20.0,
+      "learning_rate": 0.025,
+      "n_estimators": 420,
+      "seed": 1729
+    },
+    "authority": {
+      "condition": "H4 prediction >= 0",
+      "activation_earlier": 0.5,
+      "giveback_tighten": 0.2,
+      "sl_tighten": 0.0,
+      "sizing_change": 0.0,
+      "cannot_loosen_parent_thresholds": true,
+      "cannot_arm_and_exit_same_bar": true
+    },
+    "evidence": {
+      "path": "data_perp/artifacts/strict_r3_p8u_15m_h4_parent_vs_giveback20_e2_20260830_v1/portfolio_summary.parquet",
+      "sha256": "7fb1df56dd10d51737f4ede975ae504c55b31a6dbb60b2b333934d42dff5a467"
+    }
+  },
+  "causality": {
+    "entry_candidates_target_free": true,
+    "e2_selection_target_free": true,
+    "models_fit_from_prior_resolved_rows_only": true,
+    "h4_state_uses_completed_bar_only": true,
+    "h4_action_applies_next_interval_only": true,
+    "policy_cost_bps_applied_once": 100.0
+  },
+  "prohibitions": [
+    "Do not average H0 and H3 predictions; E2 is their boolean intersection.",
+    "Do not let E2 add capacity or replace a non-paired incumbent.",
+    "Do not use the gradual activation/giveback controller in this canonical contract.",
+    "Do not modify the parent hard stop, smooth-capital protection, sizing, MC1 admission, or auction priority.",
+    "Do not change an exchange-writing release without a separately sealed current-refit inference-parity bundle and explicit authorization."
+  ]
+}

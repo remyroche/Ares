@@ -1,0 +1,12 @@
+{
+  "schema": "strict_r3_p8u_meta_family_objective_selection_v2",
+  "scope": "offline strict-OOF Meta candidates for matched MC1 comparison; not canonical or live",
+  "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+  "selection_rule": "One objective per family: SStableMeta primary; conditional MI with Base against policy EV as a secondary tie-breaker. Individual Meta portfolio EV is not a selector.",
+  "candidates": [
+    {"family": "magnitude", "root": "data_perp/artifacts/strict_r3_p8u_meta_lgbm_stage3a_magnitude_broad_nofunding35_janjun2026_20260828_v1", "trial": "lambda_clipped_t12_s1", "query": "base_band_block35", "feature_contract": "strict_r3_p8u_magnitude_broad_market_contract_20260828_v6_no_funding", "sstable_meta": -0.05577, "conditional_mi": 0.13465},
+    {"family": "under", "root": "data_perp/artifacts/strict_r3_p8u_meta_lgbm_stage3a_cached_under_jan_jul2026_20260828_v1", "trial": "lambda_moderate_t12_s1", "query": "timestamp", "feature_contract": "F72", "sstable_meta": -0.04772, "conditional_mi": 0.15918},
+    {"family": "over", "root": "data_perp/artifacts/strict_r3_p8u_meta_lgbm_stage3a_cached_over_jan_jul2026_20260828_v1", "trial": "lambda_tail_t12_s1", "query": "timestamp", "feature_contract": "F72", "sstable_meta": -0.24556, "conditional_mi": 0.08191},
+    {"family": "state", "root": "data_perp/artifacts/strict_r3_p8u_meta_lgbm_stage3a_cached_state_jan_jul2026_20260828_v1", "trial": "lambda_tail_t8_s1", "query": "timestamp", "feature_contract": "F72", "sstable_meta": -0.11828, "conditional_mi": 0.13819}
+  ]
+}

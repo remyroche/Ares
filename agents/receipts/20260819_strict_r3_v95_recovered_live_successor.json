@@ -1,0 +1,45 @@
+{
+  "schema": "strict_r3_live_recovered_successor_receipt_v1",
+  "status": "sealed_and_scheduled",
+  "sealed_at": "2026-08-19T07:22:00+00:00",
+  "scope": "long_only_next_fresh_utc_candle",
+  "recovered_decisions": [
+    "2026-08-19T06:00:00+00:00",
+    "2026-08-19T07:00:00+00:00"
+  ],
+  "recovered_decisions_execution": "shadow_only_no_order_submission",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v95_bcf_current_dual_close_stop_current_materializer.json",
+  "inference_bundle_sha256": "37e00ca932a4afc107712a3c43904dd8f074b16b417cd975d6072db1bb06cea1",
+  "execution_bundle": "config/strict_r3_kraken_live_execution_v93_v115_bcf_current_dual_v95_recovered_state.json",
+  "execution_bundle_sha256_at_state_handoff": "5e9d2a65e5116a9121e323bfcc59b48563069d336619885c33e29f7ef4d1fc19",
+  "live_state": "data_perp/live/strict_r3_kraken_live_state_v56_v115_v95_recovered_state.json",
+  "state_handoff": {
+    "positions_preserved_exact": true,
+    "processed_decisions_preserved_exact": true,
+    "position_count": 1
+  },
+  "terminal_recovery": {
+    "root": "data_perp/artifacts/strict_r3_stateful_recovery_v115_extension_20260819T060000Z_20260819T070000Z_v1",
+    "root_manifest_sha256": "9fdcec2b3d3e39d85f92705754441890c8c367a7ec7d30416324b7862614e597",
+    "terminal_run": "data_perp/artifacts/strict_r3_stateful_recovery_v115_extension_20260819T060000Z_20260819T070000Z_v1/hour_20260819T070000Z/run",
+    "terminal_run_manifest_sha256": "ac720379c8ef69ebaf076ec6c893a3b2101f594d5916eda23e1ff0b2ea51be76",
+    "terminal_feature_state_bundle": "data_perp/artifacts/strict_r3_stateful_recovery_v115_extension_20260819T060000Z_20260819T070000Z_v1/hour_20260819T070000Z/run/feature_state/bundle",
+    "terminal_feature_state_manifest_sha256": "9d3d076325a6f8397d7343184a4cda221c6f452b134feb225b307074208d7843",
+    "feature_contract_sha256": "12672f92789107fab4c9ab76a20c0c6504e8adce215b4a7f3fc83171dc5705c4",
+    "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+    "geometry_parent_bundle_sha256": "ad7eae631da909feddee7349d07fd8ef377db173067d971bee33d24d82f20eb4",
+    "geometry_refit_cadence": "never",
+    "geometry_history_fields": ["k0", "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8"],
+    "next_decision_ts": "2026-08-19T08:00:00+00:00"
+  },
+  "producer": {
+    "screen": "strict_r3_live_hourly_entry_producer_v115",
+    "starts_only_at": "2026-08-19T08:00:00+00:00",
+    "bootstrap_predecessor": "data_perp/artifacts/strict_r3_stateful_recovery_v115_extension_20260819T060000Z_20260819T070000Z_v1/hour_20260819T070000Z/run",
+    "stale_recovered_decisions_may_submit_orders": false
+  },
+  "position_monitor": {
+    "screen": "strict_r3_close_based_stop_position_monitor_v87",
+    "first_successful_successor_receipt": "data_perp/artifacts/strict_r3_live_position_monitor_v87_v95_recovered_state/monitor_20260819T071451317886Z/run_manifest.json"
+  }
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ares.strict-r3-live-minute-monitor.v45</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/remyroche/Documents/Ares/scripts/run_strict_r3_live_position_monitor_loop.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/remyroche/Documents/Ares</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>STRICT_R3_EXECUTION_BUNDLE</key><string>config/strict_r3_kraken_live_execution_v30_v45_hourly_producer_context.json</string>
+    <key>STRICT_R3_LIVE_STATE</key><string>data_perp/live/strict_r3_kraken_live_state_v24_v45_hourly_producer_context.json</string>
+    <key>STRICT_R3_MONITOR_OUT_ROOT</key><string>data_perp/artifacts/strict_r3_live_position_monitor_v30_v45_hourly_producer_context</string>
+    <key>STRICT_R3_MONITOR_LOG</key><string>logs/strict_r3_live_position_monitor_v30_v45_hourly_producer_context.log</string>
+    <key>STRICT_R3_MONITOR_PID</key><string>/private/tmp/strict_r3_live_position_monitor_v30.pid</string>
+    <key>STRICT_R3_MONITOR_INTERVAL_SECONDS</key><string>60</string>
+    <key>STRICT_R3_MONITOR_SUBMIT_ORDERS</key><string>1</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/remyroche/Documents/Ares/logs/strict_r3_live_position_monitor_v45.launchd.stdout.log</string>
+  <key>StandardErrorPath</key><string>/Users/remyroche/Documents/Ares/logs/strict_r3_live_position_monitor_v45.launchd.stderr.log</string>
+</dict>
+</plist>

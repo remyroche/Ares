@@ -1,0 +1,13 @@
+{
+  "base_execution": "config/strict_r3_kraken_live_execution_v148_v172_isolated_margin_hardstop_live.json",
+  "overrides": {
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260823_v79_v177_direct_15m_book_guard_flat_execution_live.json",
+    "activation_authorization_sha256": "f4c86274556fb30b750b6087a248431844862a3650a7d15cb25c2ce2e3d74a1c",
+    "inference_bundle": "config/strict_r3_inference_overlay_long_v150_v176_direct_15m_book_guard.json",
+    "inference_bundle_sha256": "c01231514ce6e5a530b8aef4eb785f2cc833a83ebbb7aec1ec3a20d999302004",
+    "runtime_code_sha256": {
+      "extreme_price_movements/inference/strict_r3_live_execution.py": "4f9ed57bc8e26a88cd0ecf0f3c9d35150b792f9ff13cd8f2ccf3147fcfcb05ef"
+    }
+  },
+  "schema": "strict_r3_kraken_live_execution_overlay_v1"
+}

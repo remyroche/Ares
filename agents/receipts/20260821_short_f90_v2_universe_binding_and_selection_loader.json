@@ -1,0 +1,35 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "task": "bind_short_f90_features_to_targetfree_universe_and_load_frozen_subset",
+  "scope": "short-side research substrate and feature-selection loading only; no model promotion, live entry, portfolio, admission, or long-side execution authority changed",
+  "changed_paths": {
+    "scripts/materialize_short_target_free_history_projection.py": "081f6e47ae14ddb7ad393e6c06cd00f347fc3096cc3303f9d1864f426bc1315b",
+    "extreme_price_movements/tests/test_short_target_free_history_projection.py": "7c36e04e87eeb0632850e9204b9101b0378994f2308527b6dd997bfd614f33d2",
+    "scripts/run_short_base_target_objective_funnel.py": "31ed8c16be5a30d019e0c604f5298dbf952cebc6e533857c4f703e748ac255f5",
+    "extreme_price_movements/tests/test_short_base_target_objective_funnel.py": "ea6a16080114e63868494aa39904def044960f1d34a97269c9250b2144ae0b09"
+  },
+  "governing_contract_hashes": {
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295",
+    "agents/model_validation_protocol.md": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f",
+    "agents/experiment_discipline.md": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+  },
+  "controls": {
+    "side": "short",
+    "candidate_universe_binding": "feature rows restricted only by target-free candidate symbol and signal-hour bounds before short identity attachment",
+    "forbidden_feature_inputs": ["outcomes", "labels", "future_path", "target_validity", "target"],
+    "frozen_mda_contract": "recommended_feature_size_development_only selects feature_sets[90], never the 115-field ranked superset",
+    "feature_coverage": "all 90 F90 fields pass >=90% on the 2025-01 through 2026-07-10 short target-free source; minimum 94.9644%, median 99.9625%",
+    "v1_artifact": "preserved but not used because it contained source rows outside the 170-symbol candidate universe",
+    "long_live_contract_changed": false
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_short_base_target_objective_funnel.py extreme_price_movements/tests/test_short_target_free_history_projection.py extreme_price_movements/tests/test_short_policy_conversion_labels.py extreme_price_movements/tests/test_short_policy_conversion_hpo_stop.py",
+      "python3 -m py_compile scripts/run_short_base_target_objective_funnel.py scripts/run_short_policy_conversion_funnel.py scripts/materialize_short_target_free_history_projection.py",
+      "git diff --check -- scripts/run_short_base_target_objective_funnel.py extreme_price_movements/tests/test_short_base_target_objective_funnel.py scripts/materialize_short_target_free_history_projection.py extreme_price_movements/tests/test_short_target_free_history_projection.py"
+    ],
+    "result": "16 passed; syntax and whitespace checks passed"
+  }
+}

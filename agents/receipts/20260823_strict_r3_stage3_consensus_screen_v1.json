@@ -1,0 +1,22 @@
+{
+  "schema": "strict_r3_research_code_receipt_v1",
+  "scope": "offline long-only :00-only Stage-3 consensus redesign screen; no live, canonical, admission, portfolio, or execution artifact changed",
+  "verified_at_utc": "2026-08-22T23:00:00Z",
+  "files": {
+    "scripts/run_strict_r3_stage3_consensus_screen.py": "d45cf6eb87e6a1134b5e0fb823b31b11642d93b56e7f3e898d37aa23c9cc4062",
+    "extreme_price_movements/tests/test_strict_r3_stage3_consensus_screen.py": "ddc5cb4f78ba8f2843146533f49ec8d332d074e06d2d21017f494b5b3cd735df",
+    "extreme_price_movements/research/consensus_ensemble.py": "871c0d6fc681abc7370d63763a94dfcb95e4537380f8f14d1810387473bf8faa"
+  },
+  "validated_commands": [
+    "python3 -m py_compile scripts/run_strict_r3_stage3_consensus_screen.py",
+    "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_stage3_consensus_screen.py",
+    "python3 scripts/run_strict_r3_stage3_consensus_screen.py --out-dir data_perp/artifacts/strict_r3_stage3_consensus_screen_20260823_v1"
+  ],
+  "result": "4 passed. The immutable target-free screen reproduced C0 head-median parity exactly across 2,174,314 :00 long candidates, computed C1-C5 only from frozen target-free rows and strictly prior resolved labels, and wrote no inference, admission, portfolio, exchange, or exit artifact.",
+  "causality": [
+    "C2 reliability is fit before each block's preceding 28-day reserve using resolved policy labels only; every eligible C2 cell retained an effective head count above 9.55.",
+    "C4 support/OOD normalisers are fit from the same strict-prior population; empty history has zero authority rather than a held-period normalisation.",
+    "The published stage3_target_free_scores.parquet contains no policy path validity, policy outcome, or policy label-availability column."
+  ],
+  "selection_boundary": "This is a direct policy-diagnostic screen only. It cannot advance a consensus arm; correctness/CDF, current-native MC1, BCF-native MC1, dual admission, common constrained portfolio, and the frozen parent exit remain required."
+}

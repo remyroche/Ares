@@ -1,0 +1,53 @@
+{
+  "schema": "ares_governed_change_receipt_v1",
+  "timestamp_utc": "2026-08-21T18:06:00Z",
+  "objective": "Cap future live-entry leverage by the lower of the existing inverse policy-stop rule, 10x, the Kraken retail initial-margin tier, and a stressed Flex-account maintenance-headroom calculation.",
+  "scope": "new_entries_only",
+  "formula": "min(10, 66 / policy_stop_absolute_pct, liquidation_safe_leverage, market_initial_margin_max_leverage)",
+  "headroom_contract": {
+    "account_source": "kraken_flex_margin_equity_and_maintenance_margin",
+    "margin_schedule": "retail_margin_levels",
+    "minimum_margin_level_after_stress": 1.5,
+    "stressed_exit_slippage_bps": 50.0,
+    "failure_mode": "fail_closed"
+  },
+  "existing_position_policy": "Existing CRCLX, RIVER and BOME positions retained their confirmed fill leverage; no leverage was altered retroactively.",
+  "follow_on_monitor_repair": {
+    "reason": "BOME was fully closed through one ordinary reduce-only fill plus ten partial-liquidation fills; the prior monitor could reconcile only homogeneous fill sequences.",
+    "guard": "All post-entry opposite-side private fills must sum exactly to the tracked quantity and must contain both ordinary and liquidation families.",
+    "classification": "exchange_mixed_liquidation_external_exit_confirmed"
+  },
+  "changed_paths": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "6097ddc81949e496a2e388c517f90dd8b42a48412ef9a7f2abf2b0a51f0cec7a",
+    "tests/test_strict_r3_rich_live_policy.py": "5991fa8475be6423cd75bbe19b5332f474ee98231eb6321398a2efb1d9f80610",
+    "tests/test_strict_r3_live_asset_limit.py": "d447645b244e7bc5111f1499179ee6225164b66b3162ee4a5abc384cc4704622",
+    "scripts/seal_strict_r3_liquidation_headroom_leverage_successor.py": "eaa6eb05cb24bff965338a593cb17ce2b5ef211129dc3dd1c1480dc9fbc6a090",
+    "scripts/seal_strict_r3_mixed_exit_reconciliation_successor.py": "6084f8c77353e442cdd4211c70f700803183fc7eb74a18e20436c999ae6180ed",
+    "scripts/migrate_strict_r3_dynamic_stop_leverage_state.py": "27a94083e699414f22147d0a4fb0f3945951893dd2761f43ade5787266941bb0"
+  },
+  "sealed_artifacts": {
+    "inference_overlay": "config/strict_r3_inference_overlay_long_20260801_v118_bcf_current_dual_liquidation_headroom_mixed_exit_reconciliation.json",
+    "inference_overlay_sha256": "5edcde2c1e2ad5c89a72fbce943c2a881b7e971971dcd85965b30bc86b91d535",
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260821_v46_v118_liquidation_headroom_mixed_exit_reconciliation.json",
+    "activation_authorization_sha256": "e9115be6da96f485cdf4df00bccb6baad4ad643f0fbe4a9a7e2f9cbebbda6b6f",
+    "execution_contract": "config/strict_r3_kraken_live_execution_v120_v144_liquidation_headroom_mixed_exit_reconciliation.json",
+    "execution_contract_sha256": "0d5cab48b6ea48caf0ce1211e3dfc2e43a7505aea3fec4244c49766591567932",
+    "live_state": "data_perp/live/strict_r3_kraken_live_state_v79_v144_liquidation_headroom_mixed_exit_reconciliation.json"
+  },
+  "validation": {
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/inference/strict_r3_live_execution.py scripts/seal_strict_r3_liquidation_headroom_leverage_successor.py scripts/migrate_strict_r3_dynamic_stop_leverage_state.py",
+      "python3 -m pytest -q tests/test_strict_r3_rich_live_policy.py tests/test_strict_r3_live_asset_limit.py extreme_price_movements/tests/test_strict_r3_live_full_vwap_hard_stop.py"
+    ],
+    "result": "30 passed in 4.03s",
+    "live_reconciliation": "BOME private fills reconciled exactly: 125245 contracts, 11 fills, VWAP 0.0011887814379815563. No entry order was submitted by the monitor."
+  },
+  "governance_hashes": {
+    "agents/backtest_protocol.md": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373",
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295",
+    "agents/model_validation_protocol.md": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f",
+    "agents/experiment_discipline.md": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+  }
+}

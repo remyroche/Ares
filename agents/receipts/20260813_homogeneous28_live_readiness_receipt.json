@@ -1,0 +1,38 @@
+{
+  "task": "strict-r3-homogeneous28-live-readiness-receipt",
+  "scope": "Replace stale transitional readiness references with one authoritative receipt for the sealed homogeneous-28 long-only A5 bundle, recording current causality, parity, history, policy, successor-refit substrate, untouched-shadow evidence, and explicit non-authorization for production.",
+  "changed_paths": [
+    "config/strict_r3_live_readiness_receipt_homogeneous28_a5_b10_20260813.json",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 scripts/validate_strict_r3_inference_bundle.py at 2026-08-13T10:00:00Z using final-seal bundle d496dee40bf06d600b6f920c231e52151303b81288cfcde0b045fa6daf8b4d7d: 23 artifact hashes and 28 runtime-code hashes verified; shadow-only",
+      "strict_r3_lockstep_wiring_audit_homogeneous28_long_aug2026_20260813_v3.json: all checks passed",
+      "strict_r3_lockstep_successor28_homogeneous28_parity_long_aug1_7_20260813_v1: 120,252 stored/rescored rows; nine score components; maximum absolute delta 0.0",
+      "strict_r3_successor_bundle_readiness_homogeneous28_exact170_20260813_v6.json: ready=true with at least 99.8% hourly coverage and every reserve day present",
+      "strict_r3_homogeneous28_completegate_reconciliation_hourly_20260813T100000Z_v2: final-seal same-hour reconciliation; append-only maximum numeric delta 0.0; zero exchange calls; not promotion eligible",
+      "active homogeneous-28 lineage reconciled in the canonical handover: R5 v3 uses six retained stable-CMI interactions; A5 v2 calibration uses 119,985 prior OOS rows with slope 0.6416692, intercept -23.2197 bps, and predictive-SD scale 0.9695125",
+      "python3 -m pytest -q wiring/inference/hourly-shadow suite: 25 passed"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

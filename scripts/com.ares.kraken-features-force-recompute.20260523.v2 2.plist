@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ares.kraken-features-force-recompute.20260523.v2</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/private/tmp/run_kraken_features_force_recompute_20260523.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/remyroche/Documents/Ares</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/features_force_recompute_kraken_perps_20260523_015947.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/features_force_recompute_kraken_perps_20260523_015947.launchd.err.log</string>
+</dict>
+</plist>

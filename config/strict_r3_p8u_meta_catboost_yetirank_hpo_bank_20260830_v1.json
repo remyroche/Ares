@@ -1,0 +1,15 @@
+{
+  "schema": "strict_r3_p8u_meta_model_hpo_candidate_bank_v1",
+  "scope": "Predeclared CatBoost YetiRank parameter proposals. Target, query, selected feature contract, label gains, and sample weights are supplied by the enclosing frozen family receipt. This bank has no direct selection or promotion authority; target-free scores feed the common GateProxy.",
+  "search_dimensions": ["iterations", "learning_rate", "depth", "L2", "random_strength", "feature_fraction"],
+  "candidates": [
+    {"name": "yeti_hpo_00_common_budget", "model_family": "catboost_yetirank", "params": {}},
+    {"name": "yeti_hpo_01_shallow_conservative", "model_family": "catboost_yetirank", "params": {"iterations": 360, "learning_rate": 0.035, "depth": 3, "l2_leaf_reg": 16.0, "random_strength": 0.10, "rsm": 0.75}},
+    {"name": "yeti_hpo_02_shallow_smooth", "model_family": "catboost_yetirank", "params": {"iterations": 520, "learning_rate": 0.022, "depth": 3, "l2_leaf_reg": 12.0, "random_strength": 0.20, "rsm": 0.82}},
+    {"name": "yeti_hpo_03_balanced_regular", "model_family": "catboost_yetirank", "params": {"iterations": 420, "learning_rate": 0.030, "depth": 4, "l2_leaf_reg": 12.0, "random_strength": 0.30, "rsm": 0.80}},
+    {"name": "yeti_hpo_04_balanced_capacity", "model_family": "catboost_yetirank", "params": {"iterations": 320, "learning_rate": 0.050, "depth": 4, "l2_leaf_reg": 8.0, "random_strength": 0.60, "rsm": 0.84}},
+    {"name": "yeti_hpo_05_depth5_regular", "model_family": "catboost_yetirank", "params": {"iterations": 360, "learning_rate": 0.040, "depth": 5, "l2_leaf_reg": 18.0, "random_strength": 0.30, "rsm": 0.78}},
+    {"name": "yeti_hpo_06_depth5_capacity", "model_family": "catboost_yetirank", "params": {"iterations": 280, "learning_rate": 0.060, "depth": 5, "l2_leaf_reg": 6.0, "random_strength": 0.80, "rsm": 0.86}},
+    {"name": "yeti_hpo_07_depth6_regular", "model_family": "catboost_yetirank", "params": {"iterations": 260, "learning_rate": 0.050, "depth": 6, "l2_leaf_reg": 24.0, "random_strength": 0.20, "rsm": 0.75}}
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema": "ares.change_receipt.v1",
+  "date": "2026-08-20",
+  "scope": "compact order-book-only liquidity-transition panel with causal BTC benchmark recap",
+  "retention": {
+    "orderbook_recap_root": "data/execution/tardis_orderbook_recap_v1",
+    "raw_trade_archives_retained": 0,
+    "raw_archive_formats_retained": 0,
+    "btc_benchmark": "compact 1-minute OHLCV close/return recap only; downloaded ZIPs are temporary"
+  },
+  "artifacts": {
+    "btc_context": "data/execution/tardis_orderbook_recap_v1/context/binance_btcusdt_1m_recap_v1.parquet",
+    "panel": "data/execution/tardis_orderbook_recap_v1/features/liquidity_transition_panel_v2",
+    "audit": "data/execution/tardis_orderbook_recap_v1/reports/liquidity_transition_v2_orderbook_btc_audit",
+    "evaluation": "data/execution/tardis_orderbook_recap_v1/models/liquidity_transition_v2_orderbook_btc"
+  },
+  "verification": {
+    "tests": "python3 -m pytest -q tests/execution/test_liquidity_transition.py: 8 passed",
+    "syntax": "python3 -m py_compile src/execution/liquidity_transition.py scripts/execution/build_liquidity_transition_panel.py scripts/execution/materialize_btc_benchmark_ohlcv.py scripts/execution/evaluate_liquidity_transition.py scripts/execution/audit_liquidity_transition_contract.py: passed",
+    "panel_rows": 309274,
+    "panel_columns": 553,
+    "direct_targets": ["book_cost_delta", "spread_delta"],
+    "horizons_minutes": [1, 5, 10, 15, 30],
+    "validation": "three expanding chronological UTC-date folds with grouped whole-family cyclic permutation inside symbol/date trajectories",
+    "retained_contract_complete": true,
+    "all_supervision_labels_present": true
+  },
+  "source_hashes": {
+    "src/execution/liquidity_transition.py": "e1d11897e079d3be220a7a6e4761c90970fdd77dd10f99e60e611f0c536957dc",
+    "scripts/execution/build_liquidity_transition_panel.py": "8007e193e4daf8cd187d67a74f727cc18ea99d338c2e113cf5015af7298b4131",
+    "scripts/execution/materialize_btc_benchmark_ohlcv.py": "a604a8b07d17f643d0bbf1148bf05ae8d8c8cc028167e6376f09a33dd9127961",
+    "scripts/execution/evaluate_liquidity_transition.py": "3e6c9edcced8e05a0728cf326e90422123a8aaf2234b5100dc9ee5f7548ec973",
+    "scripts/execution/audit_liquidity_transition_contract.py": "c7f8455e335f91d49ab5b2b8aa13310ca59ebcd6b7d5a29d977d4ab5302eef01",
+    "tests/execution/test_liquidity_transition.py": "9e7c98b847c9bbe74834de26c4417a209d34e07de7d90223d933bd9addba860e",
+    "docs/KRAKEN_L2_LIQUIDITY_TRANSITION_RESULTS_20260819.md": "bd80c5d07ad045e6164f9b9b55d667a8560b8be68894a515d8e392cfc7dcf123"
+  },
+  "nonpromotion": "BTC benchmark and compact book-flow-rate features are coverage-valid but nonincremental in grouped MDA. This remains offline liquidity-transition research, not a live execution-policy change."
+}

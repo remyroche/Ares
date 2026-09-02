@@ -1,0 +1,41 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-22",
+  "scope": "Short P0→O250/H6→C3→K0 roadmap Round 3B; sequential C3 feature selection then conditional training-weight comparison. Research only; no canonical/live change.",
+  "artifacts": {
+    "output": "data_perp/artifacts/strict_r3_short_p0_oc_k0_round3_c_refinement_20260822_v2",
+    "runner_sha256": "72784b41aefb06246c693fd71db09bbd4abde6a78672ed0467bc6464228057c4",
+    "test_sha256": "d408b9af74ada3c17ed8fd64b20c1f7ff0b4e545115a2eb5e6e054706f0534bf",
+    "manifest_sha256": "574818f9d08971f2586c1bef33745df3b6e3d027300ea5bff8bd248dfd2f3091",
+    "feature_ranking_sha256": "a7f72bf7a8849da8012c12906cfa1682afe78bffbe9d2f653169e1d9ba609553",
+    "weight_ranking_sha256": "0f055592f36a03ec3ccb6e1e0822094dcef8136390e6f0875813b4211ea7c623"
+  },
+  "contract": {
+    "architecture": "frozen P0 → O250/H6 → C3 normalized regret → K0",
+    "opportunity": "the original Round-3A C3 O stream is exactly shared across every C feature and C-weight arm",
+    "paired_control": "C41/uniform exactly reproduces all 16,029 Round-3A C3 candidate identities, conversion scores, and K0 expected-policy-net scores",
+    "mda": "115-field C pool; valid true O-positive rows only; May–December 2024 chronological development window; labels resolved before each validation start; rank-C3 plus bounded top-20 conditional policy-net utility; >=60% positive fold stability",
+    "weights": ["uniform", "equal_month", "equal_mfe", "equal_month_mfe"],
+    "selection_gate": "2025 and 2026 net EV/trade >=90 bps and participation >=70% of the preceding-stage control"
+  },
+  "decision": {
+    "feature_winner": "C60_mda",
+    "weight_winner": "C60_mda__uniform",
+    "net_bps_per_trade_2025": 134.678733,
+    "net_bps_per_trade_2026": 136.786096,
+    "pooled_net_bps_per_trade": 135.080816,
+    "total_net_bps": 278941.884689,
+    "selected": 2065,
+    "participation_vs_C41": 1.082285,
+    "worst_month_bps_per_trade": -1.598955,
+    "mean_cvar10_bps": -365.107212,
+    "comparison_vs_C41": "mean EV/trade +5.04 bps; total net +30,823 bps; mean CVaR10 +42.24 bps; worst month +44.77 bps; participation +8.23%",
+    "reason": "The 60-field target-specific stable prefix is the best two-era mean EV contract and improves the key downside metrics. All alternative weighting schemes reduce mean EV/trade, so uniform remains frozen for the next C-HPO stage."
+  },
+  "validation": {
+    "command": "python3 -m pytest -q extreme_price_movements/tests/test_short_p0_oc_k0_round3_c_targets.py extreme_price_movements/tests/test_short_p0_oc_k0_round3_c_refinement.py",
+    "result": "8 passed"
+  },
+  "supersession": "The first refinement artifact ending _20260822_v1 is not used because its C feature arms used different C random seeds. It was retained immutably; v2 fixes the paired-control contract and is the only evidence referenced here.",
+  "caveat": "2025–2026 are sequential model-selection evidence, not an untouched promotion period."
+}

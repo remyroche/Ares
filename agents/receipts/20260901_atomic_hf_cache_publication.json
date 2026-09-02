@@ -1,0 +1,34 @@
+{
+  "task": "atomic-hf-cache-publication",
+  "scope": "Prevent readers from observing a partial local 15-minute or 5-minute Parquet archive while a cache refresh publishes it. This changes only local cache publication; it has no model, candidate, admission, portfolio, exchange, or order authority.",
+  "changed_paths": [
+    "extreme_price_movements/hf_data_loader.py",
+    "extreme_price_movements/tests/test_market_data_store_contract.py"
+  ],
+  "changed_path_hashes": {
+    "extreme_price_movements/hf_data_loader.py": "d124904b2a80ef6c8233d8f0e0ca282f273755b4de2d04d97a65b19583dfb694",
+    "extreme_price_movements/tests/test_market_data_store_contract.py": "62a6e2627b7e6cfb5388e1188eeb9a5f340e6a97cc4847e66964fd8bd078516e"
+  },
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "causality": {
+    "data": "The writer materialises the received local frame to a same-directory temporary Parquet then atomically replaces the final name. It does not fetch, impute, synthesize, alter, or remove OHLCV rows.",
+    "consumer": "Concurrent readers observe either the old complete Parquet or the new complete Parquet. A partial header/footer cannot become a source value or a candidate feature.",
+    "authority": "This implementation has no score, model, admission, portfolio, order, or exchange-write authority."
+  },
+  "artifacts": [],
+  "validation": {
+    "status": "passed_isolated_writer_validation",
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/hf_data_loader.py scripts/bootstrap_causal_sr_c1_append_state.py",
+      "isolated temporary-directory save/read assertion via hf_data_loader._save_data"
+    ],
+    "results": "The isolated writer validation saved two 15-minute rows, read the final Parquet successfully, and verified that no temporary file remained. The broader market-data contract suite was stopped after its unrelated import initialization stalled; it was not treated as passing."
+  },
+  "agent_plan": {"subagents": []}
+}

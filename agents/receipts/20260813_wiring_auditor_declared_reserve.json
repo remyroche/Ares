@@ -1,0 +1,35 @@
+{
+  "task": "strict-r3-wiring-auditor-declared-reserve",
+  "scope": "Make the external strict-R3 wiring auditor validate the immutable producer's declared reserve window rather than a retired hard-coded 42-day value, add fail-closed regression tests, and record a complete passing audit of the active homogeneous-28 long-only stack without changing sealed scoring code or artifacts.",
+  "changed_paths": [
+    "scripts/audit_strict_r3_schema_v2_long_wiring.py",
+    "tests/test_audit_strict_r3_schema_v2_long_wiring.py",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest -q tests/test_audit_strict_r3_schema_v2_long_wiring.py: 5 passed",
+      "strict_r3_lockstep_wiring_audit_homogeneous28_long_aug2026_20260813_v3.json: passed=true; 28-day declared reserve; 8,542 target-free held predictions; 2,820,951 unique strict-prequential ledger rows; 120 ordered base fields; 10 policy-residual heads; frozen October-December 2024 Geometry/K9; no held-window percentiles; 100-bps cost exactly once",
+      "active inference bundle remains config/strict_r3_inference_bundle_long_20260801_v5_homogeneous28_a5_b10_exactpolicy_v1.json at SHA-256 71abbff697728f3fb8192654b6ffeb013fada0a42002dcec1712107f84a1e624; audit code is outside its sealed 28-file runtime boundary"
+    ],
+    "not_run_reason": ""
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_archetype_recovery_20260830_v2_headhpo.json",
+    "sha256": "c4ba910a9be8148cfcc6241e80c35f03d2695322a07e4d044460dc710d538037"
+  },
+  "schema_version": "strict_r3_p8u_archetype_recovery_v1",
+  "policy_label_path": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_aug27_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "source_recovery": {
+    "reason": "The original full-prehistory source is a zero-block sparse file. This immutable Aug-27 successor contains the same 2,564,827 pre-August rows plus an August append. The runner's target-free candidate population ends 2026-07-31, so the append cannot join or affect Q4.",
+    "source_sha256": "c08c710d38679189668f8196f6ff8e4e6dd48674ad9bf60ed1eb58ccada8c94b",
+    "expected_pre_append_rows": 2564827,
+    "expected_pre_append_valid_rows": 2525498
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "strict_r3_p8u_meta_weight_screen_v1",
+  "scope": "offline strict-OOF signed-State sample-weight ablation; no MC1, admission, portfolio, live, or exchange mutation",
+  "arm": "s_sqrtatr_band28",
+  "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_state_s_sqrtatr_band28_20260830_v1/contracts/state_f50.json",
+  "weight_contract": "equal timestamp mass; Top0-20% Base-rank localisation x fold-local state-class balancing and residual magnitude; clip [0.5,4.0]; exact within-ranking-query unit mass",
+  "trials": [
+    {
+      "name": "w0_unweighted", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": null
+    },
+    {
+      "name": "w1_equal_timestamp", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[]}
+    },
+    {
+      "name": "w2_top20_local", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.35],[0.80,0.35],[0.90,1.0],[1.0,1.5]]}]}
+    },
+    {
+      "name": "w3_top20_class_balance", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.35],[0.80,0.35],[0.90,1.0],[1.0,1.5]]},{"name":"class_balance","strength":0.5}]}
+    },
+    {
+      "name": "w4_top20_class_balance_strong", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.35],[0.80,0.35],[0.90,1.0],[1.0,1.5]]},{"name":"class_balance","strength":1.0}]}
+    },
+    {
+      "name": "w5_top20_residual_p05", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.35],[0.80,0.35],[0.90,1.0],[1.0,1.5]]},{"name":"magnitude_awareness","strength":0.5,"power":0.5}]}
+    },
+    {
+      "name": "w6_top20_balanced_residual", "gain": [0, 1, 2, 3, 4, 5, 6], "truncation": 12, "sigmoid": 1.0,
+      "model": {"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight": {"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.35],[0.80,0.35],[0.90,1.0],[1.0,1.5]]},{"name":"class_balance","strength":0.5},{"name":"magnitude_awareness","strength":0.5,"power":1.0}]}
+    }
+  ]
+}

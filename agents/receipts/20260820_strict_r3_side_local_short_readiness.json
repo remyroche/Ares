@@ -1,0 +1,49 @@
+{
+  "schema": "ares.change_receipt.v1",
+  "date": "2026-08-20",
+  "scope": "strict-R3 side-local short-path infrastructure; no short model or live short execution was trained, sealed, or promoted",
+  "ordered_delivery": [
+    "policy-label materialisation and source-aligned policy-outcome assembly",
+    "base/residual/consensus training and Geometry/K9 side lineage",
+    "MC1/BCF mapping, policy HPO, and Adaptive Exit side contracts",
+    "portfolio auction and Kraken Futures execution side direction"
+  ],
+  "invariants": {
+    "side_local_artifacts": "Every new short pathway requires a distinct side=short artifact; long legacy artifacts cannot satisfy a short request.",
+    "policy_labels": "The coarse frozen-policy materialiser applies signed high/low stop and favourable-path logic and retains invalid paths as invalid supervision.",
+    "geometry": "Frozen Geometry/K9 includes its fit side and all current/upstream/conversion consumers reject a mismatched side. It is not re-fit monthly.",
+    "stacking": "Current, upstream, conversion, MC1, and BCF inputs are asserted side-local at every supervised or scoring boundary.",
+    "execution": "Short preflight sells through bids, uses buy-side exit VWAP, installs a reduce-only buy protective stop with symmetric stop-safety checks, debits only adverse short delay and sell impact, and requires an exactly side-matched sealed inference and activation contract.",
+    "promotion": "Short remains fail-closed until separately materialised labels, side-specific feature/consensus contracts, Geometry/K9, base/residual/BCF/MC1/A5/Adaptive Exit bundles, inference bundle, and execution authorization are produced."
+  },
+  "validation": {
+    "focused_side_and_policy_tests": "python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_strict_r3_side_local_pipeline.py tests/test_exact_1m_policy_contract.py tests/test_strict_r3_bcf_current_dual_auction.py tests/test_strict_r3_rich_policy.py tests/test_strict_r3_rich_policy_15m_control.py tests/test_exact_1m_rich_policy_contract.py extreme_price_movements/tests/test_exact_1m_rich_policy_stop_extensions.py",
+    "focused_side_and_policy_result": "35 passed",
+    "syntax": "Python compile parse passed for the nine repaired side-aware modules",
+    "known_unrelated_suite_failures": "A broader existing email-rendering subset has three failures in test_inference_masking_and_oco.py concerning changed email strings/categories. Those files were not modified by this side-local implementation."
+  },
+  "source_hashes": {
+    "scripts/materialize_strict_r3_frozen_policy_labels_v2.py": "9d5d6a52f3fd8aee34c5d2b398783d1c6983a89259cf724a9d4eac697690edc1",
+    "scripts/assemble_strict_r3_source_aligned_policy_ledger.py": "bc4154d963afcfcaeabbd40caaba457e802fc78908b57a0e110f54603226f49a",
+    "scripts/assemble_strict_r3_append_only_policy_labels.py": "62574a7998e46d2be0c7f15b09ee5ae115dd1fdfca7f95aeaa394d599c2d61b1",
+    "scripts/backfill_strict_r3_policy_outcomes_hourly.py": "8d4fe89c7aa2e762523f4f7e6e26796a045e06d8b9517f83a9fa1e28b7133aba",
+    "extreme_price_movements/strict_r3_canonical_current.py": "236581d5645be1995ef8b6faf52eddbb6fbf46d5bbc8b61009daa4df1493b742",
+    "extreme_price_movements/strict_r3_canonical_v2.py": "1a49f8d944adc7d821b18fd2d8b63ac38cd7df8ddc2075faf83bc5a88cbf6483",
+    "scripts/fit_strict_r3_geometry_k9_v2.py": "0e9f3333e9bacdc3f69e3a47de19a22de6893f6d3eb0e7cd6219600c4fec8f68",
+    "scripts/build_strict_r3_mc1_d2_canonical_bundle.py": "6e6aac9258d95dee00e752f7283add9b0566cc9618a7d1765932b0c8b6b268fb",
+    "scripts/build_strict_r3_bcf_mc1_d2_bundle.py": "f04f7bb4448c36dbba3fbb9953756ead11bc47330d2e03ea3f7270cbda0317da",
+    "extreme_price_movements/strict_r3_rich_policy.py": "4ed85ee171fcd500deac9492e184d7244c3c703bd755b310cffb3c253b9c392e",
+    "extreme_price_movements/adaptive_exit_v1.py": "40520b179976593f7039e1f615e9f33aff6450c00642f6f01afad3e5dc5bbb60",
+    "extreme_price_movements/exact_1m_policy_contract.py": "f728298252d232da09f4a64cf2cc240babb8242b36f196a4658cc08ebfe15176",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "bf2ce41ddd728a592af8e19b57c25dee4176fba966cba0500181921a1a6ef1f5",
+    "scripts/build_adaptive_exit_v1_canonical_bundle.py": "f5f1f5df9ceabe44612bd4007f8a252df23ae3e501a40e9d3fd7597c3993b862",
+    "extreme_price_movements/strict_r3_inference_bundle.py": "4d254f6e0ccbcb097b70a7947ebad812cbef02a515ac3589fef22021eb431297",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "90cf7c14f5caffd1e6f7bde78e38326b55a193a82cefcd2ea218826314d76522",
+    "extreme_price_movements/tests/test_strict_r3_side_local_pipeline.py": "50b9579e64c8978056874fec08bdd50172b5ed691a8f4a11b6969314bffdc601"
+  },
+  "quarantined_noncanonical_paths": {
+    "exact_1m_rich_extensions_hpo": "Explicitly remains an offline long-only research funnel. It cannot train or promote a short policy and has no inference or execution authority.",
+    "simultaneous_long_and_short_live_services": "A side-local live service rejects an opposite-side exchange position. Concurrent two-sided trading requires a separately designed unified executor and shared state; it is not implied by this work."
+  },
+  "live_effect": "No exchange-facing configuration or authorization was changed. Because the executor source is hash-bound, an existing long execution contract will now fail closed until a separately reviewed long successor is resealed with the unchanged-long behavioural parity evidence. No short execution configuration was created."
+}

@@ -1,0 +1,49 @@
+{
+  "task": "strict-r3-long-base-recall-funnel",
+  "scope": "Offline Stage-0 frozen B0 upstream parity and predeclared B0/B1/B2 base-recall screening only. No live, canonical, execution, policy, inference, or order-capable artifact was modified.",
+  "changed_paths": [
+    "scripts/run_strict_r3_base_recall_funnel.py",
+    "extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py",
+    "agents/receipts/20260822_strict_r3_long_base_recall_funnel.json"
+  ],
+  "source_hashes": {
+    "scripts/run_strict_r3_base_recall_funnel.py": "e532dc370de26c010e676f2ea54bdf0fb9fcdab76987542ef573bc072565aa79",
+    "extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py": "55d4b2b7c36ba70daa3a1bb017d36811311535b10c4bcb1d65986559db645722"
+  },
+  "contract_hashes": {
+    "AGENTS.md": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4",
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295",
+    "agents/model_validation_protocol.md": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f",
+    "agents/experiment_discipline.md": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7",
+    "agents/backtest_protocol.md": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+  },
+  "data_contract": {
+    "target_free_source": "strict_r3_schema_v2_prequential_ledger_targetfree_long_2024_2026_20260809_v1/prequential_stack_ledger.parquet",
+    "frozen_control": "strict_r3_score_family_current_v5_canonical_policy_reconstruction_2025_2026_20260816_v4",
+    "policy_outcomes": "strict_r3_source_aligned_optimized_policy_outcomes_long_2024jan_jul2026_20260812_v1/candidate_policy_outcomes.parquet",
+    "scoring_rule": "Frozen current-v5 upstream bundles score target-free rows first; R3 and policy outcomes join only after score and timestamp-local route membership are final.",
+    "terminal_finalcoverage_rule": "The finalcoverage block preserves its stored frozen candidate identities; 44,616 supplemental source rows are excluded and separately audited."
+  },
+  "invariants": {
+    "base_probability_reconstruction": "exact stored B0 parity for candidate identities, base score, same-model rank, base anchor, conditional consensus rank, and upstream",
+    "routing": "deterministic candidate-id tie break within decision timestamp; no held outcomes used",
+    "outcomes": "policy and R3 labels are diagnostic-only post-score joins",
+    "costs": "no new labels, policies, or costs are computed in this study",
+    "live_isolation": "no live or order-capable file is changed"
+  },
+  "validation": {
+    "commands": [
+      "PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py",
+      "python3 -m py_compile scripts/run_strict_r3_base_recall_funnel.py",
+      "PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=ignore python3 -B scripts/run_strict_r3_base_recall_funnel.py --out-dir data_perp/artifacts/strict_r3_long_base_recall_funnel_2025dev_holdout_2026oos_20260822_v1"
+    ],
+    "focused_tests": "3 passed",
+    "run_status": "completed: 21 blocks, 2,174,314 frozen target-free rows, 57 arm-period metrics; all upstream parity checks passed"
+  },
+  "agent_plan": {
+    "subagents": [],
+    "reason": "The research contracts require a single causally consistent reconstruction and no user request required parallel implementation."
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "strict_r3_p8u_routed_f72_underf120_research_canonical_successor_v4",
+  "status": "CANONICAL_RESEARCH_STACK_NOT_LIVE",
+  "created_at": "2026-08-28",
+  "side": "long",
+  "parent_contract": "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v3.json",
+  "unchanged_semantics": [
+    "P8U timestamp-local Router50 identity gate",
+    "F72 Raw-bps CatBoost QueryRMSE tail-linear-125 Base",
+    "Under F120 Rank-XENDCG bps100 timestamp head",
+    "BCF=Base rank; Current=0.75 Base rank + 0.25 Under rank",
+    "independent three-month strict-prequential BCF and Current MC1 maps",
+    "both maps must be >= +50 bps; one constrained chronological auction ordered by BCF MC1 EV",
+    "canonical rich-policy net bps with the 100-bps all-in round-trip cost deducted exactly once"
+  ],
+  "august_extension": {
+    "signal_scope": "through 2026-08-27; final generated decision is 2026-08-28T00:00:00Z",
+    "candidate_contract": "170-symbol target-free grid; outcomes were materialised only after Base and Under score persistence",
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_base_score_bridge_mar25_aug27_20260828_v1/target_free_scores",
+    "under_target_free_root": "data_perp/artifacts/strict_r3_p8u_under_f120_score_bridge_aug25_aug27_20260828_v1",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_aug27_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "dual_mc1_portfolio": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_nov25_aug27_20260828_v1",
+    "f72_joint_observed_feature_coverage": 0.8238,
+    "under_f120_joint_observed_feature_coverage": 0.9634,
+    "interpretation": "retrospective reconciliation only; not a selection or untouched promotion period"
+  },
+  "coverage": {
+    "base_target_free_oof": "2025-03 through 2026-08",
+    "under_target_free_oof": "2025-08 through 2026-08",
+    "dual_mc1_constrained_evaluation": "2025-11 through 2026-08"
+  },
+  "matched_evidence": {
+    "selected_period": "2025-11 through 2026-07",
+    "base_only": {"entries": 8017, "net_ev_bps_per_trade": 123.388739, "total_net_bps": 989207.519322, "max_drawdown": -0.515887},
+    "base_plus_under": {"entries": 7600, "net_ev_bps_per_trade": 131.310388, "total_net_bps": 997958.949994, "max_drawdown": -0.300594},
+    "august_extended_base_plus_under": {"entries": 8463, "net_ev_bps_per_trade": 129.107425, "total_net_bps": 1092636.139659, "max_drawdown": -0.31563}
+  },
+  "causality": {
+    "all_score_receipts_target_free_before_policy_join": true,
+    "one_immutable_source_per_month": true,
+    "held_outcomes_never_model_inputs": true,
+    "mc1_labels_resolved_before_held_month": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_live_promotion": ["later untouched forward validation", "inference/execution parity review", "separate explicit authorization"]
+  }
+}

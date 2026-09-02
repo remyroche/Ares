@@ -1,0 +1,57 @@
+{
+  "schema": "ares_short_stagei_selection_support_labels_receipt_v1",
+  "status": "complete_research_not_promoted",
+  "scope": {
+    "selection_decision_window": "[2024-01-01, 2024-04-01)",
+    "selection_inner_validation": ["2024-02", "2024-03"],
+    "untouched_target_oos_window": "[2024-04-01, 2024-07-01)",
+    "side": "short"
+  },
+  "selection": {
+    "artifact": "data_perp/artifacts/strict_r3_short_stagei_style_feature_selection_2024q1_20260820_v7",
+    "manifest_sha256": "1c0e17b1d4d647a454efa5af20ca058af55944127524be200dd4dc8360f4e794",
+    "method": "coverage/variance -> univariate plus bounded ReliefF rescue -> feature-only Spearman 0.95 representatives -> chronological signed-economic MDA -> smallest within one SE",
+    "frozen_pool_fields": 120,
+    "coverage_variance_pass_fields": 120,
+    "selected_fields": 15,
+    "oos_read_by_selector": false
+  },
+  "targets": {
+    "selected_feature_arms_root": "data_perp/artifacts/strict_r3_short_stagei_relief_features_target_arms_3m_oos_2024_20260820_v1",
+    "best_selected_feature_top1_h12_net_bps": {
+      "spec": "O_n250_z0_p75_uniform",
+      "value": -46.496289
+    },
+    "best_prior_120_field_top1_h12_net_bps": {
+      "spec": "O_n250_z0_p50_uniform",
+      "value": -9.227853,
+      "manifest_sha256": "3a5bdef1934a1f8222f4cfe603bb5b0a0668cab77446d25b79f000aea0410327"
+    },
+    "promotion": "none; Stage-I subset does not beat the 120-field short control"
+  },
+  "supportive_labels": {
+    "artifact": "data_perp/artifacts/strict_r3_short_supportive_path_labels_2024_20260820_v2",
+    "manifest_sha256": "b038356f79b397d1c830d98d81b879fac178789ba395a15e6c25d965aed95fea",
+    "kernel": "path_auxiliary_targets_v6_supportive_future_paths_12h",
+    "entry": "frozen exact one-minute decision open at signal close + one hour",
+    "path": "complete 720 x one-minute post-decision path",
+    "side_normalization": "short favourable=entry-low, adverse=high-entry",
+    "label_available_at": "decision + 12 hours",
+    "invalidity": "source-invalid rows have null economic target fields",
+    "inference": "labels only; prohibited from inference features"
+  },
+  "code": {
+    "short_selector": "53b67c72a8f4daab36179dcc37f8da5b8610b048b65b8cad0262600b71b7719e",
+    "ordinal_runner": "6e79b40cd613e4485f6c78e21283f57a5fa31901797e3ff16e9099f86134d358",
+    "supportive_materializer": "6caab4aef475a6e5788aaa5f049e40ef74d412d9f58d2d85aa5ced47b2fc4324",
+    "feature_contract": "12672f92789107fab4c9ab76a20c0c6504e8adce215b4a7f3fc83171dc5705c4"
+  },
+  "tests": {
+    "command": "python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_short_target_augmentations.py extreme_price_movements/tests/test_ordinal_base_target_ablation.py",
+    "result": "9 passed"
+  },
+  "report": {
+    "path": "docs/SHORT_STAGEI_FEATURE_SELECTION_AND_SUPPORT_LABELS_20260820.md",
+    "sha256": "a98c2995a9fb390359f340c9de5dff12d2ccbb61531e0b12e71e106193e6c68b"
+  }
+}

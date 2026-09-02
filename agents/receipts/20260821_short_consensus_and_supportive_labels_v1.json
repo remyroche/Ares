@@ -1,0 +1,41 @@
+{
+  "receipt_schema": "ares_change_receipt_v1",
+  "timestamp_utc": "2026-08-21T00:00:00Z",
+  "scope": "side-specific short residual-consensus research and exact one-minute supportive labels",
+  "artifacts": {
+    "supportive_labels_2025": {
+      "path": "data_perp/artifacts/strict_r3_short_supportive_path_labels_2025_20260821_v1",
+      "months": "2025-01 through 2025-12",
+      "contract": "shared path_auxiliary_targets v6, side_sign=-1, frozen decision-minute entry, complete 720x1-minute post-decision path",
+      "labels": "five canonical auxiliary families plus early-MFE, pre-activation adverse, squeeze-adjusted, and activation-order sidecar labels",
+      "invalid_rows": "preserved as target-invalid/null; never encoded as zero economic outcomes"
+    },
+    "frozen_short_consensus_contract": {
+      "path": "data_perp/artifacts/strict_r3_short_p0_cmi_consensus_contract_20260821_v1",
+      "selection_population": "Oct-Dec 2024 only",
+      "geometry_bundle_sha256": "2c93f1690ef36a780f2aa7b5c32b125937827f2e760913ddc3d68b65e24c9262",
+      "heads": 10,
+      "raw_k9_memberships_included": false
+    },
+    "strict_oos_consensus_evaluation": {
+      "path": "data_perp/artifacts/strict_r3_short_p0_cmi_consensus_oof_2025_20260821_v1",
+      "held_months": "2025-01 through 2025-12",
+      "training": "only earlier decision rows with resolved policy labels",
+      "rank_reference": "each head's prior training-score distribution; no held-window percentile",
+      "ensemble_selection": "Jan-Jun 2025 OOF only; assessed Jul-Dec 2025",
+      "promotion": "rejected: initial residual consensus underperforms P0/F90 base at all reported policy-net tails"
+    }
+  },
+  "source_hashes": {
+    "consensus_contract_builder": "a539bd173470099506fa94fa027489f2745b92e9a41e90d8f69238524fd8465c",
+    "consensus_oof_runner": "95b91c01bf72eab958f71589157f9a0dec83387d1726d78f55fce0d23edf29f9",
+    "supportive_label_materializer": "67147d1d977afd875d9897e3e2e8b3a9241981fa3af6b8c86d8d1aa04d7530a2"
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_short_target_augmentations.py",
+      "python3 -m py_compile scripts/build_strict_r3_short_p0_consensus_contract.py scripts/run_strict_r3_short_p0_consensus_oof.py scripts/materialize_strict_r3_short_supportive_path_labels.py"
+    ],
+    "result": "4 short target-normalization tests passed; py_compile passed"
+  }
+}

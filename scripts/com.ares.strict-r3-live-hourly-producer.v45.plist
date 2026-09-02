@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ares.strict-r3-live-hourly-producer.v45</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/remyroche/Documents/Ares/scripts/run_strict_r3_live_hourly_entry_producer_loop.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/remyroche/Documents/Ares</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>STRICT_R3_HOURLY_INFERENCE_BUNDLE</key><string>config/strict_r3_inference_bundle_long_20260801_v45_live_entry_scheduler_context.json</string>
+    <key>STRICT_R3_HOURLY_EXECUTION_BUNDLE</key><string>config/strict_r3_kraken_live_execution_v30_v45_hourly_producer_context.json</string>
+    <key>STRICT_R3_HOURLY_LIVE_STATE</key><string>data_perp/live/strict_r3_kraken_live_state_v24_v45_hourly_producer_context.json</string>
+    <key>STRICT_R3_HOURLY_BOOTSTRAP_PREDECESSOR</key><string>data_perp/artifacts/strict_r3_successor_v44_late_20260815T150000Z_v1</string>
+    <key>STRICT_R3_HOURLY_LOG</key><string>logs/strict_r3_live_hourly_entry_producer_v45.log</string>
+    <key>STRICT_R3_HOURLY_PID</key><string>/private/tmp/strict_r3_live_hourly_entry_producer_v45.pid</string>
+    <key>STRICT_R3_HOURLY_POLL_SECONDS</key><string>3</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/remyroche/Documents/Ares/logs/strict_r3_live_hourly_producer_v45.launchd.stdout.log</string>
+  <key>StandardErrorPath</key><string>/Users/remyroche/Documents/Ares/logs/strict_r3_live_hourly_producer_v45.launchd.stderr.log</string>
+</dict>
+</plist>

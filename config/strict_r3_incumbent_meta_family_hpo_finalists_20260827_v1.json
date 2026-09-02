@@ -1,0 +1,117 @@
+{
+  "schema": "strict_r3_incumbent_meta_family_hpo_finalists_v1",
+  "scope": "offline strict-OOF finalist scoring only; no MC1/admission/portfolio/inference/live/exchange mutation",
+  "incumbent_upstream": "0.50 * efficiency_bps + 0.50 * timing_bps",
+  "development_hpo_months": ["2025-09", "2025-11", "2026-01", "2026-03"],
+  "untouched_downstream_months": ["2026-04", "2026-05", "2026-06", "2026-07"],
+  "selection": "one frozen feature-selected f50 contract and one HPO winner per predeclared target family; all score receipts are target-free before MC1 fitting",
+  "arms": [
+    {
+      "name": "magnitude_hpo_f50",
+      "family": "magnitude",
+      "scale": "sqrt_atr",
+      "query": "base_band_block28",
+      "classes": 5,
+      "gain_schedule": "high",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.056084895657223785,
+        "max_depth": 5,
+        "num_leaves": 31,
+        "min_data_fraction": 0.007702063808563908,
+        "subsample": 0.8997744263748988,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.9359634054733116,
+        "reg_alpha": 0.14133123047159574,
+        "reg_lambda": 2.3887122500342355,
+        "min_split_gain": 0.000013897511266145122,
+        "sigmoid": 0.8459590815475251,
+        "lambdarank_truncation_level": null
+      }
+    },
+    {
+      "name": "under_u01_f50",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.03774022947324712,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.004369087266447652,
+        "subsample": 0.8107157219150619,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7120059373030293,
+        "reg_alpha": 0.0052937551471843045,
+        "reg_lambda": 18.513302796072402,
+        "min_split_gain": 0.00021172845275700355,
+        "sigmoid": 1.095681694551189,
+        "lambdarank_truncation_level": 20
+      }
+    },
+    {
+      "name": "over_hpo_f50",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.25,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.030795227755305608,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.016336903795340387,
+        "subsample": 0.8985900293021699,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.8122573674551403,
+        "reg_alpha": 0.09018905156828184,
+        "reg_lambda": 9.40506592138639,
+        "min_split_gain": 0.0040125195089651166,
+        "sigmoid": 0.9169644521733844,
+        "lambdarank_truncation_level": 5
+      }
+    },
+    {
+      "name": "state_hpo_f50",
+      "family": "state",
+      "scale": "atr",
+      "query": "timestamp",
+      "classes": 7,
+      "state_edges": [-1.25, -0.5, -0.15, 0.15, 0.5, 1.25],
+      "gain_schedule": "medium",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.05243228922545565,
+        "max_depth": 5,
+        "num_leaves": 31,
+        "min_data_fraction": 0.004641201067711745,
+        "subsample": 0.9157757765838783,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.9188110845373024,
+        "reg_alpha": 0.7312340865682975,
+        "reg_lambda": 3.1604728268148987,
+        "min_split_gain": 0.00009680941558457452,
+        "sigmoid": 0.5754867276875778,
+        "lambdarank_truncation_level": 20
+      }
+    }
+  ],
+  "contracts": {
+    "magnitude_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/magnitude/magnitude_f50.json",
+    "under_u01_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f50.json",
+    "over_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/over/over_f50.json",
+    "state_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/state/state_f50.json"
+  },
+  "source_hpo_receipts": {
+    "magnitude_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_magnitude_hpo_20260827_v1/winner.json",
+    "under_u01_f50": "data_perp/artifacts/strict_r3_incumbent_meta_under_hpo_20260827_v4/winner.json",
+    "over_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_over_hpo_20260827_v2/winner.json",
+    "state_hpo_f50": "data_perp/artifacts/strict_r3_incumbent_meta_state_hpo_20260827_v1/winner.json"
+  }
+}

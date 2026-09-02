@@ -1,0 +1,50 @@
+{
+  "recipe_id": "first_touch_two_head_stage134_fit_selected_v1",
+  "scope": "label_quality_candidate_not_production_promotion",
+  "selection_source": "data_perp/reports/first_touch_two_head_recipe_fit_holdout_stage134_v1",
+  "label_artifact": "data_perp/artifacts/20260702_120500_first_touch_c0_fast6_s10_policy_net_labels_exitaligned/labels",
+  "feature_list_csv": "data_perp/artifacts/20260629_050000_lgbm_mda/quality_reports/base_model_feature_importance.csv",
+  "fit_months": ["2026-04", "2026-05"],
+  "holdout_months": ["2026-06"],
+  "selected_by_fit": {
+    "utility_target_mode": "policy_soft",
+    "support_target_mode": "exec_guarded_policy",
+    "utility_weight_arm": "W0_base",
+    "support_weight_arm": "W14_clean_dirty_contrast",
+    "score_rule": "blend_70u_30s",
+    "support_gate_frac": 0.10,
+    "top_frac": 0.01,
+    "fit_mean_first_touch_net": 0.004866,
+    "fit_worst_month_first_touch_net": 0.002228,
+    "fit_clean_first_touch_exec_rate": 0.807175,
+    "fit_first_touch_timeout_rate": 0.049327,
+    "fit_first_touch_bad_mae_to_sl_rate": 0.143498,
+    "holdout_mean_first_touch_net": 0.007897,
+    "holdout_clean_first_touch_exec_rate": 0.888889,
+    "holdout_first_touch_timeout_rate": 0.0,
+    "holdout_first_touch_bad_mae_to_sl_rate": 0.111111
+  },
+  "balanced_challenger": {
+    "utility_target_mode": "policy_soft",
+    "support_target_mode": "fast_tight_clean_exec",
+    "utility_weight_arm": "W0_base",
+    "support_weight_arm": "W14_clean_dirty_contrast",
+    "score_rule": "blend_70u_30s",
+    "support_gate_frac": 0.03,
+    "top_frac": 0.01,
+    "fit_mean_first_touch_net": 0.003433,
+    "fit_worst_month_first_touch_net": 0.002415,
+    "fit_clean_first_touch_exec_rate": 0.860987,
+    "fit_first_touch_timeout_rate": 0.022422,
+    "fit_first_touch_bad_mae_to_sl_rate": 0.116592,
+    "holdout_mean_first_touch_net": 0.008625,
+    "holdout_clean_first_touch_exec_rate": 0.925926,
+    "holdout_first_touch_timeout_rate": 0.0,
+    "holdout_first_touch_bad_mae_to_sl_rate": 0.074074
+  },
+  "notes": [
+    "Use policy_soft for the utility head; time_decay_policy collapsed utility IC in Stage133.",
+    "Use time/path strictness in the support head or support weights, not as the main utility target.",
+    "Stage134 is a report-only fit/holdout selection check. It is stronger than aggregate Apr-May-Jun selection, but still not final base/meta production OOS."
+  ]
+}

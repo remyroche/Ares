@@ -1,0 +1,22 @@
+{
+  "schema": "strict_r3_schema_v6_live_promotion_validation_v1",
+  "side": "long",
+  "status": "accruing_shadow_evidence",
+  "first_decision_ts": "2026-08-14T01:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_schema_v6_live_chain_reconciliation_v5_20260814T000000Z",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v6_robust21_mc1_d2_adaptive_exit_v1.json",
+    "sha256": "85739214ca748ae1d1fe040b67f35d434c382e1a2941ea5c46fe3832dd1ae509"
+  },
+  "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+  "expected_artifact_hashes": 28,
+  "expected_runtime_code_hashes": 39,
+  "promotion_evidence_rules": {
+    "minimum_continuous_hours_before_review": 168,
+    "minimum_portfolio_accepted_rows_before_review": 30,
+    "minimum_realized_exit_rows_before_review": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0.0,
+    "automatic_exchange_enablement": false
+  }
+}

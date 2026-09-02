@@ -1,0 +1,54 @@
+{
+  "schema": "strict_r3_o3v2_t6t9_s11_research_canonical_v1",
+  "status": "CANONICAL_RESEARCH_CONTRACT_NOT_LIVE",
+  "created_at": "2026-08-25",
+  "side": "long",
+  "scope": "offline research only; this file must not be loaded by a live inference or exchange-execution process without a separately authorized untouched-forward promotion",
+  "score_contract": {
+    "name": "S11_T6_20_T9_05",
+    "formula": "0.75 * enhanced_base_rank_ts + 0.20 * t6_rank_ts + 0.05 * t9_rank_ts",
+    "weights": {"enhanced_base": 0.75, "t6": 0.2, "t9": 0.05},
+    "route": {"name": "enhanced_base_timestamp_local_top30", "fraction": 0.3, "minimum_candidates_per_timestamp": 1, "tie_break": "candidate_id_ascending"},
+    "common_candidate_universe": "exact target-free intersection of enhanced-base, T6, and T9 routed receipts; unsupported rows are excluded and never imputed"
+  },
+  "enhanced_base": {"formula": "mean(B0_strict_r3_bps, direct_efficiency_bps, direct_timing_bps)", "feature_contract": "frozen_120_causal_base_fields", "prediction_contract": "strict_oof"},
+  "consensus_heads": {
+    "head_count": 2,
+    "selection_receipt": "data_perp/artifacts/strict_r3_o3v2_t6t9_consensus_contract_20260825_v1/selected_physical_slots.json",
+    "selection_receipt_sha256": "bdcd87049184f586e3a64e9a6fe5cf74907be5785132123f406bbefaed5e41bc",
+    "t6": {"physical_slot": "cap80_ordinary", "support_contract": "S0_uniform", "target": "five_bin_rank_realised_rich_policy_net_minus_base_rank", "query": "cycle_4h_side"},
+    "t9": {"physical_slot": "cap120_equal_month", "support_contract": "S5_tbm_coarse", "target": "five_state_exit_quality_ordinal", "query": "cycle_4h_side"}
+  },
+  "mc1_dual_admission": {
+    "families": ["current", "bcf"],
+    "fit": "separate strict-prequential fits on six complete prior calendar months with resolved rich-policy outcomes only",
+    "features_ordered": ["final_score", "base_rank42", "base_anchor_bps", "correctness_rank", "t6_consensus_rank", "t6_combined_rank", "t9_consensus_rank", "t9_combined_rank"],
+    "recent_shift": "causal_current_or_bcf_recent_shift",
+    "model": {"type": "HistGradientBoostingRegressor", "max_depth": 2, "max_leaf_nodes": 4, "max_iter": 80, "learning_rate": 0.04, "l2_regularization": 20.0, "min_samples_leaf": 100, "random_state": 1729},
+    "admission": "current_mc1_expected_bps >= 50 AND bcf_mc1_expected_bps >= 50",
+    "authority": "admission only; neither mapper manufactures a new score or replaces the S11 auction priority"
+  },
+  "outcome_and_portfolio": {"outcome": "canonical_reconciled_rich_policy_net_bps", "outcome_join": "only after immutable target-free score receipts", "portfolio": "unchanged single chronological constrained auction"},
+  "selection_evidence": {
+    "ledger_months": ["2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "strict_oos_evaluation_months": ["2026-05", "2026-06", "2026-07"],
+    "canonical_entries": 2244,
+    "canonical_net_ev_bps_per_trade": 140.4985,
+    "canonical_total_net_bps": 315278.6809,
+    "same_family_control": "S1_CURRENT_T6T9",
+    "same_family_delta_total_net_bps": 9912.9641,
+    "same_family_delta_net_ev_bps_per_trade": 1.1258
+  },
+  "integrity": {
+    "ablation_runner": "scripts/run_strict_r3_t6t9_mc1_ablation.py",
+    "ablation_runner_sha256": "fad7b002c2f73c00faa3bdb763bce6e20f5c21042e97962f0e9d741f0abbd55c",
+    "audit_runner": "scripts/audit_strict_r3_t6t9_mc1_ablation.py",
+    "audit_runner_sha256": "86a6293a365484f27f6fe99c0036a7a0ffec9ea100269b2ba39e06f6223ffc1a",
+    "final_audit_root": "data_perp/artifacts/strict_r3_t6t9_mc1_ablation_audit_20260825_v7",
+    "correctness_report_sha256": "0fb0d8e1cd5269e65fe6ead62cce863cc9651b8612c78b6b8a7bd8cefd44abfc"
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_live_promotion": ["freeze all score, head, mapper, policy, route and threshold choices", "later untouched forward evaluation", "target-free identity and causal-label audit", "inference-parity and execution review"]
+  }
+}

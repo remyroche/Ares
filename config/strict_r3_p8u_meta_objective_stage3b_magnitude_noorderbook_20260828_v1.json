@@ -1,0 +1,13 @@
+[
+  {
+    "name": "xendcg_selected",
+    "selection": "selected by maximum SStableMeta under the predeclared gain/sigmoid/XENDCG comparison",
+    "feature_contract": "strict_r3_p8u_magnitude_broad_market_contract_20260828_v7_no_funding_no_orderbook",
+    "duration_days": 35,
+    "objective": "rank_xendcg",
+    "sstable_meta": -0.080434,
+    "conditional_mi_meta_policy_given_base": 0.157559,
+    "mean_admission_substitution_utility_bps": 5.399105,
+    "all_correctness_checks_passed": true
+  }
+]

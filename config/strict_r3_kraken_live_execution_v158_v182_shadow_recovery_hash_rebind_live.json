@@ -1,0 +1,32 @@
+{
+  "base_execution": "config/strict_r3_kraken_live_execution_v148_v172_isolated_margin_hardstop_live.json",
+  "overrides": {
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260823_v84_v182_shadow_recovery_hash_rebind_live.json",
+    "activation_authorization_sha256": "1f380ab658a0718c3ab802f1d01f685d106e6178c06697444dffbc1d9af75ce3",
+    "inference_bundle": "config/strict_r3_inference_overlay_long_v154_v182_shadow_recovery_hash_rebind.json",
+    "inference_bundle_sha256": "98c4ff7583f1422816d5f4c89f312da9550471a54e0d8d822bd0977c2ffb0f26",
+    "runtime_code_sha256": {
+      "extreme_price_movements/data_store.py": "b32e2a99f57bb86666b9b58ae5a70e7ee6f52162ad84635c24b3f660c01b7c22",
+      "extreme_price_movements/inference/strict_r3_live_execution.py": "3d83384e599ae132408ac2133c5056b0e685052a8d94ea9fa3bbd31c00ce2254",
+      "extreme_price_movements/strict_r3_inference_bundle.py": "b547f06243d674ded21b95f82fc91b589d18cd516ca74c0ec478ee5c74f83c2e",
+      "scripts/backfill_kraken_oi_funding_sidecars.py": "e5adae50f0dcd19449dd76dc14812cafac89d32ff5910e219b7edeae29ffeb2a",
+      "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "6c634d5a21cb56759087eb148b5795ee4bf5c4c123ef8a2a37a72954b20fc70b",
+      "scripts/run_strict_r3_hourly_shadow_resume_v15.py": "82cd1a12a04680470dbc013b79c99765d4a03be3cc59b85660bf6f35bbddcfad",
+      "scripts/run_strict_r3_live_hourly_entry_producer.py": "06663285efce0e864a8865d7647c68837e56e7f5d73e93feee655814e7ab4f5c"
+    }
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/strict_r3_inference_bundle.py",
+        "extreme_price_movements/inference/strict_r3_live_execution.py",
+        "scripts/run_strict_r3_live_hourly_entry_producer.py"
+      ],
+      "current_inference_bundle_sha256": "ec35abc16b4af3d710394f17c377dee7df0257025660085830415897f6fa192c",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_v152_v180_compact_execution_1m_range_pruning.json",
+      "predecessor_inference_bundle_sha256": "1680bbdcd0b594bbe66fb290cb7ba3cc3b0fca78e735b4570020ebff8c871faf"
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_overlay_v1"
+}

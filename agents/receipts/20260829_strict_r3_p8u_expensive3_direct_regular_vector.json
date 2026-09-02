@@ -1,0 +1,51 @@
+{
+  "schema": "strict_r3_p8u_expensive3_direct_regular_vector_receipt_v1",
+  "status": "pass_preproduction_only",
+  "scope": {
+    "direct_feature_groups": [
+      "price_rv_7d_15d_robust_z",
+      "liquidity_peer_residual",
+      "orderbook_depth_24h_normalisation"
+    ],
+    "remaining_features": "regular full-universe canonical vector projection cached once per timestamp",
+    "router": "full 160-symbol target-free universe",
+    "downstream": "exact Router50 only"
+  },
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_preproduction_bundle_20260829_v28_expensive3_direct_regular_vector_parity/bundle.json",
+    "sha256": "e2ce11d1aa124ca6adf9e453ff20c24d9d5303663ff71d8b51dda62bafced60b"
+  },
+  "staged_continuity": {
+    "path": "data_perp/artifacts/strict_r3_p8u_staged_score_20260829_t14_t16_v2_full_router_gate/run_manifest.json",
+    "source_hours": [
+      "2026-08-29T14:00:00+00:00",
+      "2026-08-29T15:00:00+00:00",
+      "2026-08-29T16:00:00+00:00"
+    ],
+    "candidate_rows_per_hour": 160,
+    "router50_rows_per_hour": 80,
+    "dual_mc1_admitted_per_hour": 6,
+    "outcome_columns_consumed": [],
+    "policy_or_portfolio_called": false,
+    "exchange_or_order_submission_called": false
+  },
+  "canonical_score_parity": {
+    "path": "data_perp/artifacts/strict_r3_p8u_staged_full_score_parity_20260829_t14_t16_v3_full_router_gate/correctness_report.json",
+    "status": "pass",
+    "feature_count": 175,
+    "mismatch_cells": 0,
+    "numeric_tolerance": {
+      "atol": 1e-05,
+      "rtol": 1e-06
+    }
+  },
+  "tests": {
+    "command": "python3 -m pytest -q tests/test_p8u_sealed_inference_stack.py tests/test_p8u_router_first_vectorized.py tests/test_p8u_staged_timestamp_executor.py tests/test_p8u_single_timestamp_graph.py",
+    "result": "32 passed"
+  },
+  "promotion": {
+    "exchange_authority": false,
+    "submission_allowed": false,
+    "remaining_requirement": "prospective validation on fresh append-only source hours"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema": "strict_r3_p8u_market_state_timestamp_block_contract_v1",
+  "scope": "offline research only; selected before 2026 from strict-OOF May-December 2025 timestamp-State-Meta probe",
+  "selection_root": "data_perp/artifacts/strict_r3_p8u_market_state_timestamp_probe_maydec25_20260829_v1",
+  "selection_rule": "highest 3-8 field beam block, positive economic spread in at least 60% of strict OOF held months; no 2026 outcomes used",
+  "selected_features": [
+    "ms_transition_breadth_downside_fast5d_slow21d_kalman_level",
+    "ms_transition_breadth_negative_fast7d_slow42d_kalman_level",
+    "ms_transition_execution_spread_level_fast7d_slow42d_level_normalized",
+    "ms_transition_return_iqr_fast2d_slow14d_kalman_level",
+    "ms_transition_volatility_level_fast3d_slow21d_kalman_level",
+    "ms_transition_volatility_level_fast5d_slow42d_level_normalized"
+  ],
+  "role": "timestamp-level State Meta / admission-quality coordinate; never a standalone within-timestamp candidate ranker",
+  "base_context": [
+    "state_base_top1_rank",
+    "state_base_top2_rank_mean",
+    "state_base_top1_score",
+    "state_base_top2_score_mean",
+    "state_base_top2_score_gap",
+    "state_base_top20_score_iqr",
+    "state_base_top20_candidate_n"
+  ],
+  "fixed_model": {
+    "family": "LightGBM Huber",
+    "depth": "2 or 3 fold-alternating shallow probe",
+    "n_estimators": 150,
+    "learning_rate": 0.045,
+    "min_child_samples": 96,
+    "l2": 12.0,
+    "l1": 0.05
+  },
+  "causality": {
+    "state_inputs": "target-free, timestamp-global market state before candidate filtering",
+    "base_context": "target-free Base top-20% score/rank descriptors",
+    "fit_labels": "only policy labels fully resolved before each held month",
+    "2026": "frozen confirmation only; no feature reselection"
+  }
+}

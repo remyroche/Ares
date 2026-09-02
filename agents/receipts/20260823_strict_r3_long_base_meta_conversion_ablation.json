@@ -1,0 +1,43 @@
+{
+  "schema": "ares_agent_receipt_v1",
+  "date_utc": "2026-08-23",
+  "scope": "Offline long-only strict-R3 base-to-meta conversion ablation. It tests raw rich-policy net utility against the incumbent simple policy-residual consensus target, conditional on the B0 top-30% route, then tests bounded demotion/recovery overlays. No live, canonical, model-bundle, admission, portfolio, or execution contract changes are made.",
+  "live_stack_changed": false,
+  "changed_paths": [
+    "scripts/run_strict_r3_long_base_meta_conversion_ablation.py",
+    "extreme_price_movements/tests/test_strict_r3_long_base_meta_conversion_ablation.py",
+    "agents/receipts/20260823_strict_r3_long_base_meta_conversion_ablation.json"
+  ],
+  "contracts": [
+    "agents/dataset_contract.md",
+    "agents/leakage_prevention.md",
+    "agents/model_validation_protocol.md",
+    "agents/experiment_discipline.md",
+    "agents/backtest_protocol.md"
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+    "python3 -m py_compile scripts/run_strict_r3_long_base_meta_conversion_ablation.py",
+    "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_long_base_meta_conversion_ablation.py (6 passed)",
+    "strict walk-forward run: 2025 Jul-Dec selection; 2026 Apr-Jul confirmation with mandatory B0 control and two 2025-selected challengers",
+    "target-free schema audit across 54 held prediction files: no policy outcome, label availability, residual target, or MC1 fields"
+    ]
+  },
+  "causality": [
+    "The route is B0 timestamp-local top-30%; direct-head scores are inputs only and never add route identities.",
+    "Every monthly meta model fits only the preceding three calendar months with labels resolved before the held month.",
+    "Held prediction files are target-free. Policy outcomes and frozen MC1 maps are joined only downstream for evaluation.",
+    "Demotion/recovery heads can only rerank B0-routed candidates and cannot create a dual-MC1 admission."
+  ],
+  "source": {
+    "runner_sha256": "c995419b99c8e194257258415f4b28160de81e44e03b8ab49a66d684f176f117",
+    "test_sha256": "1972f06375b47dbca4857311a43d38d0b4a0e51b3473b4cfb1724ec5611eb05f"
+  },
+  "artifact": {
+    "root": "data_perp/artifacts/strict_r3_long_base_meta_conversion_ablation_20260823_v3",
+    "run_manifest_sha256": "6ba565fd24258b507036593ec56488a3f23b437035619d728b3f3b3fb55ddfeb",
+    "metrics_sha256": "41a02f3fefb6c26f61638cab33db53069436eac57139ffb1889b3420b0047708"
+  },
+  "result_boundary": "The 2025 Jul-Dec comparison selects two rich-policy target arms for 2026 confirmation. The demotion/recovery overlays did not advance. This is research evidence only; it is not a canonical or live promotion."
+}

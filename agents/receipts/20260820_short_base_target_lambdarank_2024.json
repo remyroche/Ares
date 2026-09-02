@@ -1,0 +1,72 @@
+{
+  "task": "short-base-target-and-lambdarank-2024",
+  "scope": "Repair the side=short target-free 120-field coverage gate, materialise cost-aware/economic target variants, and run strict chronological base and residual LambdaRank controls. Research-only; no short model, inference bundle, or exchange execution path is promoted.",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_forward_features.py",
+    "scripts/run_strict_r3_short_base_3m_oos.py",
+    "scripts/materialize_short_r3_target_augmentations.py",
+    "scripts/run_strict_r3_short_target_ablations_3m_oos.py",
+    "scripts/materialize_short_lambdarank_query_population.py",
+    "scripts/run_query_construction_screen.py",
+    "scripts/run_frozen_specialist_query_hpo.py",
+    "scripts/run_frozen_residual_query_hpo.py",
+    "extreme_price_movements/tests/test_short_base_feature_coverage.py",
+    "extreme_price_movements/tests/test_short_target_augmentations.py",
+    "extreme_price_movements/tests/test_short_target_ablation_contract.py",
+    "extreme_price_movements/tests/test_short_lambdarank_query_cap.py",
+    "extreme_price_movements/tests/test_short_residual_prequential.py"
+  ],
+  "contracts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4"
+    },
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "invariants": {
+    "candidate_population": "Coverage is computed only on complete target-free, decision-time entry-executable Jan--Mar candidates. Labels, H12 completeness, and outcomes are excluded from eligibility and feature selection.",
+    "short_feature_contract": "All 120 fields pass >=90% finite coverage on 158,658 eligible Jan--Mar rows; minimum coverage is 0.9002445512.",
+    "labels": "Cost-aware robust-clear B50/B75 labels use an exact post-entry 1-minute H12 path, meaningful-adverse precedence on same-minute conflict, and a 100-bps cost exactly once. Invalid paths remain invalid supervision.",
+    "lambda_rank": "Query construction is label-only Jan--Mar; exact-time and four-hour side-local queries are bounded to deterministic SHA-256(candidate_id) 64-row training representations. OOS scoring retains every executable candidate.",
+    "early_stopping": "The corrected LambdaRank HPO uses a latest-20%-of-training-query chronological inner holdout with 30-round early stopping. Its median development iteration is frozen for final Apr--Jun refit.",
+    "residual": "Residual training consumes only base OOF predictions (Jan->Feb, Jan--Feb->Mar) and rank-to-net maps from prior resolved OOF outcomes. It does not use base in-sample or post-date predictions."
+  },
+  "artifacts": {
+    "coverage_and_smoke": "data_perp/artifacts/strict_r3_short_base_3m_train_3m_oos_2024_20260820_v5/r3_base_full120_smoke",
+    "target_labels": "data_perp/artifacts/strict_r3_short_target_labels_2024_20260820_v1",
+    "target_ablations": "data_perp/artifacts/strict_r3_short_target_ablations_3m_oos_2024_20260820_v3",
+    "query_screen": "data_perp/artifacts/strict_r3_short_query_screen_20260820_v2",
+    "specialist_target_query_hpo": "data_perp/artifacts/strict_r3_short_specialist_query_hpo_20260820_v5",
+    "residual_query_hpo": "data_perp/artifacts/strict_r3_short_residual_query_hpo_20260820_v1"
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_short_base_feature_coverage.py extreme_price_movements/tests/test_short_target_augmentations.py extreme_price_movements/tests/test_short_target_ablation_contract.py",
+      "python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_short_lambdarank_query_cap.py extreme_price_movements/tests/test_short_target_ablation_contract.py",
+      "python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_short_residual_prequential.py extreme_price_movements/tests/test_short_lambdarank_query_cap.py",
+      "python3 -B -m py_compile scripts/run_query_construction_screen.py scripts/run_frozen_specialist_query_hpo.py scripts/run_frozen_residual_query_hpo.py"
+    ],
+    "not_run_reason": "No full repository suite: this work is new short-side offline research and the focused contract tests cover its causal gates."
+  },
+  "agent_plan": {
+    "subagents": []
+  },
+  "source_hashes": {
+    "scripts/materialize_strict_r3_forward_features.py": "103888e9f277f0499f42cf4ef1b5c715d2230481acf55d79583bea4a6da848c0",
+    "scripts/run_strict_r3_short_base_3m_oos.py": "19885849b457075c34b06a4537b09883fa729546536885fefc2e01fe2495225c",
+    "scripts/materialize_short_r3_target_augmentations.py": "5303ec6028d40b60231c24942d5aadad2575c8599f8ab5d341006d98b850cd11",
+    "scripts/run_strict_r3_short_target_ablations_3m_oos.py": "0d9eb583169fd7385c71c7d051c15ab13b2dc0ba7613fc67173e4191af09a6f8",
+    "scripts/materialize_short_lambdarank_query_population.py": "7a10d1c6337d6ae1e2ad8b1574da24661fced2dce081b8304a43d568daaeb70a",
+    "scripts/run_query_construction_screen.py": "13f62c2983e7a72a76a6aa9eb8e790a0020446570839af5f06553241fb666393",
+    "scripts/run_frozen_specialist_query_hpo.py": "42d76549395721f2786cb7782a4b6146831032bf9ee9305ecfdfa94f68646ebc",
+    "scripts/run_frozen_residual_query_hpo.py": "e41ce864dbb7148a061b8e1251ff0eaaa1630710df3cdee27d12c8d4cdb4e464"
+  }
+}

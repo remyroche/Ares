@@ -1,0 +1,29 @@
+{
+  "schema": "strict_r3_router_scoreband_mixing_v1",
+  "scope": "research-only causal per-score-band Router recipe selection; no canonical or live stack mutation",
+  "side": "long",
+  "input_scores": "data_perp/artifacts/strict_r3_router_threshold_recall_heads_20260831_v2",
+  "policy_path": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_aug27_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "months": ["2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"],
+  "first_test_month": "2025-07",
+  "route_fraction": 0.5,
+  "band_source": "current_router_control",
+  "score_bands": [0.0, 0.5, 0.75, 1.000001],
+  "recipe_fields": [
+    "current_router_control",
+    "router_r50",
+    "blend_r5075_r10025_r20000",
+    "blend_r5075_r10000_r20025",
+    "blend_r5000_r10025_r20075"
+  ],
+  "calibration": {
+    "window": "expanding prior strict-OOF months only",
+    "selection": ["max Recall@positive", "then max Recall@50", "then max Recall@100", "then max selected net EV", "then lowest recipe-index tuple"],
+    "outcome_use": "only resolved policy outcomes from months strictly before the held test month"
+  },
+  "evaluation": {
+    "primary": ["Recall@positive", "Recall@50", "Recall@100", "Recall@200"],
+    "comparators": ["current_router_control", "router_r50", "best causal score-band policy"],
+    "selection": "exact timestamp-local top 50%, deterministic candidate-id ties"
+  }
+}

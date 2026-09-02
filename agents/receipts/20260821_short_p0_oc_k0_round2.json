@@ -1,0 +1,40 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-21",
+  "scope": "Short P0→O→C→K0 roadmap Round 2; opportunity-only sequential funnel above frozen matching Round-1 conversion predictions. Research only; no canonical/live change.",
+  "artifacts": {
+    "output": "data_perp/artifacts/strict_r3_short_p0_oc_k0_round2_20260821_v1",
+    "runner_sha256": "2cae31a88c8aea39368a86772a95006836ff8cf3f1aa2d839c1927d3f0b0ab2a",
+    "test_sha256": "bb1ae310066fc5d0afe5311e97d89c003f6691d1bb3fc60bdc3c2acbcce2ee22",
+    "manifest_sha256": "777913a47fbb0cf565855c93297217990c288957589921b6aa5989d98670c8c7",
+    "ranking_sha256": "dff22cf011948f9414311164f2865488736adcd2fcd6d0cba022a7cd52cccd7b"
+  },
+  "contract": {
+    "architecture": "P0 target-free winner → O opportunity → matching frozen strict-prequential C → K0 analytic mixture",
+    "round_2_scope": "O feature stability/caps, O training weights, O probability calibration, O HPO only",
+    "cross_stage_identity": "Every Round-2 O inner OOF candidate was audited against the corresponding frozen Round-1 C inner OOF candidate; early months without C/K0 support were skipped.",
+    "causality": "all O fits require label_available_at < validation start; all probability maps use only each outer fold's OOF rows"
+  },
+  "stages": {
+    "feature_caps": [30, 45, 60, 75, 90],
+    "weights": ["uniform", "boundary_confidence", "equal_month_boundary", "magnitude_positive"],
+    "calibration": ["raw", "platt", "isotonic", "beta"],
+    "hpo": "20 Optuna trials/finalist, three chronological development folds, 30-round early stopping and median pruning after two folds"
+  },
+  "decision": {
+    "winner": "O250_H6|C_platt",
+    "contract": "45 target-specific stability-MDA fields; uniform O weights; strict-OOF Platt probability calibration; frozen pre-HPO O geometry",
+    "metrics_2025": 114.76710606599809,
+    "metrics_2026": 102.20825371717669,
+    "mean_net_bps_per_trade": 112.23022835288756,
+    "total_net_bps": 269464.77827528305,
+    "worst_month_net_bps_per_trade": 3.5384163508450026,
+    "mean_cvar10_bps": -446.55919847619657,
+    "reason": "passes both-era >=90 bps and >=70% participation gates. Both development-HPO challengers fail the 2026 >=90 bps gate, so HPO is rejected rather than replacing the preceding sequential control."
+  },
+  "validation": {
+    "command": "python -m pytest -q extreme_price_movements/tests/test_short_p0_oc_k0_round1.py extreme_price_movements/tests/test_short_p0_oc_k0_round2.py",
+    "result": "7 passed"
+  },
+  "caveat": "2025–2026 remain model-selection evidence. The selection/report repair changed no numerical replay, model, target, score, or label artifact."
+}

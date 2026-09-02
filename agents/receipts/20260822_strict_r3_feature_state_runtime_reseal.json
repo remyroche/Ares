@@ -1,0 +1,100 @@
+{
+  "task": "strict-r3-feature-state-runtime-reseal",
+  "scope": "Seals a direct runtime successor after an isolated incremental materialization reproduced the complete 170-row deployed feature vector byte-for-byte. The successor records the reviewed BCF calibration ledger, advances only runtime receipts, and preserves all model, geometry, admission, portfolio, execution, and exit economics.",
+  "changed_paths": [
+    "scripts/seal_strict_r3_v125_bcf_feature_state_reseal.py",
+    "scripts/reconcile_strict_r3_kraken_live_state.py",
+    "scripts/assemble_strict_r3_stateful_recovery_seed.py",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py",
+    "scripts/audit_strict_r3_feature_state_parity_partitioned.py",
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py",
+    "scripts/update_strict_r3_feature_panel_state.py",
+    "scripts/migrate_strict_r3_flat_runtime_reseal.py",
+    "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+    "scripts/seal_strict_r3_v128_recovery_rebind.py",
+    "scripts/rebuild_strict_r3_stateful_recovery.py",
+    "scripts/assemble_strict_r3_stateful_recovery_seed.py",
+    "extreme_price_movements/path_based_exit_optimisation.py",
+    "scripts/seal_strict_r3_v129_recovered_terminal.py",
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py",
+    "scripts/audit_strict_r3_terminal_state_replay_parity.py",
+    "scripts/seal_strict_r3_v130_decision_open_volume_pit_shadow.py",
+    "scripts/seal_strict_r3_v131_direct_15m_reference_shadow.py",
+    "scripts/seal_strict_r3_v132_direct_15m_reference_live.py",
+    "scripts/seal_strict_r3_v133_bootstrap_fastpath_live.py"
+  ],
+  "file_hashes": {
+    "scripts/seal_strict_r3_v125_bcf_feature_state_reseal.py": "9fd41ca67558867fe279a18e9f8c938022727defe66408d44e4d962b5f8d1a8e",
+    "scripts/reconcile_strict_r3_kraken_live_state.py": "f6ba9e05a48d41d3c1c127ea9a29fe5836c23aa0ffb85034b4c3bc0f57e3c9fa",
+    "scripts/assemble_strict_r3_stateful_recovery_seed.py": "d1dcf3b740d54f73dde5a9e2c8017d8d50adc4952fd39a3f688d24568defcd52",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "45a50a972ef9a8734bf2a27d1af05b3fa5c7547ecced0f17d040abb1b90adcd7",
+    "scripts/audit_strict_r3_feature_state_parity_partitioned.py": "2d316457f71011d7cd2622474342f89b6609449e8b9e5c63bb99cf69b764f69d",
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "218fd06c1552901d27e5e2d5935ace9db87f9c682fda2eaf890293d6e2dec343",
+    "scripts/update_strict_r3_feature_panel_state.py": "36cfb8b1384f92b6fb6f984cd2dada4c19904e4410585fd1bb1ce8d54a5c3fa9",
+    "scripts/migrate_strict_r3_flat_runtime_reseal.py": "58ad19da51faf4d575f0a5371f80eef1f3ff58acfd52fe41d76626b121ecb265",
+    "scripts/run_strict_r3_hourly_shadow_resume_v15.py": "098a1f06f6c38fda3e7f7e5dfae999920a58e7f9c17dd972244a6f9c9d918ed5",
+    "scripts/seal_strict_r3_v128_recovery_rebind.py": "3fb0531e4272e7a9850146d416be5d843966344ac50475886edfb215872cdde3",
+    "scripts/rebuild_strict_r3_stateful_recovery.py": "4eb4d1647a3ffc925c769e33c95af6af62a408e98a40d2cc7a0416ce50d89000",
+    "scripts/assemble_strict_r3_stateful_recovery_seed.py": "46de913a3541e9a50115e04949cecc43434f5914b3cbb47547a193804822e8e6",
+    "extreme_price_movements/path_based_exit_optimisation.py": "6dae7b8640c03dcff860ef03c0f6355e3d0d14e4e5d78c4bb3e33e720dfa2e50",
+    "scripts/seal_strict_r3_v129_recovered_terminal.py": "4fdf4a573c7f3a4c876968f7977fa8e65ef9f9ef10892ab2c6f4394c838d4ffd",
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "8c45fe7cf3b5a287719292f7227da6c5dcffe285f1c4dbd138b4315afc78d951",
+    "scripts/audit_strict_r3_terminal_state_replay_parity.py": "12e6941eb4e086ab2aa30430453930568be8e14431421e0d5f4650c2232ab3e7",
+    "scripts/seal_strict_r3_v130_decision_open_volume_pit_shadow.py": "305ab59d7004567bcebe7593493d281a84085aaddff8d1bd873461af743ec594",
+    "scripts/seal_strict_r3_v131_direct_15m_reference_shadow.py": "856d3299adc32e59acccae98d64e5a57649181efa71fdbc483c3cde0a229f4c9",
+    "scripts/seal_strict_r3_v132_direct_15m_reference_live.py": "157e12d957df92203f017513667b16845a4ddfdb837d83edf84b0b059f39ed94",
+    "scripts/seal_strict_r3_v133_bootstrap_fastpath_live.py": "3bae781eeae5e459a96712715baa8a72732586b7756b1e4adf22715226dd282d"
+  },
+  "contracts": {
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+  },
+  "validation_evidence": {
+    "commands": [
+      "python3 scripts/seal_strict_r3_v125_bcf_feature_state_reseal.py",
+      "StrictR3ExecutionContract.load(config/strict_r3_kraken_live_execution_v128_v152_bcf_current_dual_samebundle21d_feature_state_reseal.json)",
+      "python3 scripts/migrate_strict_r3_live_state_runtime_successor.py --state data_perp/live/strict_r3_kraken_live_state_v84_v149_bcf_mc1_samebundle21d_replay.json --old-execution config/strict_r3_kraken_live_execution_v125_v149_bcf_mc1_samebundle21d_replay.json --new-execution config/strict_r3_kraken_live_execution_v128_v152_bcf_current_dual_samebundle21d_feature_state_reseal.json --out-state data_perp/live/strict_r3_kraken_live_state_v85_v152_bcf_current_dual_samebundle21d_feature_state_reseal.json --allow-approved-model-promotion",
+      "python3 scripts/reconcile_strict_r3_kraken_live_state.py --state data_perp/live/strict_r3_kraken_live_state_v84_v149_bcf_mc1_samebundle21d_replay.json --side long",
+      "python3 scripts/assemble_strict_r3_stateful_recovery_seed.py --source-run data_perp/artifacts/strict_r3_successor_v122_live_20260822T080000Z_v1 --out-dir data_perp/artifacts/strict_r3_stateful_recovery_seed_v152_20260822T080000Z_v1",
+      "python3 -m py_compile scripts/audit_strict_r3_feature_state_parity_partitioned.py",
+      "python3 -m py_compile scripts/migrate_strict_r3_flat_runtime_reseal.py",
+      "python3 -m py_compile scripts/run_strict_r3_hourly_shadow_resume_v15.py scripts/seal_strict_r3_v128_recovery_rebind.py",
+      "python3 scripts/seal_strict_r3_v128_recovery_rebind.py",
+      "python3 -m py_compile scripts/rebuild_strict_r3_stateful_recovery.py",
+      "recovery portfolio-chain unit: reconciliation flag is present only for the first recovered hour; all successors consume their predecessor next_portfolio_state unchanged",
+      "recovery exact-shadow-bootstrap unit: a verified predecessor can suppress the one-time live-to-shadow reconciliation while retaining its immediate feature-state bundle",
+      "runtime barrier primitive equivalence: 4,103 values across 216 ATR-power/multiplier/median combinations exactly match simple_policy_optimiser._effective_policy_barrier_pct",
+      "python3 -m py_compile scripts/assemble_strict_r3_stateful_recovery_seed.py",
+      "python3 scripts/assemble_strict_r3_stateful_recovery_seed.py --source-run data_perp/artifacts/strict_r3_successor_v122_live_20260822T080000Z_v1 --out-dir data_perp/artifacts/strict_r3_stateful_recovery_seed_v153_20260822T080000Z_v1",
+      "recovery exact-decision bridge unit: flat v87 live state + v152 predecessor produces a 2026-08-22T09:00Z strict_r3_shadow_portfolio_state_v3_adaptive_exit bridge with zero live overlays and no hypothetical entries",
+      "StrictR3ExecutionContract.load(config/strict_r3_kraken_live_execution_v130_v154_bcf_current_dual_samebundle21d_feature_state_reseal_recovery_rebind.json)",
+      "all-170 current decision-open adapter versus v122 target-free candidate receipt: exact (170 finite pairs; 0 missing mismatches; max absolute delta 0)",
+      "current feature-panel updater v121→v122 append in preserve-and-audit mode: all 35 new 07:00 source-panel fields exact; 12 prior-06:00 exchange-source revisions audited and preserved"
+      ,"python3 -m py_compile scripts/seal_strict_r3_v129_recovered_terminal.py"
+      ,"python3 scripts/seal_strict_r3_v129_recovered_terminal.py"
+      ,"strict recovered terminal replay parity: pass; exact candidates, features, base/BCF/current predictions, admission, portfolio decisions, Geometry/K9 and 138-file state bundle; zero exchange writes"
+      ,"StrictR3InferenceBundle.load(v129 recovered terminal overlay) and StrictR3ExecutionContract.load(v131 recovered terminal execution): pass; order submission authorized"
+      ,"python3 scripts/migrate_strict_r3_flat_runtime_reseal.py --state v87 --old-execution v154 --new-execution v155 --runtime-review recovered_terminal_review --out-state v88: pass; flat state and 81 processed decision identities preserved exactly"
+      ,"direct-15m candidate-reference unit: unknown final volume remains an audit flag, while a finite timestamp-exact direct 15m open is candidate-valid; official hourly fallback remains positive-volume and book-aligned"
+      ,"python3 scripts/seal_strict_r3_v130_decision_open_volume_pit_shadow.py"
+      ,"python3 scripts/seal_strict_r3_v131_direct_15m_reference_shadow.py"
+      ,"v158 14:00–15:00 shadow recovery: complete; all 170 source rows present; 157/155 feature-complete candidate rows; zero exchange calls/orders"
+      ,"python3 scripts/audit_strict_r3_terminal_state_replay_parity.py --primary-run v158/15:00 --replay-run v158/terminal_parity_replay/15:00: pass; exact candidate identities, 120 features, scores, dual admission, portfolio decisions, Geometry/K9 and 140 persisted operator-state files"
+      ,"StrictR3InferenceBundle.load(v131 direct-15m overlay) and StrictR3ExecutionContract.load(v132/v156 direct-15m execution): pass; order submission authorized"
+      ,"python3 scripts/seal_strict_r3_v132_direct_15m_reference_live.py"
+      ,"python3 scripts/migrate_strict_r3_flat_runtime_reseal.py --state v88 --old-execution v155 --new-execution v156 --out-state v89: pass; flat state and 81 processed decision identities preserved exactly"
+      ,"hash-bound bootstrap predecessor selector: returns the verified v158 15:00 recovery state in 0.000853 seconds; completion, temporal, bundle, feature-state, Geometry/K9 and next-portfolio-state checks are identical to the archival fallback selector"
+      ,"python3 -m py_compile scripts/run_strict_r3_live_hourly_entry_producer.py scripts/seal_strict_r3_v133_bootstrap_fastpath_live.py"
+      ,"python3 scripts/seal_strict_r3_v133_bootstrap_fastpath_live.py: pass; only scripts/run_strict_r3_live_hourly_entry_producer.py changed; economic_contract_changed=false"
+      ,"StrictR3InferenceBundle.load(v132 bootstrap-fastpath overlay), StrictR3ExecutionContract.load(v133/v157 execution), and approved v131 runtime bridge: pass; order submission authorized"
+      ,"python3 scripts/migrate_strict_r3_flat_runtime_reseal.py --state v89 --old-execution v156 --new-execution v157 --out-state v90: pass; flat state and 81 processed decision identities preserved exactly"
+      ,"partitioned feature parity classification audit: all 19 historical v1 flags are now correctly classified as stateful-reference exclusions; no comparable field remains divergent. This changes audit classification only, not live feature/model computation."
+    ],
+    "result": "Passed: sealed execution contract hash validation, exact 170-row/135-field isolated stateful materialization parity, byte-identical operator-state payloads, flat live-state successor migration, read-only Kraken flat-state reconciliation, and a recovery-only bootstrap with source state/features/K9 symlinked read-only plus a byte-identical exact-decision shadow portfolio state. The v153 candidate additionally replaces only serial per-symbol 15-minute coverage reads with bounded deterministic parallel reads; each worker still reads its same fixed causal window and results remain ordered by the frozen universe. The current decision-open adapter exactly reproduced all 170 frozen values. The current panel updater exactly reproduced the appended 07:00 state across all 35 source fields and correctly retained a sealed 06:00 row despite later exchange revisions. The v154 successor permits only that updater hash transition, only from the sealed re-receipt, only for the first stateful recovery advance, and only when every other implementation hash remains exact; it writes a dedicated implementation-rebind receipt. Recovery applies the existing exact-decision live-to-shadow bridge only to its first bootstrap hour; every successor then consumes its immediate recovered predecessor's exact next_portfolio_state, preserving the counterfactual portfolio chain. The recovery seed now exposes the already-frozen v122 canonical-120 feature prefix alongside candidate, score, geometry, and feature-state inputs, allowing the exact append-only prefix proof to cover all required roles without recomputation. These are recovery-only orchestration changes; they do not alter model, feature, Geometry/K9, admission, portfolio, or exit economics. The partitioned feature audit is explicitly marked inconclusive for its intentionally disabled stateful field families; it can no longer misreport those fields as feature divergences. The v155 recovery completed hours 11:00–13:00 UTC in shadow-only mode with exact terminal independent replay parity, then a v129/v131 successor bound the terminal feature/K9 state with no economic change. The v88 flat live state preserves all processed decisions exactly and is ready only for a fresh later decision."
+  },
+  "runtime_dependency_fix": "The Adaptive Exit V1 state builder no longer imports the full SimplePolicyOptimiser research module merely to obtain its deployable ATR-power barrier primitive. A local exact-equivalence implementation preserves the same clipping, default-median, float32, and trailing minimum-giveback semantics. This removes the open-position-only startup stall from stateful recovery and live exit evaluation without changing policy economics.",
+  "agent_plan": {
+    "subagents": []
+  }
+}

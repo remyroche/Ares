@@ -1,0 +1,62 @@
+{
+  "schema": "ares.change_receipt.v1",
+  "date": "2026-08-20",
+  "scope": "completion of the compact causal liquidity-transition feature contract with per-minute aggregate trade activity",
+  "retention": {
+    "raw_trade_archives_retained": 0,
+    "raw_archive_formats_retained": 0,
+    "individual_trade_prints_retained": false,
+    "orderbook_recap_root_bytes_approx": "2.2 GiB",
+    "activity_recap": "data/execution/tardis_orderbook_recap_v1/context/kraken_per_minute_activity_recap_v1.parquet",
+    "activity_recap_size": "6.3 MiB",
+    "activity_fields": [
+      "buy_trade_quote_volume",
+      "sell_trade_quote_volume",
+      "trade_quote_volume",
+      "trade_intensity",
+      "sell_order_flow_imbalance",
+      "1/3/5-minute aggregate activity changes"
+    ]
+  },
+  "cohort": {
+    "symbols": 12,
+    "rows": 120852,
+    "dates": [
+      "2025-01-01",
+      "2025-04-01",
+      "2025-07-01",
+      "2025-10-01",
+      "2026-01-01",
+      "2026-04-01",
+      "2026-07-01"
+    ],
+    "causality": "exact symbol/minute aggregate join; activity_available_ts must be no later than next-bar decision_ts; gaps remain null; zero-volume state explicit"
+  },
+  "verification": {
+    "full_feature_audit": "data/execution/tardis_orderbook_recap_v1/reports/liquidity_transition_activity_recap_v1_contract_audit/feature_contract_audit.json",
+    "all_inference_families_complete": true,
+    "retained_contract_complete": true,
+    "all_supervision_labels_present": true,
+    "models": ["bayesian_shrinkage", "ridge", "lgbm"],
+    "targets": ["book_cost_delta", "spread_delta"],
+    "horizons_minutes": [1, 5, 10, 15, 30],
+    "validation": "three expanding chronological date folds, deterministic 12,000-row-per-date cap, grouped whole-family cyclic permutation by symbol/date",
+    "tests": "python3 -m pytest -q tests/execution: 26 passed"
+  },
+  "matched_trade_flow_ablation": {
+    "with_trade_flow": "data/execution/tardis_orderbook_recap_v1/models/liquidity_transition_activity_recap_v1",
+    "without_trade_flow": "data/execution/tardis_orderbook_recap_v1/models/liquidity_transition_activity_recap_no_trade_flow_v1",
+    "comparison": "data/execution/tardis_orderbook_recap_v1/reports/liquidity_transition_activity_trade_flow_matched_ablation.parquet",
+    "result": "LGBM mean held-fold MAE difference stayed within -0.001054 to +0.000727 bps across all ten direct tasks; aggregate trade flow is not promoted as incremental."
+  },
+  "source_hashes": {
+    "src/execution/liquidity_transition.py": "20e25af6e427e5d8ff9277156f6d16fde18935dd7bd5f373c8fff789b0233e9d",
+    "scripts/execution/build_liquidity_transition_panel.py": "59b12393683a6320738d3e2e32c69ee612baa16ebf7902e429fbd0cd1ce231c2",
+    "scripts/execution/materialize_trade_activity_recap.py": "fe086d5a20bbf04634350d938cf65ed248884f90a58b51ecb31675bb42452381",
+    "scripts/execution/materialize_btc_benchmark_ohlcv.py": "a604a8b07d17f643d0bbf1148bf05ae8d8c8cc028167e6376f09a33dd9127961",
+    "scripts/execution/evaluate_liquidity_transition.py": "34d095202cda3e02dfa1e43ab1b326b45e16b2059854040080c4fc635c0ce8e6",
+    "scripts/execution/audit_liquidity_transition_contract.py": "c7f8455e335f91d49ab5b2b8aa13310ca59ebcd6b7d5a29d977d4ab5302eef01",
+    "tests/execution/test_liquidity_transition.py": "7b5a31e3e441a15581c767ebf47c035d87222d1b876be1fdc60017ebcd01d370"
+  },
+  "nonpromotion": "This remains offline liquidity-transition research. No live execution, admission, or exit policy is modified."
+}

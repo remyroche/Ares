@@ -1,0 +1,23 @@
+{
+  "feature_contract": [
+    "mark_perp_dislocation", "volatility_autocorr_48", "ker_10", "mark_vs_perp_bps",
+    "asset_mkt_exhaustion_phase_divergence", "mark_gap_vol_10h", "z_dist_ema_24", "ffd_rv_2h_04",
+    "dir_path_short_2h", "eth_btc_ret_4h", "hour_of_week_sin", "mkt_ret_eq_4h",
+    "q_tail_width__bars_in_high_vol_state_log_norm", "short_default_damage_ema_5d", "rv_12h", "oi_7d_chg_z",
+    "wick_ratio_4h_max", "funding_mean_10d_robust_z", "donchian_zone_1d_atr", "oi_value_log_1d_robust_z",
+    "mark_gap_vol_5h", "funding_vol_15d_robust_z", "upside_semivariance_24", "price_x_oi_3d",
+    "amihud_z_peer_resid", "fund_rate", "choppiness_cp_absratio_8_32", "oi_expansion_compression_balance_96h",
+    "oi_value_log_7d_robust_z", "distance_to_resistance_daily_donchian_atr", "price_trend_15d_vol_norm", "mark_trigger_risk_5h",
+    "mr_soft", "loc_range_pos_48", "ret48h_bench_resid", "adx_di_minus_14", "asset_flush_exhaustion_score",
+    "beta_eth_24h", "autocorr_6h", "ret24h_bench_resid", "corr_eth_24h", "prog_eff_24",
+    "bars_in_high_vol_state_log_norm", "tail_score", "dist_from_low_vol", "price_trend_10d_vol_norm",
+    "distance_to_support_weekly_vwap_atr", "trend_slope_120h", "price_x_oi_7d", "vol_z_30_calm",
+    "rv_rel_universe", "vol_exhaust", "bars_since_max_oi_drop_72h_norm", "rv_48h", "log_realized_vol",
+    "ker_24", "ffd_rv_6h_06", "regime_transition_entropy_48h", "dist_prior_day_low", "zr_6h_x_range_z_24h",
+    "dist_rolling_7d_high", "leverage_build", "oiw_z_delta_entry_dist_14d_atr", "asset_funding_rate_mean_15d",
+    "seasonality_strength", "funding_crowded_mom_exhaustion_self_z_5h", "ffd_amihud_06", "ffd_amihud_04",
+    "loc_session_pos_48", "ffd_rv_24h_04", "loc_pivot_ladder_pos_48", "dist_prior_day_high"
+  ],
+  "source": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+  "purpose": "explicit frozen F72 causal contract for strict-OOF historical runway reconstruction"
+}

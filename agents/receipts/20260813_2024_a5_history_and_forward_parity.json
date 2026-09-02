@@ -1,0 +1,56 @@
+{
+  "schema": "strict_r3_2024_a5_history_forward_parity_receipt_v1",
+  "status": "verified_shadow_only",
+  "scope": "long_only",
+  "a5_history": {
+    "evaluation_start": "2025-01-01T00:00:00Z",
+    "first_fold_training_start": "2024-04-01T00:00:00Z",
+    "first_fold_training_end_exclusive": "2025-01-01T00:00:00Z",
+    "training_window_months": 9,
+    "first_fold_training_rows": 60000,
+    "full_nine_month_history": true,
+    "executable_from": "2025-01-01T00:00:00Z",
+    "authoritative_replay": "data_perp/artifacts/strict_r3_canonical_a5_long_2025_jul2026_2024warmup_20260812_v1"
+  },
+  "forward_parity": {
+    "full_universe_symbols": 170,
+    "august_population_rows": 48960,
+    "eligible_rows": 25794,
+    "feature_prefix_rows": 28390,
+    "shared_feature_columns": 135,
+    "bit_identical_feature_columns": 135,
+    "eligible_score_overlap_rows": 8542,
+    "all_score_components_max_abs_difference": 0.0,
+    "feature_artifact": "data_perp/artifacts/strict_r3_schema_v2_features_targetfree_long_aug1_12_fulluniverse_20260813_v2/canonical120_features.parquet",
+    "feature_artifact_sha256": "2ccf5e1ba4d6a9f79cf5cec1ad83968018d58cf9b96e459156a37a7301addd38",
+    "score_artifact": "data_perp/artifacts/strict_r3_fixed_aug1_bundle_score_long_aug1_12_fulluniverse_20260813_v2/predictions.parquet",
+    "score_artifact_sha256": "60abe971d11c597bd2030d40c98c670fd6b57122135dfddd2df906eaccf8993f"
+  },
+  "successor_preflight": {
+    "cutoff": "2026-08-12T23:00:00Z",
+    "reserve_days": 28,
+    "ready": true,
+    "receipt": "data_perp/artifacts/strict_r3_successor_bundle_readiness_28d_refreshed_20260813_v4.json",
+    "receipt_sha256": "f2bbdbfa646d2c237a228c2b2fdac20fba80eea19c8078112425edffe441bd23"
+  },
+  "causality": {
+    "features_before_eligibility_filter": true,
+    "outcomes_consumed_by_scorer": false,
+    "held_percentile_operations": 0,
+    "same_bundle_reference_and_held": true,
+    "geometry_k9_frozen": true,
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "code": {
+    "complete_universe_guard": "scripts/materialize_strict_r3_forward_features.py",
+    "complete_universe_guard_sha256": "229b7eb4d349ed1a110fa09e8ba5c5c6f378df21cdb5b94a872824fddb00b0c6",
+    "downloader": "scripts/download_kraken_15m_hf.py",
+    "downloader_sha256": "22244cb1761feb7ad6c3a225b310961310baf192b30067326e66f8607dfb0d86"
+  },
+  "tests": {
+    "command": "python3 -m pytest tests/test_materialize_strict_r3_forward_features.py tests/test_download_kraken_15m_hf.py tests/test_audit_strict_r3_successor_bundle_readiness.py -q",
+    "passed": 5,
+    "failed": 0
+  }
+}

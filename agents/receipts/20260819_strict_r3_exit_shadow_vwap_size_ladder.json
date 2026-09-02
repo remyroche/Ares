@@ -1,0 +1,44 @@
+{
+  "schema": "strict_r3_agent_evidence_receipt_v1",
+  "task": "strict-r3-read-only-exit-shadow-vwap-size-ladder",
+  "scope": "Adds read-only per-completed-minute, directional order-book VWAP telemetry at 1x/5x/10x/50x/100x of each live position's actual leveraged contract exposure. The ladder never extrapolates beyond visible depth, creates no exchange writes, and does not alter the sealed live exit monitor or its orders.",
+  "changed_paths": [
+    "extreme_price_movements/inference/strict_r3_exit_shadow.py",
+    "scripts/run_strict_r3_exit_shadow_monitors.py",
+    "extreme_price_movements/tests/test_strict_r3_exit_shadow.py",
+    "agents/receipts/20260819_strict_r3_exit_shadow_vwap_size_ladder.json"
+  ],
+  "contracts": [
+    {"path": "AGENTS.md", "sha256": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4"},
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "fixed_contract": {
+    "mode": "read_only_shadow",
+    "book_direction": "long positions sell through bids; short positions buy through asks",
+    "size_basis": "actual_open_contracts_including_live_leverage; leverage is reported but never multiplied a second time",
+    "depth_behavior": "only fully covered rows receive executable_vwap_price; visible_partial_vwap_price is retained separately with coverage_fraction",
+    "exchange_write_calls": 0
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_exit_shadow.py extreme_price_movements/tests/test_strict_r3_live_full_vwap_hard_stop.py",
+      "python3 -m py_compile extreme_price_movements/inference/strict_r3_exit_shadow.py scripts/run_strict_r3_exit_shadow_monitors.py",
+      "git diff --check -- extreme_price_movements/inference/strict_r3_exit_shadow.py scripts/run_strict_r3_exit_shadow_monitors.py extreme_price_movements/tests/test_strict_r3_exit_shadow.py"
+    ],
+    "results": [
+      "9 focused exit-shadow and close-based hard-stop tests passed.",
+      "The 1x/5x/10x/50x/100x test confirms actual leveraged contract exposure is used once and insufficient visible depth is never represented as executable.",
+      "Syntax and whitespace checks passed."
+    ]
+  },
+  "runtime_hashes": {
+    "extreme_price_movements/inference/strict_r3_exit_shadow.py": "79d504269053e95efb4e3e9287304931e8db57b4477676bc31f8070c98ee556f",
+    "scripts/run_strict_r3_exit_shadow_monitors.py": "da6865bf53bf1005cc89e03a974dac90fdd1c4ef2f6599f775078fdba7a407b9",
+    "extreme_price_movements/tests/test_strict_r3_exit_shadow.py": "29ded30e1e6f042dee6711801936cd0c1bdfeff43ee4544157ac1f26013dcf15"
+  },
+  "agent_plan": {"subagents": []}
+}

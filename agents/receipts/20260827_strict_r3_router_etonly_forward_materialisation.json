@@ -1,0 +1,25 @@
+{
+  "task": "strict-r3-router-etonly-forward-materialisation",
+  "scope": "Offline-only helper for materialising the already frozen router feature contract from target-free historical identities plus a schema-v2 forward candidate grid. It does not train, score, calibrate, admit, replay, perform exchange I/O, or alter live inference.",
+  "contracts": {
+    "candidate_identity": "candidate_id, UTC decision timestamp, side, native timestamp and symbol; exact identity is required after feature generation",
+    "causality": "Target-free identity sources only; the forward grid must declare no future-path columns consumed. The feature engine uses causal hourly inputs only.",
+    "features": "Explicit ordered frozen feature-contract JSON; no runtime feature discovery or target-derived selection.",
+    "missing_data": "Values remain missing in output; no label-conditioned filtering, fill, or synthetic outcome-derived feature is permitted."
+  },
+  "implementation": {
+    "new_script": "scripts/materialize_strict_r3_router_forward_features_v1.py",
+    "outputs": "Immutable month-partitioned causal_feature_universe.parquet panels, per-field coverage, target-free identity/coverage audit, and run manifest."
+  },
+  "validation_plan": [
+    "python3 -m py_compile scripts/materialize_strict_r3_router_forward_features_v1.py",
+    "CLI help invocation",
+    "target-free August grid manifest and per-month identity/coverage audit",
+    "strict router and downstream U/MC1 causality checks after forward scoring"
+  ],
+  "changed_paths": [
+    "scripts/materialize_strict_r3_router_forward_features_v1.py",
+    "agents/receipts/20260827_strict_r3_router_etonly_forward_materialisation.json"
+  ],
+  "agent_plan": {"subagents": []}
+}

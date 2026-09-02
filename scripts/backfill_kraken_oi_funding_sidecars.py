@@ -15,6 +15,7 @@ values.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -46,6 +47,15 @@ class Product:
     sidecar_key: str
     status: str
     reason: str = ""
+
+
+class LocalSidecarUnavailableError(RuntimeError):
+    """A local OI/funding sidecar is explicitly unavailable for safe use."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f"{path}: {reason}")
+        self.path = path
+        self.reason = reason
 
 
 def _utc(value: Any) -> pd.Timestamp:
@@ -111,6 +121,21 @@ def _read_products(
         seen.add(product.feature_symbol)
         out.append(product)
     return out
+
+
+def _partition_products(
+    products: list[Product], *, partition_count: int, partition_id: int,
+) -> list[Product]:
+    """Return one stable, disjoint partition of the frozen product order."""
+    if partition_count < 1:
+        raise ValueError("partition_count must be positive")
+    if not 0 <= partition_id < partition_count:
+        raise ValueError("partition_id must be in [0, partition_count)")
+    ordered = sorted(products, key=lambda item: item.feature_symbol)
+    return [
+        product for index, product in enumerate(ordered)
+        if index % partition_count == partition_id
+    ]
 
 
 def _http_get(session: requests.Session, url: str, params: dict[str, Any]) -> requests.Response:
@@ -253,10 +278,46 @@ def _load_funding_archive(product: Product, archive_path: Path | None, start: pd
     return series, {"status": "OK" if not series.empty else "EMPTY", "member": member, "rows": int(len(series))}
 
 
+def _unavailable_marker(path: Path) -> Path:
+    return path.with_name(path.name + ".unavailable.json")
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False,
+    ) as handle:
+        tmp = Path(handle.name)
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _load_existing(path: Path, column: str) -> pd.Series:
+    marker = _unavailable_marker(path)
+    if marker.exists():
+        raise LocalSidecarUnavailableError(path, "prior_corrupt_sidecar_quarantined")
     if not path.exists():
         return pd.Series(dtype="float32", index=pd.DatetimeIndex([], tz="UTC"))
-    frame = pd.read_parquet(path)
+    error: Exception | None = None
+    # Atomic writes protect the normal path, but networked/local-sync filesystems
+    # can still transiently reject an otherwise-valid footer during concurrent
+    # metadata activity. Retry a bounded number of times before quarantining.
+    for delay_seconds in (0.0, 0.2, 0.5):
+        if delay_seconds:
+            time.sleep(delay_seconds)
+        try:
+            frame = pd.read_parquet(path)
+            break
+        except Exception as exc:  # pragma: no cover - exercised via outcome path
+            error = exc
+    else:
+        assert error is not None
+        raise LocalSidecarUnavailableError(
+            path, f"invalid_parquet_after_retries:{type(error).__name__}",
+        ) from error
     if frame.empty:
         return pd.Series(dtype="float32", index=pd.DatetimeIndex([], tz="UTC"))
     col = column if column in frame.columns else next(iter(frame.columns), None)
@@ -282,39 +343,130 @@ def _atomic_write(series: pd.Series, path: Path, column: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def _merge_one(
+def _quarantine_corrupt_sidecar(
+    *, path: Path, quarantine_root: Path, reason: str,
+) -> dict[str, Any]:
+    """Atomically isolate a bad local file and leave an explicit fail-closed marker.
+
+    A corrupt historical sidecar must never be silently replaced by a partial
+    current API response.  The immutable quarantine receipt makes the row
+    unavailable until an explicit, separately-audited historical recovery.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    relative = path.relative_to(path.parents[1])
+    quarantined = quarantine_root / relative.parent / (
+        f"{relative.name}.{digest[:16]}.corrupt"
+    )
+    quarantined.parent.mkdir(parents=True, exist_ok=True)
+    if quarantined.exists():
+        if hashlib.sha256(quarantined.read_bytes()).hexdigest() != digest:
+            raise RuntimeError(f"quarantine collision for {path}")
+    else:
+        os.replace(path, quarantined)
+    marker = _unavailable_marker(path)
+    payload = {
+        "schema": "kraken_oi_funding_corrupt_sidecar_quarantine_v1",
+        "status": "unavailable_until_explicit_historical_repair",
+        "source_path": str(path),
+        "quarantine_path": str(quarantined),
+        "sha256": digest,
+        "reason": reason,
+        "partial_api_replacement_forbidden": True,
+    }
+    _atomic_json(marker, payload)
+    return payload
+
+
+def _download_observations(
+    product: Product,
+    family: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    funding_archive: Path | None = None,
+    archive_only: bool = False,
+) -> tuple[pd.Series, dict[str, Any]]:
+    """Fetch one product/family without touching the local sidecar store."""
+    if family == "open_interest_hourly":
+        return _download_oi(product, start, end)
+    if archive_only:
+        return _load_funding_archive(product, funding_archive, start, end)
+    observations, api = _download_funding(product, start, end)
+    if funding_archive is not None:
+        archive_observations, archive_meta = _load_funding_archive(
+            product, funding_archive, start, end,
+        )
+        if not archive_observations.empty:
+            observations = pd.concat([archive_observations, observations]).groupby(
+                level=0,
+            ).last().sort_index().astype("float32")
+        api["archive"] = archive_meta
+    return observations, api
+
+
+def _merge_observations(
     product: Product,
     family: str,
     start: pd.Timestamp,
     end: pd.Timestamp,
     root: Path,
-    funding_archive: Path | None = None,
-    archive_only: bool = False,
+    observations: pd.Series,
+    api: dict[str, Any],
+    quarantine_corrupt_sidecars_dir: Path | None = None,
 ) -> dict[str, Any]:
+    """Apply one downloaded observation set in the canonical sidecar form.
+
+    The common live case is a strictly newer append.  It intentionally avoids
+    a full concat/groupby/sort pass over the historical file.  An overlapping
+    repair still follows the original conservative gap-filling merge.
+    """
     column = "open_interest" if family == "open_interest_hourly" else "funding_rate"
     path = root / family / f"{product.sidecar_key}.parquet"
-    existing = _load_existing(path, column)
-    if family == "open_interest_hourly":
-        observations, api = _download_oi(product, start, end)
-    else:
-        if archive_only:
-            observations, api = _load_funding_archive(product, funding_archive, start, end)
-        else:
-            observations, api = _download_funding(product, start, end)
-            if funding_archive is not None:
-                archive_observations, archive_meta = _load_funding_archive(product, funding_archive, start, end)
-                if not archive_observations.empty:
-                    observations = pd.concat([archive_observations, observations]).groupby(level=0).last().sort_index().astype("float32")
-                api["archive"] = archive_meta
-    # New endpoint rows are observations.  Only after filtering do we shift to
-    # the canonical availability index.  Existing canonical rows are retained
-    # on duplicate timestamps so the backfill is gap-only and resumable.
+    try:
+        existing = _load_existing(path, column)
+    except LocalSidecarUnavailableError as exc:
+        quarantine = None
+        if path.exists():
+            if quarantine_corrupt_sidecars_dir is None:
+                raise
+            quarantine = _quarantine_corrupt_sidecar(
+                path=path,
+                quarantine_root=quarantine_corrupt_sidecars_dir,
+                reason=exc.reason,
+            )
+        return {
+            "feature_symbol": product.feature_symbol,
+            "product_id": product.product_id,
+            "family": family,
+            "path": str(path),
+            "status": "UNAVAILABLE_LOCAL_SIDECAR",
+            "reason": exc.reason,
+            "existing_rows": None,
+            "observed_rows": int(len(observations)),
+            "available_rows": 0,
+            "added_rows": 0,
+            "final_rows": None,
+            "merge_mode": "corrupt_local_quarantine" if quarantine else "prior_quarantine_marker",
+            "quarantine": quarantine,
+            "api": api,
+            "availability_shift_hours": 1,
+            "partial_api_replacement_forbidden": True,
+        }
     available = observations.copy()
     if not available.empty:
         available.index = pd.DatetimeIndex(available.index + HOUR, name="ts")
         available = available[(available.index >= start) & (available.index <= end)]
+        available = available.loc[~available.index.duplicated(keep="last")].sort_index()
     added = available[~available.index.isin(existing.index)] if not available.empty else available
-    merged = pd.concat([existing, added]).groupby(level=0).last().sort_index().astype("float32")
+    if existing.empty:
+        merged = added.astype("float32")
+    elif added.empty:
+        merged = existing
+    elif added.index.min() > existing.index.max():
+        merged = pd.concat([existing, added]).astype("float32")
+    else:
+        merged = pd.concat([existing, added]).groupby(level=0).last().sort_index().astype("float32")
     if not merged.empty and (not path.exists() or len(added) > 0):
         _atomic_write(merged, path, column)
     return {
@@ -329,6 +481,11 @@ def _merge_one(
         "available_rows": int(len(available)),
         "added_rows": int(len(added)),
         "final_rows": int(len(merged)),
+        "merge_mode": (
+            "initial" if existing.empty else "unchanged" if added.empty
+            else "strict_append" if added.index.min() > existing.index.max()
+            else "overlap_repair"
+        ),
         "existing_first_ts": existing.index.min().isoformat() if len(existing) else None,
         "existing_last_ts": existing.index.max().isoformat() if len(existing) else None,
         "api_first_observation_ts": observations.index.min().isoformat() if len(observations) else None,
@@ -337,6 +494,25 @@ def _merge_one(
         "availability_shift_hours": 1,
         "preserved_existing_duplicates": True,
     }
+
+
+def _merge_one(
+    product: Product,
+    family: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    root: Path,
+    funding_archive: Path | None = None,
+    archive_only: bool = False,
+    quarantine_corrupt_sidecars_dir: Path | None = None,
+) -> dict[str, Any]:
+    observations, api = _download_observations(
+        product, family, start, end, funding_archive, archive_only,
+    )
+    return _merge_observations(
+        product, family, start, end, root, observations, api,
+        quarantine_corrupt_sidecars_dir,
+    )
 
 
 def main() -> None:
@@ -354,10 +530,24 @@ def main() -> None:
     ap.add_argument("--start-ts", default=None)
     ap.add_argument("--end-ts", default=None)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--partition-count", type=int, default=1)
+    ap.add_argument("--partition-id", type=int, default=0)
     ap.add_argument("--skip-oi", action="store_true")
     ap.add_argument("--skip-funding", action="store_true")
     ap.add_argument("--funding-archive-zip", type=Path, help="Official Kraken PF funding export; rows are observations and shifted +1h.")
     ap.add_argument("--archive-only", action="store_true", help="For funding jobs, use the official export without calling the rolling API.")
+    ap.add_argument(
+        "--quarantine-corrupt-sidecars-dir",
+        type=Path,
+        help=(
+            "Atomically quarantine an invalid local sidecar and leave a "
+            "fail-closed marker instead of replacing history with a partial API response."
+        ),
+    )
+    ap.add_argument(
+        "--batch-append", action="store_true",
+        help="Fetch a whole partition first, then perform one deterministic local merge phase.",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -388,6 +578,12 @@ def main() -> None:
             continue
     start = _utc(args.start_ts) if args.start_ts else min((x.min() for x in all_indices if len(x)), default=pd.Timestamp("2022-05-19", tz="UTC"))
     end = _utc(args.end_ts) if args.end_ts else max((x.max() for x in all_indices if len(x)), default=pd.Timestamp.now(tz="UTC").floor("h"))
+    all_products = list(products)
+    products = _partition_products(
+        all_products,
+        partition_count=int(args.partition_count),
+        partition_id=int(args.partition_id),
+    )
     ready = [p for p in products if p.status == "READY"]
     skipped = [asdict(p) for p in products if p.status != "READY"]
     manifest: dict[str, Any] = {
@@ -400,6 +596,9 @@ def main() -> None:
         "availability_rule": "availability_ts = observation_ts + 1h",
         "product_contract": "PF linear USD only; PI/inverse and unresolved aliases skipped",
         "workers": max(1, int(args.workers)),
+        "partition_count": int(args.partition_count),
+        "partition_id": int(args.partition_id),
+        "products_total_unpartitioned": len(all_products),
         "products_total": len(products),
         "products_ready": len(ready),
         "products_skipped": skipped,
@@ -407,6 +606,7 @@ def main() -> None:
         "families": [x for x, enabled in (("open_interest_hourly", not args.skip_oi), ("funding_hourly", not args.skip_funding)) if enabled],
         "funding_archive_zip": str(args.funding_archive_zip) if args.funding_archive_zip else None,
         "funding_archive_only": bool(args.archive_only),
+        "batch_append": bool(args.batch_append),
     }
     args.out_dir.mkdir(parents=True, exist_ok=True)
     if args.dry_run:
@@ -416,10 +616,36 @@ def main() -> None:
 
     jobs = [(p, family) for p in ready for family in manifest["families"]]
     results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=max(1, int(args.workers))) as pool:
-        futures = [pool.submit(_merge_one, p, family, start, end, args.perp_root, args.funding_archive_zip, args.archive_only) for p, family in jobs]
-        for future in as_completed(futures):
-            results.append(future.result())
+    if args.batch_append:
+        fetched: list[tuple[Product, str, pd.Series, dict[str, Any]]] = []
+        with ThreadPoolExecutor(max_workers=max(1, int(args.workers))) as pool:
+            futures = {
+                pool.submit(
+                    _download_observations, p, family, start, end,
+                    args.funding_archive_zip, args.archive_only,
+                ): (p, family)
+                for p, family in jobs
+            }
+            for future in as_completed(futures):
+                product, family = futures[future]
+                observations, api = future.result()
+                fetched.append((product, family, observations, api))
+        for product, family, observations, api in sorted(
+            fetched, key=lambda item: (item[0].feature_symbol, item[1]),
+        ):
+            results.append(_merge_observations(
+                product, family, start, end, args.perp_root, observations, api,
+                args.quarantine_corrupt_sidecars_dir,
+            ))
+    else:
+        with ThreadPoolExecutor(max_workers=max(1, int(args.workers))) as pool:
+            futures = [pool.submit(
+                _merge_one, p, family, start, end, args.perp_root,
+                args.funding_archive_zip, args.archive_only,
+                args.quarantine_corrupt_sidecars_dir,
+            ) for p, family in jobs]
+            for future in as_completed(futures):
+                results.append(future.result())
     results.sort(key=lambda x: (x["feature_symbol"], x["family"]))
     manifest["status"] = "COMPLETE"
     manifest["results"] = results

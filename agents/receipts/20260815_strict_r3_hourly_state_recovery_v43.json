@@ -1,0 +1,53 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "date_utc": "2026-08-15",
+  "scope": "strict-R3 long-only hourly state recovery and reconciliation",
+  "changes": [
+    {
+      "path": "scripts/backfill_kraken_oi_funding_sidecars.py",
+      "summary": "Adds deterministic partition-count/partition-id support for a 16-partition funding refresh."
+    },
+    {
+      "path": "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+      "summary": "Derives the exact-decision portfolio reconciliation bridge from the canonical live state; permits one explicitly sealed, byte-identical feature-state re-receipt only after operator-state hash verification."
+    },
+    {
+      "path": "extreme_price_movements/features.py",
+      "summary": "Permits market-spectral state catch-up only when every missing completed hourly row is present; missing rows remain fail-closed."
+    },
+    {
+      "path": "tests/test_backfill_kraken_oi_funding_sidecars.py",
+      "summary": "Covers stable, disjoint, complete product partitions."
+    },
+    {
+      "path": "tests/test_market_spectral_feature_state.py",
+      "summary": "Covers safe contiguous multi-hour spectral history catch-up."
+    },
+    {
+      "path": "tests/test_run_strict_r3_hourly_shadow.py",
+      "summary": "Covers live-to-shadow reconciliation and byte-identical feature-state re-receipt enforcement."
+    }
+  ],
+  "verification": {
+    "focused_tests": "6 passed, 25 deselected",
+    "state_reseal": {
+      "superseded_manifest_sha256": "d17ae07b5ac7c45c7e688db4b7a0d19fdf7a86c43f3671e393b61a6b7ef1b839",
+      "resealed_manifest_sha256": "00e4de10c038171f7f56928b0a491648b92bea8d80acae740a510e3d6816b5b0",
+      "operator_state_payload_sha256": "49b5ebd7dbbf3f385bb114d7080cb669c2b0514b5ad4307863643a2ecb0dd3ba",
+      "operator_state_files_changed": 0
+    },
+    "ordered_shadow_recovery": {
+      "0800": "170 population, 162 eligible, 49 mapped, 7 admitted, 2 portfolio accepted",
+      "0900": "170 population, 160 feature-complete eligible, 48 mapped, 3 admitted, 2 portfolio accepted",
+      "outcome_columns_consumed": [],
+      "exchange_calls": 0,
+      "order_submission_enabled": false
+    }
+  },
+  "artifacts": [
+    "config/strict_r3_inference_bundle_long_20260801_v43_auto_bridge_catchup_state_reseal.json",
+    "data_perp/artifacts/strict_r3_feature_state_resealed_v42_20260815T090000Z_v1",
+    "data_perp/artifacts/strict_r3_successor_v43_shadow_recovery_20260815T080000Z_v1",
+    "data_perp/artifacts/strict_r3_successor_v43_shadow_replay_20260815T090000Z_v2"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "task": "simple-policy-optimiser-canonical-1m-guard",
+  "scope": "Canonical SimplePolicyOptimiser entrypoints now require completed one-minute execution paths. The explicit 15-minute replay store remains available only to explicitly labelled historical-reconciliation callers.",
+  "changed_paths": [
+    "extreme_price_movements/simple_policy_optimiser.py",
+    "tests/test_simple_policy_optimiser_deployment.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "causality": {
+    "outcome_inputs": "unchanged; only executable post-decision one-minute OHLC paths are used by the policy replay",
+    "exchange_io": false,
+    "order_submission": false,
+    "cost_change": "none"
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m pytest tests/test_simple_policy_optimiser_deployment.py tests/test_exact_1m_rich_policy_contract.py -q"
+    ],
+    "result": "16 passed"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

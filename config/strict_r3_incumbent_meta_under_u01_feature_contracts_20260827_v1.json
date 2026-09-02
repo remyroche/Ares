@@ -1,0 +1,86 @@
+{
+  "schema": "strict_r3_incumbent_meta_under_u01_feature_contracts_v1",
+  "scope": "offline strict-OOF feature-count screen for the U01 unexpected-trailing meta challenger; no live/inference authority",
+  "incumbent_upstream": "0.50 * efficiency_bps + 0.50 * timing_bps",
+  "source_hpo": "data_perp/artifacts/strict_r3_incumbent_meta_under_hpo_20260827_v4/winner.json",
+  "selection_rule": "compare f35/f50/f70 through separate prequential Current/BCF MC1 maps and unchanged dual-50 constrained portfolio; prefer the smallest contract unless added value is material and robust",
+  "arms": [
+    {
+      "name": "under_u01_f35",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.03774022947324712,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.004369087266447652,
+        "subsample": 0.8107157219150619,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7120059373030293,
+        "reg_alpha": 0.0052937551471843045,
+        "reg_lambda": 18.513302796072402,
+        "min_split_gain": 0.00021172845275700355,
+        "sigmoid": 1.095681694551189,
+        "lambdarank_truncation_level": 20
+      }
+    },
+    {
+      "name": "under_u01_f50",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.03774022947324712,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.004369087266447652,
+        "subsample": 0.8107157219150619,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7120059373030293,
+        "reg_alpha": 0.0052937551471843045,
+        "reg_lambda": 18.513302796072402,
+        "min_split_gain": 0.00021172845275700355,
+        "sigmoid": 1.095681694551189,
+        "lambdarank_truncation_level": 20
+      }
+    },
+    {
+      "name": "under_u01_f70",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.03774022947324712,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.004369087266447652,
+        "subsample": 0.8107157219150619,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7120059373030293,
+        "reg_alpha": 0.0052937551471843045,
+        "reg_lambda": 18.513302796072402,
+        "min_split_gain": 0.00021172845275700355,
+        "sigmoid": 1.095681694551189,
+        "lambdarank_truncation_level": 20
+      }
+    }
+  ],
+  "contracts": {
+    "under_u01_f35": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f35.json",
+    "under_u01_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f50.json",
+    "under_u01_f70": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f70.json"
+  }
+}

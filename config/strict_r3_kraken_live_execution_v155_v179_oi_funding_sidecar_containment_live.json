@@ -1,0 +1,16 @@
+{
+  "base_execution": "config/strict_r3_kraken_live_execution_v148_v172_isolated_margin_hardstop_live.json",
+  "overrides": {
+    "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260823_v81_v179_oi_funding_sidecar_containment_live.json",
+    "activation_authorization_sha256": "fe0c75f1ab9850e7c0d477fd920bb761156ab6db7b1770ef652423625aa561c8",
+    "inference_bundle": "config/strict_r3_inference_overlay_long_v151_v179_oi_funding_sidecar_containment.json",
+    "inference_bundle_sha256": "8af3b2f5e33934271110c2ffe521a0378a0cc88ba9cdde2e1596e2502450ac6c",
+    "runtime_code_sha256": {
+      "extreme_price_movements/inference/strict_r3_live_execution.py": "4f9ed57bc8e26a88cd0ecf0f3c9d35150b792f9ff13cd8f2ccf3147fcfcb05ef",
+      "scripts/backfill_kraken_oi_funding_sidecars.py": "e5adae50f0dcd19449dd76dc14812cafac89d32ff5910e219b7edeae29ffeb2a",
+      "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "6c634d5a21cb56759087eb148b5795ee4bf5c4c123ef8a2a37a72954b20fc70b",
+      "scripts/run_strict_r3_live_hourly_entry_producer.py": "98c1ed656aeb6ea4515d2d3618985062a7d0c0c757e2758d7434d0126d445ddf"
+    }
+  },
+  "schema": "strict_r3_kraken_live_execution_overlay_v1"
+}

@@ -1,0 +1,96 @@
+{
+  "task": "strict-r3-p8u-e2-h4-live-parity-candidate-v2",
+  "status": "SEALED_NO_ORDER_SUCCESSOR_NOT_CONNECTED_TO_EXCHANGE",
+  "scope": "Seals current prior-resolved H0/H3/H4 models, ordered feature contracts, target-free E2-before-auction logic, persisted next-interval H4 state logic, and an independent inference/replay parity audit. The active exchange-writing gateway and active minute monitor are exclusion boundaries.",
+  "predecessor_receipt": "agents/receipts/20260830_strict_r3_p8u_e2_h4_live_parity_candidate.json",
+  "release_candidate": {
+    "path": "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260830_v1.json",
+    "sha256": "315d1a26ea3a0ff5c65831eb1fc099775f36567db7f6ad8aee64f61048f206da"
+  },
+  "documentation": {
+    "path": "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md",
+    "sha256": "5afe2c7f6c5b8ad303b309a55e1bbc618193973a946b20c8a165264dbca1fbd2"
+  },
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1/bundle_manifest.json",
+    "sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd",
+    "resolved_label_cutoff": "2026-08-29T00:00:00Z",
+    "training_window": "2026-04-29T00:00:00Z through 2026-08-29T00:00:00Z exclusive",
+    "e2_prior_resolved_pairs": 1021,
+    "h4_prior_resolved_states": 59131,
+    "e2_ordered_fields": 30,
+    "h4_ordered_fields": 45
+  },
+  "sealed_runtime": {
+    "e2_authority": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_parity.py",
+      "sha256": "a139939704cbacd09b19addf91e76d0a645d45f1a0391d6ef14d721be1e446ef"
+    },
+    "target_free_e2_features": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_features.py",
+      "sha256": "dc75ae3cc49aef72dc4148500533d30d1c42a2743d3c6e269201f0a170a34f70"
+    },
+    "persistent_h4_state": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_continuation.py",
+      "sha256": "3e4c149504e790a65e3c6dd617eb0fa13fc4be86a0dd89cc7b97055a2824c97b"
+    },
+    "h4_next_interval_minute_wrapper": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_rich_policy.py",
+      "sha256": "213be69e687d787d054bc0f68accb8c6f0214864f4f8aed8f310f809ceb7bf20"
+    },
+    "e2_before_auction": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_auction.py",
+      "sha256": "b3d14123f8adcc5ae33bb0f8c5c897b91fe98b5645c9a75c473aa0e2597ec239"
+    },
+    "bundle_refit": {
+      "path": "scripts/refit_strict_r3_p8u_e2_h4_live_parity_bundle.py",
+      "sha256": "a21637f2010fba30e4e23a7249985165f0d7d889f9cc2e81f88e0971089a879a"
+    },
+    "target_free_selection": {
+      "path": "scripts/score_strict_r3_p8u_e2_live_parity_noorder.py",
+      "sha256": "c9b5b5546fdda88be9fe4b6a31cbbc96877ed6e08d6cbc14582c3cc8ab897e91"
+    },
+    "noorder_auction": {
+      "path": "scripts/prepare_strict_r3_p8u_e2_h4_noorder_auction.py",
+      "sha256": "ac5e2b676042da0aefeaa06e65633b6020f1daf5bd96515edd0cb8f2ce2025d3"
+    },
+    "parity_audit": {
+      "path": "scripts/audit_strict_r3_p8u_e2_h4_inference_replay_parity.py",
+      "sha256": "643929c01af3d19776979261789b15bdcc51ad03551dc268096b51ccfec38b35"
+    }
+  },
+  "authorities": {
+    "entry": "Target-free dual-MC1 >=20 population; ordinary BCF-priority dual-30 top-two. H0 q50 >=50 AND H3 q50 >=50 may replace only one marginal ordinary candidate. The no-order auction then applies the unchanged 8-position, 2-entry, 80%-margin, 10%-slot, 7x-leverage constraints.",
+    "continuation": "At a completed 15-minute state boundary, a hash-bound 45-field H4 prediction is persisted with source/state hashes. Prediction >=0 adjusts only following completed minute bars through trailing activation x0.50 and fixed giveback x0.80; no hard-stop, smooth-capital-protection, sizing, or timeout relaxation is possible. The just-completed minute ending at the H4 state boundary is explicitly excluded."
+  },
+  "inference_replay_parity": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_inference_replay_parity_20260830_v1/receipt.json",
+    "sha256": "da82cc52fc0438e68a8f49e1111bff4f55e5735a07c2492aad8598024cb3820a",
+    "range": "2026-08-20T00:00:00Z through 2026-08-21T00:00:00Z exclusive",
+    "entry_rows": 168,
+    "e2_pair_rows": 17,
+    "e2_selected_rows": 48,
+    "h4_state_rows": 603,
+    "h4_active_rows": 132,
+    "e2_h0_max_abs_delta": 0.0,
+    "e2_h3_max_abs_delta": 0.0,
+    "h4_max_abs_delta": 0.0,
+    "outcome_columns_consumed": [],
+    "exchange_or_order_submission_called": false
+  },
+  "validation": {
+    "focused_tests": "8 passed: tests/test_p8u_e2_h4_giveback20_contract.py and tests/test_p8u_e2_h4_live_parity.py",
+    "static_validation": "JSON validation and Python compilation passed for all sealed successor components.",
+    "hash_behavior": "Every model, ordered feature contract, successor module, runner, and audit receipt is bound in the release candidate; a mismatch is fail-closed."
+  },
+  "active_exchange_boundary": {
+    "gateway": "config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json",
+    "gateway_sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d",
+    "statement": "The active exchange-writing gateway and minute monitor are unchanged. They do not import E2/H4 successor modules and retain the old dual-50 entry adapter plus parent rich-policy exit behavior. This receipt has no exchange or order authority."
+  },
+  "remaining_activation_work": [
+    "Build a separately named successor gateway that invokes the sealed target-free E2 selector and no-order auction before any executable-price check.",
+    "Build a separately named successor minute monitor that atomically persists the H4 state transition and calls the sealed H4 minute wrapper.",
+    "Run exact current-decision feature parity and completed-one-minute exit parity against those successor processes, then obtain separate explicit exchange-writing activation."
+  ]
+}

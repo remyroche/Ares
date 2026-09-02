@@ -1,0 +1,143 @@
+{
+  "schema_version": "strict_r3_p8u_archetype_recovery_v1",
+  "side": "long",
+  "seed": 1729,
+  "research_period": ["2024-09-01T00:00:00Z", "2026-07-31T23:59:59Z"],
+  "development_period": ["2024-09-01T00:00:00Z", "2025-12-31T23:59:59Z"],
+  "frozen_validation_period": ["2026-01-01T00:00:00Z", "2026-07-31T23:59:59Z"],
+  "policy_label_path": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "probe_feature_sidecar_root": "data_perp/artifacts/strict_r3_p8u_probe_causal_intraday_sidecar_20260829_v3",
+  "probe_feature_sidecar_fields_key": "OPPORTUNITY_PROBE_COVERAGE_QUALIFIED_FEATURE_KEYS",
+  "feature_sources": [
+    {"start": "2024-09-01", "end": "2024-10-31", "root": "data_perp/artifacts/strict_r3_p8u_f72_router_early_jul_oct24_identityonly_20260829_v1"},
+    {"start": "2024-11-01", "end": "2024-11-30", "root": "data_perp/artifacts/strict_r3_p8u_f72_router_early_nov24_identityonly_20260829_v2"},
+    {"start": "2024-12-01", "end": "2025-02-28", "root": "data_perp/artifacts/strict_r3_p8u_full1400_meta_features_dec24_feb25_source_repaired_completecontext_batched64_20260829_v5_expanded_base_lineage"},
+    {"start": "2025-03-01", "end": "2025-07-31", "root": "data_perp/artifacts/strict_r3_p8u_full1400_meta_features_marjul_source_repaired_completecontext_batched64_20260829_v1"},
+    {"start": "2025-08-01", "end": "2026-07-31", "root": "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_v1"}
+  ],
+  "router_score_sources": [
+    {"start": "2024-09-01", "end": "2025-07-31", "root": "data_perp/artifacts/strict_r3_p8u_router_oof_sep24_jul25_source_repaired_20260829_v1"},
+    {"start": "2025-08-01", "end": "2026-07-31", "root": "data_perp/artifacts/strict_r3_p8u_router_oof_apr25_jul26_successorlabels_20260828_v1"}
+  ],
+  "outer_folds": [
+    {"name": "2025_q2", "held_start": "2025-04-01", "held_end": "2025-06-30"},
+    {"name": "2025_q3", "held_start": "2025-07-01", "held_end": "2025-09-30"},
+    {"name": "2025_q4", "held_start": "2025-10-01", "held_end": "2025-12-31"}
+  ],
+  "inner_months": 2,
+  "minimum_train_months": 3,
+  "feature_contract_keys": {
+    "discovery": "OPPORTUNITY_PROBE_DISCOVERY_FEATURE_KEYS",
+    "predictive": "OPPORTUNITY_PROBE_PREDICTIVE_FEATURE_KEYS"
+  },
+  "preprocessing": {
+    "winsor_lower": 0.005,
+    "winsor_upper": 0.995,
+    "correlation_collapse_abs": 0.95,
+    "min_feature_coverage": 0.90,
+    "zero_iqr_fallback_quantiles": [0.10, 0.90],
+    "zero_iqr_relative_floor": 0.00001,
+    "discovery_scaling": "percentile",
+    "percentile_lower": 0.001,
+    "percentile_upper": 0.999,
+    "percentile_grid_size": 257,
+    "pca_explained_variance": 0.90,
+    "max_fit_rows": 40000,
+    "max_discovery_rows": 8000,
+    "gmm_max_iter": 60,
+    "gmm_reg_covar": 0.001,
+    "gmm_n_init": 3,
+    "nmf_max_iter": 120,
+    "archetypal_n_init": 5,
+    "archetypal_max_iter": 200,
+    "archetypal_outward_scale": 1.25
+  },
+  "discovery": {
+    "strict_structural_qualification": true,
+    "algorithms": ["nmf", "archetypal", "gmm"],
+    "gmm_covariances": ["tied", "diag"],
+    "gmm_full_max_k": 0,
+    "k_values": [4, 5, 6, 7, 8, 9, 10],
+    "nmf_k_values": [4, 5, 6, 7, 8, 9, 10],
+    "hdbscan_diagnostic": false,
+    "minimum_category_ess": 250.0,
+    "minimum_stability": 0.60,
+    "max_qualification_rows": 50000,
+    "max_stability_rows": 12000,
+    "structural_selection_tolerance": 0.05,
+    "frozen_structural_selection": {
+      "rule": "The supervised probe funnel reuses only these selections, previously chosen by the immutable target-free structural matrices named below. It refits and requalifies the specified decomposition on each permitted fold but does not repeat or use outcome-based selection.",
+      "artifacts": [
+        "data_perp/artifacts/strict_r3_p8u_archetype_recovery_structural_q2_20260830_v4_overlapgate",
+        "data_perp/artifacts/strict_r3_p8u_archetype_recovery_structural_q3q4_20260830_v2_overlapgate"
+      ],
+      "folds": {
+        "2025_q2": {"algorithm": "nmf", "covariance": null, "k": 5, "archetype_temperature_multiplier": 1.0},
+        "2025_q3": {"algorithm": "nmf", "covariance": null, "k": 4, "archetype_temperature_multiplier": 1.0},
+        "2025_q4": {"algorithm": "nmf", "covariance": null, "k": 4, "archetype_temperature_multiplier": 1.0}
+      }
+    },
+    "frozen_structural_controls": {
+      "rule": "C4 uses one separately predeclared qualified diagonal-GMM per fold, selected from the same immutable target-free qualification artifacts. It is a matched null control only and can never replace the NMF primary representation.",
+      "folds": {
+        "2025_q2": {"algorithm": "gmm", "covariance": "diag", "k": 7, "seed": 6274},
+        "2025_q3": {"algorithm": "gmm", "covariance": "diag", "k": 8, "seed": 6375},
+        "2025_q4": {"algorithm": "gmm", "covariance": "diag", "k": 5, "seed": 1006072}
+      }
+    },
+    "archetypal_temperature_multipliers": [0.05, 0.10, 0.20, 0.35],
+    "qualification": {
+      "max_mass_share": 0.65,
+      "min_ess_fraction": 0.03,
+      "max_pairwise_signature_cosine": 0.90,
+      "min_median_max_membership": 0.35,
+      "min_median_second_membership": 0.01,
+      "max_median_effective_fraction": 0.80,
+      "min_temporal_signature_correlation": 0.60
+    }
+  },
+  "probe": {
+    "feature_sets": ["P0", "P1"],
+    "model_specs": [
+      {"target_family": "atr_utility", "model_kind": "lgbm_huber", "canonical": true},
+      {"target_family": "atr_ordinal", "model_kind": "lgbm_ordinal", "canonical": true},
+      {"target_family": "atr_utility", "model_kind": "catboost_huber", "canonical": true},
+      {"target_family": "atr_ordinal", "model_kind": "catboost_ordinal", "canonical": true},
+      {"target_family": "atr_timestamp_rank", "model_kind": "lgbm_ranker", "canonical": false}
+    ],
+    "membership_gammas": [0.5, 1.0, 2.0],
+    "aggregation_methods": ["max", "top2_mean", "logsumexp"],
+    "combination_methods": ["rank_times_membership", "minimum", "geometric_mean"],
+    "feature_selection": {"max_fields_p0": 48, "max_fields_p1": 80, "max_rows": 12000, "mi_bins": 8},
+    "max_train_rows": 50000,
+    "selection_max_train_rows": 18000,
+    "max_eval_rows": 100000,
+    "models": {
+      "n_estimators": 350,
+      "selection_n_estimators": 100,
+      "learning_rate": 0.04,
+      "num_leaves": 15,
+      "max_depth": 3,
+      "min_child_samples": 300,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.8,
+      "reg_lambda": 5.0,
+      "huber_alpha": 0.9,
+      "catboost_huber_delta": 1.0,
+      "n_jobs": 4
+    }
+  },
+  "evaluation": {
+    "budget_fractions": [0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40],
+    "rescue_router_shares": [1.0, 0.9, 0.75, 0.6666666667, 0.5],
+    "outcome_thresholds_bps": [0.0, 50.0, 100.0, 200.0],
+    "within_timestamp_top_fractions": [0.20, 0.10, 0.05, 0.02, 0.01],
+    "selection_primary_budget": 0.10,
+    "selection_min_gain_pp": 2.0,
+    "selection_max_negative_months": 1
+  },
+  "validation": {
+    "fit_end": "2026-01-01",
+    "months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"]
+  }
+}

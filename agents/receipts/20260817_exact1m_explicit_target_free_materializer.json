@@ -1,0 +1,41 @@
+{
+  "task": "exact1m-explicit-target-free-materializer",
+  "scope": "Extend the offline exact one-minute policy materializer so a sealed target-free BCF/current dual-admission request can replace the legacy hardwired 2024 ledger route. Preserve immutable downloader receipt binding, join future paths only after routing, and do not alter live inference or submit/download data.",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_exact_1m_policy_hpo_dataset.py",
+    "tests/test_exact_1m_policy_contract.py",
+    "docs/EXACT_1M_POLICY_HPO_CONTRACT.md",
+    "agents/receipts/20260817_exact1m_explicit_target_free_materializer.json"
+  ],
+  "contracts": [
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/materialize_strict_r3_exact_1m_policy_hpo_dataset.py",
+      "python3 -m pytest -q tests/test_exact_1m_policy_contract.py tests/test_exact_1m_policy_hpo_runner.py: 9 passed",
+      "Direct read-only validation against data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_decision_2025_2026_20260817_v1/candidate_download_request.parquet: 49,556 rows, 164 symbols, decision-entry contract hash 357ba876186a02ecca8c8a1047448100ed3c2678ab677347b75d3ceb36d062f9, target_free=true, score source priority_bps.",
+      "No downloader, materializer output, live configuration, exchange call, or execution state was modified."
+    ],
+    "not_run_reason": "The required 16 downloader receipts do not exist yet; materialising paths is intentionally deferred until the parent authorizes the partitioned append-only acquisition."
+  },
+  "artifacts": [
+    "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_decision_2025_2026_20260817_v1/candidate_download_request.parquet",
+    "data_perp/artifacts/strict_r3_exact_1m_dual30_bcf_priority_candidates_decision_2025_2026_20260817_v1/candidate_download_request.json"
+  ],
+  "agent_plan": {
+    "subagents": []
+  }
+}

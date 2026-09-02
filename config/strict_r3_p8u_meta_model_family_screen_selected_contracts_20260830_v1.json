@@ -1,0 +1,63 @@
+{
+  "schema": "strict_r3_p8u_meta_model_family_screen_selected_contracts_v1",
+  "scope": "Offline fixed-budget model-family screen only. Each item is the highest GateProxy-ranked strict-OOF sample-weight candidate for its independently selected target/query and feature contract. GateProxy is screen-only; no item is an MC1 or production promotion.",
+  "selection_authority": "frozen GateProxy P0 Ridge trained on 88 independently actual MC1 replays; strict MC1 confirmation remains the only downstream promotion authority",
+  "source_config": "config/strict_r3_p8u_meta_staged_gateproxy_20260830_v1.json",
+  "items": [
+    {
+      "family": "magnitude",
+      "arm": "m_sqrtatr_g7_band28",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_magnitude_m_sqrtatr_g7_band28_20260830_v1/contracts/magnitude_f70.json",
+      "weight_trials": "config/strict_r3_p8u_meta_weight_trials_magnitude_m_sqrtatr_g7_band28_20260830_v1.json",
+      "weight_trial": "w0_unweighted",
+      "weight_gateproxy": "data_perp/artifacts/strict_r3_p8u_meta_weight_gateproxy_magnitude_20260830_v1"
+    },
+    {
+      "family": "state",
+      "arm": "s_sqrtatr_band28",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_state_s_sqrtatr_band28_20260830_v1/contracts/state_f50.json",
+      "weight_trials": "config/strict_r3_p8u_meta_weight_trials_state_s_sqrtatr_band28_20260830_v1.json",
+      "weight_trial": "w3_top20_class_balance",
+      "weight_gateproxy": "data_perp/artifacts/strict_r3_p8u_meta_weight_gateproxy_state_20260830_v1"
+    },
+    {
+      "family": "under",
+      "arm": "u_atr10_ts",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_under_u_atr10_ts_20260830_v1/contracts/under_f90.json",
+      "weight_trials": "config/strict_r3_p8u_meta_weight_trials_under_u_atr10_ts_20260830_v1.json",
+      "weight_trial": "w0_unweighted",
+      "weight_gateproxy": "data_perp/artifacts/strict_r3_p8u_meta_weight_gateproxy_under_20260830_v1"
+    },
+    {
+      "family": "over",
+      "arm": "o_atr10_ts",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_over_o_atr10_ts_20260830_v1/contracts/over_f90.json",
+      "weight_trials": "config/strict_r3_p8u_meta_weight_trials_over_o_atr10_ts_20260830_v1.json",
+      "weight_trial": "w3_over_local_adverse",
+      "weight_gateproxy": "data_perp/artifacts/strict_r3_p8u_meta_weight_gateproxy_over_20260830_v1"
+    }
+  ],
+  "model_families": [
+    "lgbm_xendcg",
+    "catboost_queryrmse",
+    "catboost_yetirank"
+  ],
+  "common_budget": {
+    "iterations": 220,
+    "learning_rate": 0.05,
+    "depth": 4,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "l2": 8.0,
+    "one_thread_per_fit": true
+  },
+  "held_months": [
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07"
+  ]
+}

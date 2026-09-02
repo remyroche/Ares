@@ -1,0 +1,17 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "task": "strict-r3-feature-state-exact-parity-reseal",
+  "scope": "Versioned live-lineage repair only. Preserve the active long-only BCF/current dual-MC1 models, policy, admission, auction, sizing, execution, exit policy, Geometry/K9 state and feature values. Reseal only the verified features.py implementation receipt after an exact same-state parity test.",
+  "changed_paths": {
+    "scripts/seal_strict_r3_v125_bcf_feature_state_reseal.py": "PENDING_AT_SEAL_TIME"
+  },
+  "validation": {
+    "required": [
+      "The isolated incremental clone must reproduce all 170 candidate identities and all 135 vector fields exactly.",
+      "The state reseal must preserve every operator-state payload byte-for-byte.",
+      "The sealed successor must permit only the declared features.py, BCF mapper, and producer deltas from v122."
+    ],
+    "status": "pending_seal"
+  },
+  "causality": "The parity run uses the 2026-08-22 07:00 point-in-time panel, a 06:00 predecessor state, and no outcomes, labels, future bars, or exchange-writing calls."
+}

@@ -1,0 +1,83 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "Predeclared offline-only successor Meta challenger bank. It deliberately changes under-confidence target margin and training-query geometry while retaining the frozen P8U Router50/F72 Base, Current 75/25 blending authority, rich-policy outcome contract, MC1 gate, and portfolio rules. It has no live, exchange, admission, or promotion authority.",
+  "research_contract": "P8U_META_RELATIVE_GATEPROXY_TARGETQUERY_BANK_V1",
+  "parent_protocol": "config/strict_r3_p8u_meta_challenger_relative_gateproxy_protocol_20260831_v1.json",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_prequential_bridge_mar25_jul26_20260830_v1/target_free_shap_features",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_meta_f72_enriched_universe_marjul25_20260830_v2",
+      "data_perp/artifacts/strict_r3_p8u_meta_f72_enriched_universe_aug25jul26_20260830_v2"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_p8u_supportive_path_labels_fullcurrent_source_mar25jul26_20260830_v2/parts"
+  },
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 100000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM Rank-XENDCG common target/query screen",
+    "objective": "rank_xendcg",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.75,
+    "meta_rank_weight": 0.25,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "under": {
+      "definition": "strict-prequential unexpected favourable rich-policy residual, conditional on reaching the frozen 0.5-ATR trailing-activation level",
+      "arms": [
+        {"name": "under_bps75__timestamp", "scale": "bps", "query": "timestamp", "threshold": 75.0},
+        {"name": "under_bps125__timestamp", "scale": "bps", "query": "timestamp", "threshold": 125.0},
+        {"name": "under_bps100__base_band_block14", "scale": "bps", "query": "base_band_block14", "threshold": 100.0},
+        {"name": "under_bps100__base_band_block21", "scale": "bps", "query": "base_band_block21", "threshold": 100.0},
+        {"name": "under_bps75__base_band_block14", "scale": "bps", "query": "base_band_block14", "threshold": 75.0},
+        {"name": "under_bps125__base_band_block21", "scale": "bps", "query": "base_band_block21", "threshold": 125.0}
+      ]
+    }
+  },
+  "candidate_bank": {
+    "incumbent": "under_bps100__timestamp with frozen Under-F120 LightGBM rank-XENDCG depth-4 sparse; it bypasses all proxy ranking and is carried into every confirmation.",
+    "structural_novelty": [
+      "Unseen 75- and 125-bps under-confidence margins bracket the retained 100-bps target without changing the economic policy.",
+      "14- and 21-day Base-band block queries test calibration-state learning instead of timestamp-only ordering.",
+      "The two crossed arms test whether target margin and query semantics interact rather than assuming either effect is separable."
+    ],
+    "post_screen_feature_contracts": [
+      "Frozen Under-F120 control.",
+      "F120 plus the fixed three-field SHAP-stable additive overlay, only for shortlisted target/query arms; this is additive, never a replacement."
+    ],
+    "post_screen_hpo": "Only each shortlisted arm receives the fixed bounded LambdaRank geometry bank. Gain/truncation and regularisation are not tuned before the target/query funnel.",
+    "no_same_bank_retuning": true,
+    "selection": "Use GateProxy_P0_Ridge for Top-3 new challengers plus one uncertain/diverse candidate. The incumbent is external and always confirmed. The challenger-relative proxy is intentionally not used until this new bank provides any qualifying positive incumbent-beat examples."
+  },
+  "causality": {
+    "feature_inputs": "F72 target-free fields only during target/query screening. F120/F123 are used only in the later named post-screen stage.",
+    "labels": "Policy and supportive-path labels join only after held target-free scores persist and must resolve before the fold reserve.",
+    "held_outcomes": "Descriptor diagnostics only; never a score input.",
+    "downstream": "Separate strict-prequential Current and BCF MC1 maps, dual admission, and one chronological constrained portfolio remain the sole promotion evidence."
+  }
+}

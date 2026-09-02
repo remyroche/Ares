@@ -1,0 +1,43 @@
+{
+  "task": "strict-r3-p8u-single-timestamp-state-probe",
+  "scope": "Adds an unactivated, target-free one-timestamp executor and a sequential parity audit. The executor advances only a cloned canonical transform state with one full-universe source row and may produce offline scores, but has no policy, portfolio, exchange, or order-submission capability.",
+  "changed_paths": [
+    "scripts/audit_strict_r3_p8u_single_timestamp_state_probe.py",
+    "extreme_price_movements/features.py",
+    "extreme_price_movements/inference/p8u_canonical_feature_adapter.py",
+    "extreme_price_movements/inference/p8u_canonical_single_timestamp_runtime.py",
+    "scripts/run_strict_r3_p8u_canonical_single_timestamp_executor.py",
+    "scripts/seal_strict_r3_p8u_preproduction_bundle.py",
+    "tests/test_p8u_canonical_single_timestamp_runtime.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "9c93012a0f5276f59f2279bff5b7d06727b2f375b4f088553039631d3d705e43"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "causality": {
+    "complete_frozen_universe": true,
+    "state_must_precede_probe_hour": true,
+    "source_panel_is_target_free": true,
+    "synthetic_mode_is_explicitly_non_promotion": true,
+    "outcome_columns_consumed": [],
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/audit_strict_r3_p8u_single_timestamp_state_probe.py extreme_price_movements/inference/p8u_canonical_single_timestamp_runtime.py scripts/run_strict_r3_p8u_canonical_single_timestamp_executor.py",
+      "python3 -m pytest tests/test_p8u_canonical_single_timestamp_runtime.py tests/test_p8u_staged_timestamp_executor.py -q (7 passed)"
+    ],
+    "deferred_dynamic_validation": "The first managed synthetic parity attempt (artifact strict_r3_p8u_single_timestamp_state_probe_20260830_v3_synthetic_sequential) terminated with exit 139 before a result receipt. It is not evidence of parity or an inference route; rerun after isolating the native feature worker."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

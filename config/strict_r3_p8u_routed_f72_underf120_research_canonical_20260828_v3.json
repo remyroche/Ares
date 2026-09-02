@@ -1,0 +1,48 @@
+{
+  "schema": "strict_r3_p8u_routed_f72_underf120_research_canonical_successor_v3",
+  "status": "CANONICAL_RESEARCH_STACK_NOT_LIVE",
+  "created_at": "2026-08-28",
+  "side": "long",
+  "parent_contract": "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v2.json",
+  "unchanged_semantics": [
+    "P8U timestamp-local Router50 identity gate",
+    "F72 Raw-bps CatBoost QueryRMSE tail-linear-125 Base",
+    "Under F120 Rank-XENDCG bps100 timestamp head",
+    "BCF=Base rank; Current=0.75 Base rank + 0.25 Under rank",
+    "independent three-month strict-prequential BCF and Current MC1 maps",
+    "both maps must be >= +50 bps; one constrained chronological auction ordered by BCF MC1 EV",
+    "canonical rich-policy net bps with the 100-bps all-in round-trip cost deducted exactly once"
+  ],
+  "current_evidence_sources": {
+    "router_prehistory": "data_perp/artifacts/strict_r3_p8u_router_oof_nov24_jul25_fullprehistory_20260828_v1",
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_tail125_base_history_mar25_jul26_fullprehistory_20260828_v1/target_free_scores",
+    "under_target_free_root": "data_perp/artifacts/strict_r3_p8u_meta_under_fullfeatures_xendcg_f120_aug25_jul26_fullprehistory_20260828_v4",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "matched_base_only_mc1": "data_perp/artifacts/strict_r3_p8u_f72_baseonly_dual_mc1_nov25_jul26_fullprehistory_20260828_v1",
+    "matched_base_under_mc1": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_nov25_jul26_fullprehistory_20260828_v1",
+    "full_oos_reporting_receipt": "data_perp/artifacts/strict_r3_p8u_f72_underf120_full_oof_reporting_20260828_v7",
+    "frozen_map_gate_sweep": "data_perp/artifacts/strict_r3_p8u_f72_underf120_gate_sweep_nov25jul26_20260828_v1"
+  },
+  "coverage": {
+    "base_target_free_oof": "2025-03 through 2026-07; 2025-03 history-only extension is not a selection result",
+    "under_target_free_oof": "2025-08 through 2026-07",
+    "dual_mc1_constrained_evaluation": "2025-11 through 2026-07"
+  },
+  "matched_evidence": {
+    "period": "2025-11 through 2026-07",
+    "base_only": {"entries": 8017, "net_ev_bps_per_trade": 123.388739, "total_net_bps": 989207.519322, "max_drawdown": -0.515887},
+    "base_plus_under": {"entries": 7600, "net_ev_bps_per_trade": 131.310388, "total_net_bps": 997958.949994, "max_drawdown": -0.300594},
+    "delta_under_minus_base": {"entries": -417, "net_ev_bps_per_trade": 7.921649, "total_net_bps": 8751.430672, "max_drawdown_percentage_points": 21.5293}
+  },
+  "causality": {
+    "all_score_receipts_target_free_before_policy_join": true,
+    "one_immutable_source_per_month": true,
+    "held_outcomes_never_model_inputs": true,
+    "mc1_labels_resolved_before_held_month": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_live_promotion": ["later untouched forward validation", "inference/execution parity review", "separate explicit authorization"]
+  }
+}

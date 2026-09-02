@@ -1,0 +1,40 @@
+{
+  "task": "live-execution-adjusted-ev-auction-and-late-reconciliation",
+  "status": "implemented_and_fail_closed_verified",
+  "scope": "Kraken Futures long-only; entry selection only; existing minute monitor is exit-only",
+  "execution_contract": "config/strict_r3_kraken_live_execution_v19_v43_execution_ev_auction.json",
+  "execution_contract_sha256": "a7b5e16d71f21a235281109b299bb41a2b392ede6719d77eececd391d2ade1ec",
+  "inference_bundle_sha256": "cb8e8cc19fd6e23fd4310535f2d562bfc5b3e760d0b25dff01a784d302acde81",
+  "changes": {
+    "selection": "Preflight every MC1-admitted candidate before entry-cap selection; then rank by execution-adjusted mapped EV, candidate ID as deterministic tie-breaker.",
+    "execution_adjusted_ev": "MC1_expected_net_bps - adverse_delay_gap_bps - min(80, 1.2 * live_full_spread_bps + 2 * entry_impact_bps).",
+    "limits_preserved": [
+      "minimum adjusted EV: +50 bps",
+      "maximum two new entries per bar",
+      "maximum eight open positions",
+      "80% margin cap",
+      "per-position 10% wallet-margin limit",
+      "frozen decision-open slippage guard"
+    ],
+    "late_exception": "Bound to 2026-08-15T09:00:00Z and expiry 2026-08-15T13:00:00Z; the audit receipt records normal freshness false rather than disguising the exception."
+  },
+  "source_hashes": {
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "9996684c8a569537372a098062fa8a90f075802958374698be6be20ef02dcc1d",
+    "scripts/run_strict_r3_shadow_cycle.py": "e3ed485b1267dee6a3d20b53d5f998216509245139bd4ca872226d6fa58532e6",
+    "scripts/audit_strict_r3_schema_v6_live_hour.py": "f9a4976e34abb3474b0ad7591e4bccddf667a9a6b8d8103ec4868727daf40a08"
+  },
+  "validation": {
+    "focused_tests": "53 passed: test_strict_r3_live_execution, test_run_strict_r3_shadow_cycle, test_strict_r3_shadow_portfolio",
+    "contract_load": "passed with order submission explicitly authorized",
+    "late_hour_audit": "passed all lineage and parity checks; maximum historical delta 0; full 120-field parity",
+    "persistent_monitor": "screen session strict_r3_v19_exit_monitor; v19 minute receipts append successfully; it manages exits only"
+  },
+  "live_reconciliation": {
+    "decision_ts": "2026-08-15T09:00:00Z",
+    "execution_receipt": "data_perp/artifacts/strict_r3_live_execution_v19_late_execution_20260815T090000Z_v1.json",
+    "mc1_admitted": 3,
+    "execution_preflight_passed": 0,
+    "orders_submitted": 0,
+    "reason": "All three late candidates breached the frozen decision-open slippage guard; no cap, threshold, or risk limit was relaxed."
+  }
+}

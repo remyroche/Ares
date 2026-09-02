@@ -1,0 +1,54 @@
+{
+  "task": "strict-r3-a5-portable-ldf-matched-reconciliation",
+  "scope": "Reconcile regenerated causal MDA with the repaired A5 ledger, materialize the selected portable fields causally, run a matched block-OOF sizing replay, and retain unit sizing when the LDF fails portability.",
+  "changed_paths": [
+    "scripts/combine_strict_r3_lockstep_history.py",
+    "scripts/materialize_strict_r3_n5_causal_features.py",
+    "scripts/run_strict_r3_ldf_selected_walkforward.py",
+    "scripts/project_strict_r3_fixed_admission_replay.py",
+    "scripts/replay_strict_r3_forward_portfolio.py",
+    "scripts/audit_strict_r3_successor_bundle_readiness.py",
+    "scripts/download_kraken_15m_hf.py",
+    "tests/test_combine_strict_r3_lockstep_history.py",
+    "tests/test_materialize_strict_r3_n5_causal_features.py",
+    "tests/test_audit_strict_r3_successor_bundle_readiness.py",
+    "tests/test_download_kraken_15m_hf.py",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md",
+    "agents/receipts/20260813_a5_compact20_ldf_rejection.json"
+  ],
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/feature_pipeline_rules.md", "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"},
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"},
+    {"path": "agents/backtest_protocol.md", "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"}
+  ],
+  "validation": {
+    "status": "passed",
+    "focused_tests": "17 passed",
+    "successor_preflight": "canonical 28-day audit remains fail-closed because source/outcome stores end 2026-07-31; historical 2024 extension is not a substitute for the current reserve",
+    "feature_contract": "20 fields; 100% coverage; no raw K9 memberships; one frozen Geometry/K9 hash; prior-resolved label availability only",
+    "block_oof": "21 A5 blocks; January 2025 explicit unit-size cold start; 20 causal fits; 2125988 identities scored exactly once",
+    "matched_unit": {"trades": 8449, "net_bps_per_trade": 163.1551642779942, "sortino": 0.4661222938634192, "worst_week": -0.3508664708632042},
+    "matched_compact20_ldf": {"trades": 7661, "net_bps_per_trade": 162.1019579173225, "sortino": 0.4405175803582095, "worst_week": -0.5090626769530269},
+    "decision": "reject compact20 LDF; retain unit relative sizing"
+  },
+  "artifacts": [
+    "data_perp/artifacts/strict_r3_successor_bundle_readiness_28d_20260813_v3.json",
+    "data_perp/artifacts/strict_r3_lockstep_history_long_2024apr_jul2026_strictfull_prior28_optimizedpolicy_20260813_v2",
+    "data_perp/artifacts/strict_r3_ldf_compact20_a5_features_long_2024apr_jul2026_20260813_v1",
+    "data_perp/artifacts/strict_r3_ldf_compact20_a5_oof_long_2025_jul2026_20260813_v2",
+    "data_perp/artifacts/strict_r3_canonical_a5_compact20_fixed_admission_projection_20260813_v2",
+    "data_perp/artifacts/strict_r3_canonical_a5_compact20_ldf_portfolio_long_2025_jul2026_20260813_v4",
+    "data_perp/artifacts/strict_r3_canonical_a5_unit_portfolio_projected_long_2025_jul2026_20260813_v1"
+  ],
+  "important_semantics": {
+    "ranking_changes": false,
+    "admission_changes": false,
+    "canonical_relative_sizing": 1.0,
+    "ldf_status": "rejected_shadow_research",
+    "production_authorized": false
+  },
+  "agent_plan": {"subagents": []}
+}

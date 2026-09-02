@@ -1,0 +1,56 @@
+{
+  "task": "strict-r3-base-stability-selector-v2",
+  "scope": "Adds a research-only, stability-first randomized-subspace selector for the routed long B/E/T base heads. It uses target-free candidate features, strict pre-reserve labels for fitting, timestamp-local enhanced-base economics for selection, and writes only immutable research artifacts. Live inference, exchange I/O, consensus, MC1, admission, portfolio, and execution contracts are excluded.",
+  "changed_paths": [
+    "scripts/run_strict_r3_base_stability_selector_v2.py",
+    "scripts/run_strict_r3_base_stability_reference_v2.py",
+    "scripts/score_strict_r3_b0_crossyear_oof_v1.py"
+  ],
+  "contracts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4"
+    },
+    {
+      "path": "agents/dataset_contract.md",
+      "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"
+    },
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "validation": {
+    "status": "in_progress",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_base_stability_selector_v2.py",
+      "python3 -m py_compile scripts/run_strict_r3_base_stability_reference_v2.py",
+      "Cross-year smoke sequence on E: November 2025, March 2026, June 2026. All three strict OOF folds completed; the intentionally undersized four-model smoke stopped only because inclusion evidence requires at least 12 randomized subspaces.",
+      "Full 48-subspace E selection strict_r3_base_stability_selector_e_20260826_v1 completed: 1,407 causal fields -> 1,010 hygiene-valid -> 891 after rho>=0.97 pruning -> 420 empirical survivors; target_fields_in_feature_matrix=false and coverage spans 2025-07 through 2026-06.",
+      "Five-fold/two-seed incumbent-versus-large-contract reference validation completed as strict_r3_stability_reference_e_20260826_v1. Its default folds are 2025-11, 2026-01, 2026-03, 2026-05, and 2026-07; selector/reference scripts now reject a non-cross-year or insufficiently spread fold set.",
+      "python3 -m py_compile scripts/score_strict_r3_b0_crossyear_oof_v1.py",
+      "Strict cross-year enhanced-B0 counterpart ledger completed as strict_r3_b0_crossyear_oof_20260826_v1: 179,861 held rows, zero duplicate identities, zero missing scores, and 100% coverage of the five-fold E reference population.",
+      "The selector and reference evaluator accept only a strict-OOF enhanced-B0 score ledger as a counterpart override. Compact E contracts of 200/120/70 stable-inclusion-ranked fields are running over the same cross-year five-fold reference; the malformed v2 startup artifacts contain no fit results and are not evidence."
+    ],
+    "not_run_reason": "The selection result, compression, HPO, blend grid, and downstream validation remain in progress. No live or exchange test applies because this change is research-only."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

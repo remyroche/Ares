@@ -1,0 +1,43 @@
+{
+  "authorization_source": "User-approved v180 bounded legacy compact one-minute cache-range repair; runtime-only with no economic contract change.",
+  "authorized": true,
+  "authorized_after": "2026-08-23T09:00:00+00:00",
+  "bounded_entry_window": "fresh decision hour only (0 to 3,600 seconds); recovered decisions are simulation-only and may never be submitted",
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_v152_v180_compact_execution_1m_range_pruning.json",
+  "inference_bundle_sha256": "1680bbdcd0b594bbe66fb290cb7ba3cc3b0fca78e735b4570020ebff8c871faf",
+  "manual_override_authorized_by_user": true,
+  "manual_promotion_override": true,
+  "overridden_failed_promotion_checks": [
+    "continuous_hours",
+    "portfolio_accepted_rows",
+    "realized_exit_rows"
+  ],
+  "preserved_gates": [
+    "feature_completeness",
+    "append_only_primary_receipt",
+    "sealed_runtime_checkpoint",
+    "target_free_BCF_same_model_reserve",
+    "dual_BCF_and_current_MC1_expected_EV_at_least_30bps",
+    "common_BCF_MC1_portfolio_auction",
+    "execution_adjusted_EV_at_least_30bps_after_common_portfolio_auction",
+    "max_two_new_entries_per_bar",
+    "max_eight_concurrent_positions",
+    "80_percent_margin_cap",
+    "frozen_geometry_k9_bundle_and_append_only_history",
+    "raw_decision_time_ATR_smooth_protection",
+    "same_bar_smooth_arm_and_trigger_prohibited",
+    "upward_only_reduce_only_stop_amendments",
+    "isolated_account_platform_margin_tier_leverage_cap",
+    "isolated_post_stop_and_stressed_exit_margin_headroom",
+    "undiscounted_executable_VWAP_hard_risk_threshold",
+    "native_stop_not_looser_than_hard_risk_threshold",
+    "openpositions_503_tracked_fills_only_fail_closed_fallback"
+  ],
+  "promotion_audit": "data_perp/artifacts/strict_r3_schema_v39_promotion_chain_audit_20260815T070000Z_v2_reconciled/run_manifest.json",
+  "promotion_audit_sha256": "9f140959228ca2a5266bb670b0140e216804ebb758472c25fff75ac4515cc635",
+  "schema": "strict_r3_kraken_live_activation_authorization_v2_manual_override",
+  "scope": "kraken_futures_long_only_fresh_signals",
+  "stale_signal_execution_prohibited": true
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "strict_r3_bcf_current_dual_mc1_portfolio_v1",
+  "side": "long",
+  "bcf_expected_net_field": "bcf_mc1_expected_net_bps",
+  "current_expected_net_field": "mc1_d2_expected_net_bps",
+  "admission_boolean_field": "dual_bcf_current_admitted_ge_30bps",
+  "admission_threshold_bps": 30.0,
+  "auction_score_field": "bcf_mc1_expected_net_bps",
+  "missing_component": "fail_closed",
+  "max_concurrent_positions": 8,
+  "max_concurrent_per_symbol": 1,
+  "max_new_entries_per_bar": 2,
+  "max_total_margin_fraction": 0.8,
+  "margin_slot_fraction": 0.1,
+  "leverage": 7.0,
+  "minimum_gross_notional": 1.0,
+  "status": "offline_challenger_only_until_live_parity_and_replay_receipts_pass"
+}

@@ -1,0 +1,43 @@
+{
+  "admission": {
+    "bcf_min_expected_bps": 50.0,
+    "current_min_expected_bps": 50.0,
+    "priority": "bcf_mc1_expected_bps"
+  },
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_preproduction_bundle_20260830_v37_stateful_executor_research",
+    "sha256": "539e0bfb13681093e42752a7db7ae34c49f9af5f43e844db3e51293118a6a4ef"
+  },
+  "execution": {
+    "entry_delay_minutes": 5,
+    "max_signal_age_minutes": 15,
+    "required_pre_submit_checks": [
+      "current account reconciliation",
+      "fresh executable-book and fill-impact validation",
+      "entry freshness and price-gap guard",
+      "authorized gateway only"
+    ]
+  },
+  "order_submission": false,
+  "policy": {
+    "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+    "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+  },
+  "portfolio": {
+    "leverage": 7.0,
+    "margin_budget_fraction": 0.8,
+    "margin_slot_fraction": 0.1,
+    "max_concurrent_positions": 8,
+    "max_new_entries_per_decision": 2,
+    "max_per_symbol": 1
+  },
+  "purpose": "P8U preproduction execution handoff: target-free staged score commit to deterministic no-order portfolio intent. A separately authorized exchange gateway is required for any account I/O or order submission.",
+  "schema": "strict_r3_p8u_execution_portfolio_adapter_v1",
+  "side": "long",
+  "staged_score": {
+    "contract_hash": "0a902d317150080038cd0d65a141350f1dd29700f3fb34cd650f5c2f03d37152",
+    "required_schema": "strict_r3_p8u_staged_timestamp_executor_v1",
+    "required_status": "pass_target_free_router_first_score"
+  },
+  "status": "preproduction_no_order"
+}

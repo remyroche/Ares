@@ -1,0 +1,74 @@
+{
+  "date": "2026-08-28",
+  "scope": "Offline direct comparison of two single P8u Router50 Base heads through the same short-warm-up Meta/MC1 diagnostic. No live, canonical, exchange, or order-submission mutation.",
+  "fixed_upstream": {
+    "router": "frozen P8u Router50 identity gate only; no router score enters either Base model",
+    "population": "identical routed candidate IDs on all matched folds",
+    "base_post_router_cutoff": "none; all Router50 rows are passed to Meta",
+    "policy": "canonical reconciled rich-policy net bps; costs remain in the parent policy only"
+  },
+  "base_heads": {
+    "control": {
+      "name": "policy_ordinal_lightgbm_rank_xendcg",
+      "features": 72,
+      "target": "policy ordinal, fixed 0/50/100/200/400 bps bins",
+      "model": "LightGBM rank-XENDCG",
+      "strict_oof": "3 months train, 28-day reserve, 60,000 complete-query cap"
+    },
+    "challenger": {
+      "name": "raw_bps_catboost_queryrmse_tail125",
+      "features": 72,
+      "target": "raw canonical policy-net bps, clipped and six equal-width ordinal bins",
+      "model": "CatBoost QueryRMSE; G3 clipped-economic gains",
+      "weights": "tail-linear-125, timestamp-renormalised and clipped [0.5,2]",
+      "parameters": {
+        "depth": 5,
+        "learning_rate": 0.06509939203594448,
+        "feature_fraction": 0.80065065628642,
+        "bagging_fraction": 0.7096047498424234,
+        "lambda_l2": 2.2357264515179467,
+        "random_strength": 0.9428901899180999
+      }
+    }
+  },
+  "standalone_matched_oof": {
+    "held_months": ["2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "policy_ordinal": {"score_stable": 1.1735767983880325, "dtp2_bps": 151.747, "dtp5_bps": 92.051, "dtp10_bps": 44.972},
+    "raw_bps_tail125": {"score_stable": 1.7137201582366475, "dtp2_bps": 190.2953083232199, "dtp5_bps": 131.26274215486478, "dtp10_bps": 86.14497245750444}
+  },
+  "short_warmup_downstream": {
+    "held_months": ["2026-06", "2026-07"],
+    "mc1_history_months": 2,
+    "meta": "same strict-OOF under_atr1__timestamp head, mapping/demotion context only; Base rank retains auction authority",
+    "admission": "50 bps; inherited constrained portfolio",
+    "control_base_only": {"entries": 871, "net_ev_bps_per_trade": 147.393436, "net_sum_bps": 128379.682408, "worst_month_bps": 140.770968, "worst_week_bps": 20.684843, "max_drawdown": -0.383609},
+    "challenger_base_only": {"entries": 1314, "net_ev_bps_per_trade": 156.092519, "net_sum_bps": 205105.569530, "worst_month_bps": 130.445454, "worst_week_bps": 97.434510, "max_drawdown": -0.212285},
+    "control_base_plus_under": {"entries": 1451, "net_ev_bps_per_trade": 117.976677, "net_sum_bps": 171184.158110, "worst_month_bps": 91.866697, "worst_week_bps": 61.513627, "max_drawdown": -0.357148},
+    "challenger_base_plus_under": {"entries": 1282, "net_ev_bps_per_trade": 158.963332, "net_sum_bps": 203790.991208, "worst_month_bps": 132.706083, "worst_week_bps": 98.682259, "max_drawdown": -0.147773}
+  },
+  "correctness": {
+    "all_held_scores_target_free_before_outcome_join": true,
+    "all_train_labels_resolved_before_held": true,
+    "base_meta_identity_exact": true,
+    "router50_only": true,
+    "daily_mc1_shift_prior_resolved_only": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "limitation": "This is deliberately a two-month short-warm-up diagnostic. It is not comparable to the live dual-MC1 system and cannot promote a Base head. A six-month common post-Meta ledger is required.",
+  "decision": "RETAIN_RAW_BPS_BASE_AS_QUALIFIED_CHALLENGER_ONLY",
+  "changed_file_sha256": {
+    "scripts/materialize_strict_r3_single_head_downstream_source_v1.py": "a99df0dce966c084f2eb31d53f1cfe03cad69ea82d74d26aed3c67ca264b9591",
+    "scripts/run_strict_r3_p8u_singlebase_meta_mc1_diagnostic_v1.py": "7d4e488cead0be79f0dd7cb2217bdde34334510189980f38b56b79a64208dd4a",
+    "scripts/run_strict_r3_p8u_precision_preservation_screen_v1.py": "2e32aaa1724c7f6ff10e8f4ef636cfea03e74ebcb26643d061632e57fa605fa2",
+    "tests/test_materialize_strict_r3_single_head_downstream_source_v1.py": "6391693f8e1408874c3aae865d1dafecac2fd109ace0531fc739d87975e0014e",
+    "tests/test_run_strict_r3_p8u_singlebase_meta_mc1_diagnostic_v1.py": "f17d882d731bf8b560a0a9735e0afe8247ea9ca2086d56219b003e14add2e268"
+  },
+  "artifact_manifest_sha256": {
+    "policy_ordinal_base_history": "ba20f8ff4bf4b4fe5e8660eeb10c7ce05df9fd68a04d744d557f3d8168a0aef4",
+    "policy_ordinal_downstream_adapter": "31fdad6954aad76a1ca06c87b15a5c8231c4690b93f9e3cb7ce6912454f032aa",
+    "policy_ordinal_meta": "48e0ab7577e18d00120e2e8cbaea67c78a6a6481462ca04182a6a879c020a444",
+    "policy_ordinal_diagnostic": "628ed46426ffeb134dbd0d919e86cc3b661ff012cc68c4a4930686f52b319335",
+    "raw_bps_diagnostic": "14530928e430669c63ef0f60e003abea76dab0d66dcf98a01aab38435bef7f05"
+  },
+  "tests": "python3 -m pytest -q tests/test_materialize_strict_r3_single_head_downstream_source_v1.py => 1 passed; existing diagnostic tests remained green before this comparison."
+}

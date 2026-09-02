@@ -1,0 +1,30 @@
+{
+  "schema": "strict_r3_p8u_meta_successor_source_binding_v3",
+  "scope": "offline P8U Meta research source binding only; no live, admission, execution, or promotion authority",
+  "purpose": "coverage-complete strict-prequential successor: one target-free 284-field F72+SHAP+state owner for every month from March 2025 through July 2026. The March–July owner uses the exact frozen F72 contract and the same append-only SHAP/state schema as August–July.",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_prequential_bridge_mar25_jul26_20260830_v1/target_free_shap_features",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_meta_f72_enriched_universe_marjul25_20260830_v2",
+      "data_perp/artifacts/strict_r3_p8u_meta_f72_enriched_universe_aug25jul26_20260830_v2"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_p8u_supportive_path_labels_fullcurrent_source_mar25jul26_20260830_v2/parts"
+  },
+  "lineage": {
+    "supersedes": "config/strict_r3_p8u_meta_successor_source_binding_20260830_v2.json only for strict-prequential historical score coverage",
+    "months": "2025-03 through 2026-07, exactly one month-local full feature owner per month",
+    "feature_contract": "strict_r3_p8u_meta_f72_enriched_universe_v1: 72 frozen raw F72 fields plus 212 target-free append-only SHAP/state fields",
+    "prehistory_raw_f72_owner": "strict_r3_p8u_f72_router_early_marjul25_identityonly_source_repaired_20260829_v1; exact frozen F72 contract, target-free canonical-ledger identities",
+    "coverage_contract": "Both feature owners have 284 feature columns plus three identity columns in identical order; each owner rejects outcome-like inputs and records exact candidate identity coverage.",
+    "prohibition": "Do not pool this source with predecessor Meta results, historical legacy path labels, live scoring, admission, portfolio, or execution artifacts."
+  },
+  "correctness": {
+    "target_free_only": true,
+    "march_july_and_august_july_schema_order_identical": true,
+    "one_full_feature_owner_per_month": true,
+    "source_override_cannot_change_target_query_fold_weight_or_model_contract": true,
+    "all_prequential_inputs_must_precede_held_decisions": true
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schema": "strict_r3_router_etonly_frozen_u_f50_v1",
+  "scope": "One frozen U contract for routed 50/50 E/T research. No feature, target, query, threshold, or HPO selection is performed in this forward evaluation.",
+  "incumbent_upstream": "0.50 * efficiency_bps + 0.50 * timing_bps",
+  "selection_provenance": {
+    "source_contract": "config/strict_r3_incumbent_meta_under_u01_feature_contracts_20260827_v1.json",
+    "selection_rule": "under_u01_f50 is retained from the previous f35/f50/f70 development funnel; this file freezes it for the routed E/T forward test only."
+  },
+  "arms": [
+    {
+      "name": "under_u01_f50",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0,
+      "classes": 7,
+      "gain_schedule": "small",
+      "model_params": {
+        "n_estimators": 1200,
+        "learning_rate": 0.03774022947324712,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "min_data_fraction": 0.004369087266447652,
+        "subsample": 0.8107157219150619,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7120059373030293,
+        "reg_alpha": 0.0052937551471843045,
+        "reg_lambda": 18.513302796072402,
+        "min_split_gain": 0.00021172845275700355,
+        "sigmoid": 1.095681694551189,
+        "lambdarank_truncation_level": 20
+      }
+    }
+  ],
+  "contracts": {
+    "under_u01_f50": "data_perp/artifacts/strict_r3_incumbent_meta_fullfeatures_selection_20260827_v3/contracts/under/under_f50.json"
+  }
+}

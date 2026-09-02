@@ -1,0 +1,40 @@
+{
+  "schema": "strict_r3_untouched_forward_validation_v1",
+  "side": "long",
+  "status": "accruing_shadow_evidence",
+  "freeze_ts": "2026-08-15T07:10:45+00:00",
+  "first_decision_ts": "2026-08-15T07:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_successor_v37_live_ready_20260815T060000Z_v1",
+  "frozen_universe_rows": 170,
+  "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+  "reason": "Successor v39 preserves every frozen economic/model/routing semantic and the causal no-trade execution path from v38. It additionally prevents a synthetic decision-boundary flat candle from overriding the declared timestamp-exact official-hourly entry-open fallback; observed 15-minute decision cells still require exact equality. The first 07:00 run completed inside the frozen entry window with exact current replay and independent exit parity.",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v39_top30_observed_entry_cell.json",
+    "sha256": "4cc5f422991e209b0520541e5934f5ee715af4a75e16c0981365b80c732d7baf"
+  },
+  "portfolio": {
+    "initial_wallet": 1000,
+    "initial_open_positions": ["BB/USD:USD|long|2026-08-14T11:00:00Z"],
+    "sizing": "unit_relative_size",
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "promotion_evidence_rules": {
+    "hourly_parity_required": true,
+    "current_features_and_scores_must_be_target_free": true,
+    "outcomes_may_be_attached_only_after_h12_resolution": true,
+    "all_prior_checkpoints_are_reconciliation_only": true,
+    "portfolio_state_must_chain_from_exact_predecessor": true,
+    "no_model_feature_policy_admission_or_sizing_changes_during_interval": true,
+    "incomplete_base_contract_must_fail_a5_and_auction_closed": true,
+    "minimum_continuous_hours_before_review": 168,
+    "minimum_portfolio_accepted_rows_before_review": 30,
+    "minimum_realized_exit_rows_before_review": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0,
+    "automatic_exchange_enablement": false,
+    "maximum_audit_completion_age_seconds": 1200
+  },
+  "expected_artifact_hashes": 28,
+  "expected_runtime_code_hashes": 45
+}

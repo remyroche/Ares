@@ -1,0 +1,45 @@
+{
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "version_note": "v66: runtime-only reseal after the v65 verified liquidation reconciliation. The hourly producer now recognizes a separately sealed direct executor receipt for the exact inference bundle and decision hour, so a service restart waits for the next candle instead of retrying a conclusively handled decision. No model, feature, admission, policy, entry-economics, portfolio, or exchange semantics changed.",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v59_close_reporting_threshold_lineage.json",
+  "inference_bundle_sha256": "1cc7587ec9dbf000b0bf3983ea139b0bafdc0e2d5a13424d6070759342ab1e3d",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "exchange_id": "krakenfutures",
+  "side": "long",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 50.0,
+  "baseline_policy_cost_bps": 100.0,
+  "order_submission_authorized": true,
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260816_v21_v59_close_reporting_threshold_lineage.json",
+  "activation_authorization_sha256": "8376752ce0f94407af8d197a680b537b07778c59bbf6220f2659fed742110dc3",
+  "runtime_checkpoint_required_before_order_submission": true,
+  "failure_policy": "fail_closed",
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - max(80 bps, 1.2 * live_full_spread_bps + 2 * entry_impact_bps); raw_expected_gross_bps is the explicit MC1 gross convention and the historical 100-bps policy cost is not debited again; must remain at least +50 bps at preflight and after fill",
+  "position_monitor": "persistent one-minute threshold monitor: stop/trailing/timeout use only post-fill closed 1m bars; the stored Adaptive Exit V1 activation is consumed by the minute executor and is never recomputed there; complete private liquidation-fill reconciliation is an exchange-close exception only",
+  "close_reporting": "v42: close reports distinguish active policy thresholds, confirmed protective-stop fills, and externally confirmed liquidation fills. Fee-pending reports show confirmed gross PnL without claiming confirmed net PnL.",
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "e7cc6b3bc17c88e5d36fa4a4a8f9d4e9d0223f7ffe88223f3ef361f19c74439c",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "28125fafe34a38e36c7c67f843d4e51ec14f08fe409937dc247b37421547ccc7",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "679e4ad6b6746ea5c1dc274f64ef93e77c5856ce8a63d11a0ce4c3c062124668",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "2cf10909c88278a571f36ae7253a6be202cacff9fcbd953b1b0a04e609de10d5",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "fbc304ac28c5273f2d7409ed145836aea291f77c79c6197e7b381a9360afa8cf",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "current_inference_bundle_sha256": "1cc7587ec9dbf000b0bf3983ea139b0bafdc0e2d5a13424d6070759342ab1e3d",
+      "predecessor_inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v58_close_reporting_lineage.json",
+      "predecessor_inference_bundle_sha256": "b60f62a3ee05f001d2b8ad9b70a0fb9ec38ca988f05152829b9c082df840ece0",
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/run_inference.py"
+      ],
+      "reason": "v59 differs from v58 only in close-report presentation. The v66 execution reseal retains v65 liquidation reconciliation and adds only the tested producer idempotency repair."
+    }
+  ]
+}

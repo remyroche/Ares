@@ -1,0 +1,63 @@
+{
+  "task": "canonical-sr-e2-mc1-input-comparison",
+  "scope": "Offline-only rerun of the S/R and 15-minute-E2 inputs on the retained, family-specific absolute-EV dual-MC1 contract. No live, canonical, execution, policy, or frozen model artifact changed.",
+  "changed_paths": [
+    "scripts/run_canonical_sr_e2_mc1_input_ablation.py",
+    "tests/test_canonical_sr_e2_mc1_input_contract.py",
+    "docs/CANONICAL_SR_E2_MC1_INPUT_COMPARISON_20260831.md"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_canonical_sr_e2_mc1_input_ablation.py": "e0ef429fb6e1214cb60e95ea3eaeef8706ad68c0cde04981e3e731e9b5aef971",
+    "tests/test_canonical_sr_e2_mc1_input_contract.py": "f4f128dd13adef8a1bf80b20f38e715b84f7f9e28ab16cc09781901ba04a3794",
+    "docs/CANONICAL_SR_E2_MC1_INPUT_COMPARISON_20260831.md": "78db877bd29088eb942668e71fbd5c2f848e5b9ad80b91fa0f600c27614e4dcb"
+  },
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "causality": {
+    "score_and_map_contract": "Each arm uses the retained BCF and current-v5 score surfaces, but independently refits their absolute rich-policy-EV MC1 maps. The HGB configuration, p02/p98 target clip, score-band coordinate, 21-day prior-resolved shift, dual +50 admission, BCF-EV priority and constrained portfolio are fixed.",
+    "comparison_baseline": "The frozen historical map is context only because its exact pre-February BCF score warm-up ledger was pruned. C0_refit_core_postfeb is the sole delta baseline and shares the post-February score/policy substrate with every input arm.",
+    "sr_inputs": "Only causal_sr_heads_oof_20260830_v3_entrypivotfix is merged. Missing S/R rows remain model missingness plus sr_snapshot_available, never an eligibility change; oracle S/R outputs are not read.",
+    "e2_inputs": "The 70-field 15-minute proxy is materialised from the complete target-free February-July candidate union before outcomes are joined. Every monthly E2 fit uses only prior four-month rows whose decision timestamp and policy_label_available_ts precede the held month. Missing/unreadable source rows remain unavailable and are not imputed.",
+    "labels_and_portfolio": "Source-aligned rich-policy labels are identical across families where identities overlap. Invalid or unresolved paths are excluded before capacity and never reserve portfolio slots. Costs remain embedded exactly once in policy_net_bps.",
+    "execution": "The runner imports no live execution client and made no network or exchange-writing calls."
+  },
+  "artifacts": [
+    {
+      "path": "data_perp/artifacts/canonical_sr_e2_mc1_input_ablation_20260831_v5/run_manifest.json",
+      "sha256": "b06e7f7488d4ae15de6b55557d92dbb53d817c4536238384c2158091900f2d55"
+    },
+    {
+      "path": "data_perp/artifacts/canonical_sr_e2_mc1_input_ablation_20260831_v5/portfolio_summary.parquet",
+      "sha256": "585aa019bde59bf4fbf855a6a36925ee2ddde5738630e1b0def701ed0ff02662"
+    },
+    {
+      "path": "data_perp/artifacts/canonical_sr_e2_mc1_input_ablation_20260831_v2/target_free_15m_features.parquet",
+      "sha256": "843d30c03160758b6f0c1efd24d9864fccaa0e49f38b35c994bcfc7de533b7b9"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_pycache python3 -m py_compile scripts/run_canonical_sr_e2_mc1_input_ablation.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_pycache python3 -m pytest -q tests/test_canonical_sr_e2_mc1_input_contract.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_pycache python3 scripts/run_canonical_sr_e2_mc1_input_ablation.py --out data_perp/artifacts/canonical_sr_e2_mc1_input_ablation_20260831_v5 --feature-cache data_perp/artifacts/canonical_sr_e2_mc1_input_ablation_20260831_v2/target_free_15m_features.parquet",
+      "post-run target-free audit: no policy fields in admissions, exact candidate uniqueness, finite mapped EV, and exact dual-50 admission equality"
+    ],
+    "results": "Focused tests: 4 passed. June-July constrained replay: C0 refit 183 trades at +264.05 bps/trade; S/R 438 at +188.09; E2 298 at +186.97; S/R+E2 383 at +201.23. No arm is promoted."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

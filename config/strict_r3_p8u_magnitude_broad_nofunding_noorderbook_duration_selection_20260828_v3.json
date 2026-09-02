@@ -1,0 +1,26 @@
+{
+  "schema": "strict_r3_p8u_magnitude_broad_nofunding_noorderbook_duration_selection_v3",
+  "scope": "offline strict-OOF Meta objective selection; not an MC1 or live promotion",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "feature_contract": "data_perp/artifacts/strict_r3_p8u_magnitude_broad_market_contract_20260828_v7_no_funding_no_orderbook/feature_contract.json",
+  "target": "strict-prequential rich-policy-net residual in bps, ordinalized with train-only quantile grades",
+  "query": "Base-score band × fixed calendar block; duration is selected strictly OOF",
+  "duration_candidates_days": [21, 28, 35, 42],
+  "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+  "feature_boundary": {
+    "include": [
+      "high-coverage broad market mkt/IQR/eigen/spectral/cross-sectional fields",
+      "materialised causal regime-change and transition families"
+    ],
+    "exclude": [
+      "funding and funding-derived aliases",
+      "order-book, depth, spread, and order-book-derived aliases",
+      "unmaterialised soft-regime sidecar values"
+    ],
+    "soft_transition_policy": "Do not impute missing historical soft-state fields. Add them only after a complete causal sidecar is materialised over the selected folds."
+  },
+  "supersedes": [
+    "strict_r3_p8u_magnitude_broad_duration_selection_20260828_v1.json",
+    "strict_r3_p8u_magnitude_broad_nofunding_duration_selection_20260828_v2.json"
+  ]
+}

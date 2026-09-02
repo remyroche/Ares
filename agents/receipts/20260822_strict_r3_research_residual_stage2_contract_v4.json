@@ -1,0 +1,22 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-22T00:00:00Z",
+  "scope": "offline long-only Strict-R3 :00-only research; no live, canonical, exchange, admission, portfolio, or execution artifact modified",
+  "purpose": "Correct Stage-2 residual runner contracts before any valid layer-two artifact is accepted: R2 is the declared three-class residual-direction head, R3 satisfies the shallow Huber depth cap, and first-pass layer-two outputs have late-MC1 evidence only.",
+  "contracts": {
+    "r2_target": "r2 <= -100 bps is adverse; -100 < r2 < +100 bps is weak; r2 >= +100 bps is clear; score=P(clear)-0.5*P(adverse).",
+    "r3_capacity": "HistGradientBoostingRegressor Huber maximum depth is 3 with the existing high leaf and regularization constraints.",
+    "fusion": "No layer-two output receives upstream or final-score authority in the initial pass. Early bounded authority may be tested only after a late-evidence survivor passes its Stage-2 gates.",
+    "causality": "Layer-two fitting remains restricted to labels resolved before each preceding 28-day reserve and consumes only strict-OOF layer-one/Delta1 inputs."
+  },
+  "changed_files": {
+    "scripts/run_strict_r3_base_recall_two_stage_residual_consensus.py": "8d40661efa05155a62a9599a7a50ebd0d09f4cd5480e992418092da26bc21c50",
+    "extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py": "65229e69c9fad0e5f6fb090a1318c2d5c5a29ccb289ddecec509ba351a7e9e35"
+  },
+  "validation": {
+    "syntax": "python3 -m py_compile scripts/run_strict_r3_base_recall_two_stage_residual_consensus.py",
+    "tests": "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py: 8 passed",
+    "diff_check": "git diff --check -- scripts/run_strict_r3_base_recall_two_stage_residual_consensus.py extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py: passed"
+  },
+  "agent_plan": {"subagents": []}
+}

@@ -1,0 +1,56 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260818_v03_bcf_current_dual_newest_feature_runtime_lockstep_memorysafe.json",
+  "activation_authorization_sha256": "5199fb7f393ee3d13c710420e0a5e7e892fd700dd3c3fb4c3926a6b309c1bf26",
+  "baseline_policy_cost_bps": 100.0,
+  "exchange_id": "krakenfutures",
+  "execution_adjusted_ev": "raw_expected_gross_bps - (calculated microstructure friction + adverse delay gap + 10 bps); raw_expected_gross_bps uses the explicit MC1 gross convention and the historical 100-bps policy cost is not debited again; adjusted EV must remain >=50 bps at preflight and after fill.",
+  "execution_microstructure_buffer_bps": 10.0,
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "failure_policy": "fail_closed",
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v75_bcf_current_dual_newest_feature_runtime_lockstep_memorysafe.json",
+  "inference_bundle_sha256": "a54699cbd67c488288ef0e7bc2078ef6cb879dc2a4a8488696c3ea7179468f12",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 50.0,
+  "order_submission_authorized": true,
+  "position_monitor": "persistent one-minute controller: hard stop -> prior smooth lock -> trailing -> fast adverse -> next-bar MFE/arm; entry ATR immutable; Adaptive Exit V1 only modulates parent trailing activation.",
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "5a97a030b31ac36dda7f8b12f306bf032198166aa97ccf2819d6e0fcc247fe7f",
+    "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "f58d40d06aae4d922f61b8e9277c412d8c6dc2875869f338ee6c9e063ae4aa2b"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/features.py",
+        "extreme_price_movements/strict_r3_shadow_portfolio.py",
+        "scripts/materialize_strict_r3_forward_features.py",
+        "scripts/materialize_strict_r3_forward_features_incremental_v13.py",
+        "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py",
+        "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+        "scripts/run_strict_r3_live_hourly_entry_producer.py",
+        "scripts/run_strict_r3_shadow_cycle.py",
+        "scripts/run_tp6_sl4_exact170_canonical_consensus.py",
+        "scripts/update_strict_r3_feature_panel_state.py"
+      ],
+      "current_inference_bundle_sha256": "a54699cbd67c488288ef0e7bc2078ef6cb879dc2a4a8488696c3ea7179468f12",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v65_bcf_current_dual_mc1_cached_parallel.json",
+      "predecessor_inference_bundle_sha256": "241341068feb3ec41c8c78fdb04dbc2ebacb072da54008ff57bd0be51af65f91",
+      "reason": "User-approved newest code transition; static strategy, model, feature, admission, portfolio and exit contracts are unchanged."
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long",
+  "version_note": "v76: newest-source runtime successor of the approved BCF/current dual-MC1 live stack; no model, feature contract, admission, portfolio, entry-economics, or rich-exit parameter change."
+}

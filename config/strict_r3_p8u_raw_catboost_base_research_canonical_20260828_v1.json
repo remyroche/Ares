@@ -1,0 +1,100 @@
+{
+  "schema": "strict_r3_p8u_raw_catboost_base_research_canonical_v1",
+  "status": "CANONICAL_RESEARCH_BASE_CONTRACT_NOT_LIVE",
+  "created_at": "2026-08-28",
+  "side": "long",
+  "scope": "Offline P8u Base research canonical only. This is not an inference, admission, execution, or exchange-writing configuration.",
+  "selection": {
+    "name": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+    "decision": "CANONICAL_RESEARCH_WINNER",
+    "supersedes": "P8u policy-ordinal LightGBM Base control for future P8u Base research",
+    "does_not_authorize": [
+      "live stack replacement",
+      "exchange execution",
+      "modification of existing canonical live bundles"
+    ]
+  },
+  "route": {
+    "router": "P8u",
+    "rule": "exact timestamp-local top 50 percent identity gate",
+    "router_numeric_input_to_base": false,
+    "post_router_base_cutoff": false,
+    "tie_break": "candidate_id ascending"
+  },
+  "base_model": {
+    "type": "CatBoostRanker",
+    "loss": "QueryRMSE",
+    "query": "exact decision timestamp x long side",
+    "target": "canonical rich-policy net bps, clipped then ordinalised into six equal-width classes",
+    "target_geometry": "t1_raw_bps/equal_width6",
+    "target_search_provenance_tag": "g3_clipped_economic",
+    "note_on_gain": "CatBoost QueryRMSE consumes the six ordinal labels directly; the G3 tag records the parent target-search lineage, not a CatBoost label_gain parameter.",
+    "features": {
+      "count": 72,
+      "selection_receipt": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+      "contract": "frozen P8u causal F72"
+    },
+    "weights": {
+      "scheme": "tail_linear_125",
+      "rule": "row weights are renormalised to mean one within each timestamp query",
+      "clip": [0.5, 2.0]
+    },
+    "parameters": {
+      "iterations": 2000,
+      "early_stopping_rounds": 30,
+      "max_depth": 5,
+      "learning_rate": 0.06509939203594448,
+      "feature_fraction": 0.80065065628642,
+      "bagging_fraction": 0.7096047498424234,
+      "lambda_l2": 2.2357264515179467,
+      "random_strength": 0.9428901899180999,
+      "random_seed": 1729
+    },
+    "fit": {
+      "train_months": 3,
+      "resolved_label_reserve_days": 28,
+      "complete_query_train_cap": 60000,
+      "held_scores": "persisted target-free before any policy outcome join"
+    }
+  },
+  "selected_downstream_research_contract": {
+    "current_family": "0.75 * Base timestamp rank + 0.25 * strict-OOF Under F120 under_bps100 timestamp rank",
+    "bcf_family": "Base timestamp rank only",
+    "meta_authority": "Under F120 / under_bps100 timestamp Rank-XENDCG only; magnitude, adverse-path, signed-State, and multi-head alternatives were rejected by their matched strict-prequential diagnostics",
+    "mc1": "separate strict-prequential three-month Current and BCF maps",
+    "admission": "Current MC1 expected net >= +50 bps AND BCF MC1 expected net >= +50 bps",
+    "portfolio": "one chronological constrained auction, BCF MC1 expected net priority",
+    "diagnostic_only": true
+  },
+  "selection_evidence": {
+    "standalone_five_fold_score_stable": 1.7137201582366475,
+    "standalone_mean_dtp2_bps": 190.2953083232199,
+    "standalone_mean_dtp5_bps": 131.26274215486478,
+    "standalone_mean_dtp10_bps": 86.14497245750444,
+    "matched_dual_mc1_portfolio_period": "2026-04 through 2026-07",
+    "matched_dual_mc1_entries": 3634,
+    "matched_dual_mc1_net_ev_bps_per_trade": 119.20764069008153,
+    "matched_dual_mc1_total_net_bps": 433200.5662677563,
+    "matched_dual_mc1_worst_month_bps": 68.27676128475827,
+    "matched_dual_mc1_worst_week_bps": 50.43551286856032,
+    "matched_dual_mc1_max_drawdown": -0.21963202656779623,
+    "matched_delta_vs_base_only_ev_bps_per_trade": 4.04682588369962,
+    "matched_delta_vs_base_only_total_net_bps": -149.5798486587596
+  },
+  "artifacts": {
+    "base_history": "data_perp/artifacts/strict_r3_p8u_tail125_base_history_aug25_jul26_successorlabels_20260828_v1",
+    "meta_history": "data_perp/artifacts/strict_r3_p8u_tail125_meta_three_arms_jan_jul_successorlabels_20260828_v1",
+    "dual_mc1_replay": "data_perp/artifacts/strict_r3_p8u_tail125_true_dual_mc1_aprjul_successorlabels_20260828_v1",
+    "diagnostic_producer": "scripts/run_strict_r3_p8u_singlebase_true_dual_mc1_v1.py",
+    "handover": "docs/P8U_BASE_PRECISION_PRESERVATION_HANDOVER_20260828.md"
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_live_promotion": [
+      "at least six common post-Meta months under this exact dual-family construction",
+      "later untouched forward period",
+      "inference-parity and execution review",
+      "separate explicit authorization"
+    ]
+  }
+}

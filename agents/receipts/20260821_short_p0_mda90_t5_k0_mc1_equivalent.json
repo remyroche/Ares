@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-21",
+  "scope": "research-only strict-prequential short MC1-equivalent atop MDA90 opportunity + T5 conversion + K0",
+  "live_or_canonical_change": false,
+  "source_artifact": "data_perp/artifacts/strict_r3_short_p0_two_stage_opportunity_conversion_2024may_2026jul_20260821_v2",
+  "output_artifact": "data_perp/artifacts/strict_r3_short_p0_mda90_t5_k0_mc1_equivalent_20260821_v2",
+  "implementation": {
+    "script": "scripts/run_strict_r3_short_p0_mda90_t5_k0_mc1_equivalent.py",
+    "script_sha256": "991ecc52c46b8d82a1d2c914d864ee27ddb4443373474c4c09cc6e1cd8b49c65",
+    "test": "extreme_price_movements/tests/test_short_p0_mda90_t5_k0_mc1_equivalent.py",
+    "test_sha256": "4fe11e9083232e6b108f9131f890e60c82d582dccb66d7c165be37ed6f7bc672"
+  },
+  "contract": {
+    "side": "short",
+    "upstream": "frozen MDA90 P(MFE_H12 > 200 bps) + frozen T5 low-regret conversion + frozen K0 analytic mixture",
+    "agreement_heads": [
+      "O_F41_binary",
+      "O_F90_binary",
+      "O_F115_binary",
+      "O_MDA30_binary",
+      "O_MDA60_binary",
+      "O_MDA90_binary"
+    ],
+    "mapper": "HistGradientBoostingRegressor depth=2, iter=80, lr=0.04, L2=20, min_leaf=100, seed=1729",
+    "mapper_target": "exact policy net bps clipped only to [-500,+500] for fitting",
+    "admission": "MC variants: expected policy net >= +50 bps; K0 native retained at its existing outer-train inner-OOF p80 threshold",
+    "dynamic_state": "strictly prior-resolved, equal-day 21-day residual history with 10% tail trimming; invalid paths excluded",
+    "forbidden": ["held outcomes", "MFE-based inference routing", "held-period percentile admission", "live/canonical mutation"]
+  },
+  "causality_checks": {
+    "upstream_scores": "outer strict-OOS monthly two-stage scores",
+    "mapper_fit": "label_available_at < held month start",
+    "recent_state": "label_available_at < decision timestamp",
+    "focused_tests": [
+      "same-decision resolved labels excluded",
+      "future outcome mutation cannot change earlier state",
+      "agreement inputs are independent of realised outcome"
+    ],
+    "test_command": "/Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python -m pytest -q extreme_price_movements/tests/test_short_p0_mda90_t5_k0_mc1_equivalent.py",
+    "test_result": "3 passed"
+  },
+  "v2_artifact_hashes": {
+    "run_manifest_sha256": "0ca791822c6fd513392bf1ffb0cb4e0c78b674dda836293a3fe25f3152e62758",
+    "era_metrics_sha256": "b4b2e085858173a12782f6dc0810a194861a739ead8f30e71c279fdd84f1d11c"
+  },
+  "decision": {
+    "status": "does_not_advance",
+    "reason": "Agreement-only calibration provides only a marginal 2025 gain and worsens 2026 CVaR/worst-month behavior. The exact 21-day global-shift and band-correctness equivalents materially degrade performance.",
+    "canonical_or_live_authority": "none"
+  }
+}

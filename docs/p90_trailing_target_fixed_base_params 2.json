@@ -1,0 +1,15 @@
+{
+  "n_estimators": 147,
+  "learning_rate": 0.023186706725487574,
+  "num_leaves": 15,
+  "max_depth": 4,
+  "min_child_samples": 98,
+  "subsample": 0.7858416187773574,
+  "colsample_bytree": 0.9119108731134247,
+  "reg_alpha": 0.027300426078104418,
+  "reg_lambda": 0.34080226291305005,
+  "loss_function": "regression",
+  "min_split_gain": 0.0,
+  "target_mode": "p90_trailing_blend",
+  "weight_arm": "W7_timestamp_balanced"
+}

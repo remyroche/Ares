@@ -1,0 +1,22 @@
+{
+  "schema": "strict_r3_untouched_forward_validation_v1",
+  "side": "long",
+  "status": "reconciliation_only",
+  "freeze_ts": "2026-08-13T11:05:00+00:00",
+  "first_decision_ts": "2026-08-13T10:00:00+00:00",
+  "frozen_reconciliation_predecessor": "data_perp/artifacts/strict_r3_untouched_homogeneous28_hourly_20260813T090000Z_v1",
+  "frozen_universe_rows": 170,
+  "reason": "One-hour real-output audit of the completeness-successor contract; never promotion evidence.",
+  "inference_bundle": {
+    "path": "config/strict_r3_inference_bundle_long_20260801_v5_homogeneous28_a5_b10_exactpolicy_v2.json",
+    "sha256": "d496dee40bf06d600b6f920c231e52151303b81288cfcde0b045fa6daf8b4d7d"
+  },
+  "promotion_evidence_rules": {
+    "minimum_continuous_hours_before_review": 168,
+    "minimum_portfolio_accepted_rows_before_review": 30,
+    "minimum_realized_exit_rows_before_review": 20,
+    "minimum_all120_complete_fraction": 0.9,
+    "maximum_append_only_numeric_delta": 0.0,
+    "automatic_exchange_enablement": false
+  }
+}

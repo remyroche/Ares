@@ -1,0 +1,36 @@
+{
+  "schema": "strict_r3_p8u_meta_cmi_family_selection_v1",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "selection_rule": "Within each predeclared target family, select the causally screened target/query arm with the strongest conditional mutual information with policy EV given the frozen Base rank. SStableMeta remains a stability veto and diagnostic; standalone Meta portfolio EV is not a selection criterion.",
+  "families": [
+    {
+      "family": "magnitude",
+      "arm": "magnitude_bps__base_band_block28",
+      "conditional_mi_meta_policy_given_base": 0.117698,
+      "sstable_meta": -0.061525,
+      "source": "strict_r3_p8u_meta_target_query_magnitude_jan_jul2026_20260828_v1"
+    },
+    {
+      "family": "under",
+      "arm": "under_bps100__timestamp",
+      "conditional_mi_meta_policy_given_base": 0.161339,
+      "sstable_meta": -0.000697,
+      "source": "strict_r3_p8u_meta_target_query_under_jan_jul2026_20260828_v1"
+    },
+    {
+      "family": "over",
+      "arm": "over_bps100__timestamp",
+      "conditional_mi_meta_policy_given_base": 0.080696,
+      "sstable_meta": -0.222186,
+      "source": "strict_r3_p8u_meta_target_query_over_jan_jul2026_20260828_v1"
+    },
+    {
+      "family": "state",
+      "arm": "state_bps__timestamp",
+      "conditional_mi_meta_policy_given_base": 0.135318,
+      "sstable_meta": -0.108485,
+      "source": "strict_r3_p8u_meta_target_query_state_jan_jul2026_20260828_v1"
+    }
+  ],
+  "next_stage": "Objective/loss screen, then a multihead Meta-to-MC1 combination grid. No individual Meta head is discarded solely because its standalone portfolio outcome is negative."
+}

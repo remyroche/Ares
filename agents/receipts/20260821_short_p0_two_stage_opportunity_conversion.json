@@ -1,0 +1,35 @@
+{
+  "task": "strict-r3-short-p0-two-stage-opportunity-conversion",
+  "status": "validated_research_only_not_promoted",
+  "scope": "short-only research challenger; no live, long, policy, or execution contract change",
+  "architecture": {
+    "opportunity": "P(MFE_H12 > 200 bps | target-free causal X)",
+    "conversion": "frozen T5 low-regret ordinal; train only prior resolved opportunity-positive rows; score every candidate",
+    "stacking": "inner chronological OOF O/C predictions only; K0 analytic mixture, K1 product plus isotonic, K2 hierarchical 5x5 shrinkage"
+  },
+  "causality": {
+    "outer": "fit rows require label_available_at before held month start",
+    "inner": "mapper consumes only chronological OOF O/C predictions",
+    "inference": "no realised MFE or conditional opportunity gate is used",
+    "invalidity": "invalid/incomplete paths are excluded from fitting and outcome metrics, never encoded as failures"
+  },
+  "required_validation": [
+    "focused unit tests",
+    "full strict walk-forward execution",
+    "feature coverage and identity lineage",
+    "cross-era opportunity and economic gates"
+  ],
+  "validation": {
+    "artifact": "data_perp/artifacts/strict_r3_short_p0_two_stage_opportunity_conversion_2024may_2026jul_20260821_v2",
+    "manifest_status": "complete",
+    "focused_tests": "12 passed: extreme_price_movements/tests/test_short_p0_two_stage_opportunity_conversion.py and test_short_p0_path_target_funnel.py",
+    "prediction_coverage": "16,748 target-free held candidates per arm receive finite O and C outputs; no future-MFE inference gate",
+    "prequential_lineage": "1,008,182 inner OOF rows; zero label_available_at violations relative to their outer held month; C fit support 666..5,761 prior opportunity-positive rows",
+    "economic_gate": "opportunity discrimination passes, but 2024 strict support is only Sep-Dec, 2025 has a negative month, and 2026 CVaR is worse than M4; no promotion"
+  },
+  "source_sha256": {
+    "producer": "36f95a845d1d9968701468d633d5f1be394a91e6dfc687bc9962a517a64cae75",
+    "focused_test": "9a03da9098ab40707082cefe302dea45b798e225bc583069052e56adb3068b1f",
+    "run_manifest": "a6c0b6185532414aea9986f66ccd468873bc74f05988ba83f66dbfa769c0413e"
+  }
+}

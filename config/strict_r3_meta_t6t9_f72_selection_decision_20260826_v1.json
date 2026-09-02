@@ -1,0 +1,37 @@
+{
+  "schema": "strict_r3_meta_t6t9_f72_selection_decision_v1",
+  "status": "RETAIN_FROZEN_T6_T9_NO_LIVE_PROMOTION",
+  "scope": "Long-only offline research decision. This file is not an inference bundle and must not alter live trading, MC1, admission, portfolio, or execution.",
+  "canonical_research_contract": {
+    "score": "0.75 * enhanced_base_rank + 0.20 * frozen_T6_rank + 0.05 * frozen_T9_rank",
+    "route": "timestamp-local top 30 percent on enhanced-base score",
+    "frozen_physical_slots": {
+      "T6_rank_error_ordinal": "cap80_ordinary",
+      "T9_exit5_ordinal": "cap120_equal_month"
+    },
+    "slot_contract": "data_perp/artifacts/strict_r3_o3v2_t6t9_consensus_contract_20260825_v1/selected_physical_slots.json"
+  },
+  "new_base_evaluation_source": "data_perp/artifacts/strict_r3_frozen_threeway_targetfree_20260826_v2",
+  "strict_evaluation": {
+    "held_months": ["2026-06", "2026-07"],
+    "train": "six complete months before a 28-day reserve; only resolved semantic labels",
+    "held_scores": "target-free before canonical rich-policy outcomes are joined",
+    "limitation": "Two held months are sufficient for a controlled candidate audit but insufficient to claim cross-era portability or authorize a live replacement."
+  },
+  "challengers": {
+    "T6": {
+      "artifact": "data_perp/artifacts/strict_r3_meta_t6t9_f72_selection_20260826_v5_t6",
+      "target": "rank_error_ordinal",
+      "decision": "REJECT_RETAIN_FROZEN_T6",
+      "reason": "Lower mean weighted Top-1/2/3 objective and weaker weekly/monthly Top-2 stability than the like-for-like frozen T6 control."
+    },
+    "T9": {
+      "artifact": "data_perp/artifacts/strict_r3_meta_t6t9_f72_selection_20260826_v1_t9",
+      "target": "exit5_ordinal",
+      "decision": "RESEARCH_CHALLENGER_ONLY_RETAIN_FROZEN_T9",
+      "reason": "Small two-month average objective improvement is not stable enough nor broad enough in eras to replace the frozen T9 contract."
+    }
+  },
+  "baseline_metrics": "data_perp/artifacts/strict_r3_meta_newbase_t6t9_baseline_metrics_20260826_v3",
+  "handover": "docs/STRICT_R3_META_T6T9_F72_SELECTION_20260826.md"
+}

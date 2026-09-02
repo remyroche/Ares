@@ -1,0 +1,115 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline strict-OOF Meta family screen; GateProxy proposal and strict MC1 confirmation are research-only and never mutate the live stack",
+  "base_contract": "P8U_ROUTED_F72_UNDERF120_RESEARCH_CANONICAL_20260828",
+  "research_contract": "P8U_META_STAGED_GATEPROXY_F120_SHAP_STATE_V1",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_underlineage_aug25_jul26_20260829_v1/target_free_shap_features",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_meta_f120_shap_state_stack_aug25jul26_20260830_v1"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_p8u_meta_f120_shap_state_stack_aug25jul26_20260830_v1/feature_contract.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "meta_feature_count": 237,
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 60000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM rank-XENDCG common target-query screen",
+    "objective": "rank_xendcg",
+    "n_estimators": 220,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 400,
+    "min_split_gain": 0.002,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.67,
+    "meta_rank_weight": 0.33,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "magnitude": {
+      "definition": "strict-prequential rich-policy-net residual against the earlier-resolved Base-rank isotonic anchor, ordinalized only from each training fold",
+      "arms": [
+        {"name":"m_bps_g5_band", "scale":"bps", "query":"base_band", "grade_count":5, "clip":400},
+        {"name":"m_bps_g7_band", "scale":"bps", "query":"base_band", "grade_count":7, "clip":400},
+        {"name":"m_bps_g5_band28", "scale":"bps", "query":"base_band_block28", "grade_count":5, "clip":400},
+        {"name":"m_bps_g7_band28", "scale":"bps", "query":"base_band_block28", "grade_count":7, "clip":400},
+        {"name":"m_sqrtatr_g5_band", "scale":"sqrt_atr", "query":"base_band", "grade_count":5, "clip":40},
+        {"name":"m_sqrtatr_g7_band", "scale":"sqrt_atr", "query":"base_band", "grade_count":7, "clip":40},
+        {"name":"m_sqrtatr_g5_band28", "scale":"sqrt_atr", "query":"base_band_block28", "grade_count":5, "clip":40},
+        {"name":"m_sqrtatr_g7_band28", "scale":"sqrt_atr", "query":"base_band_block28", "grade_count":7, "clip":40},
+        {"name":"m_atr_g5_band", "scale":"atr", "query":"base_band", "grade_count":5, "clip":4},
+        {"name":"m_atr_g7_band", "scale":"atr", "query":"base_band", "grade_count":7, "clip":4},
+        {"name":"m_atr_g5_band28", "scale":"atr", "query":"base_band_block28", "grade_count":5, "clip":4},
+        {"name":"m_atr_g7_band28", "scale":"atr", "query":"base_band_block28", "grade_count":7, "clip":4}
+      ]
+    },
+    "under": {
+      "definition": "unexpected favorable rich-policy residual: threshold is cleared and the path reaches the frozen 0.5-ATR trailing-profit activation",
+      "query": "timestamp",
+      "arms": [
+        {"name":"u_bps50_ts", "scale":"bps", "threshold":50},
+        {"name":"u_bps100_ts", "scale":"bps", "threshold":100},
+        {"name":"u_atr05_ts", "scale":"atr", "threshold":0.5},
+        {"name":"u_atr10_ts", "scale":"atr", "threshold":1.0}
+      ]
+    },
+    "over": {
+      "definition": "unexpected adverse rich-policy residual: threshold is breached and the canonical policy exits via stop-loss or fast-adverse protection",
+      "query": "timestamp",
+      "arms": [
+        {"name":"o_bps50_ts", "scale":"bps", "threshold":50},
+        {"name":"o_bps100_ts", "scale":"bps", "threshold":100},
+        {"name":"o_atr05_ts", "scale":"atr", "threshold":0.5},
+        {"name":"o_atr10_ts", "scale":"atr", "threshold":1.0}
+      ]
+    },
+    "state": {
+      "definition": "signed strict-prequential Base calibration state: strongly over-confident → accurate → strongly under-confident",
+      "arms": [
+        {"name":"s_bps_band", "scale":"bps", "query":"base_band", "edges":[-150,-50,-10,10,50,150]},
+        {"name":"s_bps_ts", "scale":"bps", "query":"timestamp", "edges":[-150,-50,-10,10,50,150]},
+        {"name":"s_bps_band28", "scale":"bps", "query":"base_band_block28", "edges":[-150,-50,-10,10,50,150]},
+        {"name":"s_sqrtatr_band", "scale":"sqrt_atr", "query":"base_band", "edges":[-15,-5,-1,1,5,15]},
+        {"name":"s_sqrtatr_ts", "scale":"sqrt_atr", "query":"timestamp", "edges":[-15,-5,-1,1,5,15]},
+        {"name":"s_sqrtatr_band28", "scale":"sqrt_atr", "query":"base_band_block28", "edges":[-15,-5,-1,1,5,15]},
+        {"name":"s_atr_band", "scale":"atr", "query":"base_band", "edges":[-1.5,-0.5,-0.1,0.1,0.5,1.5]},
+        {"name":"s_atr_ts", "scale":"atr", "query":"timestamp", "edges":[-1.5,-0.5,-0.1,0.1,0.5,1.5]},
+        {"name":"s_atr_band28", "scale":"atr", "query":"base_band_block28", "edges":[-1.5,-0.5,-0.1,0.1,0.5,1.5]}
+      ]
+    }
+  },
+  "selection": {
+    "stage_1_primary": "MetaDecisionStable; use only strict-OOF target-free score receipts plus outcome-joined diagnostics",
+    "stage_1_secondary": ["conditional_mi_meta_policy_given_base", "mean_top2_substitution_ev_bps", "worst_week_smeta"],
+    "gateproxy": "Versioned P0 GateProxy screens trials. At every expensive stage it proposes Top-3 predicted value + one high-uncertainty + one diverse control. It has no direct score, MC1, admission, portfolio, or live authority.",
+    "mc1": "Strict matched Current MC1 confirmation is the promotion authority. BCF is retrained only if its input contract changes.",
+    "inclusion_uplift": "fold-local training-only evidence for feature selection, never a candidate input",
+    "final_authority": "stable incremental economic information that strict MC1 converts into better constrained decisions"
+  },
+  "causality": {
+    "feature_inputs": "F120 parent plus target-free SHAP, prior-resolved same-rule state, predeclared Kalman/transition, innovation, and synergy fields only",
+    "labels": "policy/path labels are joined only after held target-free scores persist and training labels resolve before the fold reserve",
+    "kalman": "half-life pairs are predeclared and never refit on a held fold; their block selection is strict-OOF",
+    "held_outcomes": "metrics only; never an input to prediction"
+  }
+}

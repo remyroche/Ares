@@ -1,0 +1,6 @@
+{
+  "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_underlineage_aug25_jul26_20260829_v1/target_free_shap_features",
+  "full_feature_roots": [
+    "data_perp/artifacts/strict_r3_p8u_underf120_shapconditional5_overlay_underlineage_aug25jul26_20260829_v1"
+  ]
+}

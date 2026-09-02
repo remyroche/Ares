@@ -1,0 +1,49 @@
+{
+  "schema": "ares_governed_change_receipt_v1",
+  "created_utc": "2026-08-14T07:58:00Z",
+  "objective": "Restore live execution readiness without carrying spreads: causally materialize Kraken-omitted no-trade 15-minute policy bars, seal a new inference contract, replay six hours, and preserve append-only spread/history collection.",
+  "causality_contract": {
+    "policy_atr": "Signal-time Wilder14 ATR. Missing 15-minute intervals through the signal timestamp are flat OHLC bars based only on the last already-observed close.",
+    "spread": "Timestamp-exact bid/ask only. No carry, imputation, or flat-bar rule applies to spreads.",
+    "future_paths_consumed": [],
+    "exchange_calls": 0,
+    "order_submission_authorized": false
+  },
+  "changed_files_sha256": {
+    "scripts/materialize_strict_r3_target_free_hourly_grid_v2.py": "1fd277d5d7b3f012cd5fc1ff9380afa85807de3bc4516300132d167c2158c014",
+    "tests/test_materialize_strict_r3_target_free_hourly_grid_v2.py": "26d556302e0279ca126199dc4dbf607f6027130795f30ee605cc84adf7d866e2",
+    "tests/test_strict_r3_inference_bundle.py": "64a74f0cb0ae4afdf7ee5ef38f5dec07d9717ac3ca6366bf2765320020f559ad",
+    "config/strict_r3_inference_bundle_long_20260801_v12_flatbaratr_robust21_mc1_d2_adaptive_exit_v1.json": "e556ccdbf04579f7032c8c92399fcc69745b6654a5a0e86f0f3a05de0be3495a",
+    "config/strict_r3_kraken_live_execution_v7_flatbaratr.json": "91f9954a9bcbdcd707581bb1a553fb985ed111334a343e6b90f8144bc4a9e647",
+    "config/strict_r3_schema_v6_live_promotion_20260814_v7_flatbaratr.json": "281e58543db74f8886644ee00a6c7fc3f2301a20b5505aaa9ee424543275646d",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md": "0831cfe683562c0aeef324aec2e0a48a3955e66dfdf4075758b98f0f5f57e8b5"
+  },
+  "validation": {
+    "bundle_validation": "28 artifact hashes and 39 runtime code hashes verified",
+    "tests": "83 passed",
+    "replay_root": "data_perp/artifacts/strict_r3_v12_flatbaratr_last6_replay_20260814_v1_20260814T000000Z through data_perp/artifacts/strict_r3_v12_flatbaratr_last6_replay_20260814_v1_20260814T050000Z",
+    "current_feature_complete_rows_by_hour": [162, 163, 163, 161, 160, 162],
+    "mapped_rows_by_hour": [33, 33, 33, 33, 32, 33],
+    "admitted_rows_by_hour": [3, 3, 2, 4, 4, 3],
+    "portfolio_accepted_rows_by_hour": [2, 1, 0, 2, 2, 0],
+    "append_only_max_numeric_delta": 0.0
+  },
+  "spread_audit": {
+    "persistent_unavailable_symbols": ["AUD/USD:USD", "BNT/USD:USD", "CHR/USD:USD", "GAS/USD:USD", "ONG/USD:USD", "TON/USD:USD"],
+    "interpretation": "Contracts are delisted and absent from the current 280-market Kraken collector universe; retain frozen-universe identity but reject each symbol-hour.",
+    "transient_gap": "GBP/USD:USD had four one-sided-book hours on 2026-08-09; fail-closed behavior is correct."
+  },
+  "collector": {
+    "immutable_snapshot": "data_perp/exchanges/krakenfutures/spread_snapshots/kraken_futures_perp_spreads_20260814_064308.parquet",
+    "symbols": 280,
+    "ticker_rows": 280,
+    "l2_rows": 8546,
+    "candle_rows": 764,
+    "training_rows": 280,
+    "orderbook_failures": 0,
+    "cumulative_spread_rows": 102089,
+    "cumulative_candle_rows": 220249,
+    "cumulative_training_rows": 102069,
+    "write_contract": "Immutable per-run snapshots plus timestamp/symbol append-and-deduplicate cumulative histories; no history erasure."
+  }
+}

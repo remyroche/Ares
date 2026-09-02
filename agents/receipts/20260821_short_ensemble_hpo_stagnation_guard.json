@@ -1,0 +1,27 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "task": "bound_short_specialist_and_residual_hpo_stagnation",
+  "scope": "short-side research HPO only; no model, score, admission, portfolio, or live execution contract changed",
+  "changed_paths": {
+    "extreme_price_movements/residual_lambdarank_hpo.py": "03f02657e3ba0f90511c874e2dc6d209650e4b33d67c5d50f4a4a21d7e1d3291",
+    "scripts/run_frozen_specialist_query_hpo.py": "69b6ce6c84d9d903a08d51669f3a5d96f7d2c0065e6311558e9495271966ad37",
+    "scripts/run_frozen_residual_query_hpo.py": "988a17489e83dff2ccd0de01fce2b95da65563ec4151edc835ce60e842a4ecd1",
+    "extreme_price_movements/tests/test_residual_lambdarank_hpo_stagnation.py": "42404e57dc5c44af8cf945441fea9cf2a352f33edc7703a79d6f98c816ba3d3a"
+  },
+  "controls": {
+    "patience": 20,
+    "trial_states_consuming_budget": ["COMPLETE", "PRUNED"],
+    "reset_condition": "strictly better completed objective only",
+    "ties": "do not reset",
+    "failed_trials": "do not consume budget",
+    "provenance": "stop reason, patience, last improving objective, and trials since improvement are persisted in Optuna study metadata; winner rows carry stop reason and patience"
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_residual_lambdarank_hpo_stagnation.py extreme_price_movements/tests/test_short_policy_conversion_hpo_stop.py",
+      "python3 -m py_compile extreme_price_movements/residual_lambdarank_hpo.py scripts/run_frozen_specialist_query_hpo.py scripts/run_frozen_residual_query_hpo.py",
+      "git diff --check -- extreme_price_movements/residual_lambdarank_hpo.py scripts/run_frozen_specialist_query_hpo.py scripts/run_frozen_residual_query_hpo.py extreme_price_movements/tests/test_residual_lambdarank_hpo_stagnation.py"
+    ],
+    "result": "4 passed; syntax and whitespace checks passed"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-08-26",
+  "scope": "research-only strict-R3 one-head downstream source",
+  "change": "Added a target-free adapter that supplies the fixed downstream schema from exactly one 120-feature policy-ordinal LambdaRank head. It never loads E, T, R3, policy outcomes, or path labels; historical component slots are one-score copies and disagreement slots are zero-authority constants.",
+  "files": {
+    "scripts/materialize_strict_r3_single_head_downstream_source_v1.py": "9d35ea09bbf72857f29afa506b32c53d74a4171c7b2db130a221c2425c3dad46",
+    "tests/test_materialize_strict_r3_single_head_downstream_source_v1.py": "a079098842b5af8305d19e7eef3937020291e9116677605b3a9c20e61a049d53"
+  },
+  "validation": {
+    "command": "python3 -m pytest -q tests/test_materialize_strict_r3_single_head_downstream_source_v1.py",
+    "result": "3 passed",
+    "materialised_source": "data_perp/artifacts/strict_r3_single_head_downstream_source_20260826_v1",
+    "coverage": "526912 rows across 2025-11 through 2026-07; every month 100% complete on the frozen 120 fields",
+    "target_free": true,
+    "et_or_r3_score_loaded": false
+  },
+  "runtime_scope": "research-only; no live/exchange configuration, model bundle, or execution process changed"
+}

@@ -1,0 +1,44 @@
+{
+  "task": "strict-r3-price-memory-pipeline-raw-provider",
+  "scope": "Wire the existing PriceMemoryPipelineState as an opt-in pre-transform raw provider for its fourteen direct price-memory outputs, preserving the batch fallback and existing live configuration.",
+  "changed_paths": [
+    "extreme_price_movements/features.py",
+    "tests/test_price_memory_feature_state.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "NUMBA_NUM_THREADS=4 python3 -m pytest -q tests/test_price_memory_feature_state.py tests/test_residual_surprise_state.py",
+      "python3 -m py_compile extreme_price_movements/features.py extreme_price_movements/inference/price_memory_pipeline_state.py"
+    ],
+    "not_run_reason": "",
+    "promotion_status": "opt-in-and-disabled",
+    "evidence": {
+      "raw_outputs": 14,
+      "disabled_fallback": "passed; no provider state directory is created and batch frames remain bit-identical",
+      "resumed_one_row_raw_parity": "passed against independent canonical batch formulas",
+      "resumed_one_row_transformed_parity": "passed through the existing CausalTransformStateContainer",
+      "common_hourly_watermark": "passed; PrimitivePriceState and PriceMemoryFeatureState are restored and asserted at the same terminal UTC hour",
+      "non_contiguous_append": "provider refuses an append unless the first new timestamp equals the common watermark plus one hour and every batch timestamp is hourly",
+      "bootstrap_14_fields_170_symbols_4669_rows_seconds": 6.352,
+      "single_hour_update_14_fields_170_symbols_seconds": 0.00168,
+      "features_sha256": "ae1f1fb74095be6f9f86bc422c743c6ec4ecd32fd532116c280b9423a70eafdc",
+      "tests_sha256": "4b7713743d56a33ee1df82b59f93a5b907fffb3c5d9222b2f959ecb75da4a808"
+    },
+    "decision": "The provider is integrated before the existing causal transform and carries all fourteen outputs under one atomic logical watermark. It is not enabled in any live configuration and does not alter the fallback list. A full 120-feature/downstream parity audit is still required before promotion."
+  },
+  "agent_plan": {
+    "subagents": [],
+    "delegation_note": "Bounded implementation retained locally."
+  }
+}

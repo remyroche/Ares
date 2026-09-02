@@ -1,0 +1,71 @@
+{
+  "schema": "strict_r3_routed_b0_research_contract_v1",
+  "status": "research_frozen_challenger_not_live",
+  "scope": "B0 replacement research only; it does not amend the current live inference, execution, consensus, or MC1 bundles.",
+  "side": "long",
+  "router": {
+    "source": "data_perp/artifacts/strict_r3_fulluniverse_recall_router_full30_frozen_jul25_jul26_20260826_v1",
+    "scoring_receipts": "target_free_scores/month=*.parquet",
+    "training_population": "strict-OOF timestamp-local top 50% of the frozen router primary rank",
+    "base_input": "router-selected target-free candidates only"
+  },
+  "b0_challenger": {
+    "target": {
+      "name": "policy_ordinal_base",
+      "label": "canonical rich policy net bps",
+      "bins_bps": [
+        "<= 0 => 0",
+        "0 to 50 => 1",
+        "50 to 100 => 2",
+        "100 to 200 => 3",
+        "200 to 400 => 4",
+        "> 400 => 5"
+      ],
+      "invalid_rows": "excluded; never encoded as economic failures"
+    },
+    "objective": "lambdarank",
+    "label_gain": [0, 0.5, 2, 3, 6, 8],
+    "query": "decision timestamp x long side",
+    "strict_oof": {
+      "train_months": 3,
+      "reserve_days": 28,
+      "label_available_before_reserve": true,
+      "query_safe_train_cap": 60000,
+      "held_cap": 15000
+    },
+    "features": {
+      "selection_receipt": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+      "selection_receipt_sha256": "977228b53c99a1984ffcbe061c1ba234f07abfe0d47231e51cb6b2b9c5a44d86",
+      "feature_count": 72,
+      "selection_method": "1407 causal numeric -> 1199 coverage-valid -> 1094 near-duplicate survivors -> Screen120 -> two-seed individual/boundary/family MDA -> F70 ladder -> structure-location add-back F72 -> targeted drop confirmation"
+    },
+    "hpo": {
+      "receipt": "data_perp/artifacts/strict_r3_b0_compact_hpo_20260826_v1_f72/run_manifest.json",
+      "receipt_sha256": "df7cd3fd473b464fcae06997b5994d2f4e8059ff183ac9e909cb5f408a68982b",
+      "n_estimators_ceiling": 2000,
+      "early_stopping_rounds": 30,
+      "median_pruner": "startup=8, warmup_fold=1",
+      "best_trial": 5,
+      "params": {
+        "learning_rate": 0.0971743501454128,
+        "max_depth": 4,
+        "num_leaves": 18,
+        "min_data_fraction": 0.022951038787373697,
+        "feature_fraction": 0.825109330471186,
+        "bagging_fraction": 0.7964427230405263,
+        "lambda_l1": 0.0006475618744569717,
+        "lambda_l2": 0.22122239590450088,
+        "min_gain_to_split": 0.0020138375332521173,
+        "lambdarank_truncation_level": 10,
+        "sigmoid": 1.4293382009169473
+      }
+    }
+  },
+  "three_head_context": {
+    "E": "existing frozen E contract retained: full-universe compact challenger rejected",
+    "T": "existing frozen T contract retained: full-universe compact challenger rejected",
+    "blend_for_development": "equal ranks: (B0 + E + T) / 3",
+    "downstream": "consensus and MC1 are intentionally not retrained by this contract"
+  },
+  "promotion_boundary": "The challenger must still pass a later strict downstream consensus/MC1 and portfolio replay before any inference or live-bundle promotion."
+}

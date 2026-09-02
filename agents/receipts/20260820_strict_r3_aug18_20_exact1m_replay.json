@@ -1,0 +1,44 @@
+{
+  "schema": "strict_r3_offline_replay_receipt_v1",
+  "purpose": "Target-free Aug 18–20 2026 dual-route replay; no exchange-writing calls.",
+  "final_artifact": "data_perp/artifacts/strict_r3_aug18_20_live_contract_replay_20260820_v1/replay_v7_exact1m_actual_cutoff",
+  "actual_outcome_cutoff_utc": "2026-08-20T08:07:50Z",
+  "score_contract": {
+    "route": "current-v5 timestamp-local top-30%",
+    "admission": "BCF MC1 expected EV >= 30 bps AND current-v5 MC1 expected EV >= 30 bps",
+    "auction_priority": "BCF MC1 expected EV",
+    "map": "strictly prior-resolved 21-day, 10%-trimmed residual shift"
+  },
+  "outcome_contract": {
+    "entry": "Kraken Futures exact 1-minute open at decision +5 minutes",
+    "exit": "frozen SimplePolicyOptimiser parent policy",
+    "atr": "canonical 15-minute source aggregated causally to prior-signal Wilder-14 ATR",
+    "cost": "100 bps exactly once",
+    "adaptive_exit_v1": "not replayed; no archived per-15-minute live causal state ledger supplied to this offline producer"
+  },
+  "counts": {
+    "scored": 8299,
+    "dual_admitted": 43,
+    "resolved": 29,
+    "pending_horizon": 14,
+    "invalid_source": 0,
+    "portfolio_accepted_resolved": 23
+  },
+  "realised_metrics": {
+    "net_ev_bps_per_trade": 77.41110221401829,
+    "net_sum_bps": 1780.4553509224206,
+    "final_wallet_from_1000": 1010.9740106698249,
+    "max_drawdown": -0.36248040991301456
+  },
+  "tests": {
+    "command": "python3 -m pytest -q tests/test_exact_1m_policy_contract.py",
+    "result": "10 passed"
+  },
+  "hashes": {
+    "replay_script": "3db0a8d9851fa7aa870d15e322e5bcbdebd0f545b472b709ca0f3f3968795816",
+    "exact_policy_helper": "8ed6f6de05f0196a0b623c02aec3ed4fdf166f8084818bf5cf49f5cd4ca071ba",
+    "run_manifest": "52cece2234c54ed20008df1bed66f3042d3310a04ccaa532ac7eaba87a3cb973",
+    "score_admission_outcome_ledger": "f9f57c5024a9558c869472d684952fd157a8a3a5cd5c8aa85632bab274f4492d",
+    "portfolio_decisions": "1100498fd64034253e7d674f0547f09aa665d5eefd0c1cd65fe3ab63ef001195"
+  }
+}

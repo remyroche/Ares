@@ -1,0 +1,79 @@
+{
+  "schema": "strict_r3_p8u_c0_c1_agreement_tier_inference_contract_v1",
+  "supersedes": "config/strict_r3_p8u_c0_c1_agreement_tier_inference_20260901_v1.json",
+  "status": "CANONICAL_NO_EXCHANGE_ACTIVATION",
+  "order_submission": false,
+  "side": "long",
+  "purpose": "Hash-bound target-free C0/C1 admission assembly. Both-admitted rows have priority. C1-only and C0-only rows then compete strictly by their selected raw BCF MC1 expected EV; no score-family precedence is permitted. This contract has no portfolio, exchange, or order-submission authority.",
+  "source_contracts": {
+    "c0_dual_mc1": {
+      "path": "config/strict_r3_p8u_dual_mc1_sixmonth_inference_20260828_v2.json",
+      "sha256": "5a4a25c56409093e3d3d0f5e0bd1c6872377bae7d87dece943aa182e65250989",
+      "required_population": "exact target-free Router50 identities"
+    },
+    "c1_lva_dual_mc1": {
+      "path": "config/strict_r3_p8u_c1_lva_canonical_20260901_v1.json",
+      "sha256": "3173421008d2c7d59f616f97da4372989d4a97ce3b898ae02d9b2eec4a0b98ae",
+      "required_population": "exact target-free Router50 identities"
+    }
+  },
+  "runtime": {
+    "selector": {
+      "path": "extreme_price_movements/inference/p8u_c0_c1_agreement_tier.py",
+      "sha256": "701307375c11c19c46a87ba78fe304c80ea967dcc923532e3e1202c44652b0b6"
+    },
+    "assembler": {
+      "path": "scripts/assemble_p8u_c0_c1_agreement_tier.py",
+      "sha256": "2765341cda214b26bbd6c798d28d457f009ad573ce3aa90dea3501f4c4f1f327"
+    },
+    "no_order_portfolio_adapter": {
+      "path": "extreme_price_movements/inference/p8u_execution_portfolio_adapter.py",
+      "sha256": "1b502a6fbe1eea74fb52a97ffd46732eaff8b4f098fcbc1c3f032eec9ec4fc14",
+      "required_selection_mode": "c0_c1_agreement_tier",
+      "invariant": "The adapter sorts only by portfolio_order_priority_bps in this mode while retaining auction_priority_bps as raw selected BCF EV."
+    }
+  },
+  "identity_and_causality": {
+    "population": "C0 and C1 must share exactly equal candidate_id, __decision_ts__, __symbol__, and side_name identities before any admission is formed.",
+    "prohibit_outcome_columns": true,
+    "missing_score_or_mapper": "fail closed; no C0/C1 family fallback and no stale monthly C1 package"
+  },
+  "admission": {
+    "selection_mode": "c0_c1_agreement_tier",
+    "per_family_rule": "bcf_mc1_expected_bps >= 50 AND current_mc1_expected_bps >= 50",
+    "unpaired_order": "highest_raw_bcf",
+    "tier_order": ["both_admitted", "unpaired_by_selected_raw_BCF_EV"],
+    "both_coordinate_source": "C0",
+    "c1_only_coordinate_source": "C1",
+    "c0_only_coordinate_source": "C0",
+    "raw_execution_ev_field": "auction_priority_bps",
+    "portfolio_order_field": "portfolio_order_priority_bps",
+    "portfolio_order_formula": "auction_priority_bps + 10000 only for both-admitted rows; C1-only and C0-only share portfolio_tier=0 and are sorted by selected raw BCF EV",
+    "tier_offset_bps": 10000.0,
+    "candidate_creation": "prohibited; only candidates admitted by at least one independently target-free family are retained"
+  },
+  "telemetry": {
+    "required_fields": [
+      "admission_provenance",
+      "agreement_tier",
+      "portfolio_tier",
+      "score_coordinate_source",
+      "c0_bcf_mc1_expected_bps",
+      "c0_current_mc1_expected_bps",
+      "c1_bcf_mc1_expected_bps",
+      "c1_current_mc1_expected_bps",
+      "auction_priority_bps",
+      "portfolio_order_priority_bps"
+    ],
+    "invariant": "The 10000-bps agreement-only order offset is never used as raw expected gross, execution-adjusted EV, or realised-PnL calibration input."
+  },
+  "live_readiness": {
+    "required_before_exchange_activation": [
+      "A current C0 and a current C1 mapper package, each fitted strictly from their declared prior-resolved windows.",
+      "A current append-only completed-15-minute C1 snapshot state.",
+      "An end-to-end no-order parity receipt from the current Router50 candidates through the tier selector, auction, execution preflight, and terminal telemetry fields.",
+      "A separate exchange-writing activation receipt binding the current artifacts and runtime hashes."
+    ],
+    "failure_mode": "fail closed; this canonical contract does not authorize exchange access or order submission"
+  }
+}

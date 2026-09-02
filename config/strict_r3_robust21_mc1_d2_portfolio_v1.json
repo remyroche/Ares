@@ -1,0 +1,17 @@
+{
+  "schema": "strict_r3_robust21_mc1_d2_portfolio_v1",
+  "side": "long",
+  "admission_expected_net_field": "mc1_d2_expected_net_bps",
+  "admission_boolean_field": "mc1_d2_admitted_ge_50bps",
+  "admission_threshold_bps": 50.0,
+  "robust21_role": "causal_control_and_fallback_telemetry_not_numerically_blended",
+  "auction_score_field": "final_score",
+  "missing_component": "fail_closed",
+  "max_concurrent_positions": 8,
+  "max_concurrent_per_symbol": 1,
+  "max_new_entries_per_bar": 2,
+  "max_total_margin_fraction": 0.80,
+  "margin_slot_fraction": 0.10,
+  "leverage": 7.0,
+  "minimum_gross_notional": 1.0
+}

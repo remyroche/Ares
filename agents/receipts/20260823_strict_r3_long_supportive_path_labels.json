@@ -1,0 +1,64 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-23T13:45:00Z",
+  "scope": "offline strict-R3 long supportive-label research only; no live, canonical production, exchange, or execution artifacts modified",
+  "change": "Materialise target-only H12 path labels; run strict-OOF direct-label, path-archetype, stable-geometry, and direct-bps-blend ablations; publish one research challenger only.",
+  "contracts": {
+    "causality": "The source candidate uses only point-in-time fields. All P1/direct values begin at the frozen signal-close-plus-one-hour decision entry and are labelled available only at decision plus twelve hours.",
+    "invalidity": "Rows invalid in the parent policy substrate or lacking a complete H12 path are persisted as target-invalid with every future path/direct value null; they cannot become ordinary failures.",
+    "inference": "The sidecar emits supervised labels only. No current live, admission, execution, canonical production, or exchange contract was modified.",
+    "outer_validation": "Each outer fold fits only on labels available before held-fold start minus the 12-hour H12 embargo. Invalid paths remain persisted but excluded from all supervised fits.",
+    "geometry": "Frozen K8 geometry uses only October--December 2024 rows and excludes those definition rows from later supervised training. Rolling K8 variants keep one fixed geometry bundle for every downstream user within a fold."
+  },
+  "changed_files": {
+    "scripts/materialize_strict_r3_long_supportive_path_labels.py": "61511b14d55ac3c5dd18245ea57d20b93261985163df0c4593f07e31f173359e",
+    "scripts/run_strict_r3_long_supportive_label_funnel.py": "d48a3d61a2d65315d14d1b0d535b0dd9111c41fb31ed0bbfa8f95f0b63b438ad",
+    "scripts/run_strict_r3_long_supportive_label_stage2.py": "2eaa95ec9f5fcaf7016ea27d7f603543bb068845a21252a74fabbf27ba82bfd9",
+    "scripts/audit_strict_r3_long_supportive_label_funnel.py": "413624fb88682214b4f69a0be60c90bf448f86acb5b41801d3979fb1902e6a7b",
+    "scripts/ablate_strict_r3_long_direct_support_blends.py": "434b40f1539eda6a60360e4d16cc0b55f052a5c6a6cce6623adb59a84466502d",
+    "scripts/run_strict_r3_long_supportive_label_causal_joint.py": "0a8d218d42603f39a40704549f65c3688e1d7c05be1388564c4a63b6447823f7",
+    "scripts/audit_strict_r3_long_supportive_label_causal_joint.py": "aa315dbfbc6caa312e3fc8b4d8fd3c35692f8feb3730f9e3963b6bb4244c342e",
+    "scripts/ablate_strict_r3_long_direct_joint_blends.py": "7a45f808e944e98c2248bdffdce287d176ee6f493885138d697376871ec93ef0",
+    "scripts/audit_strict_r3_long_supportive_label_hdbscan_regime.py": "efe0b0ff7ea87dd2433e494fe8423b8419e5ba3cc73b1c26245a07bcf2fc52bd",
+    "scripts/run_strict_r3_long_supportive_label_hdbscan_regime.py": "92e8ea24ffe38f28517120adf8a58bcce9e738ed5523f78576c85e7a3f0616d8",
+    "extreme_price_movements/tests/test_strict_r3_long_supportive_path_labels.py": "8bb27fa5109c07bee69ffb654eacacf8de0b8379085037aef097d8c7fa15efb3",
+    "docs/STRICT_R3_LONG_SUPPORTIVE_LABEL_ABLATION_20260823.md": "1ac3df779601a19de634d1d3e8b5167be2d5604c5ce2bebfa9a3892ba679cccd"
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_long_supportive_path_labels.py",
+      "python3 scripts/audit_strict_r3_long_supportive_label_funnel.py --root data_perp/artifacts/strict_r3_long_supportive_label_funnel_stage1_20260823_v6 --out data_perp/artifacts/strict_r3_long_supportive_label_funnel_stage1_20260823_v6/stage1_identity_causality_coverage_audit.json",
+      "python3 scripts/audit_strict_r3_long_supportive_label_funnel.py --stage2 --root data_perp/artifacts/strict_r3_long_supportive_label_stage2_frozen_geometry_20260823_v1 --out data_perp/artifacts/strict_r3_long_supportive_label_stage2_frozen_geometry_20260823_v1/stage2_identity_causality_coverage_audit.json",
+      "python3 scripts/audit_strict_r3_long_supportive_label_funnel.py --stage2 --root data_perp/artifacts/strict_r3_long_supportive_label_stage2_rolling_geometry_20260823_v1 --out data_perp/artifacts/strict_r3_long_supportive_label_stage2_rolling_geometry_20260823_v1/stage2_identity_causality_coverage_audit.json"
+    ],
+    "result": "PASS. 2,820,951 persisted candidates / 1,663,035 valid complete H12 rows; six chronological outer folds; exact candidate identity across every compared arm; target-free input contracts; 12-hour label embargo; frozen geometry definition rows excluded from supervised use; inner strict-OOF residual inputs; stage-3 blend consumes only sealed stage-1 OOF scores."
+  },
+  "published_artifacts": {
+    "labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v5",
+    "stage1": "data_perp/artifacts/strict_r3_long_supportive_label_funnel_stage1_20260823_v6",
+    "stage2_frozen": "data_perp/artifacts/strict_r3_long_supportive_label_stage2_frozen_geometry_20260823_v1",
+    "stage2_rolling": "data_perp/artifacts/strict_r3_long_supportive_label_stage2_rolling_geometry_20260823_v1",
+    "stage3": "data_perp/artifacts/strict_r3_long_direct_support_blends_20260823_v1",
+    "causal_joint": "data_perp/artifacts/strict_r3_long_supportive_label_causal_joint_20260823_v2",
+    "hdbscan_c3": "data_perp/artifacts/strict_r3_long_supportive_label_hdbscan_regime_20260823_v3",
+    "direct_joint_blend": "data_perp/artifacts/strict_r3_long_direct_joint_blends_20260823_v3",
+    "report": "docs/STRICT_R3_LONG_SUPPORTIVE_LABEL_ABLATION_20260823.md"
+  },
+  "decision": {
+    "research_challenger": "S3_direct_efficiency_time_base_equal",
+    "formula": "one-third direct path efficiency expected-policy bps + one-third direct time-to-meaningful-MFE expected-policy bps + one-third frozen prequential upstream bps",
+    "promotion": "not promoted; shadow full-stack admission/portfolio replay then a later untouched validation period are required",
+    "causal_joint_result": "C1 Ward K4 soft J2 is a stable, causal signal but does not materially beat the direct-label challenger. M2 50/50 direct/J2 is retained as a non-promoted diagnostic only. C3 HDBSCAN was run with an explicit noise state and rejected on portable economics.",
+    "rejected": [
+      "direct final-return head: constant held score after isotonic clipping",
+      "fold-local path GMM as a stable inference representation",
+      "frozen or rolling same-bundle K8 geometry residual as a portable downstream layer",
+      "C1/C2 causal-regime × path J2 as a standalone promotion candidate",
+      "C3 HDBSCAN causal-regime control: portable top-5 is negative",
+      "richer J3--J6 and policy-conversion clustering: sequentially gated off after no material J2 win"
+    ]
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

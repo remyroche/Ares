@@ -1,0 +1,69 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline Meta-HPO target/loss/feature trial bank; source-identical frozen F72/UnderF120 parent with append-only feature overlays",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "research_contract": "P8U_META_HPO_MULTITARGET_ADDITIVE_V1",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_underlineage_aug25_jul26_20260829_v1/target_free_shap_features",
+    "full_feature_roots": ["data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1"],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1/contracts/m0_parent.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 100000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM Rank-XENDCG; frozen UnderF120 parent parameters",
+    "objective": "rank_xendcg",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0
+  },
+  "provisional_meta_blend": {"base_rank_weight": 0.75, "meta_rank_weight": 0.25, "admission_proxy_fraction": 0.2, "meta_quartile_fraction": 0.25, "utility_clip_bps": [-300, 600], "utility_density_clip_bps": [0, 600]},
+  "target_families": {
+    "under": {"definition": "strict-prequential unexpected favorable policy residual with trailing activation", "query": "timestamp", "arms": [{"name": "under_bps50__timestamp", "scale": "bps", "threshold": 50.0}, {"name": "under_bps100__timestamp", "scale": "bps", "threshold": 100.0}]},
+    "over": {"definition": "strict-prequential unexpected adverse stop-loss or fast-adverse residual", "query": "timestamp", "arms": [{"name": "over_bps50__timestamp", "scale": "bps", "threshold": 50.0}, {"name": "over_bps100__timestamp", "scale": "bps", "threshold": 100.0}]},
+    "magnitude": {"definition": "strict-prequential rich-policy-net residual ordinalized into train-only seven quantile grades", "arms": [{"name": "magnitude_bps__base_band_block28", "scale": "bps", "query": "base_band_block28"}]},
+    "state": {"definition": "signed strict-prequential Base calibration state", "arms": [{"name": "state_bps__base_band_block28", "scale": "bps", "query": "base_band_block28", "edges": [-150, -50, -10, 10, 50, 150]}]}
+  },
+  "selection": {
+    "contract": "Each candidate is a replacement candidate for the existing Under F120 meta slot. It keeps all 120 frozen parent fields and may append selected target-free SHAP/state fields. It is evaluated as Current = 0.75 * Base rank + 0.25 * candidate Under rank; it is never an extra head and does not alter BCF.",
+    "screen_objective": null,
+    "screening_rule": "Strict-OOF direct metrics are descriptors only. No fixed weighted metric, percentile rank, or direct-score gate can select a trial. The versioned learned PriorityProxy and GateProxy contract is the only HPO/feature-selection proxy; complete matched MC1 evidence remains the sole advancement authority.",
+    "full_stack_objective": {
+      "scope": "For only the top two screen-qualified candidates plus frozen Under F120 control: target-free OOF score receipts, separate strict six-complete-calendar-month BCF and Current MC1 maps, dual expected-policy-net >= 50 bps admission, one chronological constrained portfolio.",
+      "primary": "highest constrained total net policy bps",
+      "non_regression_gates": {
+        "net_ev_bps_per_trade_vs_control_min": -5.0,
+        "worst_week_bps_vs_control_min": -10.0,
+        "max_drawdown_percentage_points_vs_control_min": -2.0,
+        "monthly_portability": "positive delta in at least half of held months and no single-month-only improvement"
+      },
+      "tie_breakers": ["higher constrained net EV per trade", "higher worst-week EV", "higher accepted count", "fewer fields and simpler HPO geometry"],
+      "selection_note": "Any winner replaces the one Under F120 model inside the fixed 25% Current slot. It never becomes a parallel head."
+    },
+    "feature_selection": {
+      "always_present": "all 120 frozen current Under F120 fields",
+      "stable_append_pool": ["shap_f72_signed_balance", "shap_f72_positive_total", "shap_f72_contrib__mark_perp_dislocation"],
+      "conditional_append_pool": ["shap_f72_top1_share", "shap_f72_top3_share", "shap_f72_entropy", "shap_f72_abs_total", "shap_f72_negative_abs_total"],
+      "conditional_retention_rule": "A lower-support feature can advance only when its conditional effect is non-reversing in the declared context, it occurs in >=8/12 folds or >=6 folds with the same context direction, and it improves the matched full-stack objective."
+    },
+    "advancement": "Direct timestamp-level evidence is only a funnel. Full-stack MC1/admission/portfolio evidence is the sole advancement authority."
+  },
+  "causality": {"feature_inputs": "complete frozen 120-field parent plus declared target-free additive overlays only", "labels": "policy/path labels join only after held target-free score persistence and resolve before fold reserve", "parent_stack": "Router50/F72 Base/BCF/Current dual-MC1/portfolio remain fixed"}
+}

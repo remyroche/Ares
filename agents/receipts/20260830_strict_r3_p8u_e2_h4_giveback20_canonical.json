@@ -1,0 +1,53 @@
+{
+  "task": "strict-r3-p8u-e2-h4-giveback20-canonical",
+  "scope": "Promoted the frozen E2 q50 agreement replacement authority and fixed H4 Giveback-20 continuation authority to the hash-bound P8U research-canonical contract. The active exchange-writing gateway and its live release were deliberately not changed.",
+  "changed_paths": [
+    "config/strict_r3_p8u_e2_h4_giveback20_research_canonical_20260830_v1.json",
+    "extreme_price_movements/p8u_e2_h4_giveback20_contract.py",
+    "tests/test_p8u_e2_h4_giveback20_contract.py",
+    "scripts/run_strict_r3_p8u_15m_e2_h4_gradual_august_holdout.py",
+    "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md",
+    "docs/P8U_ROUTED_F72_UNDERF120_SOURCE_ANCHORED_PREPRODUCTION_HANDOVER_20260829.md"
+  ],
+  "changed_path_hashes": {
+    "config/strict_r3_p8u_e2_h4_giveback20_research_canonical_20260830_v1.json": "9c6ffe5e62b6acfb02818a61c4e1c5b6d2dbb75a486abecf871f9eb19c653f11",
+    "extreme_price_movements/p8u_e2_h4_giveback20_contract.py": "a59b0fecb2986a41a9f233c6094486d6c65402cfa1d8e8ac4c13f53f129db947",
+    "tests/test_p8u_e2_h4_giveback20_contract.py": "881d649fb103788484a443faa03a9f7891a0439a453a0c092373ca72e5275394",
+    "scripts/run_strict_r3_p8u_15m_e2_h4_gradual_august_holdout.py": "b31e8c0c1fd1b2cf271e362139e5f8f70960f607ce2a26b4f7adc4c8c1abcc91",
+    "docs/P8U_E2_Q50_AGREEMENT_H4_GIVEBACK20_CANONICAL_HANDOVER_20260830.md": "5de82ed62331ad064d9a294823fe1267237e92117a6310d6a99c70ac921e005c",
+    "docs/P8U_ROUTED_F72_UNDERF120_SOURCE_ANCHORED_PREPRODUCTION_HANDOVER_20260829.md": "6a6fe3d49551bc9d720b7cff1e72051b48a956711923b7c51d61f466abe8a6ac"
+  },
+  "contracts": [
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    }
+  ],
+  "causality": {
+    "entry": "E2 uses target-free decision-time inputs and is the boolean intersection of independent H0/H3 q50 predictions. It may replace only an existing paired incumbent and cannot add capacity.",
+    "continuation": "H4 is evaluated only after a completed 15-minute state bar. Its fixed action applies to the following interval only and cannot arm and exit on one bar, loosen a parent threshold, change sizing, or modify the hard stop.",
+    "outcome_handling": "August gradual-controller comparison joins policy outcomes only after target-free entry selection and uses a common source-valid population. Its neutral adapter has zero net-bps, exit-bar, and exit-reason differences versus the canonical rich parent on all 700 retained paths.",
+    "costs": "The rich parent policy records its 100-bps all-in round-trip cost exactly once."
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_p8u_15m_e2_h4_gradual_august_holdout.py",
+      "python3 scripts/run_strict_r3_p8u_15m_e2_h4_gradual_august_holdout.py --output data_perp/artifacts/strict_r3_p8u_15m_e2_h4_gradual_august_holdout_20260830_v4",
+      "python3 -m py_compile extreme_price_movements/p8u_e2_h4_giveback20_contract.py",
+      "python3 -m pytest tests/test_p8u_e2_h4_giveback20_contract.py -q"
+    ],
+    "results": "The gradual replay completed; neutral parent parity passed with zero numerical, exit-bar, and exit-reason differences. The focused canonical contract suite passed 3/3 tests, including artifact hashes, E2 boolean-intersection authority, and fixed H4 next-interval authority."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "strict_r3_p8u_base_state_meta_input_audit_receipt_v1",
+  "scope": "offline long-only research only; no canonical, live, admission-production, portfolio-production, or exchange mutation",
+  "changed_sources": [
+    "scripts/materialize_strict_r3_p8u_meta_base_state_v1.py",
+    "scripts/select_strict_r3_p8u_meta_base_state_features_v1.py",
+    "scripts/run_strict_r3_p8u_meta_lgbm_objective_screen_v1.py",
+    "config/strict_r3_p8u_meta_base_state_overlay_source_20260829_v1.json"
+  ],
+  "frozen_parent": "F72 Base plus Under-F120 Meta contract",
+  "causality": {
+    "base_score_reproduces_frozen_f72_exactly_before_state_features": true,
+    "calibration_events_require_prior_label_availability": true,
+    "leaf_residual_priors_are_train_only_prequential": true,
+    "held_scores_persist_before_held_outcome_metrics": true,
+    "m6_selected_only_from_pre2026_selector": true,
+    "downstream_mc1_is_strict_prequential_with_shared_chronological_portfolio": true
+  },
+  "result": {
+    "m1_downstream_delta_net_ev_bps_per_trade_vs_m0": 0.343876,
+    "m1_downstream_delta_total_net_bps_vs_m0": 1130.096176,
+    "m1_downstream_delta_worst_week_bps_vs_m0": -3.775739,
+    "m1_downstream_delta_max_drawdown_percentage_points_vs_m0": -10.8902,
+    "promotion": "rejected; canonical stack unchanged"
+  }
+}

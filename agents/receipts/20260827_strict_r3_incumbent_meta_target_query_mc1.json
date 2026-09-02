@@ -1,0 +1,55 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "task": "strict-r3-incumbent-meta-target-query-mc1",
+  "scope": "Offline long-only research only. Keeps incumbent_upstream_bps = 0.50 * efficiency_bps + 0.50 * timing_bps fixed, materializes target-free causal meta features, screens target/query and threshold variants, evaluates their MC1 added value, and predeclares gain/truncation tuning. It does not change any base model, inference bundle, live trader, exchange state, admission threshold, or execution policy.",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_incumbent_meta_feature_universe_v1.py",
+    "scripts/run_strict_r3_incumbent_meta_target_query_grid_v1.py",
+    "scripts/run_strict_r3_incumbent_meta_mc1_screen_v1.py",
+    "tests/test_materialize_strict_r3_incumbent_meta_feature_universe_v1.py",
+    "tests/test_strict_r3_incumbent_meta_target_query_grid_v1.py",
+    "tests/test_strict_r3_incumbent_meta_mc1_screen_v1.py",
+    "config/strict_r3_incumbent_meta_fine_target_variants_20260827_v1.json",
+    "config/strict_r3_incumbent_meta_fine_target_top2_20260827_v1.json",
+    "config/strict_r3_incumbent_meta_gain_schedule_grid_20260827_v1.json",
+    "config/strict_r3_incumbent_meta_truncation_grid_20260827_v1.json",
+    "config/strict_r3_incumbent_meta_fullfeature_candidates_20260827_v1.json"
+  ],
+  "changed_path_sha256": {
+    "scripts/materialize_strict_r3_incumbent_meta_feature_universe_v1.py": "955f2dc978fc08da304fd0437e035efdaec2ef26c35eb3c58eeaa32fa8f87371",
+    "scripts/run_strict_r3_incumbent_meta_target_query_grid_v1.py": "764fef8bf52d1785802c5569264302326b42454445020caa501ccbc5c12b5f82",
+    "scripts/run_strict_r3_incumbent_meta_mc1_screen_v1.py": "d7099f68ddcbf9e2118e464ae10de39b2cbbc85a5716bf913aa64aa28e4650ee",
+    "tests/test_materialize_strict_r3_incumbent_meta_feature_universe_v1.py": "849b75c68c4dfaaadbf214634d5058a8c18665cb032f0cbb0dfeb46b789c1a6e",
+    "tests/test_strict_r3_incumbent_meta_target_query_grid_v1.py": "9823d15531eec9effd6bffa0e8781077700a211b5417cd3d269de8a632b2eca5",
+    "tests/test_strict_r3_incumbent_meta_mc1_screen_v1.py": "ba8ecbcfa5c13c4a4fa12392108f11053aa46fb3824b217800ac9e1f5e78f778",
+    "config/strict_r3_incumbent_meta_fine_target_variants_20260827_v1.json": "bcc639ae6b6d3dadd7628eeeb966fd99dcdcf1528f7ed2e483dededebad08772",
+    "config/strict_r3_incumbent_meta_fine_target_top2_20260827_v1.json": "3db09a7baded0eec2fb51dbf26c960a56b91c80201b5ed92134604d443378203",
+    "config/strict_r3_incumbent_meta_gain_schedule_grid_20260827_v1.json": "7386064da294bd8c9e1d9e4969188422641b9e0d79e1a58c430555858e9985d6",
+    "config/strict_r3_incumbent_meta_truncation_grid_20260827_v1.json": "9be42997a731b90f76b4dee2d4ba336525e444e05320ab2ea494a4fbb4dcece4",
+    "config/strict_r3_incumbent_meta_fullfeature_candidates_20260827_v1.json": "ee511346ee89a31f6f8fa2d2d51dfddc21379d294e6cd2c4b3f1fe929b8be17e"
+  },
+  "contracts": [
+    {"path": "agents/dataset_contract.md", "sha256": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "in_progress_research_artifacts_immutable",
+    "commands": [
+      "python3 -m py_compile scripts/materialize_strict_r3_incumbent_meta_feature_universe_v1.py scripts/run_strict_r3_incumbent_meta_target_query_grid_v1.py scripts/run_strict_r3_incumbent_meta_mc1_screen_v1.py",
+      "manual module helper checks for target-free candidate identities, contiguous month parsing, explicit E/T deterministic route ties, and robust shift trimming"
+    ],
+    "results": [
+      "Full causal-universe smoke: 118,874 target-free rows, 1,407 numeric causal fields, 0 outcome fields, and exact 50/50 E/T source identity.",
+      "Target/query screen completed 57 strict-OOF arm-folds; outputs were persisted target-free before outcome diagnostics.",
+      "Selected-arm historical scoring completed 44 target-free OOF receipts (four candidates across eleven months).",
+      "The meta scorer and MC1 screen consume the persisted canonical enhanced_base_routed field; they do not recompute a score-tie route boundary.",
+      "Fine target histories completed 88 target-free OOF receipts over eleven months; their MC1 screen uses separate strict-prequential Current and BCF maps, dual +50-bps admission, and one chronological rich-policy portfolio.",
+      "Gain schedules small/medium/high and optional LambdaRank truncation are explicit immutable arm fields. Downstream selection retained magnitude/high, under/small, over/small, and state/medium with no explicit truncation by parsimony.",
+      "The 1,407-field target-free universe passed its identity audit over August 2025--July 2026: exact source identities, zero upstream arithmetic delta, and no target fields. The separate April--July predecessor bundle is still materialising for full strict-OOF selection coverage.",
+      "The scorer now accepts only explicit full-feature contracts and one immutable owner per month across versioned feature roots; a focused full-feature join smoke passed on a strict July fold.",
+      "pytest is not installed in this workspace, so focused helper tests were invoked directly after py_compile."
+    ]
+  },
+  "agent_plan": {"subagents": []}
+}

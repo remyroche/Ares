@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
+from pyarrow.lib import ArrowInvalid
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -34,7 +35,10 @@ def _sha(path: Path) -> str:
     digest = hashlib.sha256()
     paths = [path] if path.is_file() else sorted(value for value in path.rglob("*") if value.is_file())
     for value in paths:
-        digest.update(str(value.relative_to(path) if path.is_dir() else value.name).encode())
+        # File hashes must be the ordinary raw-byte SHA-256 used by inference
+        # seal validation. Directory hashes additionally bind relative names.
+        if path.is_dir():
+            digest.update(str(value.relative_to(path)).encode())
         with value.open("rb") as handle:
             for block in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(block)
@@ -94,9 +98,37 @@ def _causal_hourly_atr_from_15m(bars: pd.DataFrame) -> pd.Series:
     return atr
 
 
+def _require_side(frame: pd.DataFrame, side: str, *, purpose: str) -> pd.DataFrame:
+    """Return one canonical side without silently mixing economic orientation."""
+    canonical = str(side).strip().lower()
+    if canonical not in {"long", "short"}:
+        raise ValueError(f"{purpose} has a noncanonical requested side: {side!r}")
+    if "side_name" not in frame:
+        raise ValueError(f"{purpose} lacks side_name")
+    observed = frame["side_name"].astype(str).str.lower()
+    invalid = ~observed.isin(("long", "short"))
+    if invalid.any():
+        raise ValueError(f"{purpose} contains noncanonical side values")
+    if not observed.eq(canonical).all():
+        counts = observed.value_counts(dropna=False).to_dict()
+        raise ValueError(
+            f"{purpose} must be side-local ({canonical}); observed={counts}",
+        )
+    result = frame.copy()
+    result["side_name"] = canonical
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidates", type=Path, required=True)
+    parser.add_argument(
+        "--side", choices=("long", "short"), default="long",
+        help=(
+            "Economic side to materialise. A run is deliberately side-local; "
+            "mixed candidate populations are rejected rather than pooled."
+        ),
+    )
     parser.add_argument(
         "--atr-context", type=Path,
         help=(
@@ -107,10 +139,24 @@ def main() -> None:
     parser.add_argument("--bar-root", type=Path, required=True)
     parser.add_argument("--minute-root", type=Path)
     parser.add_argument("--policy-json", type=Path, required=True)
+    parser.add_argument(
+        "--label-available-before",
+        help=(
+            "Optional strict UTC cutoff. Only candidates whose H12 label is "
+            "available before this timestamp are replayed; unresolved/current "
+            "paths are never opened."
+        ),
+    )
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     policy_payload = json.loads(args.policy_json.read_text())
+    policy_side = str(policy_payload.get("side") or "").strip().lower()
+    if policy_side != args.side:
+        raise ValueError(
+            "policy JSON side must match --side; a missing side is not valid "
+            "for a short frozen-policy materialisation"
+        )
     policy = policy_payload.get("winner", policy_payload)
     policy_keys = ("sl_mult", "trailing_activation_mult", "fixed_trailing_gap_mult")
     missing_policy = [key for key in policy_keys if key not in policy]
@@ -120,9 +166,13 @@ def main() -> None:
     if args.out_dir.exists() and not args.resume:
         raise FileExistsError(f"immutable output already exists: {args.out_dir}")
     if args.candidates.is_dir():
-        candidate_parts = sorted(args.candidates.glob("parts/month=*/side=long.parquet"))
+        candidate_parts = sorted(
+            args.candidates.glob(f"parts/month=*/side={args.side}.parquet"),
+        )
         if not candidate_parts:
-            raise FileNotFoundError(f"no long candidate parts under {args.candidates}")
+            raise FileNotFoundError(
+                f"no {args.side} candidate parts under {args.candidates}",
+            )
         candidates = pd.concat(
             [
                 pd.read_parquet(
@@ -145,11 +195,29 @@ def main() -> None:
     candidates = candidates.loc[:, [
         "candidate_id", "__ts__", "__symbol__", "side_name", "__decision_ts__",
     ]].copy()
+    candidates = _require_side(
+        candidates, args.side, purpose="frozen-policy candidate population",
+    )
+    label_cutoff = None
+    if args.label_available_before is not None:
+        label_cutoff = pd.Timestamp(args.label_available_before)
+        label_cutoff = (
+            label_cutoff.tz_localize("UTC")
+            if label_cutoff.tzinfo is None else label_cutoff.tz_convert("UTC")
+        )
+        decision = pd.to_datetime(candidates["__decision_ts__"], utc=True, errors="raise")
+        candidates = candidates.loc[
+            (decision + pd.Timedelta(hours=12)).lt(label_cutoff)
+        ].copy()
+        if candidates.empty:
+            raise ValueError("no policy labels are resolved before the declared cutoff")
     if args.atr_context is None:
         atr = candidates.loc[:, ["candidate_id"]].copy()
         atr["atr_1h"] = np.nan
     elif args.atr_context.is_dir():
-        atr_parts = sorted(args.atr_context.glob("parts/month=*/side=*.parquet"))
+        atr_parts = sorted(
+            args.atr_context.glob(f"parts/month=*/side={args.side}.parquet")
+        )
         if not atr_parts:
             raise FileNotFoundError(f"no exact-label ATR parts under {args.atr_context}")
         atr = pd.concat(
@@ -171,25 +239,36 @@ def main() -> None:
         for symbol, block in frame.groupby("__symbol__", sort=True):
             path = _symbol_path(args.bar_root, str(symbol))
             bars = None
+            bar_source = "missing"
+            local_15m_error = None
             if path.exists():
-                candidate_bars = pd.read_parquet(
-                    path, columns=["open", "high", "low", "close"]
-                )
-                candidate_bars.index = pd.to_datetime(candidate_bars.index, utc=True)
-                required_start = pd.to_datetime(block["__decision_ts__"], utc=True).min()
-                required_end = pd.to_datetime(block["__decision_ts__"], utc=True).max() + pd.Timedelta(hours=12)
-                if (
-                    len(candidate_bars)
-                    and candidate_bars.index.min() <= required_start
-                    and candidate_bars.index.max() >= required_end - pd.Timedelta(minutes=15)
-                ):
-                    bars = candidate_bars
+                try:
+                    candidate_bars = pd.read_parquet(
+                        path, columns=["open", "high", "low", "close"]
+                    )
+                    candidate_bars.index = pd.to_datetime(candidate_bars.index, utc=True)
+                    required_start = pd.to_datetime(block["__decision_ts__"], utc=True).min()
+                    required_end = pd.to_datetime(block["__decision_ts__"], utc=True).max() + pd.Timedelta(hours=12)
+                    if (
+                        len(candidate_bars)
+                        and candidate_bars.index.min() <= required_start
+                        and candidate_bars.index.max() >= required_end - pd.Timedelta(minutes=15)
+                    ):
+                        bars = candidate_bars
+                        bar_source = "local_15m"
+                except (ArrowInvalid, OSError, ValueError) as exc:
+                    # A corrupt local cache must not abort every unrelated
+                    # symbol.  Fall back only to the existing local one-minute
+                    # archive; no download, interpolation, or future fill is
+                    # permitted.
+                    local_15m_error = type(exc).__name__
             if bars is None and args.minute_root is not None:
                 required_start = pd.to_datetime(block["__decision_ts__"], utc=True).min()
                 required_end = pd.to_datetime(block["__decision_ts__"], utc=True).max() + pd.Timedelta(hours=12)
                 bars = _complete_15m_from_minute(
                     args.minute_root, str(symbol), required_start, required_end
                 )
+                bar_source = "local_1m_aggregate" if not bars.empty else "missing"
             if bars is None:
                 invalid = block.copy()
                 invalid["policy_path_valid"] = False
@@ -224,9 +303,12 @@ def main() -> None:
             parts.append(result)
             coverage.append({
                 "symbol": str(symbol), "rows": len(result),
+                "side": args.side,
                 "valid_rows": int(result["policy_path_valid"].fillna(False).sum()),
                 "source_exists": path.exists(),
                 "minute_fallback_enabled": args.minute_root is not None,
+                "bar_source": bar_source,
+                "local_15m_error": local_15m_error,
             })
         labels = pd.concat(parts, ignore_index=True).sort_values(
             ["__decision_ts__", "__symbol__", "side_name"], kind="stable",
@@ -236,6 +318,7 @@ def main() -> None:
         pd.DataFrame(coverage).to_parquet(coverage_path, index=False)
     manifest = {
         "schema": "strict_r3_frozen_policy_15m_labels_v2",
+        "side": args.side,
         "candidate_source_sha256": _sha(args.candidates),
         "atr_context_sha256": _sha(args.atr_context) if args.atr_context else None,
         "atr_context": str(args.atr_context) if args.atr_context else None,
@@ -246,6 +329,10 @@ def main() -> None:
         ),
         "bar_root": str(args.bar_root), "rows": len(labels),
         "minute_fallback_root": str(args.minute_root) if args.minute_root else None,
+        "label_available_before": (
+            label_cutoff.isoformat() if label_cutoff is not None else None
+        ),
+        "unresolved_or_current_paths_opened": False if label_cutoff is not None else None,
         "policy_json": str(args.policy_json),
         "policy_json_sha256": _sha(args.policy_json),
         "policy": policy,

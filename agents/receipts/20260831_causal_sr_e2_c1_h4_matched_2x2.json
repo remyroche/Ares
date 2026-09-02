@@ -1,0 +1,64 @@
+{
+  "task": "causal-sr-e2-c1-h4-matched-2x2",
+  "scope": "Offline-only exact one-minute matched 2×2 falsification of the archived E2/H4 result versus the C1 route. It holds the frozen rich +5-minute-entry parent policy and constrained portfolio auction fixed, while varying only target-free population (E2/C1) and continuation controller (parent/archived-L1/repaired-L2). No live, canonical, exchange-writing, policy, or production-artifact change occurred.",
+  "changed_paths": [
+    "scripts/run_causal_sr_e2_c1_h4_matched_2x2.py",
+    "docs/CAUSAL_SR_E2_C1_H4_MATCHED_2X2_20260831.md"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_causal_sr_e2_c1_h4_matched_2x2.py": "65bf39bc1d9efa0bb8f30072be11094967e73b8089aeb0303b2fd901f745d1bf",
+    "docs/CAUSAL_SR_E2_C1_H4_MATCHED_2X2_20260831.md": "4147c727baa0e63601546d5fa67efeb9a38476285c6f8994f78579abb1e3bb30"
+  },
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    },
+    {
+      "path": "agents/backtest_protocol.md",
+      "sha256": "fcd2a9e285b8da2fa9d1c3a2f226343707399f48430c60f45a265676e46c6373"
+    }
+  ],
+  "causality": {
+    "routing": "E2 and C1 selections are read and persisted as target-free route populations before exact paths or policy outcomes are accessed. Candidate identity is population-qualified for route audits; the raw 38-ID E2/C1 overlap is legitimate and does not duplicate any within-population route row.",
+    "execution": "Every arm uses the same frozen rich exact-one-minute parent, decision +5-minute entry, and one-time 100-bps cost. Parent engine exact net and exit timestamp parity are asserted on each valid path.",
+    "models": "Archived L1 and repaired L2 labels are restricted to prior-resolved rows per held month. H4 decisions take effect only after completed 15-minute state bars and modify a following interval.",
+    "availability": "The union has 3,489 target-free requests; 2,120 exact paths are valid and 1,369 are invalid only after routing. Valid and invalid candidate-ID sets form a disjoint exact partition; invalid paths are excluded from all arms and never imputed.",
+    "portfolio": "Each controller uses the unchanged constrained chronological auction for its own fixed routed population. Controller-induced duration changes may alter capacity; that effect is retained and measured, not hidden.",
+    "live": "No exchange calls were made and no live or canonical artifact was modified."
+  },
+  "artifacts": [
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v4/run_manifest.json",
+      "sha256": "2ba8abea8684365b35969b887af53790abb773fde52e86971fa4a67cb236ef5b"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v4/portfolio_summary.parquet",
+      "sha256": "ba512878e5539130819dbd2191f8ae9ebab224bad98cc6bdb7a2120b61a07537"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v4/exit_change_attribution.parquet",
+      "sha256": "139a9b5f709ca89381580124fa0e1e886d0198fb3d33bfa2caaa55b4c876a956"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v4/strict_prequential_training_support.parquet",
+      "sha256": "c17a758573288db533d672b5f15b35b5806f69b49745b0fdaa6de1d02a11805b"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_e2_c1_h4_2x2_pycache_v4 python3 -m py_compile scripts/run_causal_sr_e2_c1_h4_matched_2x2.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_e2_c1_h4_2x2_pycache_v4 python3 scripts/run_causal_sr_e2_c1_h4_matched_2x2.py --source-workers 12 --reuse-exact-root data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v1 --out data_perp/artifacts/causal_sr_e2_c1_h4_matched_2x2_20260831_v4",
+      "post-run population-qualified identity audit: routes 3,527; union 3,489; valid 2,120; invalid 1,369; six summary arms; passed"
+    ],
+    "results": "Jun-Aug 2026 exact-policy result: archived L1 changes E2 from -7.76 to +0.27 bps/trade (+8.03) and C1 from +126.88 to +128.49 (+1.61). Repaired L2 changes E2 to -8.19 (-0.43) and C1 to +126.76 (-0.12). The former 15-minute E2/H4 +23.21 bps/trade headline is not comparable to this exact-minute production-policy substrate; no promotion occurred."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

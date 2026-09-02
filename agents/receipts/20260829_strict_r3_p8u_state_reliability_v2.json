@@ -1,0 +1,44 @@
+{
+  "schema": "strict_r3_p8u_state_reliability_v2_receipt_v1",
+  "scope": "offline long-only research only; no canonical, live, admission-production, portfolio-production, or exchange mutation",
+  "changed_sources": [
+    "scripts/materialize_strict_r3_p8u_state_reliability_v2.py",
+    "scripts/screen_strict_r3_p8u_state_reliability_v2.py",
+    "scripts/run_strict_r3_p8u_state_reliability_v2.py",
+    "scripts/materialize_strict_r3_p8u_under_reliability_overlay_v2.py",
+    "scripts/run_strict_r3_p8u_meta_lgbm_objective_screen_v1.py",
+    "config/strict_r3_p8u_under_state_reliability_matched_20260829_v1.json",
+    "data_perp/artifacts/strict_r3_p8u_underf120_state_reliability_overlay_aug25jul26_20260829_v1/contracts/m2_recurrent_core.json"
+  ],
+  "frozen_parent": "Router50 -> F72 Base -> UnderF120 -> independent dual MC1 >= 50 bps -> BCF-priority shared chronological portfolio auction",
+  "contract": {
+    "new_inputs": "target-free V2 frozen-episode market-state and strict-OOF Base-Top10 reliability fields",
+    "integration": "additive UnderF120 Meta inputs only; no Base, Router, MC1, admission, policy, or auction replacement",
+    "compact_contract": "120 frozen UnderF120 parent fields plus 8 recurrent V2 fields"
+  },
+  "causality": {
+    "episode_definition_is_frozen_pre_outcome": true,
+    "state_fields_are_target_free": true,
+    "reliability_predictions_are_strict_prequential": true,
+    "held_scores_persist_before_outcome_metrics": true,
+    "dual_mc1_maps_remain_independent_and_strict_prequential": true,
+    "portfolio_is_shared_chronological_and_unchanged": true
+  },
+  "result": {
+    "evaluation": "2026-04 through 2026-07 after three-month MC1 warm-up",
+    "m1_broad_deviation_delta_net_ev_bps_per_trade_vs_parent": -1.949783,
+    "m1_broad_deviation_delta_total_net_bps_vs_parent": -2395.195458,
+    "m2_compact_recurrent_delta_net_ev_bps_per_trade_vs_parent": -2.602189,
+    "m2_compact_recurrent_delta_total_net_bps_vs_parent": -4675.532977,
+    "m3_error_scale_delta_net_ev_bps_per_trade_vs_parent": -1.188624,
+    "m3_error_scale_delta_total_net_bps_vs_parent": -16475.417786,
+    "m1_state_head_blend_75_parent_25_state_delta_net_ev_bps_per_trade_vs_parent": -1.842541,
+    "m1_state_head_blend_75_parent_25_state_delta_total_net_bps_vs_parent": -3996.395408,
+    "m1_state_head_blend_50_parent_50_state_delta_net_ev_bps_per_trade_vs_parent": -0.477790,
+    "m1_state_head_blend_50_parent_50_state_delta_total_net_bps_vs_parent": 1944.335829,
+    "m1_state_head_blend_50_parent_50_state_delta_worst_week_bps_vs_parent": -1.774577,
+    "m1_state_head_blend_50_parent_50_state_delta_max_drawdown_percentage_points_vs_parent": -10.890145,
+    "promotion": "rejected; current P8U canonical stack unchanged",
+    "interpretation": "the V2 fields can improve standalone Meta diagnostics but did not improve the complete parent MC1-plus-portfolio chain either as appended inputs or as an explicit parallel state-head blend; any later use must be a separately validated conditional reliability control"
+  }
+}

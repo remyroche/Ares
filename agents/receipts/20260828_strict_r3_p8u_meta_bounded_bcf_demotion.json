@@ -1,0 +1,33 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-28T00:00:00Z",
+  "scope": "Offline-only strict-prequential P8U Meta-to-BCF-MC1 interaction test. It cannot mutate live, canonical, execution, admission, or exchange state.",
+  "change": "Add a bounded four-Meta-head interaction demoter. It uses frozen target-free MC1 coordinates and target-free head ranks, writes those target-free inputs before joining labels, applies only zero-or-negative corrections in predeclared BCF-MC1 intervals, retains the independent Current MC1 gate, and reuses the existing chronological constrained portfolio adapter.",
+  "changed_paths": [
+    "scripts/run_strict_r3_p8u_meta_bounded_bcf_demotion_v1.py",
+    "tests/test_strict_r3_p8u_meta_bounded_bcf_demotion_v1.py",
+    "docs/P8U_META_LAYER_FAMILY_SELECTION_HANDOVER_20260828.md",
+    "agents/receipts/20260828_strict_r3_p8u_meta_bounded_bcf_demotion.json"
+  ],
+  "contracts": [
+    "AGENTS.md",
+    "agents/dataset_contract.md",
+    "agents/leakage_prevention.md",
+    "agents/model_validation_protocol.md",
+    "agents/experiment_discipline.md",
+    "agents/backtest_protocol.md"
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_p8u_meta_bounded_bcf_demotion_v1.py",
+      "python3 -m pytest -q tests/test_strict_r3_p8u_meta_bounded_bcf_demotion_v1.py",
+      "strict prequential January-July 2026 target-free input / post-join label / May-July portfolio replay"
+    ],
+    "result": "Compilation and two focused authority/causality tests passed. The immutable v3 grid completed; the bounded interaction was not promoted because no arm achieved a material portfolio or drawdown advance."
+  },
+  "artifacts": [
+    "data_perp/artifacts/strict_r3_p8u_meta_bounded_bcf_demotion_janjul2026_20260828_v3"
+  ],
+  "agent_plan": {"subagents": []}
+}

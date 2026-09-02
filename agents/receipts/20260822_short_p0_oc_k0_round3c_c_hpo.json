@@ -1,0 +1,39 @@
+{
+  "schema": "strict_r3_short_p0_oc_k0_round3c_c_hpo_receipt_v1",
+  "status": "complete",
+  "side": "short",
+  "scope": "Independent C3/C60 LightGBM HPO and within-head seed-average check; no canonical or live mutation.",
+  "architecture": "frozen P0 -> O250_H6 -> C3 normalized regret C60/uniform -> K0",
+  "selection": {
+    "winner": "C60_uniform_control",
+    "reason": "Highest strict-OOS mean net EV/trade, strongest worst month and CVaR among all arms passing the predeclared two-era and participation gates.",
+    "control": {
+      "net_2025_bps_per_trade": 134.678733,
+      "net_2026_bps_per_trade": 136.786096,
+      "mean_net_bps_per_trade": 135.080816,
+      "total_net_bps": 278941.884689,
+      "selected": 2065,
+      "worst_month_bps_per_trade": -1.598955,
+      "mean_cvar10_bps": -365.107212
+    },
+    "best_hpo_variant": {
+      "name": "C60_hpo_seed3",
+      "net_2025_bps_per_trade": 135.229510,
+      "net_2026_bps_per_trade": 127.792481,
+      "mean_net_bps_per_trade": 133.760697,
+      "total_net_bps": 267521.393773,
+      "selected": 2000,
+      "worst_month_bps_per_trade": -11.492133,
+      "mean_cvar10_bps": -405.286899
+    }
+  },
+  "validation": {
+    "tests": "7 passed: test_short_p0_oc_k0_round3_c_refinement.py and test_short_p0_oc_k0_round3_c_hpo.py",
+    "causality": "O/C outer fit uses labels resolved before each held month; inner fit uses labels resolved before each inner validation start; held candidates remain target-free until economic evaluation."
+  },
+  "hashes": {
+    "runner": "93f8bacc683e08d974a5e0129292e0a35d3a7053050900c5738170998e9aec76",
+    "test": "a0597a5edd407ed8090527810ec38645bdf15c2835599dea30257049dec89832",
+    "manifest": "f8956066eec8f507a4e4b2fb08b076e5658e764cf05c42827d08af986279e641"
+  }
+}

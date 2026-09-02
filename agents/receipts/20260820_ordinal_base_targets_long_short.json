@@ -1,0 +1,51 @@
+{
+  "task": "ordinal-base-targets-long-short-2024",
+  "scope": "Compare the current long R3 base target against predeclared ordinal H12-net targets, and test short ordinal thresholds plus training-only weights. Offline research only; no base, meta, policy, inference, or exchange artifact is promoted or modified.",
+  "changed_paths": [
+    "scripts/run_strict_r3_ordinal_base_target_ablation.py",
+    "extreme_price_movements/tests/test_ordinal_base_target_ablation.py",
+    "docs/ORDINAL_BASE_TARGET_ABLATION_20260820.md"
+  ],
+  "contracts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "840b68a184f52c73490fd70475350919fad573558e24c5adc720c7777df1c6d4"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "invariants": {
+    "population": "Every arm scores the same target-free, decision-time executable candidate population. Label validity, policy path availability, and outcomes do not affect feature coverage, scoring population, or tail membership.",
+    "time": "The train window is Jan-Mar 2024 with labels resolved before 2024-04-01. April-June 2024 is held OOS and is not used for feature selection, HPO, target promotion, ordinal bin-score mapping, or policy selection.",
+    "ordinal": "Ordinal bins are H12 net <= lower, lower..0, 0..upper, and > upper. The ordinal score uses only training-bin robust net medians and never an OOS-derived mapping.",
+    "weights": "Short boundary-certainty, square-root class, and hybrid weights apply only to training loss. They cannot become OOS/inference features, ranks, or policy inputs.",
+    "policy_diagnostic": "The short exact-1m parent policy is side-correct, fixed before OOS scoring, costed once, and joined only after score-tail selection. It has no HPO or promotion authority. Missing exact paths remain unavailable labels rather than economic failures."
+  },
+  "artifacts": {
+    "report": "docs/ORDINAL_BASE_TARGET_ABLATION_20260820.md",
+    "long_control": "data_perp/artifacts/strict_r3_long_ordinal_target_arms_3m_oos_2024_20260820_v1/R3_current_control",
+    "long_ordinal_arms": "data_perp/artifacts/strict_r3_long_ordinal_target_arms_3m_oos_2024_20260820_v2",
+    "short_ordinal_arms": "data_perp/artifacts/strict_r3_short_ordinal_target_arms_3m_oos_2024_20260820_v2"
+  },
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -q -p no:cacheprovider extreme_price_movements/tests/test_ordinal_base_target_ablation.py",
+      "PYTHONDONTWRITEBYTECODE=1 python3 -B -m py_compile scripts/run_strict_r3_ordinal_base_target_ablation.py"
+    ],
+    "not_run_reason": "No full repository suite: this is a self-contained offline research runner with focused causal/weighting tests."
+  },
+  "agent_plan": {
+    "subagents": []
+  },
+  "source_hashes": {
+    "scripts/run_strict_r3_ordinal_base_target_ablation.py": "230854ff773a8789a1ecc6a995f1693df45997f188492af1bf07796d485ead66",
+    "extreme_price_movements/tests/test_ordinal_base_target_ablation.py": "f30d78905aa363b8f5e977c6d36a7f7c2dd72331fe28ac332664a2fa36be624b"
+  }
+}

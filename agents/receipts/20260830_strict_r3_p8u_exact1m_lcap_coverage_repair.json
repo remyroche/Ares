@@ -1,0 +1,35 @@
+{
+  "task": "strict-r3-p8u-exact1m-lcap-coverage-repair",
+  "scope": "Adds a bounded frozen product-id override to the append-only historical one-minute downloader, so a candidate source without product_id can retain a historical Kraken product mapping in its immutable download receipt.",
+  "changed_paths": [
+    "scripts/download_policy_execution_1m.py"
+  ],
+  "causality": {
+    "candidate_selection_unchanged": true,
+    "existing_execution_minutes_preserved": true,
+    "only_missing_minutes_can_be_appended": true,
+    "historical_product_override_persisted": true,
+    "outcome_columns_consumed": [],
+    "policy_or_portfolio_called": false,
+    "order_submission": false
+  },
+  "dynamic_evidence": {
+    "candidate_symbol": "LCAP/USD:USD",
+    "frozen_product_id": "PF_LCAPUSD",
+    "requested_window": "2026-08-15 through 2026-08-25, comprising a 101-hour causal ATR warm-up and 720-minute exact-policy horizon",
+    "first_attempt": "data_perp/artifacts/strict_r3_p8u_exact1m_lcap_coverage_repair_20260830_v1/download_manifest.json",
+    "override_attempt": "data_perp/artifacts/strict_r3_p8u_exact1m_lcap_coverage_repair_20260830_v2_productid/download_manifest.json",
+    "result": "Kraken returned zero historical rows for all five missing buckets even with PF_LCAPUSD; the immutable store was not changed and the 42 rows remain explicit invalid supervision rather than imputed outcomes."
+  },
+  "validation": {
+    "commands": [
+      "python3 -m py_compile scripts/download_policy_execution_1m.py",
+      "python3 scripts/download_policy_execution_1m.py ... --partition-count 1024 --partition-id 584 --product-id-override LCAP/USD:USD=PF_LCAPUSD (completed with fetched_rows=0 and no store mutation)",
+      "python3 scripts/download_policy_execution_1m.py ... --verify-only (confirmed coverage remains 8678/13980)"
+    ],
+    "status": "pass_no_imputation_external_source_gap_explicit"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

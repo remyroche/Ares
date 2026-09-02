@@ -1,0 +1,31 @@
+{
+  "schema": "ares.agent_receipt.v1",
+  "date": "2026-08-19",
+  "scope": "compact order-book-only liquidity-transition feature contract and chronological validation",
+  "governed_paths": {
+    "src/execution/liquidity_transition.py": "6bb926c8d6732241d1bca63218fc1a8acadbe48c6f21fd5dcb2fe9b570c5da03",
+    "scripts/execution/extract_execution_context.py": "8e2526d206ffe57d3599625ee9dd894aa9f406637e6a19f4849a9a61355dae3c",
+    "scripts/execution/evaluate_liquidity_transition.py": "5e40bc3494e94fd7f49d10659a06023e1d1d5029902366cd84d62db7aab924ae",
+    "scripts/execution/audit_liquidity_transition_contract.py": "9169782be53bc1df0ce8347870ee96e4afb6226b48aafa1218c288bba697cb6e",
+    "tests/execution/test_liquidity_transition.py": "ebcf2ba38b6dc8227180383729ecec7f337a6c3eadeea955d85bb4a4bd0401d5",
+    "docs/KRAKEN_L2_LIQUIDITY_TRANSITION_RESULTS_20260819.md": "b06a360dc8346ddc110224e848de5e8d6fd1c5fdd5dafdebe7bf67ee92aa3b73"
+  },
+  "contracts": {
+    "retention": "raw Kraken L2, snapshot, and individual trade inputs were deleted only after 215 compact order-book recap identities and 309274 recap rows passed validation",
+    "feature_causality": "L2 event rates use only the preceding contiguous completed minute's displayed depth; OI/volume/volatility context is joined backward with a declared 60-minute availability lag",
+    "label_causality": "future 1/5/10/15/30-minute L2 labels are offline-only and excluded from feature groups",
+    "validation": "three expanding chronological UTC-date folds; deterministic 12000-row cap per date; grouped whole-family cyclic permutation within symbol-date trajectories"
+  },
+  "artifacts": {
+    "panel": "data/execution/tardis_orderbook_recap_v1/features/liquidity_transition_panel_v2",
+    "metrics": "data/execution/tardis_orderbook_recap_v1/models/liquidity_transition_v2/consolidated_metrics.parquet",
+    "grouped_mda": "data/execution/tardis_orderbook_recap_v1/models/liquidity_transition_v2_grouped_mda/consolidated_grouped_mda.parquet",
+    "contract_audit": "data/execution/tardis_orderbook_recap_v1/reports/liquidity_transition_v2_contract_audit/feature_contract_audit.json",
+    "raw_prune_receipt": "data/execution/tardis_orderbook_recap_v1/reports/raw_prune_receipt_20260819.json"
+  },
+  "verification": {
+    "tests": "python3 -m pytest -q tests/execution: 19 passed",
+    "compile": "python3 -m py_compile src/execution/*.py scripts/execution/*.py: passed",
+    "contract_audit": "309274 rows; all requested direct labels present; order-book-only trade exclusions explicit; BTC fields are present but rejected by the 80% coverage gate because no historical BTC source exists in the retained sample"
+  }
+}

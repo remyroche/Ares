@@ -121,6 +121,7 @@ def main() -> None:
     parser.add_argument("--input-outcomes", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--hourly-root", type=Path, default=DEFAULT_HOURLY)
     parser.add_argument("--policy-json", type=Path, default=DEFAULT_POLICY)
+    parser.add_argument("--side", choices=("long", "short"), default="long")
     parser.add_argument("--start", default="2025-01-01")
     parser.add_argument("--end", default="2026-08-01", help="exclusive UTC bound")
     parser.add_argument("--overlap-per-symbol", type=int, default=2_000)
@@ -131,6 +132,12 @@ def main() -> None:
     start = pd.Timestamp(args.start, tz="UTC")
     end = pd.Timestamp(args.end, tz="UTC")
     policy_document = json.loads(args.policy_json.read_text())
+    policy_side = str(policy_document.get("side") or "").strip().lower()
+    if policy_side != args.side:
+        raise ValueError(
+            "policy JSON side must match --side; a missing side is not valid "
+            "for a short policy replay"
+        )
     policy = {
         key: float(policy_document["winner"][key])
         for key in (
@@ -146,15 +153,21 @@ def main() -> None:
     frame = pd.read_parquet(
         args.input_outcomes,
         columns=columns,
-        filters=[("__decision_ts__", ">=", start), ("__decision_ts__", "<", end)],
+        filters=[
+            ("__decision_ts__", ">=", start),
+            ("__decision_ts__", "<", end),
+            ("side_name", "==", args.side),
+        ],
     )
     for column in ("__ts__", "__decision_ts__", "policy_label_available_ts"):
         if column in frame:
             frame[column] = pd.to_datetime(frame[column], utc=True, errors="raise")
     if frame.empty or frame["candidate_id"].duplicated().any():
         raise ValueError("policy source is empty or has duplicate identities")
-    if not frame["side_name"].astype(str).str.lower().eq("long").all():
-        raise ValueError("this repair is intentionally long-only")
+    observed_side = frame["side_name"].astype(str).str.strip().str.lower()
+    if not observed_side.eq(args.side).all():
+        raise ValueError("hourly policy source is not side-local after filtering")
+    frame["side_name"] = args.side
     if "policy_path_valid" not in frame:
         raise ValueError("policy source lacks path validity")
     if "atr_1h" not in frame:
@@ -307,7 +320,7 @@ def main() -> None:
     )
     manifest = {
         "schema": "strict_r3_policy_outcome_hourly_backfill_v1",
-        "side": "long",
+        "side": args.side,
         "input": str(args.input_outcomes),
         "input_sha256": _sha256(args.input_outcomes),
         "hourly_root": str(args.hourly_root),

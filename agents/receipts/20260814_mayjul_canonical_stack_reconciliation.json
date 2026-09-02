@@ -1,0 +1,32 @@
+{
+  "task": "strict-r3-may-july-canonical-stack-reconciliation",
+  "status": "passed_after_contract_patch",
+  "period": "2026-05-01T00:00:00Z/2026-08-01T00:00:00Z",
+  "artifact": "data_perp/artifacts/strict_r3_mc1_adaptive_exit_canonical_route20_mayjul2026_20260814_v2",
+  "patches": [
+    "replay now defaults to the sealed target-free SimplePolicyOptimiser winner",
+    "replay accepts an explicit bounded period",
+    "replay can enforce timestamp-local top-20 base routing",
+    "bounded reports no longer include zero-filled days outside the replay period",
+    "schema-v6 declares the inherited schema-v5 EV bridge inactive",
+    "bundle validation now checks 28-day reserves, MC1 cutoff/features/causality, and Adaptive Exit training purge"
+  ],
+  "canonical_route": "top20 base per timestamp -> MC1_d2 >= 50 bps -> final_score auction",
+  "simple_policy": {
+    "trades": 1435,
+    "trades_per_day": 15.597826086956522,
+    "net_bps_per_trade": 98.46583822388524,
+    "net_bps_per_day": 1535.8530201225579,
+    "sortino_trade": 0.3253777434245002,
+    "max_mtm_drawdown": -0.3945818474020564
+  },
+  "adaptive_exit_v1": {
+    "trades": 1448,
+    "trades_per_day": 15.73913043478261,
+    "net_bps_per_trade": 99.71094337534417,
+    "net_bps_per_day": 1569.363543559765,
+    "sortino_trade": 0.327291020968529,
+    "max_mtm_drawdown": -0.394581849462307
+  },
+  "interpretation": "The previous expected replay omitted the inference top-20 compute route. The gated executable-contract replay remains positive; differences are attributable to that gate rather than model or calibration drift."
+}

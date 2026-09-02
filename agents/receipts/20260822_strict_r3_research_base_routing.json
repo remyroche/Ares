@@ -1,0 +1,28 @@
+{
+  "task": "strict-r3-long-ablation-reusable-base-routing-contract",
+  "scope": "Offline-only reusable routing primitives for the Strict-R3 long ablation funnel. No inference bundle, scoring producer, calibration, policy, portfolio, exchange, or live-execution path was modified.",
+  "implementation": {
+    "target_free_contract": "The new helpers consume only candidate identity, decision timestamp, and already-produced scores. They have no outcome, policy-label, or held-window percentile input.",
+    "route_contract": "Top fraction is calculated independently at each decision timestamp, using ceil(n*fraction) and candidate_id ascending as the deterministic final tie-breaker.",
+    "percentile_contract": "Timestamp percentiles are local to the current cross section and never normalize over a held month or period."
+  },
+  "validation_evidence": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_research_base_recall.py extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py",
+      "python3 -m py_compile extreme_price_movements/research/__init__.py extreme_price_movements/research/base_recall.py",
+      "git diff --check -- extreme_price_movements/research extreme_price_movements/tests/test_strict_r3_research_base_recall.py"
+    ],
+    "result": "6 focused tests passed; routing is deterministic, timestamp-local, and preserves the existing strict-R3 baseline score formula."
+  },
+  "changed_paths": [
+    "extreme_price_movements/research/__init__.py",
+    "extreme_price_movements/research/base_recall.py",
+    "extreme_price_movements/tests/test_strict_r3_research_base_recall.py"
+  ],
+  "file_hashes": {
+    "extreme_price_movements/research/__init__.py": "4a3a7974a6dead5e730c15f5685702fff39f0a51b38021be72b6829ead46409a",
+    "extreme_price_movements/research/base_recall.py": "c0acdc40bf5506050c674cfb501b5f1253fbb2157e9f641c8cd344b803780426",
+    "extreme_price_movements/tests/test_strict_r3_research_base_recall.py": "8a2f29701b27d111a0d5b06dd809d3362183ba8edc793f00f4aaabe89178b471"
+  },
+  "agent_plan": {"subagents": []}
+}

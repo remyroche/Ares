@@ -1,0 +1,76 @@
+{
+  "schema": "strict_r3_short_p0_f90_base_v1",
+  "status": "research_canonical_base_only",
+  "side": "short",
+  "semantic_name": "P0/F90",
+  "implementation_target_id": "P1_policy_bps",
+  "scope": "relative opportunity ranking only; this contract has no admission, portfolio, Kraken, or live-order authority",
+  "candidate_contract": {
+    "source": "data_perp/artifacts/strict_r3_short_target_free_2023_2024_20260820_v1/short_target_free_candidate_population.parquet",
+    "sha256": "32fde9ae844218e0a2de936c763da448c232a10edc965ce82aba214e8041159c",
+    "requirements": [
+      "target-free candidate identity",
+      "decision-time entry executable",
+      "short side only",
+      "future-path validity is not a scoring input"
+    ]
+  },
+  "feature_contract": {
+    "selection_artifact": "data_perp/artifacts/strict_r3_short_policy_conversion_p1_k32_chronological_mda_20260820_v1/selected_features.json",
+    "sha256": "0dc54012c289f3d4516307f47206b71f79c056e2d89171b2dac31ed0597c6d8e",
+    "source_panel": "data_perp/artifacts/strict_r3_short_features_full2024_20260820_v1/canonical120_features.parquet",
+    "source_panel_sha256": "a2596fa2a941e42ef79218ad514d5928a227f04306ac1725b1b02169f220bd39",
+    "selection_window": "[2023-10-01T00:00:00Z, 2024-10-01T00:00:00Z)",
+    "selection_rule": "smallest feature size within one standard error of the best three-fold chronological utility",
+    "coverage_gate": ">= 90% over target-free, entry-executable training rows",
+    "field_count": 90,
+    "field_set_key": "feature_sets.90"
+  },
+  "label_contract": {
+    "source": "data_perp/artifacts/strict_r3_short_policy_conversion_labels_12m_20260820_v1/run_manifest.json",
+    "sha256": "72b14ff607e44ec0115e9f0fea28c072d599dac90565f9a58f0fe5eae16aaa8a",
+    "policy": "exact completed one-minute path; decision-time entry; 12-hour timeout; 100 bps cost exactly once",
+    "target": "ordinal policy-net bps",
+    "target_edges_bps": [-400, -200, 0, 100, 200, 400],
+    "invalid_or_incomplete_path": "excluded from supervised fitting; retained in target-free coverage audit"
+  },
+  "ranker": {
+    "model": "LightGBM LambdaRank",
+    "query": "exact decision timestamp x short side",
+    "objective": "lambdarank",
+    "lambdarank_norm": true,
+    "truncation": 32,
+    "label_gain": [0, 1, 2, 3, 4, 5, 6, 7],
+    "sample_weight": "uniform",
+    "n_estimators": 140,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "min_child_samples": 350,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 1,
+    "lambda_l2": 8.0,
+    "seed": 17,
+    "deterministic": true
+  },
+  "confirmation": {
+    "train_window": "[2024-01-01T00:00:00Z, 2024-10-01T00:00:00Z)",
+    "oos_window": "[2024-10-01T00:00:00Z, 2025-01-01T00:00:00Z)",
+    "manifest": "data_perp/artifacts/strict_r3_short_policy_conversion_confirmation_octdec2024_20260820_v1/run_manifest.json",
+    "manifest_sha256": "f5f04aed6e6a012a0ad0d4e29670b7a0e2700935d81ac4338cc54822c78ddefb",
+    "scorecard_sha256": "29da4195d6b6f675b193b1aba7849e1a6a2a26d03d0bbb245b71bdc3172a903e",
+    "within_timestamp_rank_ic": 0.152222,
+    "positive_ic_query_fraction": 0.875906,
+    "top_1_uplift_vs_query_mean_bps": 101.186702,
+    "top_2_uplift_vs_query_mean_bps": 86.526083,
+    "top_4_uplift_vs_query_mean_bps": 77.976985,
+    "top_8_uplift_vs_query_mean_bps": 61.07368,
+    "interpretation": "portable relative ranker; raw selected policy-net remains negative, so absolute admission is delegated to the short conversion stack"
+  },
+  "research_controls": {
+    "hpo_no_improvement_patience_trials": 20,
+    "feature_selection_or_hpo_must_not_use_final_oos": true,
+    "downstream_models_require_strict_prequential_base_predictions": true,
+    "side_specific_geometry_and_consensus_contract_required": true
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema": "strict_r3_hourly_operations_controller_receipt_v1",
+  "observed_at_utc": "2026-08-23T23:32:49Z",
+  "change": "Replace the hourly supervisor's check-only behavior with a bounded operations controller that can restart only missing, hash-bound sealed services and otherwise fails closed with an immutable root-cause receipt.",
+  "controller_scope": {
+    "allowed": [
+      "restart a missing minute-position monitor through its hash-pinned launcher",
+      "restart a missing hourly producer through its hash-pinned launcher for the next fresh decision boundary only"
+    ],
+    "prohibited": [
+      "stale decision execution",
+      "post-execution-boundary retries",
+      "model, policy, feature, calibration, artifact, or state-lineage mutation",
+      "source/parity/lineage auto-repair",
+      "terminating an unknown or identity-mismatched process"
+    ]
+  },
+  "initial_operational_status": "disabled pending BCF same-lineage challenger promotion; no live entry service was started or restarted by this change",
+  "changed_paths_sha256": {
+    "scripts/run_strict_r3_live_operations_controller.py": "12fe50b14ed18009f381c0dcddd68d0fc68af04c217f078a1e952f5179c249c7",
+    "scripts/run_strict_r3_live_operations_supervisor_loop.sh": "8c854dbdb1f75f36fec29c9a09d8f928ed22677bca7021d8897b3925e7a4cb0d",
+    "config/strict_r3_live_operations_controller_v1.json": "5b8052b6eeb08099ac80edf210ea4fe004552e295059378b68398d380a160008",
+    "tests/test_strict_r3_live_operations_controller.py": "7d77e7e006051e1561599ffed66a3f78360e2545522acadd98ab339cebb2fc0b",
+    "docs/STRICT_R3_HOURLY_OPERATIONS_CONTROLLER.md": "bf8a37eefdf419eb5b80415529c6d54b6aaa2a529c9e5ea6ea4d0cf3a31b05b1"
+  },
+  "validation": {
+    "focused_tests": "18 passed: test_strict_r3_live_operations_controller.py, test_strict_r3_live_hourly_entry_producer.py, test_strict_r3_live_candle_report.py",
+    "syntax": "python3 -m py_compile scripts/run_strict_r3_live_operations_controller.py; bash -n scripts/run_strict_r3_live_operations_supervisor_loop.sh",
+    "disabled_dry_run": "controller returned restart_not_authorized for a missing producer; no services were launched, no state/model/policy mutation occurred"
+  }
+}

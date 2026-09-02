@@ -1,0 +1,30 @@
+{
+  "task": "strict-r3-long-ablation-reusable-residual-consensus-contract",
+  "scope": "Offline-only reusable strict-OOF residual and consensus primitives for the Strict-R3 long ablation funnel. No inference bundle, live scorer, policy, calibration, portfolio, exchange, or order-capable file was modified.",
+  "implementation": {
+    "residual_target": "Signed policy_net_bps minus causal base_anchor_bps, with ordinal edges -100/-25/+25/+100 bps.",
+    "training_eligibility": "A residual-training row must have decision timestamp and label availability strictly before the fold cutoff and an explicit strict-OOF base-prediction flag. Missing OOF state fails closed.",
+    "fusion": "Residual authority is bounded in [0, 1] and clips output ranks to [0, 1].",
+    "consensus": "Group medians and robust disagreement statistics use only head outputs. Reliability authority fails closed for missing agreement, support, or OOD inputs.",
+    "c3_note": "The supplied C3 median(group scores) plus second-highest(group score) formula is mathematically a no-op for three or more groups; it is retained as a literal diagnostic control rather than silently redesigned."
+  },
+  "validation_evidence": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_strict_r3_research_base_recall.py extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py extreme_price_movements/tests/test_strict_r3_base_recall_funnel.py",
+      "python3 -m py_compile extreme_price_movements/research/*.py",
+      "git diff --check -- extreme_price_movements/research extreme_price_movements/tests/test_strict_r3_research_base_recall.py extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py"
+    ],
+    "result": "9 focused tests passed; strict cutoff/OOF eligibility, residual ordinalization, bounded fusion, consensus summaries, and missing-input fail-closed authority were verified."
+  },
+  "changed_paths": [
+    "extreme_price_movements/research/hierarchical_residual.py",
+    "extreme_price_movements/research/consensus_ensemble.py",
+    "extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py"
+  ],
+  "file_hashes": {
+    "extreme_price_movements/research/hierarchical_residual.py": "1a27ca3b59625e78fdd87076a9bfef4aae2bdc6fa6c3d0ba3a055e0d1908fba5",
+    "extreme_price_movements/research/consensus_ensemble.py": "a00c25544c9d33e8fbb8b85aeddeb1609fc234e05f73d637519649ab3ebb2e96",
+    "extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py": "d5833c0fecdcb8b046ca9120cf766c1c270d1f3f0ec89e9caaa458491eeb013a"
+  },
+  "agent_plan": {"subagents": []}
+}

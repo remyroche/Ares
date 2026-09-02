@@ -1,0 +1,26 @@
+{
+  "schema": "strict_r3_p8u_meta_hpo_objective_binding_v2",
+  "scope": "offline research binding only; no live, admission, portfolio, or automatic promotion authority",
+  "trial_bank_config": "config/strict_r3_p8u_meta_hpo_multitarget_additive_20260829_v1.json",
+  "active_learned_objective": "config/strict_r3_p8u_meta_hpo_gateproxy_objective_allcontracts88_20260830_v1.json",
+  "active_scoring_utility": "scripts/score_strict_r3_p8u_meta_gateproxy_objective_v2.py",
+  "supersedes_for_new_hpo_and_feature_selection": "config/strict_r3_p8u_meta_hpo_objective_binding_allcontracts81_20260830_v2.json",
+  "supersession_scope": "The allcontracts81 P3 binding remains frozen historical authority for its completed candidate batch. New Meta HPO and Meta feature-contract screening use the support-qualified allcontracts88 P0 GateProxy binding.",
+  "selection": {
+    "primary": "GateProxy_P0_Ridge descending",
+    "proposal": "Top 3 expected gate-improving trials, plus one high-disagreement exploration and one descriptor-diverse control if the MC1 label budget permits",
+    "hard_checks": "retain predeclared strict-OOF residual-IC and weekly-Q10 safety checks as non-ranking exclusions only",
+    "confirmation": "every candidate needs a fresh matched six-month MC1 replay; only its actual dual-admission and constrained-portfolio result can advance it"
+  },
+  "feature_selection": {
+    "objective": "Delta GateProxy_P0_Ridge for add/drop/swap screening",
+    "required_confirmation": "fresh MC1 for every top feature contract; never select solely on proxy prediction",
+    "f128": "eligible for support-qualified portable selection after six independently MC1-labelled trials; every F128 proposal still requires fresh MC1 confirmation"
+  },
+  "forbidden": [
+    "PriorityProxy HPO authority",
+    "Hand-weighted direct Meta-metric objective",
+    "Use of proxy outputs in live trading or model inference",
+    "Automatic promotion from a proxy shortlist"
+  ]
+}

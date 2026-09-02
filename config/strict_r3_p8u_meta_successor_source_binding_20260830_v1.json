@@ -1,0 +1,23 @@
+{
+  "schema": "strict_r3_p8u_meta_successor_source_binding_v1",
+  "scope": "offline P8U Meta research source binding only; no live, admission, execution, or promotion authority",
+  "purpose": "replace the unavailable mixed historical path-label source with one complete current-source target-only contract for every new strict-OOF P8U Meta result",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_f72_shapderived_prequential_bridge_mar25_jul26_20260830_v1/target_free_shap_features",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_p8u_meta_f72_enriched_universe_aug25jul26_20260830_v1"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_p8u_supportive_path_labels_fullcurrent_source_mar25jul26_20260830_v2/parts"
+  },
+  "lineage": {
+    "candidate_population": "971770 exact target-free candidate identities, March 2025 through July 2026",
+    "policy_ledger_sha256": "e16ce972983d01a33580224e1408d80bdf34876dbc2d32ad9f731e1f2a2ac2b1",
+    "path_contract": "strict_r3_p8u_supportive_path_label_recovery_v1; complete rematerialisation from one current-source 15-minute bar cache",
+    "bar_override": "data_perp/artifacts/strict_r3_p8u_recovered_offloaded15m_history_20260830_v1/bars",
+    "valid_path_share": 0.9968,
+    "causal_availability": "Every valid policy and supportive-path label is timestamped at or after its candidate decision timestamp.",
+    "prohibition": "Do not pool this successor source with any historical strict_r3_long_supportive_path_labels parts or predecessor Meta results."
+  }
+}

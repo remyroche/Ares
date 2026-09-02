@@ -1,0 +1,57 @@
+{
+  "date": "2026-08-28",
+  "scope": "Offline strict-OOF P8u Router50 and single-Base comparison only. No live, canonical promotion, exchange, portfolio, or execution mutation.",
+  "root_cause": {
+    "finding": "The default reconciled rich-policy ledger begins on 2025-04-01, so a May Router fold with a three-month training window has no resolved January-March labels.",
+    "repair": "Reconstruct only 2024-12 through 2025-03 rich-policy labels from target-free path identities, local 15-minute OHLC, and the pre-existing frozen smooth-protection policy; append them before the unchanged canonical ledger in a new immutable successor.",
+    "invalidity_contract": "Missing entry/ATR metadata and incomplete paths remain policy_path_valid=false and are excluded from fitting; they are not economic failures."
+  },
+  "successor_policy": {
+    "path": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "sha256": "e16ce972983d01a33580224e1408d80bdf34876dbc2d32ad9f731e1f2a2ac2b1",
+    "coverage": "2024-12-01 through 2026-07-31; 2,210,645 identities; 2,196,605 valid labels",
+    "causal_checks": {
+      "candidate_id_unique": true,
+      "valid_gross_minus_net_equals_100bps_once": true,
+      "valid_label_availability_equals_decision_plus_12h": true,
+      "maximum_cost_reconciliation_error_bps": 5.684341886080802e-14
+    }
+  },
+  "router": {
+    "path": "data_perp/artifacts/strict_r3_p8u_router_oof_apr25_jul26_successorlabels_20260828_v1",
+    "contract_sha256": "64f625191a6e26b187656d2ad8a43f0bb01bf570c62f5db0670ec6615699dcc1",
+    "contract": "frozen P8u_floor100_cap250 primary-only rank-XENDCG Router50; 30 causal features; 3-month strict training, 28-day reserve, 120,000-query-safe row cap; no router numeric coordinate enters Base",
+    "feature_sources": "disjoint target-free Dec-Mar, Apr-Jul-2025, and Aug-2025-Jul-2026 causal feature roots; every required Router/B0 F72 field present",
+    "score_months": ["2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"]
+  },
+  "base_target_comparison": {
+    "path": "data_perp/artifacts/strict_r3_p8u_router50_base_policyordinal_vs_raw_may25_jul26_20260828_v2",
+    "manifest_sha256": "ffdd535cddd776f764adba6124209f0682c70c5a67f697786ad3bcc82d14fc1c",
+    "correctness_sha256": "c82e343c614072d397af599776c91e67041cc19acce82c396a0a6ae54fa495e0",
+    "common_contract": "exact same Router50 identities, F72 causal features, LightGBM LambdaRank geometry, three-month strict training, 28-day reserve, 60,000 complete-query cap, and canonical rich-policy labels; held August 2025 through July 2026",
+    "models": {
+      "policy_ordinal_control": "fixed policy-net ordinal bins <=0/0-50/50-100/100-200/200-400/>400 bps",
+      "raw_magnitude_challenger": "policy net bps with training-fold winsorised six-quantile relevance bins"
+    },
+    "timestamp_averaged_results": {
+      "policy_ordinal": {"dtp1_bps": 201.513693, "dtp2_bps": 161.851656, "dtp5_bps": 105.345521, "dtp10_bps": 60.061987, "dtp20_bps": 19.150637, "recall50_at20": 0.372541, "recall100_at20": 0.436827, "er50_at20": 0.484386, "er100_at20": 0.524760, "q10_week_dtp5_bps": 52.778723, "q25_month_dtp5_bps": 105.345525, "worst_month_dtp5_bps": 105.345525},
+      "raw_magnitude": {"dtp1_bps": 190.151941, "dtp2_bps": 157.062252, "dtp5_bps": 109.199771, "dtp10_bps": 66.902830, "dtp20_bps": 25.963684, "recall50_at20": 0.371657, "recall100_at20": 0.430134, "er50_at20": 0.467666, "er100_at20": 0.501731, "q10_week_dtp5_bps": 60.082336, "q25_month_dtp5_bps": 109.199772, "worst_month_dtp5_bps": 109.199772}
+    },
+    "decision": "RETAIN_POLICY_ORDINAL_CONTROL_FOR_THIS_ROUTER_FIRST_COMMON_LIGHTGBM_CONTRACT. Raw magnitude improves breadth but fails the predeclared Top-1/Top-2, utility-recall, and selection-score gates. This does not supersede the separately evaluated CatBoost F72 qualified challenger."
+  },
+  "correctness": {
+    "all_router_top50_identity_exact": true,
+    "base_receives_no_router_numeric_input": true,
+    "no_base_post_router_cutoff": true,
+    "all_train_labels_resolved_before_reserve": true,
+    "held_scores_target_free_before_outcome_join": true,
+    "train_only_feature_medians": true,
+    "cost_reused_from_canonical_parent_only": true,
+    "no_live_or_exchange_mutation": true
+  },
+  "changed_file_sha256": {
+    "scripts/materialize_strict_r3_router_single_base_target_labels_v1.py": "69a1552cf04b13a8bcdc1d56dd3211d84e791a847c0617b12b76396a6ba66602",
+    "tests/test_materialize_strict_r3_router_single_base_target_labels_v1.py": "e7742d29c97b6f5b9d2f7eaffaf1266b4c29b2a3f99cf181a92689fae48501a0"
+  },
+  "tests": "Focused direct test functions passed; Python compilation passed; persisted April/May label coverage checks passed; git diff --check passed. pytest is unavailable in the active Python runtime, so no pytest result is claimed."
+}

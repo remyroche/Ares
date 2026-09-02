@@ -1,0 +1,44 @@
+{
+  "schema": "strict_r3_mc1_d2_research_champion_v1",
+  "status": "FROZEN_RESEARCH_CHAMPION_NOT_PRODUCTION",
+  "side": "long",
+  "mapper_family": "MC1_agreement_calibration",
+  "model": {
+    "type": "HistGradientBoostingRegressor",
+    "max_depth": 2,
+    "max_iter": 80,
+    "learning_rate": 0.04,
+    "l2_regularization": 20.0,
+    "min_samples_leaf": 100,
+    "random_state": 1729
+  },
+  "features_ordered": [
+    "final_score",
+    "base_rank42",
+    "conditional_consensus_rank",
+    "upstream",
+    "ordinary_shadow_consensus_rank",
+    "correctness_rank"
+  ],
+  "dynamic_component": {
+    "type": "causal_recent_global_residual_shift",
+    "window_days": 21,
+    "trim_fraction_each_tail": 0.10,
+    "outcome_availability_rule": "policy_label_available_ts <= decision_ts"
+  },
+  "admission_threshold_bps": 50.0,
+  "auction_order": "frozen strict-R3 final_score only",
+  "selection_evidence": "2025 development plus 2026 final validation/model selection",
+  "promotion_evidence": "none; requires a later untouched forward period",
+  "forbidden_post_freeze_changes": [
+    "feature set",
+    "feature order",
+    "depth",
+    "seed",
+    "recent-shift horizon",
+    "admission threshold",
+    "authority",
+    "ranking",
+    "execution policy"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "extends": {
+    "path": "strict_r3_p8u_router50_broad_rescue_recall_20260830_v1.json",
+    "sha256": "3f5d5679af701d1ec9933d2a491acd5a0a9cb64f54793f0cdffcb48c4b88cf36"
+  },
+  "schema_version": "strict_r3_p8u_router50_broad_rescue_sourcebundle_v1",
+  "scope": "offline-only strict-OOF Router Recall@50 rescue and Router/P8U blend ablation; uses immutable original outer-fold P8U probe models because the raw prior-label ledger is temporarily unavailable; no canonical, admission, portfolio, execution, or live change",
+  "p8u": {
+    "training_population": "not refit in this variant: immutable outer-fold source-bundle probe models were already trained prequentially on strictly prior resolved rows",
+    "geometry": "reuse each outer fold's immutable source NMF geometry and the probe_models embedded in that same bundle; no refit, alignment, HPO, or feature selection",
+    "score_normalization": "within-timestamp deterministic percentile rank, computed target-free independently for Router and P8U before blending"
+  },
+  "outcome_sidecar": {
+    "path": "data_perp/artifacts/strict_r3_p8u_router_conditioned_head_retrain_20260830_v3_router50/candidate_predictions.parquet",
+    "sha256": "deferred_to_runtime",
+    "contract": "existing sealed held outcomes only; loaded and joined after target-free source-bundle scoring, never used for scoring or selection"
+  },
+  "controls": {
+    "matched_generic_broad_probe": false,
+    "selection": "no arm is promoted or selected on held results; pooled and per-quarter metrics are reported for falsification only"
+  }
+}

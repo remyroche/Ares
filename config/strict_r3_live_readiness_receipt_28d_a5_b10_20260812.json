@@ -4,7 +4,7 @@
   "side": "long",
   "inference_bundle": {
     "path": "config/strict_r3_inference_bundle_long_20260801_v5_a5_b10.json",
-    "sha256": "e4a3334c2c12111c0a4864900099364d99f3837877dcabc89483bef759fc0eeb",
+    "sha256": "0c2b6eb429ccc6d6c4ab883d12e8ce980ac2be1dba7817033b1cf4b6947924bd",
     "hashes_verified": 23
   },
   "trust_contract": {
@@ -15,7 +15,7 @@
     "missing_component": "fail_closed"
   },
   "a5_bundle": {
-    "path": "data_perp/artifacts/strict_r3_a5_bounded10_trust_bundle_long_20260801_28d_9m_v1",
+    "path": "data_perp/artifacts/strict_r3_a5_bounded10_trust_bundle_long_20260801_28d_9m_v2",
     "cutoff": "2026-08-01T00:00:00Z",
     "a4_training_window_months": 9,
     "a4_training_rows": 60000,
@@ -23,7 +23,7 @@
     "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638"
   },
   "shadow_verification": {
-    "path": "data_perp/artifacts/strict_r3_shadow_cycle_28d_a5_b10_20260812T090000Z_v1",
+    "path": "data_perp/artifacts/strict_r3_shadow_cycle_28d_a5_b10_20260812T090000Z_v2_exactcal",
     "decision_ts": "2026-08-12T09:00:00Z",
     "rows": 163,
     "feature_complete_rows": 162,

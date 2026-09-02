@@ -1,0 +1,22 @@
+{
+  "task": "liquidity-transition-one-minute-maximum-target-contract",
+  "scope": "Offline-only execution-liquidity target reshaping. No canonical strategy, inference, policy, exchange, or live code changed.",
+  "change": "A one-minute maximum deterioration is exactly its one-minute terminal deterioration. The evaluator now reuses the existing causal terminal label for max_spread_delta/max_book_cost_delta at 1 minute rather than demanding a redundant maximum-path column.",
+  "causality": "The reused labels are both future outcomes over the identical single next-minute interval. No feature, fold, target timestamp, or available-information contract changes.",
+  "validation_evidence": {
+    "commands": [
+      "python3 -m pytest -q tests/execution/test_execution_targets.py",
+      "python3 -m py_compile scripts/execution/train_execution_risk.py"
+    ],
+    "result": "5 focused tests passed; syntax check passed. The added test proves equality between 1m direct and maximum cost/spread targets."
+  },
+  "changed_paths": [
+    "scripts/execution/train_execution_risk.py",
+    "tests/execution/test_execution_targets.py"
+  ],
+  "file_hashes": {
+    "scripts/execution/train_execution_risk.py": "bdb8997a9cae5c87e1ed4baaff4e6ce59b8460975e62e2a718235914c01fcf11",
+    "tests/execution/test_execution_targets.py": "fee12b8886f0a6a3a095c98ff02edfa46fcffb8ee3d46303debea078691a1aa6"
+  },
+  "agent_plan": {"subagents": []}
+}

@@ -1,0 +1,33 @@
+{
+  "date": "2026-08-26",
+  "scope": "strict-R3 offline F72 history reconstruction only",
+  "changed_paths": [
+    "scripts/materialize_strict_r3_enhanced_base_rich_policy_labels.py",
+    "scripts/build_strict_r3_policy_label_successor_v1.py",
+    "scripts/materialize_strict_r3_policy_ordinal_labels_v1.py",
+    "scripts/materialize_strict_r3_f72_early_router_features_v1.py",
+    "scripts/assemble_strict_r3_f72_contiguous_feature_source_v1.py",
+    "scripts/materialize_strict_r3_incumbent_component_scores_v1.py",
+    "scripts/score_strict_r3_frozen_head_oof_v1.py"
+  ],
+  "reason": "The original raw target-free ledger is a sparse local placeholder. Add a narrowly scoped, opt-in identity recovery path that reads only candidate identity plus declared decision-time entry/ATR fields from the already immutable path-panel ledger; no realised path fields are selected or emitted as inference inputs.",
+  "contracts": [
+    "target-free candidate population retained before future rich-policy paths are evaluated",
+    "missing entry/ATR or incomplete 15-minute paths remain explicit invalid labels",
+    "all outcome fields stay downstream of target-free feature/scoring panels",
+    "cost remains applied once by the existing rich-policy simulator"
+  ],
+  "validation_planned": [
+    "compile the patched materializer",
+    "run a bounded historical smoke materialization",
+    "audit source identity equality, label validity, label availability, and gross-minus-net cost identity",
+    "verify the immutable successor has no cross-cutoff IDs and does not alter the incumbent segment",
+    "verify successor B-policy ordinal labels match the incumbent B labels on their common canonical period",
+    "compile the contiguous feature producer and prove its January output matches the previously validated single-month causal panel before historical scoring",
+    "compose the early and later causal sources by immutable monthly symlink only, with no candidate filtering or outcome join",
+    "adapt incumbent E/T raw coordinates into target-free score ledgers while retaining every candidate identity exactly once",
+    "when blending F72 B with incumbent E/T, restrict E/T solely to the F72 target-free router identity ledger; never use label or outcome eligibility",
+    "for the single B head only, omit generic raw B/E/T geometry that is not a model input, so valid early causal history is not rejected solely because incumbent raw score coordinates did not yet exist"
+  ],
+  "live_or_exchange_impact": "none"
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "strict_r3_p8u_meta_weight_screen_v1",
+  "scope": "offline strict-OOF Under sample-weight ablation; no MC1, admission, portfolio, live, or exchange mutation",
+  "arm": "u_atr10_ts",
+  "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_under_u_atr10_ts_20260830_v1/contracts/under_f90.json",
+  "weight_contract": "equal timestamp mass; 5-20% Base-rank authority with moderate 0-5% and 20-30% shoulders x target-positive and residual-magnitude weighting; clip [0.5,4.0]; exact within-timestamp unit mass",
+  "trials": [
+    {
+      "name":"w0_unweighted", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":null
+    },
+    {
+      "name":"w1_equal_timestamp", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[]}
+    },
+    {
+      "name":"w2_under_local", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.25],[0.60,0.25],[0.70,0.5],[0.80,1.0],[0.95,2.0],[1.0,0.75]]}]}
+    },
+    {
+      "name":"w3_under_local_positive_mild", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.25],[0.60,0.25],[0.70,0.5],[0.80,1.0],[0.95,2.0],[1.0,0.75]]},{"name":"positive_recall","strength":0.5,"power":1.0}]}
+    },
+    {
+      "name":"w4_under_local_positive_strong", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.25],[0.60,0.25],[0.70,0.5],[0.80,1.0],[0.95,2.0],[1.0,0.75]]},{"name":"positive_recall","strength":1.0,"power":1.0}]}
+    },
+    {
+      "name":"w5_under_local_residual_p05", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.25],[0.60,0.25],[0.70,0.5],[0.80,1.0],[0.95,2.0],[1.0,0.75]]},{"name":"magnitude_awareness","strength":0.5,"power":0.5}]}
+    },
+    {
+      "name":"w6_under_local_positive_residual", "gain":[0,1], "truncation":12, "sigmoid":1.0,
+      "model":{"objective":"rank_xendcg","n_estimators":220,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":400,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0,"n_jobs":1}, "sample_weight":{"equal_timestamp":true,"normalise_within_query":true,"min_weight":0.5,"max_weight":4.0,"components":[{"name":"base_rank_localization","strength":1.0,"knots":[[0.0,0.25],[0.60,0.25],[0.70,0.5],[0.80,1.0],[0.95,2.0],[1.0,0.75]]},{"name":"positive_recall","strength":0.5,"power":1.0},{"name":"magnitude_awareness","strength":0.5,"power":1.0}]}
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "strict_r3_p8u_uom_cmi_input_freeze_v1",
+  "scope": "offline source-repaired full-1400 CMI prescreens; no MC1, admission, portfolio, live, execution, or exchange mutation",
+  "full_feature_selector_config": "config/strict_r3_p8u_meta_target_query_grid_source_repaired_dec24_jul25_20260829_v2_expanded_base_lineage.json",
+  "full_feature_selector_config_sha256": "932c358fa2542ab504475f79afbccda601284e417d57b38cc0351122a2e2cac7",
+  "target_query_screen_root": "data_perp/artifacts/strict_r3_p8u_uom_target_grid_f72_source_repaired_expandedbase_20260829_v1",
+  "target_query_manifest_sha256": "d4f4da86c00a71b7cf659df400d1631576ac008a0f50ad1454e80fa30e75760f",
+  "target_query_summary_sha256": "fcb905f9979da0c46908517c65679a8ae9ca99b977c65415a98f565c7682b37d",
+  "held_months": ["2025-05", "2025-06", "2025-07"],
+  "selection_rule": "Exactly one arm per family, selected by the predeclared target/query SStableMeta rule before any full-1400 CMI result exists. The selected arms must not be changed in response to CMI, Meta, MC1, or portfolio outcomes.",
+  "selected_arms": {
+    "magnitude": "magnitude_bps__base_band_block28",
+    "over": "over_bps100__timestamp",
+    "under": "under_bps100__timestamp"
+  },
+  "base_explanation_v1": {
+    "fields": ["base_score", "base_rank_ts", "base_query_count", "base_query_mean", "base_query_std", "base_query_range", "base_score_z_ts", "base_top_gap", "base_top2_gap"],
+    "evidence_population": "timestamp-local strongest 15% of the frozen Base score",
+    "cmi_conditioning": "joint deterministic, fold-local, outcome-free Base Explanation V1 strata"
+  },
+  "objective_trial_grid": {
+    "path": "config/strict_r3_p8u_meta_lgbm_objective_stage3a_20260828_v1.json",
+    "sha256": "249218ea8fae9ae9f28c2434bac95d885e05ca3728347170c356948794068dc5",
+    "selection_rule": "run all nine target-neutral LambdaRank trials for each selected family; select SStableMeta on 2025 only, with conditional MI and top-2 substitution as predeclared tie-breakers"
+  },
+  "next_stage": "Run one strict-OOF full-1400 prescreen per frozen arm after every source-repaired expanded-base full-feature month from 2024-12 through 2025-07 has sealed. No MDA stage is requested. Convert each sealed prescreen to an 80-feature contract, then run the hash-bound nine-trial objective grid separately for each family."
+}

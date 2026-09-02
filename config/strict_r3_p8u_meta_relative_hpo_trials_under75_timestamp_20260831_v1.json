@@ -1,0 +1,5 @@
+[
+  {"name":"u75ts__h0_inherited_under","model":{"objective":"rank_xendcg","n_estimators":260,"learning_rate":0.045,"max_depth":4,"num_leaves":15,"min_child_samples":350,"min_split_gain":0.001,"feature_fraction":0.8,"bagging_fraction":0.82,"lambda_l1":0.02,"lambda_l2":8.0},"gain":[0,1,2,4,7,11,16,24],"truncation":12,"sigmoid":1.0,"sample_weight":null},
+  {"name":"u75ts__h1_shallow_sparse","model":{"objective":"rank_xendcg","n_estimators":360,"learning_rate":0.035,"max_depth":3,"num_leaves":7,"min_child_samples":700,"min_split_gain":0.003,"feature_fraction":0.75,"bagging_fraction":0.85,"lambda_l1":0.08,"lambda_l2":16.0},"gain":[0,1,2,4,7,11,16,24],"truncation":12,"sigmoid":1.0,"sample_weight":null},
+  {"name":"u75ts__h2_compact_tail","model":{"objective":"rank_xendcg","n_estimators":320,"learning_rate":0.04,"max_depth":4,"num_leaves":15,"min_child_samples":600,"min_split_gain":0.002,"feature_fraction":0.8,"bagging_fraction":0.8,"lambda_l1":0.04,"lambda_l2":14.0},"gain":[0,1,2,5,10,18,28,40],"truncation":8,"sigmoid":1.0,"sample_weight":null}
+]

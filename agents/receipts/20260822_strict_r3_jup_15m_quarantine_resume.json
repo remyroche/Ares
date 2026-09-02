@@ -1,0 +1,46 @@
+{
+  "task": "strict-r3-phase-native-jup-15m-source-stall-repair",
+  "scope": "Offline phase-native feature replay only. The repair preserves the frozen 15-minute source interval and never touches live state, exchange I/O, targets, predictions, MC1, admission, or portfolio rules.",
+  "finding": {
+    "raw_sources": [
+      "data_perp/exchanges/krakenfutures/raw/ohlcv_15m/jupusd:usd_15m.parquet",
+      "data_perp/exchanges/krakenfutures/raw/ohlcv_15m/wldusd:usd_15m.parquet"
+    ],
+    "sidecar_source": "data_perp/exchanges/krakenfutures/funding_hourly/ETH_USD_ETH.parquet",
+    "symptom": "Three independent :15/:30/:45 panel workers reproducibly blocked inside individual legacy Arrow scans, first raw 15-minute and then a funding sidecar.",
+    "evidence": "A macOS sample of PID 53065 showed pyarrow.dataset.ParquetFileFragment.ReadPhysicalSchemaImpl blocked in a kernel read on JUP. A bounded 170-symbol filtered-read audit subsequently identified WLD as a timed-out raw scan with a healthy shared 15-minute mirror. After raw-source repair, all phases reached 150/170 and a sample of PID 57298 showed the same blocked Arrow stack on ETH funding sidecar."
+  },
+  "repair": {
+    "contract": "config/strict_r3_raw_15m_source_quarantine_v1.json, config/strict_r3_panel_sidecar_quarantine_v1.json, plus scripts/audit_strict_r3_raw_15m_source_health.py",
+    "behavior": "The shared causal panel loader checks a versioned raw-source quarantine before opening a raw shard. Quarantined raw JUP/WLD use the existing same-interval shared 15-minute mirror; no hourly or minute fallback is introduced. Quarantined funding sidecars remain missing after the official archive ends rather than being imputed.",
+    "lineage": "The exact raw and sidecar quarantine receipts are embedded in each newly written phase panel state and state manifest."
+  },
+  "validation_evidence": {
+    "commands": [
+      "python3 scripts/audit_strict_r3_raw_15m_source_health.py ... --timeout-seconds 8 --workers 4 ...",
+      "python3 - <<'PY' ... _read_downloaded_15m_hourly for JUP/USD:USD and WLD/USD:USD at phase 15 ... PY",
+      "python3 - <<'PY' ... _add_oi_funding_panels for ETH/USD:USD ... PY",
+      "python3 -m py_compile scripts/run_tp6_sl4_exact170_canonical_consensus.py scripts/update_strict_r3_feature_panel_state.py scripts/audit_strict_r3_raw_15m_source_health.py",
+      "python3 -m json.tool config/strict_r3_raw_15m_source_quarantine_v1.json",
+      "git diff --check -- scripts/run_tp6_sl4_exact170_canonical_consensus.py scripts/update_strict_r3_feature_panel_state.py config/strict_r3_raw_15m_source_quarantine_v1.json"
+    ],
+    "result": "The filtered-read audit found one unhealthy raw source without a mirror gap (WLD); the explicit JUP diagnostic remains quarantined. Both JUP and WLD produced 72 complete phase-15 shared-mirror hourly rows for 2026-07-12 through 2026-07-15. The ETH funding guard completed a four-hour causal panel call with no unavailable funding values imputed. Syntax, JSON, and whitespace checks passed."
+  },
+  "changed_paths": [
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py",
+    "scripts/update_strict_r3_feature_panel_state.py",
+    "config/strict_r3_raw_15m_source_quarantine_v1.json",
+    "config/strict_r3_panel_sidecar_quarantine_v1.json",
+    "scripts/audit_strict_r3_raw_15m_source_health.py"
+  ],
+  "file_hashes": {
+    "scripts/run_tp6_sl4_exact170_canonical_consensus.py": "218fd06c1552901d27e5e2d5935ace9db87f9c682fda2eaf890293d6e2dec343",
+    "scripts/update_strict_r3_feature_panel_state.py": "36cfb8b1384f92b6fb6f984cd2dada4c19904e4410585fd1bb1ce8d54a5c3fa9",
+    "scripts/audit_strict_r3_raw_15m_source_health.py": "c5a3cfacef8e28acb5298bb08e332bcc29d2bcb603e584b5f30822564b92055b",
+    "config/strict_r3_raw_15m_source_quarantine_v1.json": "6bdf288d9363179c0dcddd6cdbcde0070ce7141730b76f7216e7a8d050ce3e26",
+    "config/strict_r3_panel_sidecar_quarantine_v1.json": "f139553421c38d42c1035f60fca1b46d32078f1f1cb50af437df6ca02084388c"
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

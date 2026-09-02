@@ -1,0 +1,19 @@
+{
+  "date_utc": "2026-08-26",
+  "scope": "offline research-only strict-OOF F72/router causal-history reconstruction",
+  "changed_file": "scripts/materialize_strict_r3_f72_early_router_features_v1.py",
+  "sha256": "66a320ee4035822ddae04f73ac7e20be3780d56249e115332e25b7be1a855677",
+  "reason": "The canonical materializer emitted only native __ts__/__symbol__ keys. The patch restores candidate_id, __decision_ts__, and side_name through a one-to-one merge with the identity-only candidate ledger before downstream scoring.",
+  "causality": "The merge uses only deterministic candidate identity fields. Target validity and policy outcomes remain excluded from the feature panel and are not used to select materialized rows.",
+  "validation_required": [
+    "every restored candidate_id is unique",
+    "restored row count equals the complete point-in-time identity ledger",
+    "target/outcome columns are absent from output",
+    "strict scorer identity join succeeds"
+  ],
+  "preserved_invalid_artifacts": [
+    "strict_r3_f72_early_router_features_20260826_v2_jan",
+    "strict_r3_f72_early_router_features_20260826_v2_feb",
+    "strict_r3_f72_early_router_features_20260826_v2_mar"
+  ]
+}

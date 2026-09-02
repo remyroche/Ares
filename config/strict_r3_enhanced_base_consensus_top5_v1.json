@@ -1,0 +1,20 @@
+{
+  "schema": "strict_r3_conditional_consensus_subset_v1",
+  "side": "long",
+  "purpose": "enhanced-base research only; not a live-contract replacement",
+  "parent_contract": "strict_r3_conditional_consensus_v1.json",
+  "parent_contract_sha256": "44173ba6db6ab5019f0247e15a79f126a4e51ef831de672cb7dfee5c232eda45",
+  "base_contract_sha256": "db900e4a617db1437277d9e081e4a2cade2c510856caf54faeb31f7d1f25f13b",
+  "selected_heads": [
+    "cap100_ordinary",
+    "cap80_ordinary",
+    "cap120_equal_month",
+    "cap40_equal_month",
+    "cap60_equal_month"
+  ],
+  "selection_evidence": {
+    "audit": "strict_r3_enhanced_base_consensus_head_audit_20260823_v2",
+    "criterion": "strict-OOS standalone economic tails, month stability, pairwise redundancy, and leave-one-out consensus contribution",
+    "selection_is_not": "a modification of the frozen ten-head live contract"
+  }
+}

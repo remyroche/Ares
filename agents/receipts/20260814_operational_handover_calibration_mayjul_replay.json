@@ -1,0 +1,71 @@
+{
+  "task": "operational-handover-calibration-and-may-july-replay-verification",
+  "status": "passed_current_seal_and_byte_identical_replay",
+  "canonical_bundle": "config/strict_r3_inference_bundle_long_20260801_v6_robust21_mc1_d2_adaptive_exit_v1.json",
+  "canonical_bundle_sha256": "6b4604e589e0efb39ae09bff934da51d884bd46774ab063bbda9a5918993e7f3",
+  "bundle_validation": {
+    "decision_ts": "2026-08-14T00:00:00Z",
+    "artifact_hashes_verified": 28,
+    "runtime_code_hashes_verified": 39,
+    "upstream_bundle_sha256": "8d8139b166dc0af69815247e2abab1999a6670b0d7cb5552a485dd7ea0006a0e",
+    "conversion_bundle_sha256": "094b26e5fe9a18b0696d444f553b318be8b3cea6b1c0f5c43a01e84347a08fe7",
+    "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+    "mode": "shadow-only"
+  },
+  "calibration_contract": {
+    "upstream_same_model_reserve_days": 28,
+    "conversion_same_model_reserve_days": 28,
+    "reserve_start": "2026-07-04T00:00:00+00:00",
+    "bundle_cutoff": "2026-08-01T00:00:00+00:00",
+    "base_reference_rows": 111710,
+    "base_reference_hours": 672,
+    "base_reference_zero_candidate_hours": 0,
+    "policy_net_map_source_rows": 2418355,
+    "policy_net_map_bins": 20,
+    "conditional_residual_heads": 10,
+    "conversion_geometry_refit_cadence": "never",
+    "conversion_geometry_definition": "2024-10-01T00:00:00Z/2025-01-01T00:00:00Z",
+    "held_window_percentiles": false,
+    "robust21_role": "control_telemetry_only",
+    "mc1_d2_role": "absolute_ev_admission_authority",
+    "mc1_admission_threshold_bps": 50,
+    "mc1_dynamic_shift": "prior-resolved trailing 21-day history with 10% day-tail trim",
+    "label_availability_rule": "policy_label_available_ts <= decision_ts"
+  },
+  "replay": {
+    "period": "2026-05-01T00:00:00Z/2026-08-01T00:00:00Z",
+    "artifact": "data_perp/artifacts/strict_r3_mc1_adaptive_exit_canonical_route20_mayjul2026_20260814_v3_bound",
+    "manifest_sha256": "dfe52577e42f746d0e6a2226a0a5d712869f154e097ef6e2a1bfcfc7d80d3b23",
+    "active_bundle_bound": true,
+    "all_nine_data_outputs_byte_identical_to_v2": true,
+    "historical_model_lineage": {
+      "2026-05": {"upstream_vintages": 2, "conversion_vintages": 2},
+      "2026-06": {"upstream_vintages": 2, "conversion_vintages": 2},
+      "2026-07": {"upstream_vintages": 2, "conversion_vintages": 2},
+      "geometry_vintages_across_period": 1,
+      "rule": "period-appropriate causal walk-forward vintages; active August model is not back-applied"
+    },
+    "route": "timestamp-local top-20% base -> MC1_d2 >= 50 bps -> final_score auction",
+    "simple_policy": {
+      "trades": 1435,
+      "trades_per_day": 15.60,
+      "net_bps_per_trade": 98.47,
+      "sortino": 0.325,
+      "max_mtm_drawdown": -0.3946
+    },
+    "adaptive_exit_v1": {
+      "trades": 1448,
+      "trades_per_day": 15.74,
+      "net_bps_per_trade": 99.71,
+      "sortino": 0.327,
+      "max_mtm_drawdown": -0.3946
+    }
+  },
+  "verification": {
+    "current_seal_tests_passed": 13,
+    "prior_operational_tests_passed": 40,
+    "tests_failed": 0,
+    "source_refresh": "170/170 frozen symbols refreshed successfully for the operational checkpoint",
+    "runtime_hash_drift_behavior": "bundle failed closed after the source-read optimization and passed only after explicit resealing"
+  }
+}

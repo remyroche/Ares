@@ -1,0 +1,16 @@
+{
+  "schema": "strict_r3_inference_bundle_overlay_v1",
+  "base_bundle": "config/strict_r3_inference_bundle_long_v168_v197_paired_current_peer_historical_recovery_candidate.json",
+  "overrides": {
+    "paths": {
+      "same_model_reference_candidates": "data_perp/artifacts/strict_r3_bcf_live_promotion_recovery_20260824_v1/recovered_reference_candidates.parquet",
+      "same_model_reference_features": "data_perp/artifacts/strict_r3_state_advance_validation_aug22_23_20260824_v7_independent_full/score_inputs/reference_features_exact111710.parquet",
+      "bcf_mc1_ledger": "data_perp/artifacts/strict_r3_bcf_same_lineage_challenger_20260824_v1/bcf_mc1_oos_ledger.parquet"
+    },
+    "sha256": {
+      "same_model_reference_candidates": "6e81f996ddba9dd213efbe011b7ed825269aac793eec0b82f979a5fc067b707a",
+      "same_model_reference_features": "e68bc797c9e5dcc8cea7e4705134352cf38540b03b65d918b5628a2632f3ae50",
+      "dual_bcf_mc1_ledger": "974a9782045994619a0a8b3ca1f002cfcf2101bf0caa961b451e39eaa2e83996"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "f128ext_magnitude_xendcg_d3",
+    "source_trial": "proxybank_124_magnitude_rank_xendcg",
+    "target": "magnitude",
+    "arm_name": "magnitude_bps__base_band_block28",
+    "feature_mode": "additive_overlay",
+    "additive_feature_family": "current_plus_shap_combined",
+    "parent_contract": "config/strict_r3_p8u_under_state_reliability_matched_20260829_v1.json",
+    "gain": [0, 1, 2, 5, 10, 18, 28, 40],
+    "truncation": 8,
+    "sigmoid": 1.25,
+    "sample_weight": {"equal_timestamp": true, "components": []},
+    "model": {"objective": "rank_xendcg", "learning_rate": 0.045, "max_depth": 3, "num_leaves": 7, "min_child_samples": 500, "min_split_gain": 0.0, "feature_fraction": 0.9, "bagging_fraction": 0.7, "lambda_l1": 0.0, "lambda_l2": 8.0, "n_estimators": 300}
+  }
+]

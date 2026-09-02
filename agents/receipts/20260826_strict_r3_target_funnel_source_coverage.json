@@ -1,0 +1,30 @@
+{
+  "task": "strict-r3-target-funnel-source-coverage",
+  "scope": "Adds a fail-closed guard to the offline target-funnel producer so a declared six-month strict-prequential fit cannot silently shorten when an earliest source month is absent. It does not modify live inference, MC1, admission, portfolio, execution, or exchange state.",
+  "changed_paths": [
+    "scripts/run_strict_r3_o3v2_target_funnel.py",
+    "tests/test_strict_r3_o3v2_target_funnel_coverage.py"
+  ],
+  "changed_path_sha256": {
+    "scripts/run_strict_r3_o3v2_target_funnel.py": "de36b23e6196cbebc956941892e6f9a796d7421e20a3fca2ca9193c3f491407f",
+    "tests/test_strict_r3_o3v2_target_funnel_coverage.py": "84a5ac8bd76630385cddca7d549b083a5da8877406e09797b9b062769a79e0f5"
+  },
+  "contracts": [
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "complete",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_o3v2_target_funnel.py scripts/run_strict_r3_meta_t6t9_incumbent_selection_v2.py",
+      "python3 -m pytest -q tests/test_strict_r3_o3v2_target_funnel_coverage.py tests/test_strict_r3_meta_t6t9_incumbent_selection_v2.py"
+    ],
+    "results": [
+      "4 passed",
+      "Missing monthly sources now stop the declared strict-prequential fit before any head is trained",
+      "The October 2025 receipt is excluded because March 2025 source data is absent"
+    ]
+  },
+  "agent_plan": {"subagents": []}
+}

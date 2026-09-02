@@ -1,0 +1,46 @@
+{
+  "task": "strict-r3-lockstep-geometry-predecessor-and-warmed-feature-runtime",
+  "scope": "Runtime-only live safeguard: require the Geometry/K9 state receipt to name the current decision as its exact next decision before source refresh. Records the verified complete 170-symbol warmed feature runtime used for the resumed live service.",
+  "changed_paths": [
+    "scripts/run_strict_r3_live_hourly_entry_producer.py",
+    "scripts/seal_strict_r3_v134_lockstep_geometry_predecessor_live.py"
+  ],
+  "file_hashes": {
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "e33134329bea51ee73b1909ed06b0663bd11b6c2c599ee90b882dfb595590014",
+    "scripts/seal_strict_r3_v134_lockstep_geometry_predecessor_live.py": "b459ee756cededca4cbfa78a7891e775914ab211ef9bc822a8f547df02683445"
+  },
+  "feature_runtime_evidence": {
+    "feature_log": "data_perp/artifacts/strict_r3_stateful_recovery_v159_terminal_replay_20260822T170000Z_v1/hour_20260822T170000Z/run/features.log",
+    "feature_log_sha256": "7c5f3815060d8a37f79f6f89d9a9028dbd56b20612128c45909b9182625e3fd0",
+    "universe_rows": 170,
+    "full_feature_contract_seconds": 54.848,
+    "runtime_gate_seconds": 60.0,
+    "numba_cache_dir": "/private/tmp/ares_numba_cache",
+    "status": "pass"
+  },
+  "lineage_evidence": {
+    "recovery_root": "data_perp/artifacts/strict_r3_stateful_recovery_v159_20260822T160000Z_170000Z_v1",
+    "terminal_parity": "data_perp/artifacts/strict_r3_stateful_recovery_v159_20260822T160000Z_170000Z_v1/terminal_state_replay_parity_manifest.json",
+    "terminal_parity_sha256": "2b411a2bdf971aeb66e7b6bd51732cd024a86e1a58bd2eefabf6b07b3defd8b1",
+    "checks": [
+      "independent recovered 17:00 replay passed exact candidate, feature, Geometry/K9, score, admission, portfolio and persisted-operator-state parity",
+      "the recovered 17:00 Geometry/K9 manifest names 18:00 as its exact next decision",
+      "the focused predecessor test accepts recovered 17:00 for 18:00"
+    ]
+  },
+  "sealed_successor": {
+    "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v133_bcf_current_dual_samebundle21d_direct_15m_reference_lockstep_geometry_predecessor.json",
+    "inference_bundle_sha256": "74f6f806ef1c7f2c634e2d342c910c7be33363b4439457f1ae03c9aa5c0513d4",
+    "execution_bundle": "config/strict_r3_kraken_live_execution_v134_v158_direct_15m_reference_lockstep_geometry_predecessor_live.json",
+    "execution_bundle_sha256": "7713427e7dfd040dd71d722d3565cd1a6f97926e7ba36198c6b6128d298f0ab7",
+    "live_state": "data_perp/live/strict_r3_kraken_live_state_v91_v158_direct_15m_reference_lockstep_geometry_predecessor_live.json",
+    "live_state_sha256": "aed634f38a699a227fd78ddb168f1b69dc1de112617b9d89c1ba707d6d7db2fe",
+    "economic_contract_changed": false
+  },
+  "validation_evidence": [
+    "python3 -m py_compile scripts/run_strict_r3_live_hourly_entry_producer.py scripts/seal_strict_r3_v134_lockstep_geometry_predecessor_live.py",
+    "python3 scripts/seal_strict_r3_v134_lockstep_geometry_predecessor_live.py",
+    "python3 scripts/migrate_strict_r3_flat_runtime_reseal.py ...: pass; flat state, open positions and processed decisions preserved exactly",
+    "stale geometry state is now rejected before source and feature work; valid 17:00 recovered state was accepted for the 18:00 decision"
+  ]
+}

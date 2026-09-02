@@ -1,0 +1,90 @@
+{
+  "task": "strict-r3-persisted-feature-state",
+  "scope": "Persist and transactionally advance the complete strict-R3 causal feature operator state for both live hourly inference and chronological training chunks; embed a bounded source-panel tail in immutable schema-v2 bundles; add a stateful hourly challenger without changing the incumbent live bundle. Promotion remains blocked until dependency-matched exact feature and downstream score/admission parity pass.",
+  "changed_paths": [
+    "extreme_price_movements/inference/live_zscore_state.py",
+    "extreme_price_movements/inference/derived_feature_state.py",
+    "extreme_price_movements/inference/price_memory_state.py",
+    "extreme_price_movements/inference/cross_sectional_composite_state.py",
+    "extreme_price_movements/features.py",
+    "extreme_price_movements/features_oi.py",
+    "scripts/materialize_strict_r3_forward_features_incremental_v13.py",
+    "scripts/materialize_strict_r3_forward_features.py",
+    "scripts/snapshot_strict_r3_feature_state_bundle.py",
+    "scripts/restore_strict_r3_feature_state_bundle.py",
+    "scripts/bootstrap_strict_r3_fixed_ffd_state.py",
+    "scripts/audit_strict_r3_feature_state_parity_partitioned.py",
+    "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+    "tests/test_fixed_ffd_feature_state.py",
+    "tests/test_nested_derived_feature_state.py",
+    "tests/test_price_memory_feature_state.py",
+    "tests/test_cross_sectional_composite_state.py",
+    "tests/test_snapshot_strict_r3_feature_state_bundle.py",
+    "docs/STRICT_R3_CAUSAL_FEATURE_STATE_CONTRACT_20260814.md"
+  ],
+  "contracts": [
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/snapshot_strict_r3_feature_state_bundle.py scripts/restore_strict_r3_feature_state_bundle.py scripts/run_strict_r3_hourly_shadow_resume_v15.py scripts/audit_strict_r3_feature_state_parity_partitioned.py",
+      "python3 -m pytest -q tests/test_nested_derived_feature_state.py tests/test_snapshot_strict_r3_feature_state_bundle.py tests/test_fixed_ffd_feature_state.py tests/test_market_spectral_feature_state.py tests/test_causal_transform_state_container.py",
+      "NUMBA_NUM_THREADS=4 python3 -m pytest -q tests/test_cross_sectional_composite_state.py tests/test_market_spectral_feature_state.py",
+      "python3 -m py_compile extreme_price_movements/inference/cross_sectional_composite_state.py extreme_price_movements/features.py"
+      ,"python3 -m py_compile extreme_price_movements/inference/price_memory_state.py tests/test_price_memory_feature_state.py"
+      ,"NUMBA_NUM_THREADS=4 python3 -m pytest -q tests/test_price_memory_feature_state.py"
+    ],
+    "not_run_reason": "",
+    "promotion_status": "blocked",
+    "promotion_evidence": {
+      "dependency_matched_audit": "data_perp/artifacts/strict_r3_partitioned_feature_state_parity_20260814T130000Z_v2_dependency_matched",
+      "fields_passed": 111,
+      "fields_failed": 9,
+      "clean_historical_append": "data_perp/artifacts/strict_r3_incremental_features_20260814T130000Z_v29_clean_append_bounded",
+      "append_runtime_seconds_approx": 46,
+      "clean_append_fields_failed": 32,
+      "late_stage_nested_state_append": "data_perp/artifacts/strict_r3_incremental_features_20260814T130000Z_v40_late_stage_sqlite_append",
+      "late_stage_nested_state_audit": "data_perp/artifacts/strict_r3_partitioned_feature_state_parity_20260814T130000Z_v3_late_stage_state",
+      "late_stage_feature_runtime_seconds_approx": 76,
+      "late_stage_fields_failed": 32,
+      "late_stage_rows_over_0p01_percent": 3519,
+      "late_stage_missing_mismatch_rows": 6,
+      "hybrid_exact_output": "data_perp/artifacts/strict_r3_incremental_features_20260814T130000Z_v44_hybrid_exact_complete_selfcontained",
+      "selfcontained_exact_reference": "data_perp/artifacts/strict_r3_selfcontained_repair_reference_20260814T130000Z_v2_allrepair/partitioned_exact_features.parquet",
+      "hybrid_exact_audit": "data_perp/artifacts/strict_r3_hybrid_exact_selfcontained_parity_20260814T130000Z_v2_allrepair",
+      "hybrid_exact_fields": 120,
+      "hybrid_exact_candidate_rows": 170,
+      "hybrid_exact_missing_mismatch_rows": 0,
+      "hybrid_exact_rows_over_0p01_percent": 0,
+      "hybrid_exact_status": "passed",
+      "hybrid_exact_runtime_seconds_approx": 174,
+      "cross_sectional_composite_operator": {
+        "state_schema": "strict_r3_cross_sectional_composite_state_v1",
+        "family": "xs_dispersion/q_tail reductions",
+        "state_semantics": "Versioned complete-universe contract plus append watermark; current-row quantiles are intentionally recomputed from point-in-time parent values and are never restored from stale history.",
+        "focused_parity_tests": 4,
+        "status": "passed"
+      },
+      "price_memory_operator": {
+        "state_schema": "PriceMemoryFeatureState/v1",
+        "family": "price memory, prior volatility, transformed-volume rank, and prior-24-bar daily VWAP/Donchian anchors",
+        "state_semantics": "Stores only bounded point-in-time raw/upstream feature rows; emits each row before appending it, preserving shifted-anchor semantics. Timestamp gaps are not synthesized because batch feature windows count supplied rows.",
+        "focused_parity_tests": 2,
+        "status": "passed",
+        "integration_status": "standalone proven operator; not yet wired into the promoted incremental producer"
+      },
+      "decision": "The self-contained hybrid producer is the exact causal golden comparator, not the promoted fast path. Replace its long-memory allow-list family by family with explicit bootstrap/update/snapshot operators; require exact 120-field and full downstream score/admission/policy parity before binding a successor into live inference."
+    }
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

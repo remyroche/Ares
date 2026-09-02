@@ -1,0 +1,49 @@
+{
+  "schema": "ares_experiment_receipt_v1",
+  "date": "2026-08-22",
+  "scope": "Strict-prequential research-only MC1-equivalent ablation above the frozen short P0→O250/H6→C3→K0 stack. No canonical/live change.",
+  "artifacts": {
+    "output": "data_perp/artifacts/strict_r3_short_p0_o250_c3_k0_mc1_equivalent_20260822_v2",
+    "runner_sha256": "e02f445e0db6510e6dedb786a9654cc04cf87381b9f8a0aed0ed4c4baa4aad59",
+    "test_sha256": "7a6b65061ccb5ca82b650517ae606de01b669995ec14de1d222d714f13c4dcf8",
+    "manifest_sha256": "33d1025ea1894b9d50d5731063f1778f38104cfeee6f5d1f26b707650facfad2"
+  },
+  "contract": {
+    "upstream": "frozen P0 → O250/H6 → C3 normalized-regret → K0 outer-OOF predictions",
+    "mapper": "fixed HistGradientBoostingRegressor depth 2; no HPO; H12 policy net clipped to ±500 bps only for mapper fitting",
+    "outer_fit": "only earlier OOF rows with label_available_at < held month start",
+    "correctness": "prior-resolved only, strict before decision, equal-day 21d residual/hit-rate state with 10% trim",
+    "agreement": "target-free O/C/K0 dispersion across the five separately strict-OOF C-target arms",
+    "direct_mapper_admission": "mapped expected policy net >= +50 bps",
+    "demotion_admission": "native K0 p80 admission AND MC mapped expected policy net >= +50 bps; MC cannot manufacture an admission"
+  },
+  "results_2025_2026": {
+    "native_c3_k0_p80": {
+      "net_bps_per_trade": 130.04116313214232,
+      "total_net_bps": 248118.53925612755,
+      "selected": 1908,
+      "worst_month_bps_per_trade": -46.36595471700033,
+      "pooled_cvar10_bps": -468.600535
+    },
+    "direct_mc1_agreement": {
+      "net_bps_per_trade": 113.61344011295809,
+      "total_net_bps": 295394.9442911514,
+      "selected": 2600,
+      "decision": "does not advance: higher total contribution is caused by broad extra admissions while EV/trade, 2026 EV, and CVaR worsen"
+    },
+    "native_k0_plus_mc1_agreement_demotion": {
+      "net_bps_per_trade": 138.84151854720123,
+      "total_net_bps": 245055.2802347168,
+      "selected": 1765,
+      "participation_vs_native": 0.9250524109014675,
+      "worst_month_bps_per_trade": -13.456147300079466,
+      "pooled_cvar10_bps": -451.934696,
+      "decision": "promising challenger only: higher EV/trade and materially improved worst month with a 1.2% total-EV reduction. It needs a predeclared later-period confirmation before any architecture decision."
+    }
+  },
+  "validation": {
+    "command": "python3 -m pytest -q extreme_price_movements/tests/test_short_p0_o250_c3_k0_mc1_equivalent.py extreme_price_movements/tests/test_short_p0_oc_k0_round3_c_targets.py",
+    "result": "7 passed"
+  },
+  "caveat": "The active roadmap keeps P0→O→C→K0 as the frozen architecture. The MC1-equivalent arms, including the conservative demoter, are noncanonical research evidence. 2025–2026 were used for target selection and this challenger comparison, so they are not untouched promotion evidence."
+}

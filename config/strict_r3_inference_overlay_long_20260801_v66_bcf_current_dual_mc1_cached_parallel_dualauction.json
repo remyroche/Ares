@@ -1,0 +1,53 @@
+{
+  "base_bundle": "config/strict_r3_inference_bundle_long_20260801_v59_close_reporting_threshold_lineage.json",
+  "overrides": {
+    "admission_contract": "strict_r3_bcf_current_dual_mc1_authority_v1",
+    "dual_bcf_current": {
+      "admission": "both_mc1_expected_net_bps_ge_30",
+      "auction_priority": "bcf_mc1_expected_net_bps",
+      "bcf_map_role": "same_model_bcf_native_mc1_and_auction_priority",
+      "current_map_role": "confirmation_only_no_manufactured_admissions",
+      "exit_role": "unchanged_rich_simple_policy_optimiser_parent_with_adaptive_exit_v1_activation_overlay",
+      "order_submission": false
+    },
+    "paths": {
+      "bcf_mc1_bundle_dir": "data_perp/artifacts/strict_r3_bcf_mc1_d2_canonical_long_20260801_native_v1",
+      "bcf_mc1_ledger": "data_perp/artifacts/strict_r3_bcf_live_mc1_native_ledger_20260817_v1/bcf_mc1_native_ledger.parquet",
+      "bcf_monthly_bundle_dir": "data_perp/artifacts/strict_r3_schema_v2_walkforward_targetfree_long_2025_aug7_2026_20260809_v1/bundles/month=2026-08",
+      "bcf_reference_ledger": "data_perp/artifacts/strict_r3_schema_v2_prequential_ledger_targetfree_long_2024_2026_raw15m_strictfull_20260812_v1/prequential_stack_ledger.parquet",
+      "dual_portfolio_policy": "config/strict_r3_bcf_current_dual_mc1_portfolio_challenger_v1.json"
+    },
+    "runtime": {
+      "admission": "dual confirmation: BCF-native MC1 expected net >= +30 bps AND current-v5 MC1 expected net >= +30 bps; BCF MC1 expected net is the common-auction priority; fail closed on any unavailable component",
+      "dual_bcf_current_overlay": "enabled_before_common_portfolio_auction"
+    },
+    "runtime_code_sha256": {
+      "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+      "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+      "extreme_price_movements/inference/strict_r3_live_execution.py": "5a97a030b31ac36dda7f8b12f306bf032198166aa97ccf2819d6e0fcc247fe7f",
+      "extreme_price_movements/strict_r3_bcf_mc1_mapper.py": "fc9dc62a8f301bbcb9946048b089f322074d709a8ef23b3747b4f7e90033b3b7",
+      "extreme_price_movements/strict_r3_canonical_v2.py": "8a7ba6f1a96a1f119abcd23866cb55916a551e112cd5db43a92ad0a535e546fa",
+      "extreme_price_movements/strict_r3_inference_bundle.py": "a8bf872554a1f10fdbb567577afbbda81b29cb28bbd01f823cb7f45c7fc4e5c9",
+      "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+      "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+      "scripts/admit_strict_r3_bcf_current_dual_forward.py": "d8bc2cd6dfa0d5e61744d0cfb9e6d098eb11fba39926a229cbd0907fad222a38",
+      "scripts/audit_strict_r3_schema_v6_live_hour.py": "74bb3660394dfdad9af8a1c1c6973731fdcf84a91a1fce5f5f44dc11648606fe",
+      "scripts/backfill_kraken_oi_funding_sidecars.py": "3c2244f484b74479b191f293c1246e6f1c1e0432ca203d97d094353c4caa98b6",
+      "scripts/run_strict_r3_hourly_shadow_resume_v15.py": "870164117031ff53a371bd7518a98c4a727193324dc94370ef905c15c474061d",
+      "scripts/run_strict_r3_live_hourly_entry_producer.py": "38dfcbea9932f0695aa0d4737bdecdda7f4810a80caacff450f1069751e6e6e5",
+      "scripts/run_strict_r3_shadow_cycle.py": "04c77efdbae58671dc4918ef3c9cb61064d81f9b01b176fca8264fcb802894de",
+      "scripts/score_strict_r3_bcf_forward.py": "3e1fe9b7265b00c0c12983eef4d65006a7bab7db913b2443158b3b9735f3c012"
+    },
+    "sha256": {
+      "dual_bcf_mc1_ledger": "b938c8e1545e992f0ae129f7980aaaefdc187e0829c197a49eb569cd0fbad136",
+      "dual_bcf_mc1_manifest": "278fe0b6b3d87c0a2f0b0d7ebd5752e3db17ac4401ec34c6b14dc31059b1fc25",
+      "dual_bcf_mc1_model": "b6655f44a063dfedc908865b5f8cbe5a28cddad8024dc4515f165671139712cf",
+      "dual_bcf_monthly_bundle": "7c98bc4f048df717fee840f78df93a7928b0eab8651125957181ad28fc805ade",
+      "dual_bcf_monthly_manifest": "ca2058f46a77f2c82349b8c595fd29499a5082b5d96ede9e09ff9069cdf2fa8d",
+      "dual_bcf_reference_ledger": "2ef06dde238b0ce0c8c3f6cb2bec305a2a03190f113fddb974097e407792f682",
+      "dual_portfolio_policy": "ca7d1bbea4af0e1bf38e2a46e9471d6a451013157bf7e1f98ff412b86d961fc3"
+    }
+  },
+  "purpose": "v75: hash-bound activation of the already-approved BCF/current dual portfolio admission: both native MC1 EVs >=30 bps, BCF-MC1 priority, and unchanged common auction constraints",
+  "schema": "strict_r3_inference_bundle_overlay_v1"
+}

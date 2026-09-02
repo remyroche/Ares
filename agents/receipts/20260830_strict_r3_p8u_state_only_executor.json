@@ -1,0 +1,48 @@
+{
+  "task": "strict-r3-p8u-state-only-single-timestamp-executor",
+  "scope": "Adds an append-only native direct-state forwarder and an explicit one-row saved-state mode for the 171 regular P8U fields. The composed scorer remains research/preproduction only: it has no policy, portfolio, exchange, or order-submission authority.",
+  "changed_paths": [
+    "extreme_price_movements/inference/p8u_direct_state_forward.py",
+    "scripts/forward_strict_r3_p8u_direct_timestamp_state.py",
+    "scripts/materialize_strict_r3_p8u_regular_feature_state_snapshot.py",
+    "scripts/seal_strict_r3_p8u_preproduction_bundle.py",
+    "tests/test_p8u_direct_state_forward.py",
+    "tests/test_p8u_regular_feature_state_snapshot.py"
+  ],
+  "contracts": [
+    {
+      "path": "agents/feature_pipeline_rules.md",
+      "sha256": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed"
+    },
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    }
+  ],
+  "causality": {
+    "complete_frozen_universe": true,
+    "direct_state_requires_contiguous_hourly_append": true,
+    "regular_state_only_mode_requires_exactly_one_completed_source_hour": true,
+    "source_is_target_free": true,
+    "outcome_columns_consumed": [],
+    "policy_or_portfolio_called": false,
+    "exchange_io": false,
+    "order_submission": false
+  },
+  "dynamic_evidence": {
+    "direct_state_forward_receipt": "data_perp/artifacts/strict_r3_p8u_direct_state_forward_20260830_t10_v1/forward_receipt.json",
+    "direct_state_forward_result": "20 causal commits from 2026-08-29T14:00:00Z through 2026-08-30T09:00:00Z; 58 native fields; broad retained-tail graph false"
+  },
+  "validation": {
+    "status": "partial_pass",
+    "commands": [
+      "python3 -m py_compile extreme_price_movements/inference/p8u_direct_state_forward.py scripts/forward_strict_r3_p8u_direct_timestamp_state.py scripts/materialize_strict_r3_p8u_regular_feature_state_snapshot.py scripts/seal_strict_r3_p8u_preproduction_bundle.py",
+      "python3 -m pytest tests/test_p8u_regular_feature_state_snapshot.py tests/test_p8u_direct_state_forward.py tests/test_p8u_staged_timestamp_executor.py -q (11 passed)",
+      "python3 scripts/forward_strict_r3_p8u_direct_timestamp_state.py --bootstrap-root data_perp/artifacts/strict_r3_p8u_one_timestamp_executor_bootstrap_20260829_t13_v2 --source-state data_perp/artifacts/strict_r3_p8u_canonical_source_append_20260830_t10_v1/source_panel_state.joblib --through 2026-08-30T09:00:00Z --out-root data_perp/artifacts/strict_r3_p8u_direct_state_forward_20260830_t10_v1 (passed)"
+    ],
+    "deferred_dynamic_validation": "The one-row regular state projection and fresh assembled Router/Base/Under/MC1 parity are not yet promotion evidence. They must run from the 2026-08-14 canonical predecessor once the unrelated 8.6-GB P8U research worker releases memory, then be compared against a full-vector reference over multiple appended hours."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

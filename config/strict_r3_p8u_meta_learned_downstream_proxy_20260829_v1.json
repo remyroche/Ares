@@ -1,0 +1,47 @@
+{
+  "schema": "strict_r3_p8u_meta_learned_downstream_proxy_v1",
+  "scope": "offline only; a learned trial-level proxy for HPO and append-only meta feature selection. It cannot modify a live model, score, map, admission, or portfolio.",
+  "parent_hpo_config": "config/strict_r3_p8u_meta_hpo_multitarget_additive_20260829_v1.json",
+  "canonical_control": {
+    "score_root": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_nov25_jul26_fullprehistory_20260828_v1",
+    "current": "0.75 Base rank + 0.25 frozen Under F120 rank",
+    "bcf": "Base rank only",
+    "policy": "canonical rich 15-minute policy net bps; 100 bps cost embedded once"
+  },
+  "trial_contract": "A trial is one replacement candidate for the existing Under F120 meta slot. It uses all 120 frozen parent fields plus an optional append-only field subset. It never creates a new head.",
+  "frozen_downstream_contract": {
+    "mc1": "independent Current and BCF six-complete-calendar-month packages with their frozen model/HPO and prior-21-day resolved-outcome shift",
+    "priority_value": "matched admission-budget Top1/Top2 EV, candidate substitution EV, captured utility, weekly lower-tail stability",
+    "gate_value": "real dual Current/BCF >=50 bps admitted EV/trade, admitted utility, >=50 and >100 precision, volume, and stability",
+    "portfolio_value": "separate later confirmation under the fixed chronological constrained auction; never the only training target"
+  },
+  "cheap_descriptors": {
+    "conditional_predictiveness": ["residual_ic", "conditional_mi_given_base", "ic_base_0_5", "ic_base_5_10", "ic_base_10_20", "ic_base_20_30"],
+    "correction_economics": ["meta_top1_ev", "meta_top2_ev", "meta_top5_ev", "top1_candidate_only_minus_control_only_ev", "top2_candidate_only_minus_control_only_ev", "utility_separation_gt50", "utility_separation_gt100"],
+    "relationship_to_base": ["base_meta_rank_correlation", "top1_overlap", "top2_overlap", "top5_overlap", "median_abs_rank_correction", "p90_rank_correction", "upgrade_fraction", "downgrade_fraction"],
+    "conditional_geometry": ["ev_upgrades", "ev_downgrades", "ev_by_correction_magnitude_band", "ev_base_high_meta_high", "ev_base_high_meta_low", "ev_base_low_meta_high", "ev_base_low_meta_low"],
+    "stability": ["weekly_mean", "weekly_q25", "weekly_q10", "weekly_q5", "monthly_median", "monthly_q25", "positive_month_fraction", "worst_fold"],
+    "fixed_probe": ["base_only_probe", "base_plus_meta_probe", "probe_delta_top1_ev", "probe_delta_top2_ev", "probe_delta_admitted_utility", "probe_delta_gt50_precision"]
+  },
+  "round_1": {
+    "trial_bank_target": [100, 300],
+    "expensive_label_subset": [30, 60],
+    "representative_sampling": "stratify across target family, target geometry, loss, HPO class, sample-weight profile, and feature contract; include good, mediocre, and bad cheap diagnostics",
+    "noise_adjustment": "block-bootstrap or week/month standard errors; shrink/weight downstream labels by reliability"
+  },
+  "surrogates": [
+    {"name": "P0_ridge", "purpose": "strongly regularized level control"},
+    {"name": "P1_elastic_net", "purpose": "sparse descriptor selection"},
+    {"name": "P2_depth2_gbdt", "purpose": "small interactions"},
+    {"name": "P3_pairwise", "purpose": "rank whether one trial has greater downstream value than another"}
+  ],
+  "proxy_validation": ["Spearman predicted vs realized downstream value", "Top-k precision", "winner containment in ProxyTop3", "Regret@3", "leave-target-family-out", "leave-loss-family-out", "leave-feature-contract-out", "leave-era-out"],
+  "selection": {
+    "separate_proxies": ["PriorityProxy", "GateProxy"],
+    "hpo_rule": "maximize PriorityProxy subject to GateProxy >= frozen-control tolerance, residual IC floor, and weekly-Q10 floor",
+    "acquisition": "top predicted 10 + high uncertainty 5 + diverse controls 5, using prediction + kappa * uncertainty",
+    "feature_rule": "add, drop, and swap fields by Delta predicted downstream MC1 value; validate top 3-5 feature contracts with actual MC1",
+    "promotion": "Only complete matched MC1/admission/portfolio evidence may promote a candidate; the learned proxy has no direct model-score authority."
+  },
+  "causality": "Every descriptor is derived only after a strict target-free held score has been persisted. Every MC1 label uses only policy outcomes resolved before its held vintage."
+}

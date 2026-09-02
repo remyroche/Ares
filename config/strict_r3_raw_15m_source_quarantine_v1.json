@@ -1,0 +1,17 @@
+{
+  "schema": "strict_r3_raw_15m_source_quarantine_v1",
+  "entries": {
+    "jupusd:usd_15m.parquet": {
+      "source": "data_perp/exchanges/krakenfutures/raw/ohlcv_15m/jupusd:usd_15m.parquet",
+      "observed_at_utc": "2026-08-22T12:25:42Z",
+      "reason": "Arrow filtered parquet metadata read blocks reproducibly; use the existing same-interval shared 15-minute mirror until the raw source is independently rebuilt and revalidated.",
+      "fallback": "shared_15m_only"
+    },
+    "wldusd:usd_15m.parquet": {
+      "source": "data_perp/exchanges/krakenfutures/raw/ohlcv_15m/wldusd:usd_15m.parquet",
+      "observed_at_utc": "2026-08-22T12:41:00Z",
+      "reason": "The bounded filtered Arrow health preflight timed out; the existing same-interval shared 15-minute mirror passed the identical scan.",
+      "fallback": "shared_15m_only"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "task": "causal-sr-oracle-ceiling",
+  "scope": "Offline-only falsification of whether causal support/resistance heads can add portfolio value beyond the frozen E2 entry and H4 continuation stack. No live inference, execution, policy, feature, or calibration contract was changed.",
+  "changed_paths": [
+    "scripts/run_causal_sr_heads.py",
+    "scripts/run_causal_sr_oracle_audit.py",
+    "scripts/run_causal_sr_oracle_continuation_ablation.py",
+    "scripts/run_causal_sr_oracle_entry_ablation.py",
+    "tests/test_causal_sr_oracle_diagnostic_contract.py",
+    "docs/CAUSAL_SR_ORACLE_CEILING_DECISION_20260830.md",
+    "docs/CAUSAL_SR_HEADS_ENTRY_CONTINUATION_RESEARCH_HANDOVER_20260830.md"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_causal_sr_heads.py": "c7b6cde7d2e3ceac077ec28c73e300c1740e9baf587fb33930aa3024f475f83c",
+    "scripts/run_causal_sr_oracle_audit.py": "d3e87b9d7f44a86eb05e373f8eb8a2425b2a1c8f55ceaab22701c961246a0423",
+    "scripts/run_causal_sr_oracle_continuation_ablation.py": "407751c61f57a371ca403c04841fbcd6c734b8068555ceb3af170deb4b02f836",
+    "scripts/run_causal_sr_oracle_entry_ablation.py": "6cf224d04d34dc0392d73bf79f9bc05828b46aa754bc82ff9c583d83861f3fa9",
+    "tests/test_causal_sr_oracle_diagnostic_contract.py": "277b8356613c785606763679eac356dec2f7d23e182a02869c859e23e29d80b3",
+    "docs/CAUSAL_SR_ORACLE_CEILING_DECISION_20260830.md": "d05ede186d45b22e0c46433139202825a1fd5ac04ffe147c23a43265f6157de3",
+    "docs/CAUSAL_SR_HEADS_ENTRY_CONTINUATION_RESEARCH_HANDOVER_20260830.md": "126274a33cdb74c436000d675c3c90554d46281a95e06d3d1f1df40715877b02"
+  },
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "causality": {
+    "causal_heads": "Each 2026 held month fits only interactions with label_available_ts before that held month. The 8-hour interaction path is treated as unresolved until its normal resolution time.",
+    "entry_and_continuation_controls": "Controls preserve their respective target-free candidates, training windows, label definition, policy, costs and global portfolio auction. Entry uses four prior months and the H0/H3 intersection; continuation preserves H4 and the 20% tighter-giveback parent policy.",
+    "oracle": "Oracle fields use the first strictly future S/R interaction resolving within the original candidate H12 policy horizon. They are explicit non-causal ceiling diagnostics and are forbidden from inference, calibration, causal replay and live execution.",
+    "archival_limit": "Unreadable rich-policy label parts are excluded by whole symbol from every compared entry arm; there is no imputation or substitute outcome source."
+  },
+  "artifacts": [
+    {
+      "path": "data_perp/artifacts/causal_sr_oracle_audit_20260830_v1/run_manifest.json",
+      "sha256": "12f968791807afa09c5fc3ea01bb7610e36e69ee1c572fd58a6638078c92d060"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_oracle_continuation_ceiling_20260830_v1/run_manifest.json",
+      "sha256": "0f2fe23be3a5e2e9bec08472284d9e46840370abc932e09b29b53d50336329b1"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_oracle_entry_ceiling_20260830_v1/run_manifest.json",
+      "sha256": "5764a59556f5d4b15784f3a31e115b7ba338b1286d95fccb629c7cbe162d6838"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "python3 -m py_compile scripts/run_causal_sr_oracle_audit.py scripts/run_causal_sr_oracle_continuation_ablation.py scripts/run_causal_sr_oracle_entry_ablation.py scripts/run_causal_sr_heads.py",
+      "python3 -m pytest -q tests/test_causal_sr_oracle_diagnostic_contract.py",
+      "python3 scripts/run_causal_sr_oracle_audit.py --output data_perp/artifacts/causal_sr_oracle_audit_20260830_v1",
+      "python3 scripts/run_causal_sr_oracle_continuation_ablation.py --output data_perp/artifacts/causal_sr_oracle_continuation_ceiling_20260830_v1",
+      "python3 scripts/run_causal_sr_oracle_entry_ablation.py --output data_perp/artifacts/causal_sr_oracle_entry_ceiling_20260830_v1"
+    ],
+    "results": "Focused tests: 2 passed. The continuation oracle was worse than H4 control on all-OOS EV/trade, drawdown and Sortino. The entry oracle did not surpass frozen E2 on any primary all-OOS economic or risk metric."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

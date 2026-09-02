@@ -1,0 +1,58 @@
+{
+  "task": "causal-sr-mc1-residual-input-ablation",
+  "scope": "Offline-only, matched strict-OOS test of causal support/resistance head outputs appended to the existing paired MC1 residual mapper. No live, canonical, execution, policy, or frozen model artifact changed.",
+  "changed_paths": [
+    "scripts/run_causal_sr_mc1_residual_ablation.py",
+    "tests/test_causal_sr_mc1_input_contract.py",
+    "docs/CAUSAL_SR_MC1_RESIDUAL_INPUT_ABLATION_20260831.md"
+  ],
+  "changed_path_hashes": {
+    "scripts/run_causal_sr_mc1_residual_ablation.py": "29098a5552a32508e9d3402d8056e2528670aa555b75e565854135c79f4edc08",
+    "tests/test_causal_sr_mc1_input_contract.py": "048785b697ffd09214ae42cdc19069968ac12d2e3a516bf6e376ce092688f82d",
+    "docs/CAUSAL_SR_MC1_RESIDUAL_INPUT_ABLATION_20260831.md": "2d41ba79855ebead3637990f1c8a58e6bb98be7e40f209c2fcf1b2f4fae745c1"
+  },
+  "contracts": [
+    {
+      "path": "agents/leakage_prevention.md",
+      "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"
+    },
+    {
+      "path": "agents/model_validation_protocol.md",
+      "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"
+    },
+    {
+      "path": "agents/experiment_discipline.md",
+      "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+    }
+  ],
+  "causality": {
+    "candidate_contract": "The S/R merge is one-to-one on candidate_id and decision timestamp, preserves target-free candidate sequence exactly, and does not gate eligibility when an S/R snapshot is missing.",
+    "sr_source": "Only causal_sr_heads_oof_20260830_v3_entrypivotfix is accepted. Its held-month S/R heads are trained on interactions resolved before that held month. Oracle and noncausal paths are rejected.",
+    "mapper": "The existing monthly paired MC1 residual mapper target is policy_net_bps minus the contemporaneous mean of BCF/current MC1 expected bps. Each fold fits only labels resolved before its held month; the only arm difference is the appended causal S/R output block and availability indicator.",
+    "labels": "Immutable rich-policy labels are source-aligned. Unreadable label parts are excluded by whole symbol in every compared arm and are neither imputed nor substituted.",
+    "execution": "All runs are offline. The output manifest records zero exchange-writing calls and no live execution path was invoked."
+  },
+  "artifacts": [
+    {
+      "path": "data_perp/artifacts/causal_sr_mc1_residual_input_ablation_20260830_v1/run_manifest.json",
+      "sha256": "e5ea52dd996ce2ac45251eaa4ea264f34d0f32ff05031cb1ae4631c0ca8db51c"
+    },
+    {
+      "path": "data_perp/artifacts/causal_sr_mc1_residual_input_ablation_20260830_v1/portfolio_summary.parquet",
+      "sha256": "43b42a967ebc794eb69ca0d2ccb5a8aeaab6b756d096d10a5ad2103c52cd0124"
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "commands": [
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_mc1_pycache python3 -m py_compile scripts/run_causal_sr_mc1_residual_ablation.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_mc1_pycache python3 -m pytest -q tests/test_causal_sr_mc1_input_contract.py",
+      "env PYTHONPYCACHEPREFIX=/private/tmp/ares_sr_mc1_pycache python3 scripts/run_causal_sr_mc1_residual_ablation.py --output data_perp/artifacts/causal_sr_mc1_residual_input_ablation_20260830_v1 --label-read-workers 8",
+      "post-run target-free audit: no duplicate selected candidate IDs; no more than two selections per timestamp; no policy or label fields in selection files; no oracle source; candidate identity preserved"
+    ],
+    "results": "Focused contract tests: 3 passed. Full portfolio-constrained OOS result: causal S/R w100 improves the matched control from +9.27 to +38.84 bps/trade over Jun-Aug 2026, including an untouched August improvement from -5.50 to +43.42 bps/trade. It remains a challenger pending composed E2+H4 validation."
+  },
+  "agent_plan": {
+    "subagents": []
+  }
+}

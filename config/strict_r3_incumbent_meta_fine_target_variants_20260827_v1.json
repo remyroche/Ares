@@ -1,0 +1,105 @@
+{
+  "schema": "strict_r3_incumbent_meta_fine_target_variants_v1",
+  "scope": "offline research only; frozen 50/50 E/T incumbent upstream and stored route",
+  "description": "Fine target threshold/bin variants after the stored-route four-family screen. Gain schedule and truncation remain at the fixed initial screen contract for this stage.",
+  "arms": [
+    {
+      "name": "magnitude_sqrtatr_q5__base_band_block28",
+      "family": "magnitude",
+      "scale": "sqrt_atr",
+      "query": "base_band_block28",
+      "classes": 5
+    },
+    {
+      "name": "magnitude_sqrtatr_q6__base_band_block28",
+      "family": "magnitude",
+      "scale": "sqrt_atr",
+      "query": "base_band_block28",
+      "classes": 6
+    },
+    {
+      "name": "magnitude_sqrtatr_q7__base_band_block28",
+      "family": "magnitude",
+      "scale": "sqrt_atr",
+      "query": "base_band_block28",
+      "classes": 7
+    },
+    {
+      "name": "under_atr050__timestamp",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 0.5
+    },
+    {
+      "name": "under_atr075__timestamp",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 0.75
+    },
+    {
+      "name": "under_atr100__timestamp",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0
+    },
+    {
+      "name": "under_atr125__timestamp",
+      "family": "under",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.25
+    },
+    {
+      "name": "over_atr050__timestamp",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 0.5
+    },
+    {
+      "name": "over_atr075__timestamp",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 0.75
+    },
+    {
+      "name": "over_atr100__timestamp",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.0
+    },
+    {
+      "name": "over_atr125__timestamp",
+      "family": "over",
+      "scale": "atr",
+      "query": "timestamp",
+      "threshold": 1.25
+    },
+    {
+      "name": "state_atr_c5__timestamp",
+      "family": "state",
+      "scale": "atr",
+      "query": "timestamp",
+      "state_edges": [-1.0, -0.25, 0.25, 1.0]
+    },
+    {
+      "name": "state_atr_c6__timestamp",
+      "family": "state",
+      "scale": "atr",
+      "query": "timestamp",
+      "state_edges": [-1.0, -0.4, 0.0, 0.4, 1.0]
+    },
+    {
+      "name": "state_atr_c7__timestamp",
+      "family": "state",
+      "scale": "atr",
+      "query": "timestamp",
+      "state_edges": [-1.25, -0.5, -0.15, 0.15, 0.5, 1.25]
+    }
+  ]
+}

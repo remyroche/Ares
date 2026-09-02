@@ -1,0 +1,56 @@
+{
+  "task": "strict-r3-causal-ten-head-history-materialization",
+  "status": "passed",
+  "scope": "offline long-only research sidecar only; no live inference, admission, portfolio, policy, exchange, or model artifact mutation",
+  "purpose": "restore individual canonical ten-head and shadow-ten-head outputs that were projected away by the lock-step aggregate ledger",
+  "source_contract": {
+    "historical_source_panel": "data_perp/artifacts/strict_r3_schema_v2_source_panel_targetfree_long_2023_aug7_2026_raw15m_strictfull_20260812_v1/canonical_source_panel.parquet",
+    "historical_source_panel_sha256": "e44deee0f44bce84ace94d538fdab09a878f8f6ff2845fc7bc53de80c7ba19c8",
+    "historical_upstream_bundle_runs": [
+      "data_perp/artifacts/strict_r3_lockstep_long_2024apr_dec_strictfull_prior28_optimizedpolicy_20260812_v2",
+      "data_perp/artifacts/strict_r3_lockstep_long_2025_jul2026_strictfull_prior28_optimizedpolicy_severefix_manifest_20260812_v3"
+    ],
+    "historical_candidate_population": "each persisted target-free held-score receipt; later repaired source-panel supersets are filtered back to that immutable candidate identity set",
+    "outcomes_consumed_during_scoring": []
+  },
+  "output_contract": {
+    "artifact": "data_perp/artifacts/strict_r3_ten_head_history_long_2024apr_today_20260816_v2/ten_head_target_free_scores.parquet",
+    "rows": 2777769,
+    "columns": 55,
+    "individual_head_fields": "40: raw and rank for ten canonical conditional-usefulness heads plus ten ordinary-shadow heads",
+    "candidate_id_unique": true,
+    "source_vintage_labels": [
+      "historical_exact_source_panel",
+      "august_full_universe_feature_receipt",
+      "live_current_hour_feature_receipt"
+    ]
+  },
+  "historical_parity": {
+    "historical_blocks": 31,
+    "historical_rows": 2725409,
+    "identity_mismatches": 0,
+    "base_score_max_abs_delta": 0.0,
+    "base_rank42_max_abs_delta": 0.0,
+    "conditional_consensus_rank_max_abs_delta": 0.0,
+    "ordinary_shadow_consensus_rank_max_abs_delta": 0.0,
+    "tolerance": 1e-7
+  },
+  "august_extension": {
+    "status": "target-free scored feature receipts appended through 2026-08-16T10:00:00Z; source-vintage-labelled and intentionally not claimed as aggregate-parity historical blocks",
+    "head_finite_fraction_minimum": 1.0
+  },
+  "tests": {
+    "syntax": "python3 -m py_compile scripts/materialize_strict_r3_ten_head_history.py",
+    "smoke": "single persisted 2024-04-01 block: 47,228 rows, all 40 individual head fields, exact aggregate parity",
+    "boundary_smoke": "2024-12-09 final-2024 receipt: 63,870 rows, exact identity and consensus parity despite later source-panel candidate superset",
+    "full_run": "PYTHONWARNINGS=ignore python3 scripts/materialize_strict_r3_ten_head_history.py --out-dir data_perp/artifacts/strict_r3_ten_head_history_long_2024apr_today_20260816_v2 --start 2024-04-01T00:00:00Z --end 2026-08-16T23:59:59Z"
+  },
+  "hashes": {
+    "producer": {
+      "scripts/materialize_strict_r3_ten_head_history.py": "ef27df743857d31793ae867fcc6bd7cefa2457fb4896e381b885dbfdfc206350"
+    },
+    "run_manifest": "bd0c0ed27778d58f93005638cddaa33513b3268ad171b3eb3319688bb930c46d",
+    "block_audit": "2227f0111c49b076b3ce4b0ddcbb0d757fe8c26e9a2fe4ea05c82be70feea83b"
+  },
+  "causality": "Only point-in-time candidate identities and declared causal feature fields are passed into frozen upstream head predictors. Policy outcomes and label columns are neither selected nor read by the scorer. Per-head ranks use each head's frozen training score reference, not a held-period percentile."
+}

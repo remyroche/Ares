@@ -1,0 +1,32 @@
+{
+  "schema": "canonical_sr_e2_mc1_august_extension_receipt_v1",
+  "status": "complete_challenger_only",
+  "scope": "offline portfolio-constrained August 1 through August 18 21:00 UTC extension; no live or canonical mutation",
+  "target_free_rows": 51369,
+  "score_complete_dual_rows": 35075,
+  "current_incomplete_rows": 16294,
+  "resolved_policy_rows": 34419,
+  "policy": "source-aligned 15m parent; SL 4.15200064332387 ATR; trailing activation 2.326224919759605 ATR; giveback 0.10237198997143725 ATR; H12; 100 bps once",
+  "admission": "BCF MC1 >= 50 bps AND current-v5 MC1 >= 50 bps; BCF EV priority; controlled global long-only portfolio",
+  "causality": {
+    "target_free_before_outcomes": true,
+    "invalid_rows_excluded_before_fit_and_capacity": true,
+    "exchange_calls": 0,
+    "order_submissions": 0,
+    "e2_august_prequential_available_rows": 31640,
+    "e2_august_held_rows": 35075,
+    "sr_available_rows": 1382
+  },
+  "validation": {
+    "test": "tests/test_canonical_sr_e2_mc1_august_extension_contract.py",
+    "result": "5 passed"
+  },
+  "hashes": {
+    "runner": "c111cab6df4151c96acdd3d6e098532e07b0f9d4e176b04b02f23fe30d722b3b",
+    "input_preparation": "9c0bf5b9d3f48aea03e01f8d17bb9ee9bbe8cfe41cd0b96a82ffc707e90d3898",
+    "label_materialiser": "9b501ae0f88bf994c6cd20b081aa69766e914ca4eb683f49d9e0ce4e481d5094",
+    "test": "176a650c4040d95a7cc7fadd203fa6b08e0c755516fdc2b3bc5c7d6a17c90c08",
+    "portfolio_summary": "5dbc65ceb959f74327075a2ea87fa4169183f06c0cc25e24f5fb618c4c2a0f9e",
+    "run_manifest": "97145ae452b9abce38bc764bd4646ea00d0ef637518547a2ccb84aa0348c818d"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "task": "strict-r3-p8u-e2-h4-live-parity-candidate-v4",
+  "status": "SEALED_NO_ORDER_SUCCESSOR_NOT_CONNECTED_TO_EXCHANGE",
+  "supersedes_for_release_binding": "agents/receipts/20260830_strict_r3_p8u_e2_h4_live_parity_candidate_v3.json",
+  "purpose": "Final hash-audited no-order release binding for the current prior-resolved E2/H4 successor. It seals the complete runtime, entry before auction, persisted next-interval H4 monitor core, and exact target-free inference/replay parity. It grants no exchange authority.",
+  "release_candidate": {
+    "path": "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260830_v1.json",
+    "sha256": "1f84407377e8e0eff3ec448de3958f162f319f5b98056d3f30b491cff1d42721"
+  },
+  "bundle": {
+    "manifest_path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1/bundle_manifest.json",
+    "manifest_sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd",
+    "label_cutoff": "2026-08-29T00:00:00Z",
+    "e2_prior_resolved_pairs": 1021,
+    "h4_prior_resolved_states": 59131,
+    "e2_ordered_features": 30,
+    "h4_ordered_features": 45
+  },
+  "hash_audit": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_release_hash_audit_20260830_v1.json",
+    "sha256": "90e13c03d937b5a85cc7bd80d6d7793a70bc5f350b90622d4869d4182a589f99",
+    "status": "pass_hash_bound_no_order_release",
+    "assertions": [
+      "all model/feature/runtime hashes match the release configuration",
+      "active exchange-writing gateway hash is unchanged",
+      "active gateway has no E2/H4 successor runtime reference",
+      "release candidate and parity audit have no exchange/order authority"
+    ]
+  },
+  "target_free_inference_replay_parity": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_inference_replay_parity_20260830_v1/receipt.json",
+    "sha256": "da82cc52fc0438e68a8f49e1111bff4f55e5735a07c2492aad8598024cb3820a",
+    "result": "exact H0/H3 reserve-pair and H4 prediction replay; all maximum absolute deltas are 0.0; no outcome columns or exchange calls"
+  },
+  "successor_path": {
+    "entry": "Target-free E2 H0/H3 q50 intersection may replace one marginal dual-30 BCF top-two incumbent with a dual-20 reserve. The no-order E2 auction then applies unchanged ordinary capacity and BCF-MC1 priority.",
+    "continuation": "The no-order monitor persists a state hash, sealed bundle hash, prediction, and effective next interval. The minute wrapper excludes the minute ending at the decision boundary, then changes only trailing activation x0.50 and giveback x0.80."
+  },
+  "active_exchange_boundary": {
+    "gateway": "config/strict_r3_p8u_kraken_live_gateway_20260830_v3_overlap.json",
+    "sha256": "2cce3a4217d945f20f6ccd867ca85ec694fb9f42f657759e359e2bc45c53d31d",
+    "statement": "Unchanged and still executing the pre-E2 dual-50 / rich-parent stack. The active exchange-writing gateway and minute monitor do not consume this successor."
+  },
+  "remaining_before_exchange_activation": [
+    "Run the separately named no-order monitor against a source-valid open-position snapshot and complete 1-minute bars, then seal its exact exit parity against the parent/H4 replay.",
+    "Create separately named successor gateway and minute-monitor processes that bind this config and use only the sealed no-order entry/auction/monitor modules.",
+    "After current-decision feature/selection/auction and exact-minute exit parity pass, obtain separate explicit exchange-writing activation."
+  ]
+}

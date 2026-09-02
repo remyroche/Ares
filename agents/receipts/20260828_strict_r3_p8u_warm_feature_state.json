@@ -1,0 +1,81 @@
+{
+  "schema": "ares.change_receipt.v1",
+  "date": "2026-08-28",
+  "scope": "Offline-only P8U Router50/F72/Under-F120 175-field warm feature-state worker and parity gate. No live inference, model scoring, admission, portfolio, exchange I/O, or order submission was changed.",
+  "contract": {
+    "feature_count": 175,
+    "feature_union_sha256": "d5ffc02249583a3c160a344f53f6b20acf015916a161ff1e904037eef452abe3",
+    "state_contract_id": "p8u-long-router50-175-d5ffc02249583a3c",
+    "stateful_tail_hours": 1536,
+    "required_state_kinds": [
+      "raw_rolling",
+      "causal_transform",
+      "derived_history",
+      "nested_derived",
+      "oi_long_iqr",
+      "fixed_ffd",
+      "market_spectral_history"
+    ],
+    "state_identity_rule": "The worker binds state snapshots to the ordered 175-field union hash and explicit state-contract ID, never to a generated plan-file hash. Legacy canonical120/final14/orderbook state snapshots are refused.",
+    "output_schema_rule": "An explicit sealed P8U plan now emits all requested fields, including deterministic hour_of_week_sin; default legacy no-plan materialisation retains its prior calendar-field exclusion."
+  },
+  "implementation": {
+    "worker": "scripts/run_strict_r3_p8u_warm_feature_worker.py",
+    "bootstrap": "scripts/bootstrap_strict_r3_p8u_warm_feature_state.py",
+    "parity_probe_builder": "scripts/prepare_strict_r3_p8u_warm_parity_probe.py",
+    "state_primitives": "extreme_price_movements/inference/p8u_warm_feature_state.py",
+    "behavior": [
+      "A request is target-free, long-only, one signal timestamp, and candidate-identity unique.",
+      "The ledger permits exactly one hourly advance and rejects a changed config hash, union hash, or state-contract ID.",
+      "The active cache is copied once to a timestamped private transaction. The materializer now accepts that explicitly private cache and skips its formerly redundant second cache clone. The worker publishes only an atomic ledger pointer after all field and parity gates pass.",
+      "Interrupted transactions remain unselected and are never reused automatically."
+    ]
+  },
+  "coverage": {
+    "physical_panel": "data_perp/artifacts/strict_r3_p8u_august_fullfeatures_benchmark_inputs_20260828_v1/month=2026-08/causal_feature_universe.parquet",
+    "physical_coverage_prior_audit": "data_perp/artifacts/strict_r3_p8u_warm_feature_readiness_20260828_v1/readiness_report.json",
+    "result": "175/175 sealed fields are physically present; no field has zero finite values. That earlier physical-only readiness report is superseded for hash lineage because its runtime hash predates this receipt's materializer patch."
+  },
+  "numeric_parity": {
+    "probe_input": "data_perp/artifacts/strict_r3_p8u_warm_feature_parity_probe_20260828_v3/probe_input_receipt.json",
+    "incremental_output": "data_perp/artifacts/strict_r3_p8u_warm_feature_state_bootstrap_probe_20260828_v3/features/canonical120_features.parquet",
+    "parity_summary": "data_perp/artifacts/strict_r3_p8u_warm_feature_state_bootstrap_probe_20260828_v3/parity/feature_parity_summary.json",
+    "parity_by_field": "data_perp/artifacts/strict_r3_p8u_warm_feature_state_bootstrap_probe_20260828_v3/parity/feature_parity_by_field.parquet",
+    "result": "FAIL CLOSED: 2/175 fields match (hour_of_week_sin, hh_count_24); 173 fields differ, with 323 finite-versus-missing mismatches and 2,647 outside-tolerance cells across 20 target-free candidates. The external August full panel is therefore not a same-construction full-causal reference for the materializer.",
+    "activation": "No P8U state bundle or activated worker config was published. This failed probe cannot seed or advance any worker."
+  },
+  "runtime_profile": {
+    "full_85_symbol_attempt": "The all-175 graph reached approximately 4.15 GiB RSS and 78.85 seconds through graph materialisation, then terminated before feature output/parity/snapshot. It produced no usable bundle.",
+    "bounded_20_symbol_attempt": {
+      "feature_graph_seconds": 29.4324,
+      "total_before_state_commit_seconds": 29.5411,
+      "observed_graph_peak_rss_gib_approx": 1.30,
+      "private_cache_mib": 55.35,
+      "output_fields": 175,
+      "output_rows": 20
+    },
+    "copy_optimization": "The warm path no longer performs a second materializer cache clone. It removes one full mutable-cache copy per advance; the historical 170-symbol strict-R3 snapshot footprint was 242.6 MB, while this bounded P8U probe state cache was 55.35 MB. The exact production P8U saving must be measured after a passing same-contract bootstrap."
+  },
+  "safe_next_action": "Build a full-causal reference with this exact materializer/source contract on the identical frozen universe, then rerun the all-175 parity gate. Apply bounded Arrow column projection, float32 state arrays, and partitioned 20-40 symbol bootstrap chunks before attempting the 85/170-symbol full bootstrap. Do not activate a bundle until all field parity passes.",
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q tests/test_p8u_warm_feature_state.py tests/test_p8u_production_contract.py",
+      "python3 -m py_compile extreme_price_movements/inference/p8u_warm_feature_state.py scripts/materialize_strict_r3_forward_features_incremental_v13.py scripts/run_strict_r3_p8u_warm_feature_worker.py scripts/bootstrap_strict_r3_p8u_warm_feature_state.py scripts/prepare_strict_r3_p8u_warm_parity_probe.py",
+      "git diff --check -- [changed offline P8U paths]"
+    ],
+    "result": "9 focused tests passed; compilation and whitespace checks passed."
+  },
+  "file_hashes": {
+    "extreme_price_movements/inference/p8u_warm_feature_state.py": "0fa6c5cf4406ca257290b49cf7febf63520b4e7b6fa9e0d0a1a0e44812717659",
+    "scripts/run_strict_r3_p8u_warm_feature_worker.py": "2693825ca42b963d3bc13b07f8850b420262c3c67b56ae4480c8aa8d5cb04553",
+    "scripts/bootstrap_strict_r3_p8u_warm_feature_state.py": "96237b39914a58664319021ebba0f7fc0dab5187605f207ee181f1ce99f96dbf",
+    "scripts/prepare_strict_r3_p8u_warm_parity_probe.py": "2cf00b47947184f8f41c3aa7ff8ce6beab260ab2e364a1243f7892e3847cff34",
+    "scripts/materialize_strict_r3_forward_features_incremental_v13.py": "c41a873e69a8ebf45b6a78699cc08c5926e37ec0582acc880e6ac33a5409390b",
+    "scripts/audit_strict_r3_p8u_warm_feature_readiness.py": "69f6e74dbe4669ac0d9070ed0c6fc82d97e052a536288a888f27c74dffbb858a",
+    "tests/test_p8u_warm_feature_state.py": "4726215cf51841f0257146cb767d1e2680c5a308207c38da6e22fbb64f78bea7",
+    "config/strict_r3_p8u_warm_feature_worker_20260828_v1.json": "075a45723498ac13f0d3b7d50421353ef0ac107779acee0d4468be0e14652f38",
+    "data_perp/artifacts/strict_r3_p8u_warm_feature_state_bootstrap_probe_20260828_v3/features/feature_manifest.json": "cc9eb4cbbe864d38220176103efb84bd71596957620f1ba65f40a331a4173ea4",
+    "data_perp/artifacts/strict_r3_p8u_warm_feature_state_bootstrap_probe_20260828_v3/parity/feature_parity_summary.json": "036bdeae6a93bfbd12c96544238303ae12c51cba162c975d9af7e036bb81154a"
+  },
+  "agent_plan": {"subagents": []}
+}

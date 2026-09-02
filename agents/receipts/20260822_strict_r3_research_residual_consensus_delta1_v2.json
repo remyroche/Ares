@@ -1,0 +1,20 @@
+{
+  "schema": "ares_research_change_receipt_v1",
+  "timestamp_utc": "2026-08-22T00:00:00Z",
+  "scope": "offline strict-R3 :00 research only; no live, canonical, exchange, or execution artifacts modified",
+  "change": "Add strict-OOF Delta-1 isotonic residual mapping and shrinkage-aware consensus weighting primitives.",
+  "contracts": {
+    "delta1": "C1-to-policy-residual isotonic maps fit only on rows with decision and label availability before the fold cutoff; conditional anchor quintiles are derived solely from training rows.",
+    "consensus": "Reliability weights are strictly prior scalar inputs; effective-head-count gates prevent concentrated consensus authority."
+  },
+  "changed_files": {
+    "extreme_price_movements/research/hierarchical_residual.py": "114efdbe2409f14e8286587dad6efbdcf7ff015c23a2f599f446523782b09663",
+    "extreme_price_movements/research/consensus_ensemble.py": "b78cc7a4d428eaee769068caf9c3d2f2e66c9f3a90375985c6d23bc4bc8a562d",
+    "extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py": "12b9c47e24e1dfea90e39b42234294a690930b503b95825f3f930b615bd116dd"
+  },
+  "validation": {
+    "command": "python3 -m pytest extreme_price_movements/tests/test_strict_r3_research_residual_consensus.py extreme_price_movements/tests/test_strict_r3_research_base_recall.py extreme_price_movements/tests/test_strict_r3_research_mc1_contract.py",
+    "result": "11 passed"
+  },
+  "agent_plan": {"subagents": []}
+}

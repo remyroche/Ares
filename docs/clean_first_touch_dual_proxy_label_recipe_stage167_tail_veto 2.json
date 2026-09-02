@@ -1,0 +1,61 @@
+{
+  "recipe_id": "clean_first_touch_tail_veto_stage167_v1",
+  "scope": "label_quality_candidate_not_production_promotion",
+  "source_labels_dir": "data_perp/artifacts/20260703_170000_first_touch_two_head_stage164_labels/labels",
+  "selector_report": "data_perp/reports/clean_first_touch_dual_proxy_selector_stage167_tail_veto_v1",
+  "clean_label_ablation_report": "data_perp/reports/clean_first_touch_label_ablation_stage167_tail_veto_v1",
+  "metric_prefix": "__stage164_primary",
+  "primary_prefix": "__stage164_primary",
+  "challenger_prefix": "__stage164_challenger",
+  "materialized_prefix": "__stage167",
+  "utility_arm": "B_stage164_primary_support",
+  "risk_arm": "E_tail_veto_support_lowmae",
+  "risk_gate_frac": 0.02,
+  "utility_top_frac": 0.01,
+  "proxy_gate_evidence": {
+    "months": 3,
+    "positive_months": 3,
+    "mean_first_touch_net": 0.003469,
+    "worst_month_first_touch_net": 0.001122,
+    "clean_first_touch_exec_rate": 0.834230,
+    "first_touch_timeout_rate": 0.014908,
+    "bad_first_touch_mae_to_sl_rate": 0.150862,
+    "p90_first_touch_mae_to_sl": 1.211349,
+    "top_symbol_share": 0.039239
+  },
+  "monthly_proxy_evidence": [
+    {
+      "month": "2026-04",
+      "selected_rows": 112,
+      "mean_first_touch_net": 0.004656,
+      "clean_first_touch_exec_rate": 0.812500,
+      "first_touch_timeout_rate": 0.035714,
+      "bad_first_touch_mae_to_sl_rate": 0.151786,
+      "p90_first_touch_mae_to_sl": 1.094277
+    },
+    {
+      "month": "2026-05",
+      "selected_rows": 111,
+      "mean_first_touch_net": 0.001122,
+      "clean_first_touch_exec_rate": 0.819820,
+      "first_touch_timeout_rate": 0.009009,
+      "bad_first_touch_mae_to_sl_rate": 0.171171,
+      "p90_first_touch_mae_to_sl": 1.467706
+    },
+    {
+      "month": "2026-06",
+      "selected_rows": 54,
+      "mean_first_touch_net": 0.004630,
+      "clean_first_touch_exec_rate": 0.870370,
+      "first_touch_timeout_rate": 0.000000,
+      "bad_first_touch_mae_to_sl_rate": 0.129630,
+      "p90_first_touch_mae_to_sl": 1.072063
+    }
+  ],
+  "notes": [
+    "This is a tighter tail-veto variant of Stage166, not a production policy promotion.",
+    "The utility target remains Stage164 primary support, because it preserved the clean utility signal better than standalone timeout-attractive utility labels.",
+    "The risk target uses the explicit Stage167 E_tail_veto_support_lowmae arm: Stage164 support inside a stricter low-MAE/no-timeout envelope.",
+    "The passing proxy result used prior-month feature IC scores and month-by-month economic gates, not LightGBM, Optuna, or final portfolio replay."
+  ]
+}

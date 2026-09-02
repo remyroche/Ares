@@ -1,0 +1,42 @@
+{
+  "task": "strict-r3-schema-v6-inference-readiness",
+  "status": "passed_for_shadow_inference_not_exchange_authorized",
+  "checked_at": "2026-08-14",
+  "bundle": "config/strict_r3_inference_bundle_long_20260801_v6_robust21_mc1_d2_adaptive_exit_v1.json",
+  "bundle_sha256": "0c0bdc48592dad71ef8ff38d5e561c49086c30192c1056f5669eb1b509899ff9",
+  "bundle_validation": {
+    "artifact_hashes_verified": 28,
+    "runtime_code_hashes_verified": 39,
+    "geometry_bundle_sha256": "dbf7de6da6bad6927bcbe577d7ad2d2118ecc24a6bdfd35fb7fa190be13d7638",
+    "mode": "shadow-only"
+  },
+  "focused_tests": {
+    "passed": 31,
+    "failed": 0
+  },
+  "real_snapshot_rehearsal": {
+    "decision_ts": "2026-08-13T12:00:00+00:00",
+    "candidate_rows": 103,
+    "complete_feature_rows": 103,
+    "routed_and_mapped_rows": 21,
+    "mc1_admitted_rows": 1,
+    "portfolio_accepted_rows": 1,
+    "exchange_calls": 0,
+    "all_runtime_checks_passed": true,
+    "next_state_as_of_ts": "2026-08-13T13:00:00+00:00",
+    "next_state_sha256": "3182b71aa9bc92dd63cd0a4c6c7691d5add5889793842b606d8ccecf5a15edaa"
+  },
+  "causality_checks": {
+    "target_free_scoring": true,
+    "held_percentile_operations": 0,
+    "same_model_reference_and_held": true,
+    "same_upstream_reference_and_held": true,
+    "frozen_geometry": true,
+    "current_outcomes_absent": true,
+    "resolved_labels_strictly_prior_to_utc_day": true,
+    "current_decision_labels_excluded": true,
+    "cost_applied_exactly_once": true,
+    "base_route_fail_closed": true
+  },
+  "scope_limit": "The canonical runner deliberately has no exchange-capable mode. This receipt establishes reproducible shadow/inference readiness, not authorization to submit live orders."
+}

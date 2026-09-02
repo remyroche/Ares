@@ -1,0 +1,47 @@
+{
+  "schema_version": "research-router50-routedonly-v1",
+  "status": "offline_research_challenger_not_live",
+  "scope": {
+    "side": "long_only",
+    "evaluation_period": "2026-04-01T00:00:00Z/2026-07-31T23:59:59Z",
+    "policy_contract": "canonical_reconciled_rich_15m_policy",
+    "policy_label_source": "data_perp/artifacts/strict_r3_enhanced_base_rich_policy_labels_reconciled_20260823_v1/canonical_reconciled_policy_labels.parquet",
+    "policy_label_sha256": "f5ef8c9e38607cf8ed0c414b986b3d25cbb02e79f06e18349ca5bb71970e6f42"
+  },
+  "router": {
+    "artifact": "data_perp/artifacts/strict_r3_fulluniverse_recall_router_full30_frozen_jul25_jul26_20260826_v1",
+    "router_feature_contract_sha256": "c787eb4c432dee34b200aa4a861e695a9597e16adb24376510dedb47d550d284",
+    "router_source_sha256": "7239515683b671285595d2427cece9f8bc8ec617e8eea7ae44a659ea8bbaf814",
+    "timestamp_local_rank_gate": 0.5,
+    "output_allowed_downstream": ["router_primary_rank"]
+  },
+  "base": {
+    "training_population": "router_selected_rows_only",
+    "numeric_router_input": false,
+    "coordinates": ["r3_clear_minus_half_adverse", "direct_policy_conversion_efficiency", "negative_time_to_meaningful_mfe"],
+    "prequential_reserve_days": 28,
+    "minimum_rows": 6000
+  },
+  "consensus": {
+    "training_population": "router_selected_rows_only",
+    "numeric_router_input": false,
+    "heads": ["T6_cap80_ordinary", "T9_cap120_equal_month"]
+  },
+  "mc1": {
+    "maps": ["Current", "BCF"],
+    "numeric_router_input": "router_primary_rank",
+    "dual_admission_min_expected_net_bps": 50,
+    "auction_priority": "BCF_mapped_expected_net_bps"
+  },
+  "portfolio": {
+    "shared_chronological_state": true,
+    "max_new_entries_per_timestamp": 2
+  },
+  "prohibitions": [
+    "no_live_or_exchange_execution",
+    "no_outcome_columns_in_score_panels",
+    "no_router_aliases_or_router_features_in_base_or_consensus",
+    "no_held_period_labels_in_prequential_fit"
+  ],
+  "selected_result_artifact": "data_perp/artifacts/strict_r3_router50_baseN_metaN_mc1R_routedonly_20260826_v1"
+}

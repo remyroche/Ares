@@ -1,0 +1,59 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260819_v27_v99_exit_telemetry.json",
+  "activation_authorization_sha256": "f1e32c856c02c36a8e2b72b990c6ac4e9bcad7eaff4b72bd920718fc869b247a",
+  "baseline_policy_cost_bps": 100.0,
+  "close_based_hard_stop_monitor_enabled": true,
+  "exchange_id": "krakenfutures",
+  "executable_vwap_frozen_threshold_sentinel_enabled": true,
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - (1.2 * live_full_spread_bps + 2 * entry_vwap_impact_bps + 10 bps); the resulting executable EV must be >= +30 bps after frozen dual MC1 admission and the common portfolio auction; it is a final veto only and never a reranking signal.",
+  "execution_adjusted_ev_veto_enabled": true,
+  "execution_book_telemetry_only": true,
+  "execution_entry_authority": "sealed_dual_mc1_admission_then_common_portfolio_auction_then_execution_adjusted_ev_ge_30bps",
+  "execution_microstructure_buffer_bps": 10.0,
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "failure_policy": "fail_closed",
+  "full_vwap_hard_stop_monitor_enabled": false,
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v99_bcf_current_dual_exit_telemetry.json",
+  "inference_bundle_sha256": "6d6192eb433f29d151529b22766b1950e6f1c23414e09830b2c6726c7b4f08e9",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 30.0,
+  "native_last_stop_backstop_bps": 50.0,
+  "order_submission_authorized": true,
+  "position_monitor": [
+    "every 30 seconds: evaluate the prior completed-1m frozen policy threshold against remaining-size fresh directional executable VWAP (long sell-through-bids; short buy-through-asks), after recorded entry half-spread and directional adverse entry-slippage allowance; the completed-bar favourable extreme (high for long, low for short) updates MFE/trailing/smooth state only for the next interval; the 50-bps directionally farther native last stop is the catastrophe backstop. Production authority remains long-only."
+  ],
+  "protective_stop_book_levels": 10,
+  "protective_stop_exit_vwap_adjustment": true,
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "2d699e16db809662f88d0e21d3c4e08a3ca165f6ff19f0374292e611fe11e248",
+    "extreme_price_movements/inference/trade_executor.py": "000017a0dbf063083a271fe9fae5d08f40d09b5fd175d7949789b7389af326bd",
+    "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "516dd1a3ac3f53a2a67fff6497bee459aac8bcbce21eef6aa915de7a2e4a70af"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/strict_r3_live_execution.py"
+      ],
+      "current_inference_bundle_sha256": "6d6192eb433f29d151529b22766b1950e6f1c23414e09830b2c6726c7b4f08e9",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v98_bcf_current_dual_side_specific_runtime.json",
+      "predecessor_inference_bundle_sha256": "279ba3b1b3f48f07f591a03deb4eb6b30b0b314283a301de19cd33f54a804170",
+      "reason": "Immutable telemetry-only runtime bridge: static model, feature, policy, admission, portfolio and execution semantics are identical."
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long",
+  "version_note": "v123: v99 analysis-only live-exit telemetry successor. Immutable monitor receipts now retain each directional executable-VWAP check and consumed completed-1m policy OHLCV/state update. No scoring, admission, auction, execution gate or rich-policy threshold changes."
+}

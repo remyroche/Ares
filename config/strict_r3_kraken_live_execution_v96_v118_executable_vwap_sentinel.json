@@ -1,0 +1,71 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260819_v24_v96_prefix_schema_runtime_reseal.json",
+  "activation_authorization_sha256": "d3294f574df7f6c629fef8cb5e523a955783208eedb98c216e661d4601effec0",
+  "baseline_policy_cost_bps": 100.0,
+  "close_based_hard_stop_monitor_enabled": true,
+  "exchange_id": "krakenfutures",
+  "executable_vwap_frozen_threshold_sentinel_enabled": true,
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - (1.2 * live_full_spread_bps + 2 * entry_vwap_impact_bps + 10 bps); the resulting executable EV must be >= +30 bps after frozen dual MC1 admission and the common portfolio auction; it is a final veto only and never a reranking signal.",
+  "execution_adjusted_ev_veto_enabled": true,
+  "execution_book_telemetry_only": true,
+  "execution_entry_authority": "sealed_dual_mc1_admission_then_common_portfolio_auction_then_execution_adjusted_ev_ge_30bps",
+  "execution_microstructure_buffer_bps": 10.0,
+  "exit_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+  "exit_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+  "failure_policy": "fail_closed",
+  "full_vwap_hard_stop_monitor_enabled": false,
+  "inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v96_bcf_current_dual_prefix_schema_runtime_reseal.json",
+  "inference_bundle_sha256": "e4aaa60181e8347b26d14eae29e2873c1832a9e09f52042537cf273de71a43e4",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 3600,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 30.0,
+  "native_last_stop_backstop_bps": 50.0,
+  "order_submission_authorized": true,
+  "position_monitor": "every 30 seconds: use only the prior completed-1m frozen policy threshold; sell remaining long size through fresh Kraken bids; exit reduce-only when executable VWAP is below the entry-friction discounted threshold. Completed 1m high updates MFE/trailing/smooth state only for the next interval; native last stop remains 50-bps lower catastrophe backstop.",
+  "protective_stop_book_levels": 10,
+  "protective_stop_exit_vwap_adjustment": true,
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/data_store.py": "b2cbf9a235ed903b72dd2231b2be4809ec54856c36b87fc53ec683ebb1b9c4ba",
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "1ea0e6d9641dc09d28048c6d9a874dd316d4206597205c4a5479b83be5b57c89",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "ed23609bd57d1374eab76506609a13cfa20a7b1fb2e55366d332df042a37b078",
+    "extreme_price_movements/inference/trade_executor.py": "000017a0dbf063083a271fe9fae5d08f40d09b5fd175d7949789b7389af326bd",
+    "extreme_price_movements/strict_r3_rich_policy.py": "c85d4ee3ce6274d7eebf4f0b0dcf8bbdaf453a3dce5cc71de513e58931a2b6cd",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "e7eb3f4122d441dc4177d5584fe1363fe4cf9ca1a92bde5601d6438848637ac6",
+    "scripts/repair_strict_r3_duplicate_live_symbol.py": "64a7cf095cd6103cbf300f21adbc1ed2202e2850287cad1de6912520c3f99c83",
+    "scripts/run_strict_r3_live_hourly_entry_producer.py": "516dd1a3ac3f53a2a67fff6497bee459aac8bcbce21eef6aa915de7a2e4a70af"
+  },
+  "runtime_reseal_predecessors": [
+    {
+      "added_runtime_code_paths": [],
+      "allowed_runtime_code_paths": [
+        "scripts/run_strict_r3_hourly_shadow_resume_v15.py",
+        "scripts/run_tp6_sl4_exact170_canonical_consensus.py"
+      ],
+      "current_inference_bundle_sha256": "e4aaa60181e8347b26d14eae29e2873c1832a9e09f52042537cf273de71a43e4",
+      "predecessor_inference_bundle": "config/strict_r3_inference_overlay_long_20260801_v95_bcf_current_dual_close_stop_current_materializer.json",
+      "predecessor_inference_bundle_sha256": "37e00ca932a4afc107712a3c43904dd8f074b16b417cd975d6072db1bb06cea1"
+    },
+    {
+      "allowed_runtime_code_paths": [
+        "extreme_price_movements/inference/strict_r3_live_execution.py"
+      ],
+      "changed_execution_fields": [
+        "executable_vwap_frozen_threshold_sentinel_enabled",
+        "native_last_stop_backstop_bps",
+        "position_monitor"
+      ],
+      "native_backstop_bps_source": "maximum_exit_slippage_bps",
+      "predecessor_execution": "config/strict_r3_kraken_live_execution_v95_v117_bcf_current_dual_v96_runtime_bridgefix.json",
+      "predecessor_execution_sha256": "6cbe5876951e76f47550af1436a04660dcbfcdbfbc7047b38837bed16045cadc",
+      "successor_execution_semantics": "frozen_threshold_executable_vwap_sentinel_v1"
+    }
+  ],
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long",
+  "version_note": "v118: user-approved executable-VWAP frozen-threshold sentinel. Every 30 seconds it evaluates remaining-size bid VWAP against only the prior completed-1m parent-policy threshold after entry half-spread and adverse entry-slippage allowance. Completed-bar high updates trailing/smooth state for the next interval only. The native Kraken last stop is retained 50 bps lower as a catastrophe backstop. All models, Geometry/K9, calibration, admission, auction, entries and frozen rich-policy parameters are unchanged."
+}

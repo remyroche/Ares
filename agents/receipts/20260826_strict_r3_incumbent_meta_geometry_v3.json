@@ -1,0 +1,32 @@
+{
+  "task": "strict-r3-incumbent-meta-geometry-v3",
+  "scope": "Repairs the offline incumbent-anchored T6/T9 feature-selection runner so its interaction geometry consists only of strict-prequential incumbent T6/T9 predictions on training rows. It does not modify base models, MC1, admission, portfolio, execution, live inference, or exchange state.",
+  "changed_paths": [
+    "scripts/run_strict_r3_meta_t6t9_incumbent_selection_v2.py",
+    "tests/test_strict_r3_meta_t6t9_incumbent_selection_v2.py",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md"
+  ],
+  "changed_path_sha256": {
+    "scripts/run_strict_r3_meta_t6t9_incumbent_selection_v2.py": "0568c9468eb544562270e314e0cc9eb15af22a9c37d9c3624fb252442d053e03",
+    "tests/test_strict_r3_meta_t6t9_incumbent_selection_v2.py": "345542bc401d27cabdb0b283c76f8caddafdefcd7971f12bf32478c163968543",
+    "docs/TP6_SL4_BASE_CONSENSUS_CANONICAL_20260807.md": "d2a7ddb490310619f18ef47ba4de49c33f83771c8c667ffcb5a85a46aec35f81"
+  },
+  "contracts": [
+    {"path": "agents/leakage_prevention.md", "sha256": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295"},
+    {"path": "agents/model_validation_protocol.md", "sha256": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f"},
+    {"path": "agents/experiment_discipline.md", "sha256": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"}
+  ],
+  "validation": {
+    "status": "complete",
+    "commands": [
+      "python3 -m py_compile scripts/run_strict_r3_meta_t6t9_incumbent_selection_v2.py",
+      "python3 -m pytest -q tests/test_strict_r3_meta_t6t9_incumbent_selection_v2.py"
+    ],
+    "results": [
+      "2 passed",
+      "Counterpart windows fail closed when a required strict-OOF monthly receipt is missing",
+      "No in-sample, post-date, or score-family-mismatched T6/T9 geometry can enter selection training rows"
+    ]
+  },
+  "agent_plan": {"subagents": []}
+}

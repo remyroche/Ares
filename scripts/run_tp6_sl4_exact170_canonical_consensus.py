@@ -16,8 +16,9 @@ import os
 import sys
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 CONTRACT_SOURCE = ROOT / 'config/strict_r3_canonical_v2_feature_contract.json'
+RAW_15M_QUARANTINE_SOURCE = ROOT / 'config/strict_r3_raw_15m_source_quarantine_v1.json'
+SIDECAR_QUARANTINE_SOURCE = ROOT / 'config/strict_r3_panel_sidecar_quarantine_v1.json'
 LABEL_ROOT = ROOT / 'data_perp/artifacts/tp6_sl4_exact170_labels_20260808_v1'
 MINUTE_ROOT = ROOT / 'data_perp/exchanges/krakenfutures/execution_1m/ohlcv'
 CONSOLIDATED_MINUTE_ROOT = ROOT / 'data_perp/artifacts/exact170_minute_consolidated_20260808_v1'
@@ -50,6 +53,55 @@ CANONICAL_INPUT_CACHE_ROOT = Path(os.environ.get(
 # regularised tail while the shared store has the freshly downloaded bars.
 HF_15M_ROOT = ROOT / '15m_ohlcv_perp'
 RAW_15M_ROOT = ROOT / 'data_perp/exchanges/krakenfutures/raw/ohlcv_15m'
+
+
+def _raw_15m_quarantine_receipt() -> dict[str, object]:
+    """Return the versioned raw-15m quarantine contract.
+
+    Some historical parquet shards can become unreadable by Arrow's filtered
+    scan even though the filesystem can still read their bytes.  This is a
+    source-availability failure, never a reason to retry indefinitely or to
+    substitute a different bar interval.  A versioned, explicit quarantine
+    lets the already-approved shared 15-minute mirror fill that source while
+    retaining the decision-time 15-minute semantics and a reproducible
+    lineage receipt.
+    """
+    if not RAW_15M_QUARANTINE_SOURCE.is_file():
+        return {"schema": "strict_r3_raw_15m_source_quarantine_v1", "entries": {}}
+    payload = json.loads(RAW_15M_QUARANTINE_SOURCE.read_text())
+    if payload.get("schema") != "strict_r3_raw_15m_source_quarantine_v1":
+        raise ValueError("unsupported raw-15m quarantine schema")
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        raise ValueError("raw-15m quarantine entries must be a mapping")
+    return payload
+
+
+def _raw_15m_is_quarantined(path: Path) -> bool:
+    if path.parent != RAW_15M_ROOT:
+        return False
+    return path.name in _raw_15m_quarantine_receipt()["entries"]
+
+
+def _panel_sidecar_quarantine_receipt() -> dict[str, object]:
+    """Return explicitly quarantined causal panel sidecars by field family."""
+    if not SIDECAR_QUARANTINE_SOURCE.is_file():
+        return {"schema": "strict_r3_panel_sidecar_quarantine_v1", "entries": {}}
+    payload = json.loads(SIDECAR_QUARANTINE_SOURCE.read_text())
+    if payload.get("schema") != "strict_r3_panel_sidecar_quarantine_v1":
+        raise ValueError("unsupported panel-sidecar quarantine schema")
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        raise ValueError("panel-sidecar quarantine entries must be a mapping")
+    return payload
+
+
+def _panel_sidecar_is_quarantined(field: str, path: Path) -> bool:
+    entries = _panel_sidecar_quarantine_receipt()["entries"]
+    field_entries = entries.get(field, {})
+    if not isinstance(field_entries, dict):
+        raise ValueError(f"panel-sidecar quarantine field={field} must be a mapping")
+    return path.name in field_entries
 
 BASE_PARAMS = dict(
     objective='multiclass', num_class=3, n_estimators=220, learning_rate=0.035,
@@ -144,7 +196,30 @@ def _source_map(symbols: Iterable[str]) -> dict[str, str | None]:
 
 def _read_hourly_source(source: str | None, start: pd.Timestamp, end: pd.Timestamp):
     if source is not None:
-        paths = sorted((OHLCV_ROOT / f'symbol={source}').glob('year=*/**/*.parquet'))
+        symbol_root = OHLCV_ROOT / f'symbol={source}'
+        # The legacy archive is partitioned by year.  Opening every fragment
+        # (including years that cannot satisfy the causal half-open query)
+        # dominates recent source refreshes because Arrow must still read
+        # each Parquet footer.  Restrict discovery to the calendar years that
+        # overlap the requested interval.  This is an I/O optimisation only:
+        # the per-row timestamp filter below remains the semantic authority.
+        final_instant = pd.Timestamp(end) - pd.Timedelta(nanoseconds=1)
+        years = range(pd.Timestamp(start).year, final_instant.year + 1)
+        year_roots = [symbol_root / f'year={year}' for year in years]
+        existing_year_roots = [path for path in year_roots if path.is_dir()]
+        if existing_year_roots:
+            paths = sorted(
+                child
+                for root in existing_year_roots
+                for child in root.glob('**/*.parquet')
+            )
+        else:
+            # Keep compatibility with a genuinely unpartitioned legacy
+            # symbol root, but do not recurse into non-overlapping
+            # ``year=YYYY`` directories.  Such files cannot provide a row in
+            # the requested window and their Parquet-footer scans can stall a
+            # live source refresh for minutes.
+            paths = sorted(symbol_root.glob('*.parquet'))
         frames = []
         for p in paths:
             try:
@@ -168,7 +243,20 @@ def _read_canonical_input_cache(symbol: str, start: pd.Timestamp, end: pd.Timest
     if not path.exists():
         return None
     try:
-        x = pd.read_parquet(path)
+        # ``part.parquet`` spans the full historical contract and lives on a
+        # comparatively slow artifact volume on the live host.  Reading every
+        # row for every symbol made a one-hour inference checkpoint take many
+        # minutes.  The timestamp is an Arrow-visible index field, so push the
+        # causal half-open window into the Parquet scan.  This changes neither
+        # selected columns nor values and retains the defensive frame filter
+        # below for engines that return extra row groups.
+        x = pd.read_parquet(
+            path,
+            filters=[
+                ('ts', '>=', pd.Timestamp(start).to_pydatetime()),
+                ('ts', '<', pd.Timestamp(end).to_pydatetime()),
+            ],
+        )
         if not isinstance(x.index, pd.DatetimeIndex):
             if 'ts' not in x:
                 return None
@@ -199,7 +287,14 @@ def _read_official_trade_hourly(
         return None
     fields = ['open', 'high', 'low', 'close', 'volume']
     try:
-        raw = pd.read_parquet(path, columns=fields)
+        raw = pd.read_parquet(
+            path,
+            columns=fields,
+            filters=[
+                ('__index_level_0__', '>=', pd.Timestamp(start).to_pydatetime()),
+                ('__index_level_0__', '<', pd.Timestamp(end).to_pydatetime()),
+            ],
+        )
         if not isinstance(raw.index, pd.DatetimeIndex):
             return None
         raw.index = pd.to_datetime(raw.index, utc=True)
@@ -212,7 +307,13 @@ def _read_official_trade_hourly(
     return raw if len(raw) else None
 
 
-def _read_downloaded_15m_hourly(symbol: str, start: pd.Timestamp, end: pd.Timestamp):
+def _read_downloaded_15m_hourly(
+    symbol: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    bar_phase_minutes: int = 0,
+):
     """Resample the source-faithful 15-minute cache into complete hourly bars.
 
     The exchange-local raw download is authoritative.  The shared HF mirror is
@@ -231,10 +332,31 @@ def _read_downloaded_15m_hourly(symbol: str, start: pd.Timestamp, end: pd.Timest
     def _load(path: Path) -> pd.DataFrame | None:
         if not path.exists():
             return None
-        try:
-            raw = pd.read_parquet(path, columns=fields)
-        except Exception:
+        # Do this before Arrow opens the file.  A quarantined raw shard has
+        # previously blocked three independent phase materialisers inside the
+        # parquet metadata read.  The shared 15-minute mirror below is the
+        # declared same-interval fallback; no hourly or minute substitute is
+        # introduced by this guard.
+        if _raw_15m_is_quarantined(path):
             return None
+        filters = [
+            ('__index_level_0__', '>=', pd.Timestamp(start).to_pydatetime()),
+            ('__index_level_0__', '<', pd.Timestamp(end).to_pydatetime()),
+        ]
+        try:
+            # New live-cache rows carry an explicit provenance bit.  Retain a
+            # legacy fallback because historical parquet files pre-date this
+            # field and must keep their conservative flat-bar treatment.
+            raw = pd.read_parquet(
+                path,
+                columns=[*fields, 'exchange_observed'],
+                filters=filters,
+            )
+        except Exception:
+            try:
+                raw = pd.read_parquet(path, columns=fields, filters=filters)
+            except Exception:
+                return None
         if not isinstance(raw.index, pd.DatetimeIndex):
             return None
         raw.index = pd.to_datetime(raw.index, utc=True)
@@ -242,15 +364,25 @@ def _read_downloaded_15m_hourly(symbol: str, start: pd.Timestamp, end: pd.Timest
         raw = raw.loc[~raw.index.duplicated(keep='last')].sort_index()
         if raw.empty:
             return None
-        raw = raw.apply(pd.to_numeric, errors='coerce')
+        observed = (
+            raw['exchange_observed'].astype('boolean')
+            if 'exchange_observed' in raw.columns
+            else pd.Series(pd.NA, index=raw.index, dtype='boolean')
+        )
+        raw = raw.loc[:, fields].apply(pd.to_numeric, errors='coerce')
         finite_ohlc = raw[['open', 'high', 'low', 'close']].notna().all(axis=1)
-        synthetic_flat_zero = (
+        flat_zero = (
             finite_ohlc
             & raw['open'].eq(raw['high'])
             & raw['high'].eq(raw['low'])
             & raw['low'].eq(raw['close'])
             & raw['volume'].fillna(0.0).le(0.0)
         )
+        # A currently observed Kraken candle is authoritative even if it is
+        # flat with no reported trade volume.  Locally filled rows are marked
+        # false.  Unlabelled legacy rows remain fail-closed under the prior
+        # heuristic until a fresh observed replacement is available.
+        synthetic_flat_zero = flat_zero & ~observed.fillna(False)
         # Do not let synthetic padding count toward a complete hourly bar.
         raw.loc[synthetic_flat_zero, fields] = np.nan
         return raw
@@ -268,7 +400,18 @@ def _read_downloaded_15m_hourly(symbol: str, start: pd.Timestamp, end: pd.Timest
         raw = raw_download.combine_first(shared_mirror)
     if raw is None or raw.empty:
         return None
-    out = raw.resample('1h', label='left', closed='left').agg(
+    phase = int(bar_phase_minutes)
+    if phase not in (0, 15, 30, 45):
+        raise ValueError('bar_phase_minutes must be one of 0, 15, 30, 45')
+    # The model contract remains one observation per hour.  A non-zero phase
+    # merely shifts the hour boundary: a row at 23:15 summarises the four
+    # fully observed 15-minute bars [23:15, 00:15), and is therefore usable
+    # for a 00:15 decision.  It must not be confused with upsampling the
+    # feature model itself to a 15-minute row cadence.
+    out = raw.resample(
+        '1h', label='left', closed='left', origin='epoch',
+        offset=f'{phase}min',
+    ).agg(
         open=('open', 'first'), high=('high', 'max'), low=('low', 'min'),
         close=('close', 'last'), volume=('volume', 'sum'),
         count=('close', 'count'),
@@ -276,6 +419,168 @@ def _read_downloaded_15m_hourly(symbol: str, start: pd.Timestamp, end: pd.Timest
     )
     out = out.loc[out['count'].eq(4)].drop(columns='count')
     return out if len(out) else None
+
+
+def _read_downloaded_15m_decision_open(
+    symbol: str,
+    decision_index: pd.DatetimeIndex,
+    *,
+    return_lineage: bool = False,
+) -> pd.Series | pd.DataFrame:
+    """Read the exact trade-candle open at each decision timestamp.
+
+    Unlike :func:`_read_downloaded_15m_hourly`, this adapter deliberately does
+    not require the other three constituent 15-minute bars. At a live
+    decision boundary those bars are in the future. The exchange-local raw
+    cache retains precedence and the shared HF cache fills only missing
+    timestamps, matching the canonical coarse-source ordering.
+
+    Only ``open`` is consumed. No high, low, close, volume, future-path or
+    completed-hour information can affect entry availability.  Kraken's
+    public 15-minute chart can lag while its current official one-hour trade
+    candle is already available.  In that case the timestamp-identical hourly
+    ``open`` fills the missing 15-minute value *only when that hourly candle
+    contains positive trade volume*.  A zero-volume OHLC row is an exchange
+    placeholder, not evidence of an executable price, and must fail closed.
+    The fallback never overwrites a 15-minute open and it is never carried
+    from another timestamp.
+
+    ``return_lineage`` exposes source and trade-volume metadata to the
+    target-free candidate materialiser.  These fields are execution audit
+    metadata only; they are never model inputs.  In particular, a direct
+    15-minute row with zero (or unknown) trade volume is retained as lineage,
+    rather than silently upgraded to an executable entry.  The materialiser
+    validates such a row against the contemporaneous book before admitting it.
+    """
+    index = pd.DatetimeIndex(pd.to_datetime(decision_index, utc=True)).sort_values()
+    index = index[~index.duplicated()]
+    if index.empty:
+        empty = pd.Series(dtype=np.float64, index=index, name='decision_open')
+        if not return_lineage:
+            return empty
+        return pd.DataFrame({
+            'decision_open': empty,
+            'decision_open_source': pd.Series(dtype='object', index=index),
+            'decision_open_trade_volume': pd.Series(dtype=np.float64, index=index),
+            'decision_open_hourly_volume': pd.Series(dtype=np.float64, index=index),
+        })
+    name = f"{symbol.lower().replace('/', '')}_15m.parquet"
+
+    def _load(path: Path) -> pd.DataFrame | None:
+        if not path.exists():
+            return None
+        try:
+            raw = pd.read_parquet(
+                path,
+                columns=['open', 'volume'],
+                filters=[
+                    (
+                        '__index_level_0__', '>=',
+                        pd.Timestamp(index.min()).to_pydatetime(),
+                    ),
+                    (
+                        '__index_level_0__', '<=',
+                        pd.Timestamp(index.max()).to_pydatetime(),
+                    ),
+                ],
+            )
+        except Exception:
+            # A legacy cache without volume is still useful as a price source,
+            # but its entry must later pass the same book-alignment validation
+            # as a zero-volume row.  Do not treat unknown volume as a trade.
+            try:
+                raw = pd.read_parquet(
+                    path,
+                    columns=['open'],
+                    filters=[
+                        (
+                            '__index_level_0__', '>=',
+                            pd.Timestamp(index.min()).to_pydatetime(),
+                        ),
+                        (
+                            '__index_level_0__', '<=',
+                            pd.Timestamp(index.max()).to_pydatetime(),
+                        ),
+                    ],
+                )
+            except Exception:
+                return None
+        if not isinstance(raw.index, pd.DatetimeIndex):
+            return None
+        raw.index = pd.to_datetime(raw.index, utc=True, errors='coerce')
+        frame = pd.DataFrame({
+            'open': pd.to_numeric(raw['open'], errors='coerce'),
+            'volume': pd.to_numeric(raw.get('volume'), errors='coerce'),
+        }, index=raw.index)
+        frame = frame.loc[~frame.index.isna()]
+        frame = frame.loc[~frame.index.duplicated(keep='last')].sort_index()
+        frame = frame.reindex(index)
+        return frame if frame['open'].notna().any() else None
+
+    raw_download = _load(RAW_15M_ROOT / name)
+    shared_mirror = _load(HF_15M_ROOT / name)
+    if raw_download is None:
+        selected = shared_mirror
+        raw_present = pd.Series(False, index=index)
+    elif shared_mirror is None:
+        selected = raw_download
+        raw_present = raw_download['open'].notna()
+    else:
+        raw_present = raw_download['open'].notna()
+        selected = raw_download.combine_first(shared_mirror)
+    if selected is None:
+        selected = pd.DataFrame({
+            'open': pd.Series(np.nan, index=index, dtype=np.float64),
+            'volume': pd.Series(np.nan, index=index, dtype=np.float64),
+        })
+        raw_present = pd.Series(False, index=index)
+    values = pd.to_numeric(selected['open'], errors='coerce').reindex(index)
+    # The row timestamped exactly at ``decision_index`` is the 15-minute bar
+    # which has just opened.  Its open is available for the canonical entry
+    # convention, but its final volume is not: a later refresh can otherwise
+    # observe trades from minutes after the decision and retroactively turn a
+    # zero/unknown-volume entry into a trade-supported one.  Keep the price
+    # lineage while forcing decision-time book corroboration for every direct
+    # 15m decision open.  This makes a delayed replay identical to the live
+    # decision rather than granting it future intra-bar information.
+    trade_volume = pd.Series(np.nan, index=index, dtype=np.float64)
+    source = pd.Series('unavailable', index=index, dtype='object')
+    source.loc[values.notna() & raw_present] = 'raw_15m'
+    source.loc[values.notna() & ~raw_present] = 'shared_15m'
+    hourly_volume = pd.Series(np.nan, index=index, dtype=np.float64)
+    if values.isna().any():
+        official = _read_official_trade_hourly(
+            symbol,
+            pd.Timestamp(index.min()),
+            pd.Timestamp(index.max()) + pd.Timedelta(hours=1),
+        )
+        if official is not None and {"open", "volume"}.issubset(official.columns):
+            official_open = pd.to_numeric(
+                official["open"], errors="coerce",
+            ).reindex(index)
+            hourly_volume = pd.to_numeric(
+                official["volume"], errors="coerce",
+            ).reindex(index)
+            valid_hourly_trade = official_open.notna() & hourly_volume.gt(0.0)
+            fill = values.isna() & valid_hourly_trade
+            values = values.where(~fill, official_open)
+            source.loc[fill] = 'official_hourly_trade'
+            rejected_hourly = values.isna() & official_open.notna() & ~valid_hourly_trade
+            source.loc[rejected_hourly & hourly_volume.le(0.0)] = (
+                'official_hourly_zero_volume'
+            )
+            source.loc[rejected_hourly & ~hourly_volume.le(0.0)] = (
+                'official_hourly_invalid'
+            )
+    values = values.reindex(index).rename('decision_open')
+    if not return_lineage:
+        return values
+    return pd.DataFrame({
+        'decision_open': values,
+        'decision_open_source': source.reindex(index),
+        'decision_open_trade_volume': trade_volume.reindex(index),
+        'decision_open_hourly_volume': hourly_volume.reindex(index),
+    })
 
 
 def _read_minute_fallback(symbol: str, start: pd.Timestamp, end: pd.Timestamp, *, floor_start: pd.Timestamp | None = None):
@@ -300,12 +605,52 @@ def _read_minute_fallback(symbol: str, start: pd.Timestamp, end: pd.Timestamp, *
     return x.resample('1h', label='left', closed='left').agg(open=('open','first'), high=('high','max'), low=('low','min'), close=('close','last'), volume=('volume','sum')).dropna(subset=['close'])
 
 
+def _project_last_completed_calendar_hour(
+    frame: pd.DataFrame | None,
+    *,
+    phase_index: pd.DatetimeIndex,
+    phase_minutes: int,
+) -> pd.DataFrame | None:
+    """Project completed calendar-H1 bars onto a shifted decision grid.
+
+    A strict-R3 candidate at ``00:15`` is decided at ``01:15``.  When the
+    exact shifted 15-minute source is unavailable, the last *completed*
+    calendar hour is therefore the bar labelled ``00:00`` (the interval
+    ``[00:00, 01:00)``), not the partly formed ``01:00`` bar.  The projection
+    has one common source convention for the entire cross-section: it does
+    not mix an exact shifted bar for liquid symbols with a stale bar for the
+    rest of the universe.
+
+    This is deliberately an as-of projection, rather than a forward fill:
+    each shifted row is an exact lookup of its prior completed calendar-H1
+    label.  Consequently it cannot consume a price, volume, mark, or other
+    hourly primitive published after the feature timestamp.
+    """
+    if frame is None or frame.empty:
+        return None
+    phase = int(phase_minutes)
+    if phase not in (15, 30, 45):
+        raise ValueError("calendar-H1 phase projection is only defined off :00")
+    work = frame.copy()
+    work.index = pd.to_datetime(work.index, utc=True)
+    work = work.loc[~work.index.duplicated(keep="last")].sort_index()
+    # Hourly sources are labelled by their interval start.  At a shifted
+    # feature time, the immediately preceding calendar hour has just closed.
+    source_index = (
+        phase_index.floor("h") - pd.Timedelta(hours=1)
+    )
+    projected = work.reindex(source_index)
+    projected.index = phase_index
+    return projected
+
+
 def _make_panel(
     symbols: list[str],
     start: pd.Timestamp,
     end: pd.Timestamp,
     *,
     allow_minute_fallback: bool = False,
+    bar_phase_minutes: int = 0,
 ):
     """Build the causal source panel from hourly and 15-minute primitives.
 
@@ -319,40 +664,73 @@ def _make_panel(
     ``allow_minute_fallback`` exists solely for explicitly named legacy
     research reproductions; the canonical materialiser never enables it.
     """
+    phase = int(bar_phase_minutes)
+    if phase not in (0, 15, 30, 45):
+        raise ValueError('bar_phase_minutes must be one of 0, 15, 30, 45')
+    if int(pd.Timestamp(start).minute) != phase:
+        raise ValueError(
+            'phase-shifted source panel start must share bar_phase_minutes; '
+            f'start={start} phase={phase}'
+        )
     source_map = _source_map(symbols)
     fields = ['open','high','low','close','volume','mark_open','mark_high','mark_low','mark_close','mark_price','index_open','index_high','index_low','index_close','index_price','spot_open','spot_high','spot_low','spot_close','spot_volume','funding_rate','open_interest','coarse_trade_size_proxy_15m']
     by_field: dict[str, dict[str, pd.Series]] = {f:{} for f in fields}
-    for n, sym in enumerate(symbols, 1):
-        official_hourly = _read_official_trade_hourly(sym, start, end)
-        raw_15m = _read_downloaded_15m_hourly(sym, start, end)
-        expected = pd.date_range(start, end - pd.Timedelta(hours=1), freq='1h', tz='UTC')
-        available_coarse = (
-            raw_15m.combine_first(official_hourly)
-            if raw_15m is not None and official_hourly is not None
-            else raw_15m if raw_15m is not None else official_hourly
+    # A shifted decision owns the complete rolling one-hour interval ending at
+    # its phase boundary.  For example, the 00:15 decision consumes the four
+    # source-faithful 15-minute bars [23:15, 00:15).  It must never be
+    # substituted with the preceding calendar H1 [23:00, 00:00): that would
+    # both discard the available latest quarter-hour information and change
+    # the meaning of the frozen H1 features across phases.
+    hourly_start = pd.Timestamp(start)
+    expected = pd.date_range(
+        start, end - pd.Timedelta(hours=1), freq='1h', tz='UTC',
+    )
+
+    def _load_symbol(sym: str) -> tuple[str, dict[str, pd.Series]]:
+        """Read one independent causal source chain without mutating state."""
+        # Official hourly candles are a valid native source only for the :00
+        # contract.  They cannot represent a shifted rolling H1 interval.
+        official_hourly = _read_official_trade_hourly(
+            sym, hourly_start, end,
         )
-        coarse_complete = (
-            available_coarse is not None
-            and available_coarse.reindex(expected)[['open', 'high', 'low', 'close']]
-            .notna().all(axis=1).all()
+        raw_15m = _read_downloaded_15m_hourly(
+            sym, hourly_start, end, bar_phase_minutes=phase,
         )
-        if coarse_complete:
-            # A short forward snapshot can be served entirely by the public
-            # coarse stores.  Avoid opening multi-year archive shards merely
-            # to prove that an already complete point-in-time window exists;
-            # downloaded 15-minute bars retain first precedence.
-            x = available_coarse
+        if phase:
+            # A shifted row is valid only when the complete four-bar rolling
+            # H1 source is present.  Calendar-H1/canonical fallbacks have a
+            # different window and must not be mixed into this representation.
+            x = raw_15m
         else:
-            x = _read_canonical_input_cache(sym, start, end)
-            if raw_15m is not None:
-                # Complete 15-minute bars remain the preferred coarse source.
-                x = raw_15m.combine_first(x) if x is not None else raw_15m
+            # Source precedence must be *cell-local*, never determined by
+            # whether the entire requested horizon happens to be complete.
+            # The former all-window shortcut meant that appending a later
+            # missing coarse bar could cause the canonical cache to be opened
+            # for an earlier interval and therefore change historical mark/
+            # index/OI-derived features.  Merge the frozen source chain for
+            # every horizon instead: downloaded 15-minute values win; the
+            # canonical hourly cache fills genuinely missing primitives; and
+            # official hourly trade candles are the final coarse fallback.
+            # This is both the documented precedence contract and invariant
+            # to appending future source rows.
+            x = raw_15m
+            canonical_cache = _read_canonical_input_cache(sym, hourly_start, end)
+            if canonical_cache is not None:
+                x = x.combine_first(canonical_cache) if x is not None else canonical_cache
             if official_hourly is not None:
-                # Official one-hour candles fill only genuinely unavailable
-                # cells; they never overwrite the 15-minute contract.
                 x = x.combine_first(official_hourly) if x is not None else official_hourly
-        if x is None:
-            x = _read_hourly_source(source_map[sym], start, end)
+        if not phase:
+            # The legacy hourly archive remains the final source-faithful
+            # fallback.  It must fill only cells that all higher-precedence
+            # sources leave unavailable.  Testing ``x is None`` here was
+            # still horizon-sensitive: a partial official archive beginning
+            # in a later month suppressed older legacy cells merely because
+            # it had *some* values in the expanded window.  Merge it
+            # cell-locally so an appended later archive cannot erase an
+            # earlier executable observation.
+            legacy_hourly = _read_hourly_source(source_map[sym], hourly_start, end)
+            if legacy_hourly is not None:
+                x = x.combine_first(legacy_hourly) if x is not None else legacy_hourly
         if x is None and allow_minute_fallback:
             x = _read_minute_fallback(sym, start, end, floor_start=pd.Timestamp('2026-01-01', tz='UTC'))
         elif (
@@ -368,11 +746,30 @@ def _make_panel(
                 x = pd.concat([x, tail]).sort_index()
                 x = x[~x.index.duplicated(keep='last')]
         if x is None:
-            continue
+            return sym, {}
         x.index = pd.to_datetime(x.index, utc=True)
+        source_values: dict[str, pd.Series] = {}
         for f in fields:
             if f in x.columns:
-                by_field[f][sym] = pd.to_numeric(x[f], errors='coerce')
+                source_values[f] = pd.to_numeric(x[f], errors='coerce')
+        return sym, source_values
+
+    # Each source chain is symbol-local and read-only.  The historical
+    # Parquet estate includes mixed-age shards whose filtered metadata reads
+    # can stall when driven by a 16-way pool.  Four workers preserve the
+    # frozen source precedence/order while keeping file pressure bounded; the
+    # 16-way setting is reserved for the separate network-bound funding/OI
+    # refresher, not local Parquet reads.
+    workers = min(
+        4,
+        max(1, int(os.environ.get('STRICT_R3_SOURCE_IO_WORKERS', '4'))),
+        max(1, len(symbols)),
+    )
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        loaded = list(executor.map(_load_symbol, symbols))
+    for n, (sym, source_values) in enumerate(loaded, 1):
+        for field, values in source_values.items():
+            by_field[field][sym] = values
         if n % 25 == 0:
             print(json.dumps({'event':'source_loaded','number':n,'symbols':len(symbols)}), flush=True)
     idx = pd.date_range(start, end - pd.Timedelta(hours=1), freq='1h', tz='UTC')
@@ -398,7 +795,21 @@ def _official_orderbook_analytics(symbol: str, start: pd.Timestamp, end: pd.Time
     if not path.exists():
         return pd.DataFrame()
     try:
-        raw = pd.read_parquet(path)
+        read_fields = [
+            'ob_bid_bestPrice', 'ob_ask_bestPrice',
+            'ob_bid_liquidity005', 'ob_ask_liquidity005',
+            'ob_bid_liquidity025', 'ob_ask_liquidity025',
+            'ob_bid_liquidity05', 'ob_ask_liquidity05',
+            'close', 'volume',
+        ]
+        raw = pd.read_parquet(
+            path,
+            columns=read_fields,
+            filters=[
+                ('__index_level_0__', '>=', pd.Timestamp(start).to_pydatetime()),
+                ('__index_level_0__', '<', pd.Timestamp(end).to_pydatetime()),
+            ],
+        )
         raw.index = pd.to_datetime(raw.index, utc=True)
         raw = raw[(raw.index >= start) & (raw.index < end)]
     except Exception:
@@ -422,22 +833,47 @@ def _official_orderbook_analytics(symbol: str, start: pd.Timestamp, end: pd.Time
     out['cum_ask_qty_l20'] = pd.to_numeric(raw['ob_ask_liquidity05'], errors='coerce')
     out['snapshot_ts'] = out.index
     out['source'] = 'kraken_futures_orderbook_analytics_bands_v1'
+    if {'close', 'volume'}.issubset(raw.columns):
+        out['notional_1h'] = (
+            pd.to_numeric(raw['close'], errors='coerce')
+            * pd.to_numeric(raw['volume'], errors='coerce')
+        )
     return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _asof_reindex(frame: pd.DataFrame, idx: pd.DatetimeIndex, symbols: list[str]) -> pd.DataFrame:
+    """Causally carry a slower sidecar onto a shifted H1 grid.
+
+    The sidecars are observed snapshots rather than future-labelled values.
+    Reindexing with a forward fill may therefore use only the latest snapshot
+    at or before a phase-shifted hour boundary; it cannot draw from a later
+    decision.  The phase-0 case is numerically identical to ordinary exact
+    reindexing whenever the hourly sidecar is complete.
+    """
+    work = frame.sort_index().reindex(columns=symbols)
+    return work.reindex(idx, method='ffill').astype(np.float32)
 
 
 def _add_orderbook_panels(panel: dict[str, pd.DataFrame], symbols: list[str], idx: pd.DatetimeIndex, start: pd.Timestamp, end: pd.Timestamp):
     ob_fields = ['best_bid','best_ask','mid','bid_qty_1','ask_qty_1','cum_bid_qty_l10','cum_ask_qty_l10','cum_bid_qty_l20','cum_ask_qty_l20','notional_1h','mean_trade_qty_1h']
     out = {f: {} for f in ob_fields}
+    # Sidecars are asynchronous decision-time observations.  A shifted H1
+    # boundary (for example :15) must be allowed to use the latest official
+    # snapshot at :00; slicing strictly from :15 makes an otherwise causal
+    # forward fill look unavailable for the whole first bar.  One prior hour
+    # is sufficient because the final as-of projection below never reaches
+    # forward.
+    source_start = pd.Timestamp(start) - pd.Timedelta(hours=1)
     for sym in symbols:
         base = sym.split('/')[0]
-        x = _official_orderbook_analytics(sym, start, end)
+        x = _official_orderbook_analytics(sym, source_start, end)
         if x.empty:
             candidate = next(iter(sorted(AUTHORITATIVE_OB_ROOT.glob(f'{base}_USD*.parquet'))), None)
             if candidate is not None:
                 try:
                     x = pd.read_parquet(candidate)
                     x.index = pd.to_datetime(x.index, utc=True)
-                    x = x[(x.index >= start) & (x.index < end)]
+                    x = x[(x.index >= source_start) & (x.index < end)]
                 except Exception:
                     x = pd.DataFrame()
         # The historical sidecars currently identify themselves as
@@ -481,44 +917,102 @@ def _add_orderbook_panels(panel: dict[str, pd.DataFrame], symbols: list[str], id
         ):
             out['mean_trade_qty_1h'][sym] = pd.to_numeric(proxy[sym], errors='coerce')
     for f, values in out.items():
-        panel[f'orderbook_{f}'] = pd.concat(values, axis=1).reindex(idx).reindex(columns=symbols).astype(np.float32) if values else pd.DataFrame(index=idx, columns=symbols, dtype=np.float32)
+        panel[f'orderbook_{f}'] = _asof_reindex(pd.concat(values, axis=1), idx, symbols) if values else pd.DataFrame(index=idx, columns=symbols, dtype=np.float32)
 
 
 def _add_oi_funding_panels(panel: dict[str, pd.DataFrame], symbols: list[str], idx: pd.DatetimeIndex, start: pd.Timestamp, end: pd.Timestamp):
     """Attach persisted causal derivatives sidecars before feature generation."""
     roots = {'open_interest': ROOT/'data_perp/exchanges/krakenfutures/open_interest_hourly', 'funding_rate': ROOT/'data_perp/exchanges/krakenfutures/funding_hourly'}
+    # Retain the most recent state strictly before a shifted H1 boundary for
+    # causal as-of alignment.  The resulting value is never a future sample.
+    source_start = pd.Timestamp(start) - pd.Timedelta(hours=1)
     for field, root in roots.items():
-        values = {}
-        for sym in symbols:
+        def _load_symbol_sidecar(sym: str) -> tuple[str, pd.Series | None]:
             base = sym.split('/')[0]
-            path = next(iter(sorted(root.glob(f'{base}_USD*.parquet'))), None)
-            if path is None: continue
-            try: x = pd.read_parquet(path)
-            except Exception: continue
-            x.index = pd.to_datetime(x.index, utc=True); x=x[(x.index>=start)&(x.index<end)]
-            if field in x: values[sym]=pd.to_numeric(x[field], errors='coerce')
+            # Exact contract identity first.  A broad prefix can otherwise
+            # select e.g. BTC_USD_BTC (an older inverse/alias sidecar) before
+            # BTC_USD_USD, which silently makes current funding unavailable.
+            canonical = root / f'{base}_USD_USD.parquet'
+            path = canonical if canonical.is_file() else next(
+                iter(sorted(root.glob(f'{base}_USD*.parquet'))), None
+            )
+            if path is None:
+                return sym, None
+            # Quarantined sidecars have failed a bounded Arrow-read audit.
+            # Leave them unavailable (and allow the declared funding archive
+            # to fill only where it exists) instead of allowing one legacy
+            # file to block every independent phase materialisation.
+            if _panel_sidecar_is_quarantined(field, path):
+                return sym, None
+            try:
+                # The sidecars are index-timestamped.  Push the same causal
+                # range into Arrow before it opens all historical row groups;
+                # the defensive local slice below remains in place for older
+                # Parquet writers that do not honour index filters.
+                x = pd.read_parquet(
+                    path,
+                    columns=[field],
+                    filters=[
+                        ('__index_level_0__', '>=', source_start.to_pydatetime()),
+                        ('__index_level_0__', '<', pd.Timestamp(end).to_pydatetime()),
+                    ],
+                )
+            except Exception:
+                try:
+                    x = pd.read_parquet(path, columns=[field])
+                except Exception:
+                    return sym, None
+            x.index = pd.to_datetime(x.index, utc=True); x=x[(x.index>=source_start)&(x.index<end)]
+            return (sym, pd.to_numeric(x[field], errors='coerce')) if field in x else (sym, None)
+
+        # Each sidecar is independent and read-only.  The old sequential
+        # implementation paid 160 cold-file seeks per field before any model
+        # work began.  A small bounded pool keeps local artifact pressure
+        # reasonable while preserving deterministic symbol/result ordering.
+        sidecar_workers = min(
+            4,
+            max(1, int(os.environ.get('STRICT_R3_SIDECAR_IO_WORKERS', '4'))),
+            max(1, len(symbols)),
+        )
+        with ThreadPoolExecutor(max_workers=sidecar_workers) as executor:
+            loaded = list(executor.map(_load_symbol_sidecar, symbols))
+        values = {sym: series for sym, series in loaded if series is not None}
         # Funding sidecars cover the recent period only.  Backfill the same
         # causal hourly rate from Kraken's historical export, keeping the
         # sidecar value where both exist.
         if field == 'funding_rate':
+            missing_symbols = [
+                sym for sym in symbols
+                if sym not in values
+                or not values[sym].reindex(idx).notna().all()
+            ]
             archive = ROOT/'data_perp/exchanges/krakenfutures/raw/funding_rates/kraken_historical_funding_rates.zip'
-            if archive.exists():
-                with zipfile.ZipFile(archive) as zf:
-                    names = set(zf.namelist())
-                    for sym in symbols:
-                        base=sym.split('/')[0]
-                        # Kraken's official export names perpetuals
-                        # ``PF_<base>USD`` (and uses XBT for BTC).
-                        trade_base = 'XBT' if base == 'BTC' else base
-                        matches=[n for n in names if n.endswith(f'PF_{trade_base}USD.csv')]
-                        if not matches: continue
-                        try:
-                            h=pd.read_csv(zf.open(matches[0]), usecols=['timestamp','relative_rate'])
-                            h['timestamp']=pd.to_datetime(h['timestamp'],utc=True); h=h[(h.timestamp>=start)&(h.timestamp<end)].set_index('timestamp')
-                            hist=pd.to_numeric(h['relative_rate'],errors='coerce')
-                            values[sym]=hist.combine_first(values[sym]) if sym in values else hist
-                        except Exception: continue
-        recovered = pd.concat(values,axis=1).reindex(idx).reindex(columns=symbols).astype(np.float32) if values else pd.DataFrame(index=idx,columns=symbols,dtype=np.float32)
+            if archive.exists() and missing_symbols:
+                # The archive is optional historical backfill, never an input
+                # requirement for a contemporaneous sidecar.  A torn or
+                # externally corrupted archive must therefore leave only its
+                # affected historical values unavailable rather than blocking
+                # the entire 170-symbol causal panel or tempting a future-data
+                # repair.  Valid archives retain the exact prior behavior.
+                try:
+                    with zipfile.ZipFile(archive) as zf:
+                        names = set(zf.namelist())
+                        for sym in missing_symbols:
+                            base=sym.split('/')[0]
+                            # Kraken's official export names perpetuals
+                            # ``PF_<base>USD`` (and uses XBT for BTC).
+                            trade_base = 'XBT' if base == 'BTC' else base
+                            matches=[n for n in names if n.endswith(f'PF_{trade_base}USD.csv')]
+                            if not matches: continue
+                            try:
+                                h=pd.read_csv(zf.open(matches[0]), usecols=['timestamp','relative_rate'])
+                                h['timestamp']=pd.to_datetime(h['timestamp'],utc=True); h=h[(h.timestamp>=source_start)&(h.timestamp<end)].set_index('timestamp')
+                                hist=pd.to_numeric(h['relative_rate'],errors='coerce')
+                                values[sym]=hist.combine_first(values[sym]) if sym in values else hist
+                            except Exception: continue
+                except (zipfile.BadZipFile, OSError):
+                    pass
+        recovered = _asof_reindex(pd.concat(values,axis=1), idx, symbols) if values else pd.DataFrame(index=idx,columns=symbols,dtype=np.float32)
         existing = panel.get(field)
         panel[field] = existing.combine_first(recovered).astype(np.float32) if isinstance(existing, pd.DataFrame) else recovered
 
@@ -534,7 +1028,14 @@ def _add_frozen_input_backfill(panel: dict[str, pd.DataFrame], symbols: list[str
         if not path.exists():
             continue
         try:
-            x = pd.read_parquet(path)
+            x = pd.read_parquet(
+                path,
+                columns=['mark_price', 'open_interest'],
+                filters=[
+                    ('__index_level_0__', '>=', pd.Timestamp(start).to_pydatetime()),
+                    ('__index_level_0__', '<', pd.Timestamp(end).to_pydatetime()),
+                ],
+            )
             x.index = pd.to_datetime(x.index, utc=True)
             x = x[(x.index >= start) & (x.index < end)]
         except Exception:
@@ -545,7 +1046,7 @@ def _add_frozen_input_backfill(panel: dict[str, pd.DataFrame], symbols: list[str
     for field, values in collected.items():
         if not values:
             continue
-        recovered = pd.concat(values, axis=1).reindex(idx).reindex(columns=symbols).astype(np.float32)
+        recovered = _asof_reindex(pd.concat(values, axis=1), idx, symbols)
         existing = panel.get(field)
         panel[field] = existing.combine_first(recovered).astype(np.float32) if isinstance(existing, pd.DataFrame) else recovered
     # The Kraken mark is an official, decision-time fair-price reference.  If
@@ -620,9 +1121,20 @@ def materialize_features(
     contract: dict[str, list[str]],
     start: pd.Timestamp,
     end: pd.Timestamp,
+    *,
+    bar_phase_minutes: int = 0,
+    full_feature_universe: bool = False,
+    reference_symbols: Sequence[str] = (),
+    context_symbols: Sequence[str] = (),
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    symbols = sorted(labels['__symbol__'].unique())
+    # Candidate membership can legitimately be a routed subset of the market.
+    # Cross-sectional fields must nevertheless be computed from the complete
+    # point-in-time market context, *before* that candidate filter.  The
+    # optional context universe augments raw inputs only: output identities
+    # remain exactly the supplied target-free label grid.
+    candidate_symbols = sorted({str(value) for value in labels['__symbol__'].astype(str).unique()})
+    symbols = sorted({*candidate_symbols, *(str(value) for value in reference_symbols), *(str(value) for value in context_symbols)})
     assert_orderbook_source_preflight(contract, out_dir, symbols)
     # Canonical strict-R3 materialisation must never invoke minute-bar data.
     panel, source_map = _make_panel(
@@ -630,6 +1142,7 @@ def materialize_features(
         start,
         end,
         allow_minute_fallback=False,
+        bar_phase_minutes=bar_phase_minutes,
     )
     _add_orderbook_panels(panel, symbols, panel['close'].index, start, end)
     _add_oi_funding_panels(panel, symbols, panel['close'].index, start, end)
@@ -654,8 +1167,29 @@ def materialize_features(
         'enable_orderbook_wall_features':False,
         'live_lgbm_mask_feature_fast_path_enabled':False,
     })
-    print(json.dumps({'event':'feature_generation_start','symbols':len(symbols),'hours':len(panel['close']),'requested_fields':len(requested)}), flush=True)
-    generated, feat_index, feat_cols = compute_features_hourly(panel, gates, cfg, requested_feature_keys=requested)
+    print(json.dumps({
+        'event':'feature_generation_start', 'symbols':len(symbols),
+        'hours':len(panel['close']), 'requested_fields':(
+            'full_config_causal_universe' if full_feature_universe else len(requested)
+        ),
+    }), flush=True)
+    # The default preserves the frozen production contract exactly.  The
+    # opt-in branch is research-only: it asks the canonical engine for the
+    # complete current causal-config union, then writes only the generated
+    # numeric feature panels.  It never expands a live model contract.
+    generated, feat_index, feat_cols = compute_features_hourly(
+        panel,
+        gates,
+        cfg,
+        requested_feature_keys=None if full_feature_universe else requested,
+    )
+    if full_feature_universe:
+        requested = sorted(
+            str(key) for key, value in generated.items()
+            if isinstance(value, pd.DataFrame)
+        )
+        if not requested:
+            raise RuntimeError('full causal feature-universe request generated no DataFrame features')
     # The early wide-panel path historically named this value
     # ``ob_spread_z_24h``; the frozen contract stores the mathematically
     # identical explicit-bps alias.  Preserve the value, do not recompute it
@@ -702,18 +1236,37 @@ def materialize_features(
         pd.Index(feat_cols),
     )
     target_keys = labels[['__ts__','__symbol__']].drop_duplicates().sort_values(['__ts__','__symbol__'])
-    out = target_keys.copy()
     unique_ts = pd.DatetimeIndex(target_keys['__ts__'].unique()).sort_values()
+    target_index = pd.MultiIndex.from_frame(target_keys[['__ts__','__symbol__']])
+    # Construct the wide output in one operation.  Repeated ``out[key] =``
+    # assignments fragment pandas' block manager for the full causal universe
+    # (roughly 1,400 fields), turning a compact research materialisation into
+    # a quadratic-time, high-memory operation.
+    values_by_key: dict[str, np.ndarray] = {}
     for key in requested:
         frame = generated.get(key)
         if not isinstance(frame, pd.DataFrame):
-            out[key] = np.nan
+            values_by_key[key] = np.full(len(target_keys), np.nan, dtype=np.float32)
             continue
         frame = frame.reindex(index=unique_ts, columns=symbols)
-        stacked = frame.stack(dropna=False).rename(key)
-        index = pd.MultiIndex.from_frame(target_keys[['__ts__','__symbol__']])
-        out[key] = stacked.reindex(index).to_numpy(dtype=np.float32)
-    out_path = out_dir / 'canonical120_features.parquet'
+        # Pandas 3 rejects ``dropna=`` on its new stack implementation even
+        # though the causal materialiser needs the full timestamp × symbol
+        # grid.  Prefer the historical call where supported; its successor
+        # keeps the same full-grid semantics for the subsequent explicit
+        # reindex onto ``target_keys``.
+        try:
+            stacked = frame.stack(dropna=False).rename(key)
+        except ValueError:
+            stacked = frame.stack(future_stack=True).rename(key)
+        values_by_key[key] = stacked.reindex(target_index).to_numpy(dtype=np.float32)
+    out = pd.concat(
+        [target_keys.reset_index(drop=True), pd.DataFrame(values_by_key)],
+        axis=1,
+        copy=False,
+    )
+    out_path = out_dir / (
+        'causal_feature_universe.parquet' if full_feature_universe else 'canonical120_features.parquet'
+    )
     out.to_parquet(out_path, index=False, compression='zstd')
     coverage = []
     for key in requested:
@@ -721,12 +1274,25 @@ def materialize_features(
         coverage.append({'feature':key,'rows':int(len(vals)),'finite_rows':int(vals.notna().sum()),'finite_fraction':float(vals.notna().mean()),'n_unique':int(vals.nunique(dropna=True))})
     pd.DataFrame(coverage).to_parquet(out_dir/'feature_coverage.parquet', index=False)
     manifest = {
-        'schema':'exact170_canonical120_feature_panel_v1',
+        'schema':(
+            'exact170_causal_feature_universe_panel_v1'
+            if full_feature_universe else 'exact170_canonical120_feature_panel_v1'
+        ),
         'source_map':source_map,
         'start':str(start),
         'end_exclusive':str(end),
+        'bar_phase_minutes': int(bar_phase_minutes),
+        'feature_cadence_contract': (
+            'one completed H1 observation per row; phase shifts only the '
+            '15-minute-derived H1 boundary and preserves all row-based H1 '
+            'lookbacks'
+        ),
         'symbols':symbols,
+        'candidate_symbols': candidate_symbols,
+        'reference_symbols': sorted({str(value) for value in reference_symbols}),
+        'context_symbols': sorted({str(value) for value in context_symbols}),
         'requested_fields':requested,
+        'full_feature_universe': bool(full_feature_universe),
         'generated_fields':sorted(generated),
         'rows':int(len(out)),
         'field_coverage':coverage,

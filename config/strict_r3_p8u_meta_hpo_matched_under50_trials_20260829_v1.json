@@ -1,0 +1,44 @@
+[
+  {
+    "name": "matched_u50_a_rank_xendcg",
+    "source_trial": "proxybank_072_under_bps50_rank_xendcg",
+    "target": "under_bps50",
+    "arm_name": "under_bps50__timestamp",
+    "feature_mode": "additive_overlay",
+    "additive_feature_family": "matched_current_overlay",
+    "parent_contract": "config/strict_r3_p8u_under_state_reliability_matched_20260829_v1.json",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 6,
+    "sigmoid": 0.75,
+    "sample_weight": {"equal_timestamp": true, "components": [{"name": "positive_recall", "strength": 0.25, "power": 1.0}]},
+    "model": {"objective": "rank_xendcg", "learning_rate": 0.025, "max_depth": 2, "num_leaves": 31, "min_child_samples": 350, "min_split_gain": 0.0, "feature_fraction": 0.7, "bagging_fraction": 0.9, "lambda_l1": 0.0, "lambda_l2": 8.0, "n_estimators": 300}
+  },
+  {
+    "name": "matched_u50_b_rank_xendcg",
+    "source_trial": "proxybank_012_under_bps50_rank_xendcg",
+    "target": "under_bps50",
+    "arm_name": "under_bps50__timestamp",
+    "feature_mode": "additive_overlay",
+    "additive_feature_family": "matched_current_overlay",
+    "parent_contract": "config/strict_r3_p8u_under_state_reliability_matched_20260829_v1.json",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 6,
+    "sigmoid": 1.0,
+    "sample_weight": {"equal_timestamp": true, "components": []},
+    "model": {"objective": "rank_xendcg", "learning_rate": 0.025, "max_depth": 2, "num_leaves": 31, "min_child_samples": 350, "min_split_gain": 0.001, "feature_fraction": 0.8, "bagging_fraction": 0.7, "lambda_l1": 0.0, "lambda_l2": 2.0, "n_estimators": 300}
+  },
+  {
+    "name": "matched_u50_c_rank_xendcg",
+    "source_trial": "proxybank_060_under_bps50_rank_xendcg",
+    "target": "under_bps50",
+    "arm_name": "under_bps50__timestamp",
+    "feature_mode": "additive_overlay",
+    "additive_feature_family": "matched_current_overlay",
+    "parent_contract": "config/strict_r3_p8u_under_state_reliability_matched_20260829_v1.json",
+    "gain": [0, 1, 2, 4, 7, 11, 16, 24],
+    "truncation": 6,
+    "sigmoid": 1.25,
+    "sample_weight": null,
+    "model": {"objective": "rank_xendcg", "learning_rate": 0.025, "max_depth": 2, "num_leaves": 7, "min_child_samples": 500, "min_split_gain": 0.001, "feature_fraction": 0.9, "bagging_fraction": 0.82, "lambda_l1": 0.0, "lambda_l2": 2.0, "n_estimators": 300}
+  }
+]

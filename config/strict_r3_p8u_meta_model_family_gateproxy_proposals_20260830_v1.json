@@ -1,0 +1,49 @@
+{
+  "schema": "strict_r3_p8u_meta_model_family_gateproxy_proposals_v1",
+  "scope": "Offline model-family proposals only. Every proposal was scored by frozen GateProxy_P0_Ridge after a strict-OOF target-free cross-model screen. This receipt does not grant MC1, admission, portfolio, live, or production authority.",
+  "gateproxy_binding": "config/strict_r3_p8u_meta_hpo_objective_binding_allcontracts88_20260830_v1.json",
+  "selection_authority": "GateProxy determines the HPO branch to screen. Strict matched MC1 confirmation remains the sole advancement authority.",
+  "proposals": [
+    {
+      "family": "state",
+      "arm": "s_sqrtatr_band28",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_state_s_sqrtatr_band28_20260830_v1/contracts/state_f50.json",
+      "weight_trial": "w3_top20_class_balance",
+      "model_family": "lgbm_xendcg",
+      "crossmodel_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_state_s_sqrtatr_band28_f50_w3_20260830_v1",
+      "gateproxy_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_gateproxy_state_s_sqrtatr_band28_f50_w3_20260830_v1",
+      "gateproxy_score": 0.246814
+    },
+    {
+      "family": "under",
+      "arm": "u_atr10_ts",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_under_u_atr10_ts_20260830_v1/contracts/under_f90.json",
+      "weight_trial": "w0_unweighted",
+      "model_family": "catboost_yetirank",
+      "crossmodel_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_under_u_atr10_ts_f90_w0_20260830_v1",
+      "gateproxy_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_gateproxy_under_u_atr10_ts_f90_w0_20260830_v1",
+      "gateproxy_score": 0.218159
+    },
+    {
+      "family": "over",
+      "arm": "o_atr10_ts",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_over_o_atr10_ts_20260830_v1/contracts/over_f90.json",
+      "weight_trial": "w3_over_local_adverse",
+      "model_family": "lgbm_xendcg",
+      "crossmodel_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_over_o_atr10_ts_f90_w3_20260830_v1",
+      "gateproxy_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_gateproxy_over_o_atr10_ts_f90_w3_20260830_v1",
+      "gateproxy_score": 0.133605
+    },
+    {
+      "family": "magnitude",
+      "arm": "m_sqrtatr_g7_band28",
+      "feature_contract": "data_perp/artifacts/strict_r3_p8u_meta_feature_select_magnitude_m_sqrtatr_g7_band28_20260830_v1/contracts/magnitude_f70.json",
+      "weight_trial": "w0_unweighted",
+      "model_family": "catboost_queryrmse",
+      "crossmodel_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_magnitude_m_sqrtatr_g7_band28_f70_w0_20260830_v1",
+      "gateproxy_root": "data_perp/artifacts/strict_r3_p8u_meta_crossmodel_gateproxy_magnitude_m_sqrtatr_g7_band28_f70_w0_20260830_v1",
+      "gateproxy_score": 0.065643,
+      "qualification": "Direct SStableMeta favored LightGBM; this GateProxy preference is deliberately subject to an additional strict MC1 confirmation."
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "task": "kraken-exact-mapped-all-asset-raw-pilot-acquisition",
+  "scope": "Extend the completed three-symbol offline Kraken Spot pilot to every exact mapped symbol whose requested first-UTC-day data was officially available. This is raw research-data acquisition only; no model, policy, admission, feature, live inference, or execution code changed.",
+  "mapping_contract": {
+    "mapping": "data/execution/tardis/manifests/kraken_spot_exact_mapping_20260819.csv",
+    "mapping_sha256": "e82864e6836a7293317babed46bb11816df09d9116cf98b7688cbe93366ec476",
+    "rule": "exact BASE/USD:USD perpetual to BASE/USD Kraken Spot membership only; no aliases, quote substitutions, or fuzzy mappings",
+    "mapped_symbols": 136
+  },
+  "bounded_sample": {
+    "exchange": "kraken",
+    "sample_date": "2025-01-01",
+    "free_sample_rule": "first UTC day of month only",
+    "data_types": ["incremental_book_L2", "book_snapshot_5", "trades"],
+    "official_metadata": "data/execution/tardis/manifests/tardis_kraken_metadata_20260819.json",
+    "manifest": "data/execution/tardis/manifests/kraken_all_mapped_pilot_20250101.parquet",
+    "manifest_sha256": "79b8b558a287dd87802f31e90b02eccb62163b621b8830b328cb777fe6760ff3",
+    "download_status": "data/execution/tardis/manifests/kraken_all_mapped_pilot_20250101_download_status.parquet",
+    "download_status_sha256": "36d15cf8a9c8d6d39ad4d2502ca9d5ebc29dc4504e4f20b287f53fd4f3f9ca37"
+  },
+  "result": {
+    "total_manifest_rows": 408,
+    "officially_available_symbols_per_type": 99,
+    "downloaded": {
+      "incremental_book_L2": 99,
+      "book_snapshot_5": 99,
+      "trades": 99,
+      "total_files": 297
+    },
+    "unavailable_before_metadata_start": {
+      "per_type": 37,
+      "total_rows": 111
+    },
+    "unexpected_failures": 0,
+    "raw_size_gib": {
+      "incremental_book_L2": 2.5572,
+      "book_snapshot_5": 1.5986,
+      "trades": 0.0031,
+      "total": 4.1589
+    }
+  },
+  "integrity_and_resume": {
+    "transport": "bounded direct official Tardis dataset URL",
+    "request_timeout_seconds": 120,
+    "retries": 2,
+    "verification": "Every new gzip was fully read for CRC/trailer validation and SHA-256 before atomic promotion. Existing verified files were revalidated rather than overwritten.",
+    "raw_immutability": "No raw input was removed or overwritten. Each manifest row persists the promoted path, byte size, and SHA-256 checksum."
+  },
+  "changed_paths": [
+    "data/execution/tardis/manifests/kraken_all_mapped_pilot_20250101.parquet",
+    "data/execution/tardis/manifests/kraken_all_mapped_pilot_20250101_download_status.parquet",
+    "data/execution/tardis/raw/kraken/"
+  ],
+  "agent_plan": {"subagents": []}
+}

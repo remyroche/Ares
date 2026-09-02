@@ -1,0 +1,64 @@
+{
+  "schema": "strict_r3_p8u_routed_f72_underf120_research_canonical_successor_v7",
+  "status": "CANONICAL_RESEARCH_STACK_NOT_LIVE",
+  "created_at": "2026-08-29",
+  "side": "long",
+  "supersedes": {
+    "path": "config/strict_r3_p8u_routed_f72_underf120_research_canonical_20260828_v6.json",
+    "reason": "resolves MC1 six-month provenance and supersedes the earlier non-equivalent warm-state parity failure"
+  },
+  "purpose": "Hash-bound Router50/F72/UnderF120/dual-MC1 research stack. It remains non-executable and does not authorize inference against an exchange or order submission.",
+  "frozen_stack": {
+    "router": "P8U top-50% timestamp-local identity gate; numeric score has no downstream feature authority",
+    "base": "F72 Raw-bps CatBoost QueryRMSE tail_linear_125",
+    "under": "F120 Rank-XENDCG bps100 confirmation head",
+    "current_family": "0.75 * Base rank + 0.25 * Under F120 rank",
+    "bcf_family": "Base rank only",
+    "admission": "independent BCF and Current six-month MC1 expected-policy-net maps, both >= 50 bps",
+    "auction_priority": "BCF MC1 expected policy-net bps"
+  },
+  "policy": {
+    "frozen_policy": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+    "frozen_policy_sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575",
+    "resolution": "15-minute aggregate rich-policy proxy; exact one-minute exit parity is not established by this research contract",
+    "cost": "100 bps round-trip policy cost embedded exactly once"
+  },
+  "mc1_provenance": {
+    "status": "RESOLVED_SIX_COMPLETE_CALENDAR_MONTHS",
+    "package_root": "data_perp/artifacts/strict_r3_p8u_f72_underf120_dual_mc1_sixmonth_aug25_aug26_20260828_v4",
+    "run_manifest_sha256": "05731b94c8e35a19d70e55392a1335e468ccd568ba96279e32466794b4a449d6",
+    "correctness_report_sha256": "46f7657026e536166731c86d3598c518b7ea382cd0da21ad86a8729b0407648d",
+    "training_rule": "six complete calendar months ending at each held-vintage start; every policy label resolves strictly before that held-vintage start",
+    "first_eligible_vintage": "2026-02",
+    "families": {
+      "bcf": "Base rank coordinate; serialized family-specific HGB map plus prior-21-day resolved-outcome shift state",
+      "current": "0.75 Base + 0.25 Under coordinate; serialized family-specific HGB map plus prior-21-day resolved-outcome shift state"
+    },
+    "superseded_artifacts": [
+      "three-month metadata references in v6",
+      "interim dual-MC1 v3 packages"
+    ]
+  },
+  "feature_state": {
+    "status": "PARITY_PROVEN_UNACTIVATED",
+    "canonical_universe": "160 contemporaneous symbols before Router50 projection",
+    "feature_count": 175,
+    "minimum_raw_tail_hours": 1536,
+    "cold_start": "exact full target-free canonical source bootstrap",
+    "parity_receipt": "data_perp/artifacts/strict_r3_p8u_canonical_stateful_tail1536_kernelstate_v26_parity_20260829/parity_summary.json",
+    "parity_result": "175/175 fields, zero mismatched cells, max absolute delta 1.3113021850585938e-06 under frozen tolerance",
+    "full_graph_receipt": "data_perp/artifacts/strict_r3_p8u_fullsource_poststdstate_parity_20260829_v1/parity_summary.json",
+    "state_semantics": "full universe canonical graph before any router projection; persisted raw rolling, causal transform, derived/nested, OI-IQR, fixed-FFD, spectral, grouped, EWMA, and regime-transition state"
+  },
+  "promotion_boundary": {
+    "live_replacement_authorized": false,
+    "required_before_promotion": [
+      "seal the v7 model, MC1, and canonical warm-state artefacts into one hash-bound inference package",
+      "verify two sequential post-bootstrap state advances against the same full causal reference",
+      "run target-free assembled inference/replay parity",
+      "establish exact one-minute exit execution parity or name a separately validated execution contract",
+      "later untouched forward validation",
+      "separate explicit authorization"
+    ]
+  }
+}

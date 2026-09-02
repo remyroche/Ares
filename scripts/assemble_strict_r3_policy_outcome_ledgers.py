@@ -48,7 +48,7 @@ def _manifest_for(path: Path) -> tuple[Path, dict[str, object]]:
 
 def _assemble(
     *, source_panel: Path, fragments: list[Path], start: pd.Timestamp,
-    end: pd.Timestamp,
+    end: pd.Timestamp, side: str,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
     source = pd.read_parquet(
         source_panel,
@@ -56,9 +56,9 @@ def _assemble(
         filters=[("__decision_ts__", ">=", start), ("__decision_ts__", "<", end)],
     )
     source["__decision_ts__"] = pd.to_datetime(source["__decision_ts__"], utc=True)
-    source = source.loc[source["side_name"].astype(str).str.lower().eq("long")].copy()
+    source = source.loc[source["side_name"].astype(str).str.lower().eq(side)].copy()
     if source.empty or source["candidate_id"].duplicated().any():
-        raise ValueError("source interval is empty or has duplicate candidate IDs")
+        raise ValueError(f"{side} source interval is empty or has duplicate candidate IDs")
 
     pieces: list[pd.DataFrame] = []
     fragment_audit: list[dict[str, object]] = []
@@ -69,6 +69,11 @@ def _assemble(
         policy_hash = str(manifest.get("policy_json_sha256", ""))
         if not policy_hash:
             raise ValueError(f"outcome fragment does not declare policy_json_sha256: {path}")
+        fragment_side = str(manifest.get("side") or "long").strip().lower()
+        if fragment_side != side:
+            raise ValueError(
+                f"outcome fragment side mismatch: expected {side}, got {fragment_side}"
+            )
         policy_hashes.add(policy_hash)
         policy_payloads.append(dict(manifest.get("policy", {})))
         piece = pd.read_parquet(
@@ -81,6 +86,7 @@ def _assemble(
             "path": str(path), "sha256": _sha(path),
             "manifest": str(manifest_path), "manifest_sha256": _sha(manifest_path),
             "rows_in_interval": int(len(piece)), "policy_json_sha256": policy_hash,
+            "side": fragment_side,
         })
     if len(policy_hashes) != 1 or len({json.dumps(value, sort_keys=True) for value in policy_payloads}) != 1:
         raise ValueError("outcome fragments do not use one identical optimized-policy contract")
@@ -134,6 +140,7 @@ def main() -> None:
     parser.add_argument("--start", required=True)
     parser.add_argument("--end-exclusive", required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--side", choices=("long", "short"), default="long")
     args = parser.parse_args()
     start, end = _utc(args.start), _utc(args.end_exclusive)
     if end <= start:
@@ -142,7 +149,7 @@ def main() -> None:
         raise FileExistsError(f"immutable output exists: {args.out_dir}")
     output, audit = _assemble(
         source_panel=args.source_panel, fragments=args.outcome_ledger,
-        start=start, end=end,
+        start=start, end=end, side=args.side,
     )
     args.out_dir.mkdir(parents=True)
     output_path = args.out_dir / "candidate_policy_outcomes.parquet"
@@ -156,7 +163,7 @@ def main() -> None:
     monthly.to_parquet(args.out_dir / "monthly_coverage.parquet", index=False)
     manifest = {
         "schema": "strict_r3_source_aligned_optimized_policy_outcomes_assembled_v1",
-        "side": "long", "source_panel": str(args.source_panel),
+        "side": args.side, "source_panel": str(args.source_panel),
         "source_panel_sha256": _sha(args.source_panel),
         "start": start.isoformat(), "end_exclusive": end.isoformat(),
         "entry": "first available bar open at signal close + one hour",

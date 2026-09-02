@@ -1,0 +1,88 @@
+{
+  "activation_path": "config/strict_r3_p8u_e2_h4_kraken_live_activation_20260831_v1.json",
+  "bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_preproduction_bundle_20260830_v58_ffd_safe_causal_tail_research",
+    "sha256": "6b90dc9b7efa6cc727b78994101ebf02176e966e307cadc879274c19ebebff6c"
+  },
+  "e2_h4_bundle": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_live_parity_bundle_20260830_v1",
+    "sha256": "1bc52bacde8fc824afceec3ba60debab129cb4a2ab4046c6b64447eaeb7fecbd"
+  },
+  "exchange_id": "krakenfutures",
+  "execution": {
+    "entry_delay_minutes": 0,
+    "execution_adjusted_ev_formula": "bcf_mc1_expected_net_bps - adverse_delay_gap - max(80bps, 1.2*full_live_spread_bps + 2*entry_impact_bps) - 10bps buffer",
+    "minimum_execution_adjusted_ev_bps": 50.0,
+    "price_gap_guard_bps": 100.0,
+    "protective_stop": "immediate reduce-only stop adjusted to current full-size exit VWAP; parent rich policy then advances on completed 1-minute bars; H4 may only modify the following 15-minute interval"
+  },
+  "failure_mode": "fail_closed; no stale execution, no artifact mismatch, no unknown exchange position, no missing exact decision-open/ATR lineage; H4 source failure retains parent rich policy only",
+  "gateway_runtime": {
+    "path": "scripts/run_strict_r3_p8u_e2_h4_live_gateway.py",
+    "sha256": "51396919a2a37538edc52ce517a17f59d5ac6f0bc83dc59ae1c32ac2ec0f1210"
+  },
+  "h4_expectation_reference": {
+    "path": "data_perp/artifacts/strict_r3_p8u_e2_h4_expectation_reference_20260830_v1/h4_expectation_reference_target_free.parquet",
+    "sha256": "ec789929954cc831aa4b6c63a251108c4e21089f20daa951aee389f48996f0d7"
+  },
+  "maximum_decision_age_seconds": 900,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 100.0,
+  "order_submission": true,
+  "policy": {
+    "path": "data_perp/artifacts/strict_r3_rich_policy_smooth_protection_long_20260817_v1/frozen_policy.json",
+    "sha256": "e7508e523d6aaa8a03b0df8009f5e766bfca83c4f1b5fb1c1bd7816901041575"
+  },
+  "portfolio": {
+    "auction_priority": "BCF MC1 expected bps; E2 may replace only the marginal ordinary dual-30 BCF top-two candidate with one qualifying dual-20 reserve; no capacity expansion",
+    "leverage": 7.0,
+    "margin_budget_fraction": 0.8,
+    "margin_slot_fraction": 0.1,
+    "max_concurrent_positions": 8,
+    "max_new_entries_per_decision": 2
+  },
+  "release_candidate": {
+    "path": "config/strict_r3_p8u_e2_h4_live_parity_release_candidate_20260831_v2.json",
+    "sha256": "502768ad252b9e8f5a83e79c898f701dc5a133781589fbdb2c8c7e1db9839d7f"
+  },
+  "runtime_dependencies": {
+    "continuation_features": {
+      "path": "extreme_price_movements/p8u_continuation_v2_features.py",
+      "sha256": "2277ddb047a872e151ef8a85050b23f885b4c77fc729bf609b5e767b352d95e8"
+    },
+    "e2_auction": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_auction.py",
+      "sha256": "b3d14123f8adcc5ae33bb0f8c5c897b91fe98b5645c9a75c473aa0e2597ec239"
+    },
+    "e2_authority": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_parity.py",
+      "sha256": "a139939704cbacd09b19addf91e76d0a645d45f1a0391d6ef14d721be1e446ef"
+    },
+    "e2_features": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_live_features.py",
+      "sha256": "68c0ce623dd31e76d3c7fc2ea0fa75f8f32dc67ce94697b818c7cb80da2c4ecd"
+    },
+    "fifteen_minute_features": {
+      "path": "extreme_price_movements/p8u_15m_features.py",
+      "sha256": "356d48029edab1e9af40f9f7a9fddb849718aefe531bb7ed018ca9b6dc02f82b"
+    },
+    "h4_policy_wrapper": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_rich_policy.py",
+      "sha256": "1fc22c2f2d862dd9562009203456757096657931211c549c342d8227e8fed4c8"
+    },
+    "h4_state": {
+      "path": "extreme_price_movements/inference/p8u_e2_h4_continuation.py",
+      "sha256": "3e4c149504e790a65e3c6dd617eb0fa13fc4be86a0dd89cc7b97055a2824c97b"
+    },
+    "live_bar_loader": {
+      "path": "extreme_price_movements/inference/run_inference.py",
+      "sha256": "5c4b6bf208a86d895eb611b8c4a64a27ff74f58ec076aa8aba51790cc3efe512"
+    },
+    "strict_execution_engine": {
+      "path": "extreme_price_movements/inference/strict_r3_live_execution.py",
+      "sha256": "7eeb68ad6e32a10baca221a4a3007fbb066eb88fa5c00a2f56db23960dd63826"
+    }
+  },
+  "schema": "strict_r3_p8u_e2_h4_kraken_live_gateway_v1",
+  "side": "long"
+}

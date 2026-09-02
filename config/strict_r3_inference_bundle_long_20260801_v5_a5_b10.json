@@ -23,7 +23,7 @@
     "cell_day_trust_bundle_dir": "data_perp/artifacts/strict_r3_cell_day_residual_trust_bundle_long_20260801_28d_r5_9m_posterior_v2",
     "cell_day_trust_contract": "config/strict_r3_cell_day_residual_trust_model_r5_9m_v1.json",
     "cell_day_trust_integration_contract": "config/strict_r3_cell_day_residual_trust_posterior_28d_challenger_v1.json",
-    "a5_bundle_dir": "data_perp/artifacts/strict_r3_a5_bounded10_trust_bundle_long_20260801_28d_9m_v1",
+    "a5_bundle_dir": "data_perp/artifacts/strict_r3_a5_bounded10_trust_bundle_long_20260801_28d_9m_v2",
     "a5_contract": "config/strict_r3_a5_bounded_10pct_canonical_v1.json"
   },
   "sha256": {
@@ -47,8 +47,8 @@
     "cell_day_trust_contract": "8c4e0ebbfb14a5886f6f1bbd2196a0db2b4a8d1bd1ac53ba10c7898c8129ae51",
     "cell_day_trust_integration_contract": "c0e2013b9afb0e9e18011bc44bfe77f41e22dfd826d3d2e7d2b3a0c2c88f5a85",
     "a5_model": "c3f15e0fda05853404aa65beff44cf021adb501dff9b9d6d22eab262a8ae68a7",
-    "a5_calibration": "db6f3fb25ee38afbf4e4b5e132f6cc58f31d36823dd798b96a4bb9ad32278063",
-    "a5_manifest": "5f62f562ba09fa726baf933d0fd46b37914508c856eb95c4be56cc87d4389e37",
+    "a5_calibration": "7bcb7793218365054547f890cec4ea5b00e29cafcebcd210efad2af5f5ab61af",
+    "a5_manifest": "c25e63f2c746082eec92f366e27cf76cd1642208479f2b7e15552f63b105e87e",
     "a5_contract": "8bae86d9170f5ba8a7ed44d378c6a540fff57c3449d3163d59a4311310e1ebf4"
   },
   "producer": {

@@ -1,0 +1,71 @@
+{
+  "receipt_type": "strict_r3_p8u_precision_preservation_funnels_hpo",
+  "timestamp_utc": "2026-08-27T00:00:00Z",
+  "scope": "Offline Router50 P8u base-head research only. No Meta, MC1, admission, portfolio, live-trading, or exchange mutation.",
+  "base_score_contract": {
+    "formula": "0.30*DTP2 + 0.30*DTP5 + 0.20*DTP10 + 0.20*ResidualUR10_to30",
+    "normalization": "Each component is normalized against the fixed Stage-1 target-free control before aggregation.",
+    "residual_utility": "(U(Top30_t)-U(Top10_t))/(U(Router50_t)-U(Top10_t)+epsilon)",
+    "utility_recall20": "U(Top20_t within Router50_t)/U(all Router50_t); recorded as a diagnostic only, not an unannounced fifth score term."
+  },
+  "strict_protocol": {
+    "router": "Frozen P8u top-50% candidate identities per timestamp",
+    "training": "3 calendar months; query-safe 60,000 complete-query cap; 28-day resolved-label reserve",
+    "hpo_screen_months": ["2025-11", "2026-03", "2026-07"],
+    "hpo_confirmation_months": ["2025-11", "2026-01", "2026-03", "2026-05", "2026-07"],
+    "inner_early_stopping": "Latest 20% chronological training queries; 30 rounds",
+    "cheap_hpo": "10 trials on the three cross-year screen folds; MedianPruner(startup=4,warmup=2); only the top three trials receive the full five-fold confirmation."
+  },
+  "source_sha256": {
+    "metric": "5afbdd5348acd11f86d28968b59b84ec2b64a3e5376ec2da2d2006f763138603",
+    "target_screen": "2e32aaa1724c7f6ff10e8f4ef636cfea03e74ebcb26643d061632e57fa605fa2",
+    "gain_funnel": "9c3f5399edf6bae8c84f5f2918c2faf75cb235857854300364baca1956a006a7",
+    "objective_funnel": "c08a9ed14ab3e5c00a1a28f761991df6fc9268d11c358599b761bb57db1960af",
+    "cross_model": "cfd77423e8b1aa8e9529b13401bd983989aeef633ffbf35674c170a547f4544b",
+    "winner_hpo": "5ca20a614c1b5e29e821fdf640cd9ac8a615b51a76bf068afa184acf7df77f9b"
+  },
+  "results": {
+    "raw_bps_equal_width6_g3_catboost_queryrmse": {
+      "cross_model_score_stable": 1.662982,
+      "confirmed_hpo_score_stable": 1.6730443163,
+      "decision": "retain HPO refinement",
+      "hpo_parameters": {
+        "learning_rate": 0.0650993920,
+        "max_depth": 5,
+        "feature_fraction": 0.8006506563,
+        "bagging_fraction": 0.7096047498,
+        "lambda_l2": 2.2357264515,
+        "random_strength": 0.9428901899
+      }
+    },
+    "atr_tail_quantile6_g3_catboost_queryrmse": {
+      "cross_model_score_stable": 1.621951,
+      "confirmed_hpo_score_stable": 1.5900401734,
+      "decision": "retain frozen cheap cross-model control; reject HPO variant"
+    },
+    "sqrt_atr_equal_width6_g1_xgb_ndcg": {
+      "cross_model_score_stable": 1.667698,
+      "confirmed_hpo_score_stable": 1.5273750470,
+      "decision": "retain frozen cheap cross-model control; reject HPO variant"
+    }
+  },
+  "artifacts": {
+    "raw_cat_hpo": "data_perp/artifacts/strict_r3_p8u_precision_preservation_hpo_raw_cat_20260827_v2",
+    "atr_cat_hpo": "data_perp/artifacts/strict_r3_p8u_precision_preservation_hpo_atr_cat_20260827_v2",
+    "sqrt_xgb_hpo": "data_perp/artifacts/strict_r3_p8u_precision_preservation_hpo_sqrt_xgb_20260827_v2"
+  },
+  "validation": {
+    "pytest": "18 passed; one non-failing LightGBM feature-name warning",
+    "correctness_checks": [
+      "all_feature_medians_train_only",
+      "all_held_scores_target_free_before_outcomes",
+      "all_train_labels_resolved_before_reserve",
+      "early_stopping_inner_split_is_chronological",
+      "p8u_router_top50_identity_exact",
+      "top_hpo_candidates_confirmed_on_full_five_fold_panel",
+      "no_meta_mc1_portfolio_or_live_mutation"
+    ],
+    "status": "all true in every v2 HPO correctness report"
+  },
+  "next_step": "Run stability-aware feature selection only for the retained contracts, then require a fresh strict downstream Meta/MC1/portfolio comparison before any promotion decision."
+}

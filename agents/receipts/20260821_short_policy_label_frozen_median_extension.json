@@ -1,0 +1,32 @@
+{
+  "schema": "ares_change_receipt_v1",
+  "task": "extend_short_policy_labels_without_evaluation_median_leakage",
+  "scope": "short-side research labels only; no live policy, portfolio, admission, or long-side execution authority changed",
+  "changed_paths": {
+    "scripts/materialize_short_policy_conversion_labels.py": "31131367102e105d29bda89274b8f2a0bade2bd7a2f7beebe20ae63da9b10116",
+    "extreme_price_movements/tests/test_short_policy_conversion_labels.py": "86d814355ee1a0f1afac93ff812fbcf37f7c7561f3cafecf0e72aadc141de9fc"
+  },
+  "governing_contract_hashes": {
+    "agents/dataset_contract.md": "3350cb34ff2f3ee98ff8fe676f973725657f62be8b9c39bf4f69d1b76179ef95",
+    "agents/feature_pipeline_rules.md": "412162011f399b617736dc4249cea44dd3cc4ccfd8c2ae7d8581b4de3b7ac1ed",
+    "agents/leakage_prevention.md": "61ad145e5a45ea1a5025382949a2c36deeda084a45098c8d64f5da74d2eed295",
+    "agents/model_validation_protocol.md": "935fd89caea0654db3e26fefdf56df3f3f4e35df252bda2612168d0de99efe6f",
+    "agents/experiment_discipline.md": "8523ab91892e13d4459c34ef87f28cb8aa0b48124e30ad567a452bd94cc0fae7"
+  },
+  "controls": {
+    "side": "short",
+    "frozen_median_atr_fraction": 0.009867850394711882,
+    "frozen_median_provenance": "strict_r3_short_policy_conversion_labels_12m_20260820_v1, derived only from its pre-2024-10 training reference",
+    "evaluation_rows_used_to_compute_median": false,
+    "invalid_policy_paths": "null targets, retained for coverage only and excluded from fitting",
+    "long_live_contract_changed": false
+  },
+  "validation": {
+    "commands": [
+      "python3 -m pytest -q extreme_price_movements/tests/test_short_policy_conversion_labels.py extreme_price_movements/tests/test_short_target_free_history_projection.py extreme_price_movements/tests/test_short_policy_conversion_hpo_stop.py",
+      "python3 -m py_compile scripts/materialize_short_policy_conversion_labels.py",
+      "git diff --check -- scripts/materialize_short_policy_conversion_labels.py extreme_price_movements/tests/test_short_policy_conversion_labels.py"
+    ],
+    "result": "9 passed; syntax and whitespace checks passed"
+  }
+}

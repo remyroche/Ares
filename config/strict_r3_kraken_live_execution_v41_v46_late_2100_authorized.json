@@ -1,0 +1,32 @@
+{
+  "activation_authorization": "config/strict_r3_kraken_live_activation_authorization_20260815_v12_v46_runtime_reseal.json",
+  "activation_authorization_sha256": "9723035c9b4d293ed6d994f12ba950c4654e1a8b75d9adddc19b86c974e61ba8",
+  "baseline_policy_cost_bps": 100.0,
+  "close_reporting": "v39: email reports only causal same-timestamp cross-sectional percentiles for K9, support, OOD, Mahalanobis, covariance and correlation diagnostics.",
+  "exchange_id": "krakenfutures",
+  "execution_adjusted_ev": "raw_expected_gross_bps - adverse_delay_gap_bps - max(80 bps, 1.2 * live_full_spread_bps + 2 * entry_impact_bps); raw_expected_gross_bps is the explicit MC1 gross convention and the historical 100-bps policy cost is not debited again; must remain at least +50 bps at preflight and after fill",
+  "exit_policy": "data_perp/artifacts/strict_r3_schema_v2_simple_policy_targetfree_long_pre2025_20260809_v3/winner.json",
+  "exit_policy_sha256": "2dc9a145766ae383a4ab7c33e8a9f9e358175597e05582300ff0a05732673603",
+  "failure_policy": "fail_closed",
+  "inference_bundle": "config/strict_r3_inference_bundle_long_20260801_v46_atomic15m_retry_runtime_reseal.json",
+  "inference_bundle_sha256": "531534c48dbd26981c33f19af95f6118a6595a904c2d43407d19ad08aa57a48d",
+  "late_entry_override_decision_ts": "2026-08-15T21:00:00+00:00",
+  "late_entry_override_expires_at": "2026-08-15T21:45:00+00:00",
+  "leverage": 7.0,
+  "maximum_decision_age_seconds": 900,
+  "maximum_entry_slippage_bps": 100.0,
+  "maximum_exit_slippage_bps": 50.0,
+  "maximum_live_spread_bps": 100.0,
+  "minimum_execution_adjusted_ev_bps": 50.0,
+  "order_submission_authorized": true,
+  "position_monitor": "persistent one-minute threshold monitor: stop/trailing/timeout use only post-fill closed 1m bars; the stored Adaptive Exit V1 activation is consumed by the minute executor and is never recomputed there",
+  "runtime_checkpoint_required_before_order_submission": true,
+  "runtime_code_sha256": {
+    "extreme_price_movements/inference/canonical_stack_reporting.py": "37623d6659dada0bee05e5c340b1b5606726e7ab20dc3f9c8eb66036cad120b5",
+    "extreme_price_movements/inference/run_inference.py": "650e9a08e7bb9babe1b8bc3da835200337614eddb9b1056297caa1a6c6ce9e78",
+    "extreme_price_movements/inference/strict_r3_live_execution.py": "c324aa3915f2b4226188cd79e2dc4bd08d176798029afa8b30b60519be4427b7",
+    "extreme_price_movements/strict_r3_shadow_portfolio.py": "2cf10909c88278a571f36ae7253a6be202cacff9fcbd953b1b0a04e609de10d5"
+  },
+  "schema": "strict_r3_kraken_live_execution_v1",
+  "side": "long"
+}

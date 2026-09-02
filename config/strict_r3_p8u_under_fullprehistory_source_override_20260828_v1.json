@@ -1,0 +1,10 @@
+{
+  "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_tail125_base_history_mar25_jul26_fullprehistory_20260828_v1/target_free_scores",
+  "full_feature_roots": [
+    "data_perp/artifacts/strict_r3_p8u_underf120_pathidentity_mar25_features_20260828_v1",
+    "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_preaug_v1",
+    "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_v1"
+  ],
+  "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_fullprehistory_20260828_v1/canonical_reconciled_policy_labels.parquet",
+  "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+}

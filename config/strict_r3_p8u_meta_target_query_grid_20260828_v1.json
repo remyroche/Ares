@@ -1,0 +1,108 @@
+{
+  "schema": "strict_r3_p8u_meta_target_query_grid_config_v1",
+  "scope": "offline P8u Meta target/query selection only; no live, admission, execution, or exchange mutation",
+  "base_contract": "P8U_RAW_BPS_CATBOOST_QUERYRMSE_F72_TAIL125",
+  "source": {
+    "base_target_free_root": "data_perp/artifacts/strict_r3_p8u_tail125_base_history_aug25_jul26_successorlabels_20260828_v1/scheme=tail_linear_125/target_free_scores",
+    "full_feature_roots": [
+      "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_preaug_v1",
+      "data_perp/artifacts/strict_r3_incumbent_meta_causal_features_20260827_v1"
+    ],
+    "base_f72_contract": "data_perp/artifacts/strict_r3_b0_family_addback_20260826_v1_policy_ordinal_base_g3/selection.json",
+    "policy_labels": "data_perp/artifacts/strict_r3_p8u_router_policy_label_successor_20260828_v1/canonical_reconciled_policy_labels.parquet",
+    "path_labels": "data_perp/artifacts/strict_r3_long_supportive_path_labels_2024_2026_20260823_v6_observed_entry/parts"
+  },
+  "folds": {
+    "held_months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+    "train_months": 4,
+    "resolved_label_reserve_days": 28,
+    "anchor_block_days": 14,
+    "max_train_rows": 100000,
+    "max_query_rows": 8000,
+    "seed": 1729
+  },
+  "model": {
+    "family": "LightGBM LambdaRank common screen",
+    "objective": "lambdarank",
+    "n_estimators": 260,
+    "learning_rate": 0.045,
+    "max_depth": 4,
+    "num_leaves": 15,
+    "min_child_samples": 350,
+    "min_split_gain": 0.001,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.82,
+    "lambda_l1": 0.02,
+    "lambda_l2": 8.0,
+    "sigmoid": 1.0,
+    "fixed_iterations_note": "The target/query screen intentionally uses a fixed common fit. Causal early-stop and full HPO are downstream stages after target selection."
+  },
+  "provisional_meta_blend": {
+    "base_rank_weight": 0.75,
+    "meta_rank_weight": 0.25,
+    "admission_proxy_fraction": 0.2,
+    "meta_quartile_fraction": 0.25,
+    "utility_clip_bps": [-300, 600],
+    "utility_density_clip_bps": [0, 600]
+  },
+  "target_families": {
+    "magnitude": {
+      "definition": "strict-prequential rich-policy-net residual against a train-only Base-rank-to-policy-EV isotonic anchor; ordinalized into seven train-only quantile grades",
+      "arms": [
+        {"name": "magnitude_bps__base_band", "scale": "bps", "query": "base_band"},
+        {"name": "magnitude_bps__base_band_block28", "scale": "bps", "query": "base_band_block28"},
+        {"name": "magnitude_atr__base_band", "scale": "atr", "query": "base_band"},
+        {"name": "magnitude_atr__base_band_block28", "scale": "atr", "query": "base_band_block28"},
+        {"name": "magnitude_sqrt_atr__base_band", "scale": "sqrt_atr", "query": "base_band"},
+        {"name": "magnitude_sqrt_atr__base_band_block28", "scale": "sqrt_atr", "query": "base_band_block28"}
+      ]
+    },
+    "under": {
+      "definition": "unexpected favorable path: policy residual clears the declared threshold and the resolved path reached the frozen 0.5-ATR trailing-profit activation",
+      "query": "timestamp",
+      "arms": [
+        {"name": "under_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "under_bps100__timestamp", "scale": "bps", "threshold": 100.0},
+        {"name": "under_atr0p5__timestamp", "scale": "atr", "threshold": 0.5},
+        {"name": "under_atr1__timestamp", "scale": "atr", "threshold": 1.0}
+      ]
+    },
+    "over": {
+      "definition": "unexpected adverse path: policy residual breaches the declared negative threshold and the canonical policy exits through stop-loss or fast-adverse protection",
+      "query": "timestamp",
+      "arms": [
+        {"name": "over_bps50__timestamp", "scale": "bps", "threshold": 50.0},
+        {"name": "over_bps100__timestamp", "scale": "bps", "threshold": 100.0},
+        {"name": "over_atr0p5__timestamp", "scale": "atr", "threshold": 0.5},
+        {"name": "over_atr1__timestamp", "scale": "atr", "threshold": 1.0}
+      ]
+    },
+    "state": {
+      "definition": "explicitly signed Base calibration state, from overconfident negative residual through approximately accurate to underconfident positive residual",
+      "arms": [
+        {"name": "state_bps__base_band", "scale": "bps", "query": "base_band", "edges": [-150, -50, -10, 10, 50, 150]},
+        {"name": "state_bps__timestamp", "scale": "bps", "query": "timestamp", "edges": [-150, -50, -10, 10, 50, 150]},
+        {"name": "state_bps__base_band_block28", "scale": "bps", "query": "base_band_block28", "edges": [-150, -50, -10, 10, 50, 150]},
+        {"name": "state_atr__base_band", "scale": "atr", "query": "base_band", "edges": [-1.5, -0.5, -0.1, 0.1, 0.5, 1.5]},
+        {"name": "state_atr__timestamp", "scale": "atr", "query": "timestamp", "edges": [-1.5, -0.5, -0.1, 0.1, 0.5, 1.5]},
+        {"name": "state_atr__base_band_block28", "scale": "atr", "query": "base_band_block28", "edges": [-1.5, -0.5, -0.1, 0.1, 0.5, 1.5]},
+        {"name": "state_sqrt_atr__base_band", "scale": "sqrt_atr", "query": "base_band", "edges": [-15, -5, -1, 1, 5, 15]},
+        {"name": "state_sqrt_atr__timestamp", "scale": "sqrt_atr", "query": "timestamp", "edges": [-15, -5, -1, 1, 5, 15]},
+        {"name": "state_sqrt_atr__base_band_block28", "scale": "sqrt_atr", "query": "base_band_block28", "edges": [-15, -5, -1, 1, 5, 15]}
+      ]
+    }
+  },
+  "selection": {
+    "one_winner_per_family": true,
+    "primary": "SStableMeta",
+    "secondary": ["conditional_mi_meta_policy_given_base", "mean_top2_substitution_ev_bps", "worst_week_smeta"],
+    "final_authority": "top family candidates must be compared through the strict Meta-to-MC1 constrained portfolio; this stage cannot select a canonical Meta head by itself"
+  },
+  "causality": {
+    "feature_inputs": "Base target-free scores/ranks and point-in-time causal features only",
+    "labels": "policy and path outcomes join only after target-free input identity is fixed; labels are restricted to availability before the fold reserve",
+    "train_residual": "expanding 14-day Base-to-EV anchors use only earlier fully resolved policy labels",
+    "held_score": "held target-free score receipt is persisted before any held outcome metric is computed",
+    "held_outcomes": "metrics only; never an input to model prediction"
+  }
+}

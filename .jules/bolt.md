@@ -48,3 +48,7 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
 ## 2026-04-21 - [Data Converter] Learning: Iterating through DataFrame rows with iterrows() to build OHLC mapping or fallback stats is critically slow. Action: Extract columns using .values and iterate via zip() or vectorize with boolean masking.
+
+## 2026-05-18 - Replacing iterrows with Vectorized Index Updates
+Learning: Iterating through DataFrame rows via iterrows() to update another DataFrame is incredibly slow. Using vectorized index matching using .intersection() and pd.concat() handles bulk updates much faster while being just as effective.
+Action: Search for .iterrows() updates on large datasets. Refactor them with vectorization, carefully keeping original types matching (e.g. `pd.NA`) and handling new rows.
